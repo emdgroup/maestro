@@ -1,88 +1,153 @@
 //! Connection server management: spawn and query the shared per-connection maestro-server process.
 
 use crate::acp::reader_task::spawn_shared_reader_task;
-use crate::acp::session_types::{ConnectionServer, PendingChannels, TransportTarget};
+use crate::acp::session_types::{ConnectionServer, PendingRequests, TransportTarget};
 use crate::acp::transport::{
     CheckToolsRequest, CheckToolsResponse, ListAgentsRequest, MaestroRpcMessage,
-    PreInitializeRequest, PreInitializeResponse, ServerRequest, SessionCloseRequest,
-    SessionDeleteRequest, SessionListOkResponse,
+    PreInitializeRequest, PreInitializeResponse, ServerRequest, ServerResponse,
+    SessionCloseRequest, SessionDeleteRequest, SessionListOkResponse,
 };
 #[cfg(windows)]
 use crate::acp::transport_setup::open_wsl_transport;
 use crate::acp::transport_setup::{
     open_local_transport, open_remote_transport, spawn_stdin_writer_task,
 };
-use crate::acp::transport_types::serialize_message;
+use crate::acp::transport_types::{serialize_message, serialize_message_with_id};
 use maestro_protocol::{
     DetectInstalledAgentsRequest, DetectInstalledAgentsResponse, DetectProjectAgentsRequest,
-    DetectProjectAgentsResponse, InstallSkillsRequest, InstallSkillsResponse, SkillFile,
+    DetectProjectAgentsResponse, InstallSkillsRequest, InstallSkillsResponse, RequestId, SkillFile,
 };
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 
-/// Generic helper: lock→insert→send→await pattern shared by all connection-server query functions.
-// Each caller supplies its own pending-channel accessor and three distinct error strings, so the
-// arguments vary per call site rather than forming a reusable group.
-#[allow(clippy::too_many_arguments)]
-async fn query_via_server<T: Send + 'static>(
+/// Builds the closure `query_via_server` uses to take the one reply a request expects out of
+/// whatever came back under its id.
+macro_rules! reply {
+    ($pattern:pat => $value:expr) => {
+        |response| match response {
+            $pattern => Some($value),
+            _ => None,
+        }
+    };
+}
+pub(crate) use reply;
+
+pub(crate) const UNEXPECTED_REPLY: &str = "The server answered with a reply of another type";
+
+async fn connection_handles(
     connection_key: crate::acp::ConnectionKey,
-    app_state: &Arc<crate::core::AppState>,
+    app_state: &crate::core::AppState,
     not_found_err: &str,
-    get_pending: impl FnOnce(
-        &ConnectionServer,
-    ) -> Arc<std::sync::Mutex<Option<oneshot::Sender<Result<T, String>>>>>,
-    already_in_progress_err: &str,
-    request: MaestroRpcMessage,
+) -> Result<(tokio::sync::mpsc::Sender<Vec<u8>>, PendingRequests), String> {
+    let servers = app_state.acp.connection_servers.lock().await;
+    let server = servers
+        .get(&connection_key)
+        .ok_or_else(|| not_found_err.to_string())?;
+    Ok((server.writer_tx.clone(), server.pending.clone()))
+}
+
+/// Send a registered request under its id and wait for whatever the server answers it with.
+async fn await_reply(
+    writer_tx: &tokio::sync::mpsc::Sender<Vec<u8>>,
+    pending: &PendingRequests,
+    id: RequestId,
+    receiver: oneshot::Receiver<Result<ServerResponse, String>>,
+    request: &MaestroRpcMessage,
     timeout_secs: u64,
     timeout_err: &str,
-) -> Result<T, String> {
-    let (writer_tx, pending) = {
-        let servers = app_state.acp.connection_servers.lock().await;
-        let server = servers
-            .get(&connection_key)
-            .ok_or_else(|| not_found_err.to_string())?;
-        (server.writer_tx.clone(), get_pending(server))
+) -> Result<ServerResponse, String> {
+    let sent = match serialize_message_with_id(Some(id), request) {
+        Ok(bytes) => writer_tx
+            .send(bytes)
+            .await
+            .map_err(|_| "Connection server writer channel closed".to_string()),
+        Err(e) => Err(e),
     };
-    let (tx, rx) = oneshot::channel();
-
-    // If another request of the same type is already in-flight, wait up to 10s for it to
-    // complete rather than failing immediately. This handles the common case where the user
-    // switches between agents in the history panel while the first query is still loading.
-    let slot_deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
-    let mut pending_tx = Some(tx);
-    loop {
-        {
-            let mut guard = pending
-                .lock()
-                .map_err(|e| format!("Lock poisoned: {}", e))?;
-            if guard.is_none() {
-                *guard = pending_tx.take();
-                break;
-            }
-        }
-        if tokio::time::Instant::now() >= slot_deadline {
-            return Err(already_in_progress_err.to_string());
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    if let Err(e) = sent {
+        pending.forget(id);
+        return Err(e);
     }
-
-    let bytes = serialize_message(&request)?;
-    writer_tx
-        .send(bytes)
-        .await
-        .map_err(|_| "Connection server writer channel closed".to_string())?;
-    let result = tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx).await;
-    match result {
+    match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), receiver).await {
         Err(_) => {
-            // Timeout: clear the pending slot so future requests aren't permanently blocked.
-            if let Ok(mut guard) = pending.lock() {
-                guard.take();
-            }
+            pending.forget(id);
             Err(timeout_err.to_string())
         }
         Ok(inner) => inner.map_err(|_| "Response channel dropped".to_string())?,
     }
+}
+
+/// Send `request` through the connection's server and return the reply carrying its id.
+///
+/// `session_id` names the session a request is made for when the request itself cannot, so that
+/// an error scoped to that session fails it rather than leaving it to time out.
+pub(crate) async fn request_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    app_state: &crate::core::AppState,
+    not_found_err: &str,
+    session_id: Option<&str>,
+    request: MaestroRpcMessage,
+    timeout_secs: u64,
+    timeout_err: &str,
+) -> Result<ServerResponse, String> {
+    let (writer_tx, pending) = connection_handles(connection_key, app_state, not_found_err).await?;
+    let (id, receiver) = pending.register(session_id);
+    await_reply(
+        &writer_tx,
+        &pending,
+        id,
+        receiver,
+        &request,
+        timeout_secs,
+        timeout_err,
+    )
+    .await
+}
+
+pub(crate) async fn query_via_server<T>(
+    connection_key: crate::acp::ConnectionKey,
+    app_state: &crate::core::AppState,
+    not_found_err: &str,
+    request: MaestroRpcMessage,
+    extract: impl FnOnce(ServerResponse) -> Option<T>,
+    timeout_secs: u64,
+    timeout_err: &str,
+) -> Result<T, String> {
+    let response = request_via_server(
+        connection_key,
+        app_state,
+        not_found_err,
+        None,
+        request,
+        timeout_secs,
+        timeout_err,
+    )
+    .await?;
+    extract(response).ok_or_else(|| UNEXPECTED_REPLY.to_string())
+}
+
+/// Ask the daemon of the project's connection about its tasks, worktrees or reviews.
+///
+/// `request` is handed the project's path as this app knows it; the daemon canonicalizes it, and
+/// keys every row by that path, so replies carry the canonical one rather than `project_id`.
+pub(crate) async fn query_project_store<T>(
+    app_state: &Arc<crate::core::AppState>,
+    project_id: i32,
+    request: impl FnOnce(String) -> ServerRequest,
+    extract: impl FnOnce(ServerResponse) -> Option<T>,
+) -> Result<T, String> {
+    let (connection_key, project_path) =
+        crate::project::automations::target(app_state, project_id).await?;
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        MaestroRpcMessage::Request(request(project_path)),
+        extract,
+        15,
+        "The project's server did not answer within 15s",
+    )
+    .await
 }
 
 /// Send `ListAgents` through the running connection server and return the result.
@@ -91,17 +156,32 @@ pub async fn query_list_agents_via_connection_server(
     connection_key: crate::acp::ConnectionKey,
     app_state: &Arc<crate::core::AppState>,
 ) -> Result<Vec<crate::acp::registry::DiscoveredAgent>, String> {
-    query_via_server(
+    let response = query_via_server(
         connection_key,
         app_state,
         &format!("No connection server for connection {:?}", connection_key),
-        |s| s.pending.list_agents.clone(),
-        "ListAgents already in progress",
         MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {})),
+        reply!(ServerResponse::ListAgentsOk(response) => response),
         15,
         "ListAgents via connection server timed out after 15s",
     )
-    .await
+    .await?;
+    let agents: Vec<crate::acp::registry::DiscoveredAgent> = response
+        .agents
+        .into_iter()
+        .map(|agent| crate::acp::registry::DiscoveredAgent {
+            id: agent.id,
+            name: agent.name,
+            icon: agent.icon,
+            spawn_deps: agent.spawn_deps,
+        })
+        .collect();
+    log::debug!(
+        "[registry] ListAgentsOk: {} agents: {:?}",
+        agents.len(),
+        agents.iter().map(|agent| &agent.id).collect::<Vec<_>>()
+    );
+    Ok(agents)
 }
 
 /// Send a request that has no answer. Fails only when there is no relay to send it through.
@@ -133,9 +213,8 @@ pub async fn query_acquire_project_lock_via_server(
         connection_key,
         app_state,
         &format!("No connection server for connection {:?}", connection_key),
-        |s| s.pending.acquire_project_lock.clone(),
-        "AcquireProjectLock already in progress",
         MaestroRpcMessage::Request(ServerRequest::AcquireProjectLock(request)),
+        reply!(ServerResponse::AcquireProjectLockOk(response) => response),
         15,
         "AcquireProjectLock via connection server timed out after 15s",
     )
@@ -151,11 +230,10 @@ pub async fn query_project_locks_via_server(
         connection_key,
         app_state,
         &format!("No connection server for connection {:?}", connection_key),
-        |s| s.pending.project_locks.clone(),
-        "ListProjectLocks already in progress",
         MaestroRpcMessage::Request(ServerRequest::ListProjectLocks(
             maestro_protocol::ListProjectLocksRequest { project_paths },
         )),
+        reply!(ServerResponse::ProjectLocksOk(response) => response),
         15,
         "ListProjectLocks via connection server timed out after 15s",
     )
@@ -168,17 +246,31 @@ pub async fn query_takeover_via_server(
     request: maestro_protocol::AcquireProjectLockRequest,
     app_state: &Arc<crate::core::AppState>,
 ) -> Result<bool, String> {
-    query_via_server(
+    let (writer_tx, pending) = connection_handles(
         connection_key,
         app_state,
         &format!("No connection server for connection {:?}", connection_key),
-        |s| s.pending.takeover.clone(),
-        "A takeover is already in progress",
-        MaestroRpcMessage::Request(ServerRequest::RequestTakeover(request)),
+    )
+    .await?;
+    let (id, receiver) = pending.register(None);
+    if !pending.claim_takeover(id) {
+        pending.forget(id);
+        return Err("A takeover is already in progress".to_string());
+    }
+    let response = await_reply(
+        &writer_tx,
+        &pending,
+        id,
+        receiver,
+        &MaestroRpcMessage::Request(ServerRequest::RequestTakeover(request)),
         15,
         "The takeover request timed out after 15s",
     )
-    .await
+    .await?;
+    match response {
+        ServerResponse::TakeoverResultOk(result) => Ok(result.granted),
+        _ => Err(UNEXPECTED_REPLY.to_string()),
+    }
 }
 
 /// Ask every server this app is connected to to wind down, and forget them.
@@ -213,26 +305,63 @@ pub async fn stop_resident_servers(
     Ok(stopped)
 }
 
-/// Ask the connection's server which sessions it is running right now.
-///
-/// Not `SessionList`, which asks an *agent* what conversations it has stored on disk. This asks
-/// the server what is alive in its own process, which is what a freshly started app needs to know
-/// about a server that outlived the previous run.
-pub async fn query_live_sessions_via_server(
+/// Every conversation the daemon holds for this project, with the live state of the ones it is
+/// running. The path goes as the app knows it; the daemon canonicalizes it.
+pub async fn query_project_sessions_via_server(
     connection_key: crate::acp::ConnectionKey,
+    project_path: String,
+    include_closed: bool,
     app_state: &Arc<crate::core::AppState>,
-) -> Result<maestro_protocol::ListLiveSessionsResponse, String> {
+) -> Result<maestro_protocol::ListProjectSessionsResponse, String> {
     query_via_server(
         connection_key,
         app_state,
         &format!("No connection server for connection {:?}", connection_key),
-        |s| s.pending.live_sessions.clone(),
-        "ListLiveSessions already in progress",
-        MaestroRpcMessage::Request(ServerRequest::ListLiveSessions(
-            maestro_protocol::ListLiveSessionsRequest {},
+        MaestroRpcMessage::Request(ServerRequest::ListProjectSessions(
+            maestro_protocol::ListProjectSessionsRequest {
+                project_path,
+                include_closed,
+            },
         )),
+        reply!(ServerResponse::ListProjectSessionsOk(response) => response),
         15,
-        "ListLiveSessions via connection server timed out after 15s",
+        "ListProjectSessions via connection server timed out after 15s",
+    )
+    .await
+}
+
+pub async fn query_rename_session_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    request: maestro_protocol::RenameSessionRequest,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        MaestroRpcMessage::Request(ServerRequest::RenameSession(request)),
+        reply!(ServerResponse::RenameSessionOk => ()),
+        15,
+        "RenameSession via connection server timed out after 15s",
+    )
+    .await
+}
+
+/// Close a conversation the daemon is not running, by its key. Sent when its load failed for
+/// good, see `reader_task::is_gone_session_error`.
+pub async fn query_close_project_session_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    request: maestro_protocol::CloseProjectSessionRequest,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        MaestroRpcMessage::Request(ServerRequest::CloseProjectSession(request)),
+        reply!(ServerResponse::CloseProjectSessionOk => ()),
+        15,
+        "CloseProjectSession via connection server timed out after 15s",
     )
     .await
 }
@@ -250,11 +379,10 @@ pub async fn query_list_automations_via_server(
         connection_key,
         app_state,
         &format!("No connection server for connection {:?}", connection_key),
-        |s| s.pending.automations.clone(),
-        "ListAutomations already in progress",
         MaestroRpcMessage::Request(ServerRequest::ListAutomations(
             maestro_protocol::ListAutomationsRequest { project_path },
         )),
+        reply!(ServerResponse::ListAutomationsOk(response) => response),
         15,
         "ListAutomations via connection server timed out after 15s",
     )
@@ -271,14 +399,13 @@ pub async fn query_save_automation_via_server(
         connection_key,
         app_state,
         &format!("No connection server for connection {:?}", connection_key),
-        |s| s.pending.save_automation.clone(),
-        "SaveAutomation already in progress",
         MaestroRpcMessage::Request(ServerRequest::SaveAutomation(
             maestro_protocol::SaveAutomationRequest {
                 project_path,
                 automation,
             },
         )),
+        reply!(ServerResponse::SaveAutomationOk(response) => response),
         15,
         "SaveAutomation via connection server timed out after 15s",
     )
@@ -294,11 +421,10 @@ pub async fn query_delete_automation_via_server(
         connection_key,
         app_state,
         &format!("No connection server for connection {:?}", connection_key),
-        |s| s.pending.delete_automation.clone(),
-        "DeleteAutomation already in progress",
         MaestroRpcMessage::Request(ServerRequest::DeleteAutomation(
             maestro_protocol::DeleteAutomationRequest { automation_id },
         )),
+        reply!(ServerResponse::DeleteAutomationOk => ()),
         15,
         "DeleteAutomation via connection server timed out after 15s",
     )
@@ -314,11 +440,10 @@ pub async fn query_delete_automation_run_via_server(
         connection_key,
         app_state,
         &format!("No connection server for connection {:?}", connection_key),
-        |s| s.pending.delete_automation_run.clone(),
-        "DeleteAutomationRun already in progress",
         MaestroRpcMessage::Request(ServerRequest::DeleteAutomationRun(
             maestro_protocol::DeleteAutomationRunRequest { run_id },
         )),
+        reply!(ServerResponse::DeleteAutomationRunOk => ()),
         // Removing a worktree is a git process over a whole checkout.
         60,
         "DeleteAutomationRun via connection server timed out after 60s",
@@ -336,14 +461,13 @@ pub async fn query_set_run_retention_via_server(
         connection_key,
         app_state,
         &format!("No connection server for connection {:?}", connection_key),
-        |s| s.pending.set_run_retention.clone(),
-        "SetRunRetention already in progress",
         MaestroRpcMessage::Request(ServerRequest::SetRunRetention(
             maestro_protocol::SetRunRetentionRequest {
                 project_path,
                 retention,
             },
         )),
+        reply!(ServerResponse::SetRunRetentionOk => ()),
         // Answered after trimming, which removes worktrees.
         60,
         "SetRunRetention via connection server timed out after 60s",
@@ -362,12 +486,11 @@ pub async fn query_webhook_settings_via_server(
         connection_key,
         app_state,
         &format!("No connection server for connection {:?}", connection_key),
-        |s| s.pending.webhook_settings.clone(),
-        "Webhook settings already in progress",
         MaestroRpcMessage::Request(match settings {
             Some(settings) => ServerRequest::SetWebhookSettings(settings),
             None => ServerRequest::GetWebhookSettings,
         }),
+        reply!(ServerResponse::WebhookSettingsOk(response) => response),
         15,
         "Webhook settings via connection server timed out after 15s",
     )
@@ -384,14 +507,13 @@ pub async fn query_server_status_via_server(
         connection_key,
         app_state,
         &format!("No connection server for connection {:?}", connection_key),
-        |s| s.pending.server_status.clone(),
-        "Server status already in progress",
         MaestroRpcMessage::Request(match autostart {
             Some(enabled) => {
                 ServerRequest::SetAutostart(maestro_protocol::SetAutostartRequest { enabled })
             }
             None => ServerRequest::GetServerStatus,
         }),
+        reply!(ServerResponse::ServerStatusOk(response) => response),
         30,
         "Server status via connection server timed out after 30s",
     )
@@ -439,11 +561,10 @@ pub async fn query_roll_webhook_secret_via_server(
         connection_key,
         app_state,
         &format!("No connection server for connection {:?}", connection_key),
-        |s| s.pending.roll_webhook_secret.clone(),
-        "RollWebhookSecret already in progress",
         MaestroRpcMessage::Request(ServerRequest::RollWebhookSecret(
             maestro_protocol::AutomationIdRequest { automation_id },
         )),
+        reply!(ServerResponse::RollWebhookSecretOk(response) => response),
         15,
         "RollWebhookSecret via connection server timed out after 15s",
     )
@@ -459,11 +580,10 @@ pub async fn query_webhook_deliveries_via_server(
         connection_key,
         app_state,
         &format!("No connection server for connection {:?}", connection_key),
-        |s| s.pending.webhook_deliveries.clone(),
-        "ListWebhookDeliveries already in progress",
         MaestroRpcMessage::Request(ServerRequest::ListWebhookDeliveries(
             maestro_protocol::AutomationIdRequest { automation_id },
         )),
+        reply!(ServerResponse::ListWebhookDeliveriesOk(response) => response),
         15,
         "ListWebhookDeliveries via connection server timed out after 15s",
     )
@@ -509,11 +629,10 @@ pub async fn query_preview_schedule_via_server(
         connection_key,
         app_state,
         &format!("No connection server for connection {:?}", connection_key),
-        |s| s.pending.preview_schedule.clone(),
-        "PreviewSchedule already in progress",
         MaestroRpcMessage::Request(ServerRequest::PreviewSchedule(
             maestro_protocol::PreviewScheduleRequest { cron, timezone },
         )),
+        reply!(ServerResponse::PreviewScheduleOk(response) => response),
         5,
         "PreviewSchedule via connection server timed out after 5s",
     )
@@ -530,14 +649,13 @@ pub async fn query_automation_runs_via_server(
         connection_key,
         app_state,
         &format!("No connection server for connection {:?}", connection_key),
-        |s| s.pending.automation_runs.clone(),
-        "ListAutomationRuns already in progress",
         MaestroRpcMessage::Request(ServerRequest::ListAutomationRuns(
             maestro_protocol::ListAutomationRunsRequest {
                 project_path,
                 limit,
             },
         )),
+        reply!(ServerResponse::ListAutomationRunsOk(response) => response),
         15,
         "ListAutomationRuns via connection server timed out after 15s",
     )
@@ -554,9 +672,8 @@ pub async fn query_session_list_via_server(
         connection_key,
         app_state,
         "Connection not initialized. Run preflight first.",
-        |s| s.pending.session_list.clone(),
-        "SessionList already in progress",
         MaestroRpcMessage::Request(ServerRequest::SessionList(request)),
+        reply!(ServerResponse::SessionListOk(response) => response),
         30,
         "SessionList via connection server timed out after 30s",
     )
@@ -573,9 +690,8 @@ pub async fn query_session_delete_via_server(
         connection_key,
         app_state,
         "Connection not initialized. Run preflight first.",
-        |s| s.pending.session_delete.clone(),
-        "SessionDelete already in progress",
         MaestroRpcMessage::Request(ServerRequest::SessionDelete(request)),
+        reply!(ServerResponse::SessionDeleteOk => ()),
         30,
         "SessionDelete via connection server timed out after 30s",
     )
@@ -592,9 +708,8 @@ pub async fn query_session_close_via_server(
         connection_key,
         app_state,
         "Connection not initialized. Run preflight first.",
-        |s| s.pending.session_close.clone(),
-        "SessionClose already in progress",
         MaestroRpcMessage::Request(ServerRequest::SessionClose(request)),
+        reply!(ServerResponse::SessionCloseOk => ()),
         30,
         "SessionClose via connection server timed out after 30s",
     )
@@ -611,9 +726,8 @@ pub async fn query_check_tools_via_server(
         connection_key,
         app_state,
         "Connection not initialized. Run preflight first.",
-        |s| s.pending.check_tools.clone(),
-        "CheckTools already in progress",
         MaestroRpcMessage::Request(ServerRequest::CheckTools(CheckToolsRequest { tools })),
+        reply!(ServerResponse::CheckToolsOk(response) => response),
         15,
         "CheckTools via connection server timed out after 15s",
     )
@@ -630,11 +744,10 @@ pub async fn set_tool_path_via_server(
         connection_key,
         app_state,
         "Connection not initialized. Run preflight first.",
-        |s| s.pending.set_tool_path.clone(),
-        "SetToolPath already in progress",
         MaestroRpcMessage::Request(ServerRequest::SetToolPath(
             maestro_protocol::SetToolPathRequest { tool, path },
         )),
+        reply!(ServerResponse::SetToolPathOk(response) => response),
         15,
         "SetToolPath via connection server timed out after 15s",
     )
@@ -651,11 +764,10 @@ pub async fn test_tool_path_via_server(
         connection_key,
         app_state,
         "Connection not initialized. Run preflight first.",
-        |s| s.pending.test_tool_path.clone(),
-        "TestToolPath already in progress",
         MaestroRpcMessage::Request(ServerRequest::TestToolPath(
             maestro_protocol::TestToolPathRequest { tool, path },
         )),
+        reply!(ServerResponse::TestToolPathOk(response) => response),
         15,
         "TestToolPath via connection server timed out after 15s",
     )
@@ -675,11 +787,10 @@ pub async fn query_install_skills_via_server(
         connection_key,
         app_state,
         "Connection not initialized. Run preflight first.",
-        |s| s.pending.install_skills.clone(),
-        "InstallSkills already in progress",
         MaestroRpcMessage::Request(ServerRequest::InstallSkills(InstallSkillsRequest {
             skills,
         })),
+        reply!(ServerResponse::InstallSkillsOk(response) => response),
         150,
         "InstallSkills via connection server timed out after 150s",
     )
@@ -691,19 +802,27 @@ pub async fn query_detect_installed_via_server(
     connection_key: crate::acp::ConnectionKey,
     app_state: &Arc<crate::core::AppState>,
 ) -> Result<DetectInstalledAgentsResponse, String> {
-    query_via_server(
+    let response = query_via_server(
         connection_key,
         app_state,
         "Connection not initialized. Run preflight first.",
-        |s| s.pending.detect_installed.clone(),
-        "DetectInstalledAgents already in progress",
         MaestroRpcMessage::Request(ServerRequest::DetectInstalledAgents(
             DetectInstalledAgentsRequest {},
         )),
+        reply!(ServerResponse::DetectInstalledAgentsOk(response) => response),
         30,
         "DetectInstalledAgents timed out after 30s",
     )
-    .await
+    .await?;
+    log::debug!(
+        "[registry] DetectInstalledAgentsOk: {:?}",
+        response
+            .agents
+            .iter()
+            .map(|agent| &agent.agent_id)
+            .collect::<Vec<_>>()
+    );
+    Ok(response)
 }
 
 /// Send `DetectProjectAgents` through the running connection server and return the result.
@@ -716,11 +835,10 @@ pub async fn query_detect_project_agents_via_server(
         connection_key,
         app_state,
         "Connection not initialized. Run preflight first.",
-        |s| s.pending.detect_project.clone(),
-        "DetectProjectAgents already in progress",
         MaestroRpcMessage::Request(ServerRequest::DetectProjectAgents(
             DetectProjectAgentsRequest { cwd },
         )),
+        reply!(ServerResponse::DetectProjectAgentsOk(response) => response),
         15,
         "DetectProjectAgents timed out after 15s",
     )
@@ -814,7 +932,7 @@ pub async fn spawn_connection_server(
         }
     };
 
-    let pending = PendingChannels::new();
+    let pending = PendingRequests::default();
     let last_ping_at = Arc::new(AtomicU64::new(0));
     let writer_tx_for_reader = write_tx.clone();
     let ended = Arc::new(tokio::sync::Notify::new());
@@ -865,36 +983,19 @@ pub async fn pre_initialize_via_connection_server(
     cwd: &str,
     app_state: &Arc<crate::core::AppState>,
 ) -> Result<PreInitializeResponse, String> {
-    let (writer_tx, pre_init_pending) = {
-        let servers = app_state.acp.connection_servers.lock().await;
-        let server = servers
-            .get(&connection_key)
-            .ok_or_else(|| format!("No connection server for connection {:?}", connection_key))?;
-        (server.writer_tx.clone(), server.pending.pre_init.clone())
-    };
-
-    let (tx, rx) = oneshot::channel();
-    pre_init_pending
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?
-        .insert(agent_id.to_string(), tx);
-
-    let req = MaestroRpcMessage::Request(ServerRequest::PreInitialize(PreInitializeRequest {
-        agent_id: agent_id.to_string(),
-        cwd: cwd.to_string(),
-    }));
-    let bytes = serialize_message(&req)?;
-    writer_tx
-        .send(bytes)
-        .await
-        .map_err(|_| "Connection server writer channel closed".to_string())?;
-
-    let response = tokio::time::timeout(std::time::Duration::from_secs(60), rx)
-        .await
-        .map_err(|_| format!("PreInitialize timed out for agent {}", agent_id))?
-        .map_err(|_| "PreInitialize response channel dropped".to_string())??;
-
-    Ok(response)
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        MaestroRpcMessage::Request(ServerRequest::PreInitialize(PreInitializeRequest {
+            agent_id: agent_id.to_string(),
+            cwd: cwd.to_string(),
+        })),
+        reply!(ServerResponse::PreInitializeOk(response) => response),
+        60,
+        &format!("PreInitialize timed out for agent {}", agent_id),
+    )
+    .await
 }
 
 /// The MCP servers the user manages on this connection's machine, secrets blanked.
@@ -907,11 +1008,10 @@ pub async fn query_list_mcp_servers_via_server(
         connection_key,
         app_state,
         "Connection not initialized. Run preflight first.",
-        |s| s.pending.list_mcp_servers.clone(),
-        "ListMcpServers already in progress",
         MaestroRpcMessage::Request(ServerRequest::ListMcpServers(
             maestro_protocol::ProjectScopedRequest { project_path },
         )),
+        reply!(ServerResponse::ListMcpServersOk(response) => response),
         15,
         "ListMcpServers via connection server timed out after 15s",
     )
@@ -927,11 +1027,10 @@ pub async fn query_save_mcp_servers_via_server(
         connection_key,
         app_state,
         "Connection not initialized. Run preflight first.",
-        |s| s.pending.save_mcp_servers.clone(),
-        "SaveMcpServers already in progress",
         MaestroRpcMessage::Request(ServerRequest::SaveMcpServers(
             maestro_protocol::SaveMcpServersRequest { servers },
         )),
+        reply!(ServerResponse::SaveMcpServersOk => ()),
         15,
         "SaveMcpServers via connection server timed out after 15s",
     )
@@ -947,11 +1046,10 @@ pub async fn query_set_mcp_secrets_via_server(
         connection_key,
         app_state,
         "Connection not initialized. Run preflight first.",
-        |s| s.pending.set_mcp_secrets.clone(),
-        "SetMcpSecrets already in progress",
         MaestroRpcMessage::Request(ServerRequest::SetMcpSecrets(
             maestro_protocol::SetMcpSecretsRequest { secrets },
         )),
+        reply!(ServerResponse::SetMcpSecretsOk => ()),
         15,
         "SetMcpSecrets via connection server timed out after 15s",
     )
@@ -969,11 +1067,10 @@ pub async fn query_test_mcp_server_via_server(
         connection_key,
         app_state,
         "Connection not initialized. Run preflight first.",
-        |s| s.pending.test_mcp_server.clone(),
-        "TestMcpServer already in progress",
         MaestroRpcMessage::Request(ServerRequest::TestMcpServer(
             maestro_protocol::TestMcpServerRequest { server },
         )),
+        reply!(ServerResponse::TestMcpServerOk(response) => response),
         30,
         "TestMcpServer via connection server timed out after 30s",
     )
@@ -989,11 +1086,10 @@ pub async fn query_list_skills_via_server(
         connection_key,
         app_state,
         "Connection not initialized. Run preflight first.",
-        |s| s.pending.list_skills.clone(),
-        "ListSkills already in progress",
         MaestroRpcMessage::Request(ServerRequest::ListSkills(
             maestro_protocol::ProjectScopedRequest { project_path },
         )),
+        reply!(ServerResponse::ListSkillsOk(response) => response),
         15,
         "ListSkills via connection server timed out after 15s",
     )
@@ -1011,9 +1107,8 @@ pub async fn query_apply_skill_via_server(
         connection_key,
         app_state,
         "Connection not initialized. Run preflight first.",
-        |s| s.pending.apply_skill.clone(),
-        "ApplySkill already in progress",
         MaestroRpcMessage::Request(ServerRequest::ApplySkill(request)),
+        reply!(ServerResponse::ApplySkillOk => ()),
         300,
         "ApplySkill via connection server timed out after 300s",
     )
@@ -1029,11 +1124,10 @@ pub async fn query_delete_skill_via_server(
         connection_key,
         app_state,
         "Connection not initialized. Run preflight first.",
-        |s| s.pending.delete_skill.clone(),
-        "DeleteSkill already in progress",
         MaestroRpcMessage::Request(ServerRequest::DeleteSkill(
             maestro_protocol::DeleteSkillRequest { name },
         )),
+        reply!(ServerResponse::DeleteSkillOk => ()),
         150,
         "DeleteSkill via connection server timed out after 150s",
     )

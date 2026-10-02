@@ -9,10 +9,11 @@
 //! Keeping it behind `ClientOut` rather than naming `tokio::io::Stdout` in a dozen signatures is
 //! what lets that second mode exist without touching any of them.
 //!
-//! A daemon serves every Maestro window on its machine at once, and the host protocol has no
-//! request ids: a window matches a reply to its request by the reply's type alone. So a reply must
-//! reach only the window that asked, which is what a route is. The server loop hands each request
-//! a `ClientOut` whose `reply_to` is its sender, and everything that request spawns inherits it.
+//! A daemon serves every Maestro window on its machine at once, and a reply must reach only the
+//! window that asked, which is what a route is. The server loop hands each request a `ClientOut`
+//! whose `reply_to` is its sender and whose `reply_id` is the id the request came with, and
+//! everything that request spawns inherits both, so a task answering later still names the
+//! request it answers.
 //! A message about a session goes to that session's owner instead, the window that last sent a
 //! request naming it, since a session outlives the request that started it.
 //!
@@ -26,7 +27,8 @@ use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::sync::Mutex;
 
 use maestro_protocol::{
-    AcquireProjectLockResponse, MaestroRpcMessage, ProjectLockInfo, ServerResponse, TakeoverResult,
+    AcquireProjectLockResponse, MaestroRpcMessage, ProjectLockInfo, RequestId, ServerResponse,
+    TakeoverResult,
 };
 
 use crate::project_locks::{Effect, ProjectLocks, TAKEOVER_TIMEOUT};
@@ -107,8 +109,10 @@ async fn encode(msg: ServerResponse) -> Result<Vec<u8>, Box<dyn std::error::Erro
     Ok(buf)
 }
 
+#[derive(Clone)]
 enum Route {
-    Stdio(Option<Writer>),
+    /// Shared, so a sink made for one request writes to the same stdout as every other.
+    Stdio(Arc<Mutex<Option<Writer>>>),
     Daemon {
         clients: Arc<Mutex<Clients>>,
         reply_to: Option<ClientId>,
@@ -117,13 +121,16 @@ enum Route {
 
 pub struct ClientSink {
     route: Route,
+    /// The id of the request this sink was made for, echoed on its replies.
+    reply_id: Option<RequestId>,
 }
 
 impl ClientSink {
     /// The stdio client: a parent process holding this one's stdin and stdout, for its whole life.
     pub fn stdio() -> ClientOut {
         Arc::new(Mutex::new(Self {
-            route: Route::Stdio(Some(Box::new(tokio::io::stdout()))),
+            route: Route::Stdio(Arc::new(Mutex::new(Some(Box::new(tokio::io::stdout()))))),
+            reply_id: None,
         }))
     }
 
@@ -135,6 +142,7 @@ impl ClientSink {
                 clients: Arc::default(),
                 reply_to: None,
             },
+            reply_id: None,
         }))
     }
 
@@ -147,7 +155,47 @@ impl ClientSink {
                     clients: Arc::clone(clients),
                     reply_to: Some(id),
                 },
+                reply_id: None,
             })),
+        }
+    }
+
+    /// The same clients, speaking to every one of them: a change the window that asked for it
+    /// has to hear about too, like any other. Stdio has one client, so it is returned as is.
+    pub async fn everyone(this: &ClientOut) -> ClientOut {
+        match &this.lock().await.route {
+            Route::Stdio(_) => Arc::clone(this),
+            Route::Daemon { clients, .. } => Arc::new(Mutex::new(Self {
+                route: Route::Daemon {
+                    clients: Arc::clone(clients),
+                    reply_to: None,
+                },
+                reply_id: None,
+            })),
+        }
+    }
+
+    /// The same route, for one request: replies written through it, or through any clone of it
+    /// a spawned task holds, carry `reply_id`. A request without an id needs nothing of its own.
+    pub async fn for_request(this: &ClientOut, reply_id: Option<RequestId>) -> ClientOut {
+        if reply_id.is_none() {
+            return Arc::clone(this);
+        }
+        let route = this.lock().await.route.clone();
+        Arc::new(Mutex::new(Self { route, reply_id }))
+    }
+
+    /// The id `msg` goes out with. Only a reply that names no session answers the request this
+    /// sink was made for: a session's command loop keeps the sink of the request that spawned it
+    /// for the rest of its life, and what it says later answers some other request or none.
+    pub fn reply_id_for(&self, msg: &MaestroRpcMessage) -> Option<RequestId> {
+        match msg {
+            MaestroRpcMessage::Response(response)
+                if response.is_reply() && msg.session_id().is_none() =>
+            {
+                self.reply_id
+            }
+            _ => None,
         }
     }
 
@@ -155,7 +203,7 @@ impl ClientSink {
     pub async fn attach(&mut self, writer: Writer) -> ClientId {
         match &mut self.route {
             Route::Stdio(slot) => {
-                *slot = Some(writer);
+                *slot.lock().await = Some(writer);
                 0
             }
             Route::Daemon { clients, .. } => {
@@ -171,7 +219,7 @@ impl ClientSink {
 
     pub async fn detach(&mut self, id: ClientId) {
         match &mut self.route {
-            Route::Stdio(slot) => *slot = None,
+            Route::Stdio(slot) => *slot.lock().await = None,
             Route::Daemon { clients, .. } => {
                 let mut clients = clients.lock().await;
                 clients.remove(id);
@@ -304,10 +352,49 @@ impl ClientSink {
     /// the answer that closes nothing.
     pub fn is_attached(&self) -> bool {
         match &self.route {
-            Route::Stdio(slot) => slot.is_some(),
+            Route::Stdio(slot) => slot.try_lock().map_or(true, |slot| slot.is_some()),
             Route::Daemon { clients, .. } => clients
                 .try_lock()
                 .map_or(true, |clients| !clients.writers.is_empty()),
+        }
+    }
+
+    /// Write to exactly one client: the owner of `session_id` if it is attached, otherwise the one
+    /// attached longest. False when nobody is attached to take it. For a call any window can
+    /// answer and only one may, which `write`'s broadcast of an unowned session would send to all.
+    pub async fn write_to_one(&mut self, session_id: &str, buf: &[u8]) -> bool {
+        match &mut self.route {
+            Route::Stdio(slot) => {
+                let mut slot = slot.lock().await;
+                let Some(writer) = slot.as_mut() else {
+                    return false;
+                };
+                if write_all(writer, buf).await.is_err() {
+                    *slot = None;
+                    return false;
+                }
+                true
+            }
+            Route::Daemon { clients, .. } => {
+                let mut clients = clients.lock().await;
+                // A client whose write fails is removed, so the next pass picks another.
+                let written = loop {
+                    let owner = clients
+                        .owners
+                        .get(session_id)
+                        .copied()
+                        .filter(|id| clients.writers.contains_key(id));
+                    let Some(id) = owner.or_else(|| clients.writers.keys().min().copied()) else {
+                        break false;
+                    };
+                    clients.write_to(id, buf).await;
+                    if clients.writers.contains_key(&id) {
+                        break true;
+                    }
+                };
+                clients.flush().await;
+                written
+            }
         }
     }
 
@@ -334,6 +421,7 @@ impl ClientSink {
     pub async fn write(&mut self, session_id: Option<&str>, buf: &[u8]) -> std::io::Result<()> {
         match &mut self.route {
             Route::Stdio(slot) => {
+                let mut slot = slot.lock().await;
                 if let Some(writer) = slot.as_mut() {
                     if write_all(writer, buf).await.is_err() {
                         *slot = None;
@@ -417,6 +505,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn write_to_one_reaches_a_single_window() {
+        let root = ClientSink::detached();
+        assert!(!root.lock().await.write_to_one("s", &[0]).await);
+        let (a, mut a_rx) = client(&root).await;
+        let (b, mut b_rx) = client(&root).await;
+
+        // Unowned: the window attached longest, and only it.
+        assert!(root.lock().await.write_to_one("s", &[1]).await);
+        assert_eq!(read(&mut a_rx).await, Some(1));
+        assert_eq!(read(&mut b_rx).await, None);
+
+        // Owned: the owner.
+        root.lock().await.claim(b, "s").await;
+        assert!(root.lock().await.write_to_one("s", &[2]).await);
+        assert_eq!(read(&mut b_rx).await, Some(2));
+        assert_eq!(read(&mut a_rx).await, None);
+
+        root.lock().await.detach(a).await;
+        root.lock().await.detach(b).await;
+        assert!(!root.lock().await.write_to_one("s", &[3]).await);
+    }
+
+    #[tokio::test]
     async fn a_lock_goes_with_the_client_that_held_it() {
         let root = ClientSink::detached();
         // Roomy enough that nobody reading does not block the broadcasts.
@@ -440,5 +551,67 @@ mod tests {
         assert!(!acquire(to_b.clone()).await);
         root.lock().await.detach(a).await;
         assert!(acquire(to_b.clone()).await);
+    }
+
+    async fn reply_id_of(stream: &mut tokio::io::DuplexStream) -> Option<RequestId> {
+        maestro_protocol::read_message_with_id(stream)
+            .await
+            .unwrap()
+            .0
+    }
+
+    fn error(session_id: Option<&str>) -> MaestroRpcMessage {
+        MaestroRpcMessage::Response(ServerResponse::Error(maestro_protocol::ErrorResponse {
+            message: String::new(),
+            session_id: session_id.map(str::to_string),
+        }))
+    }
+
+    /// Both modes: a daemon's per-client route, and the stdio sink with a pipe for its stdout.
+    async fn connection(daemon: bool) -> (ClientOut, tokio::io::DuplexStream) {
+        let (ours, theirs) = tokio::io::duplex(1 << 16);
+        let root = if daemon {
+            ClientSink::detached()
+        } else {
+            ClientSink::stdio()
+        };
+        let id = root.lock().await.attach(Box::new(ours)).await;
+        (ClientSink::for_client(&root, id).await, theirs)
+    }
+
+    #[tokio::test]
+    async fn only_a_sessionless_reply_carries_the_request_id() {
+        use crate::helpers::send_response;
+        for daemon in [true, false] {
+            let (route, mut rx) = connection(daemon).await;
+            let first = ClientSink::for_request(&route, Some(7)).await;
+            let second = ClientSink::for_request(&route, Some(8)).await;
+
+            // Interleaved requests each get their own id back, from a spawned task too.
+            send_response(&second, &error(None)).await.unwrap();
+            assert_eq!(reply_id_of(&mut rx).await, Some(8));
+            let cloned = Arc::clone(&first);
+            tokio::spawn(async move {
+                send_response(&cloned, &error(None))
+                    .await
+                    .map_err(|e| e.to_string())
+            })
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(reply_id_of(&mut rx).await, Some(7));
+
+            // A session's reply and an unprompted event do not answer this request.
+            send_response(&first, &error(Some("s"))).await.unwrap();
+            assert_eq!(reply_id_of(&mut rx).await, None);
+            let unprompted = MaestroRpcMessage::Response(ServerResponse::ProjectLocksChanged);
+            send_response(&first, &unprompted).await.unwrap();
+            assert_eq!(reply_id_of(&mut rx).await, None);
+
+            // A request without an id is answered without one.
+            let plain = ClientSink::for_request(&route, None).await;
+            send_response(&plain, &error(None)).await.unwrap();
+            assert_eq!(reply_id_of(&mut rx).await, None);
+        }
     }
 }

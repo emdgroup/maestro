@@ -28,13 +28,24 @@ mod mcp_config;
 mod mcp_gateway;
 mod mcp_stdio;
 mod mcp_store;
+mod pipeline_settings;
+mod profiles;
 mod project_locks;
+mod project_store;
+mod prompt_store;
+mod scheduler;
 mod session;
 mod sessions;
 mod skills;
+mod task_prompt;
+mod task_restart;
+mod task_runner;
+mod task_store;
+mod task_turn;
 mod terminal;
 mod tool_check;
 mod tool_config;
+mod turn;
 mod webhook;
 mod workspace_roots;
 mod worktree;
@@ -122,8 +133,16 @@ fn main() {
 /// Channel the server loop receives client requests on, whatever carried them.
 type MsgRx = tokio::sync::mpsc::Receiver<Inbound>;
 
-/// A client request, with the route its replies take: `None` for the stdio client, the only one.
-pub(crate) type Inbound = Result<(MaestroRpcMessage, Option<ClientOut>), String>;
+/// A client request, with the route its replies take (`None` for the stdio client, the only one)
+/// and the id it came with, which its reply echoes.
+pub(crate) type Inbound = Result<
+    (
+        MaestroRpcMessage,
+        Option<ClientOut>,
+        Option<maestro_protocol::RequestId>,
+    ),
+    String,
+>;
 
 /// Stdio mode: one client, this process's parent, for the life of the process.
 async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
@@ -142,9 +161,12 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         let stdin = std::io::stdin();
         let mut locked = stdin.lock();
         loop {
-            match maestro_protocol::read_message_sync(&mut locked) {
-                Ok(msg) => {
-                    if stdin_msg_tx.blocking_send(Ok((msg, None))).is_err() {
+            match maestro_protocol::read_message_with_id_sync(&mut locked) {
+                Ok((request_id, msg)) => {
+                    if stdin_msg_tx
+                        .blocking_send(Ok((msg, None, request_id)))
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -166,7 +188,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Validate the protocol version handshake before entering the main dispatch loop.
     let first_msg = match stdin_msg_rx.recv().await {
-        Some(Ok((msg, _))) => msg,
+        Some(Ok((msg, _, _))) => msg,
         _ => return Ok(()),
     };
     match first_msg {
@@ -288,6 +310,7 @@ async fn reap_idle_sessions(
     sessions: &mut SessionMap,
     stdout: &crate::ClientOut,
     automation_store: Option<&automation_runner::Store>,
+    project_store: Option<&project_store::Store>,
 ) {
     let attached = stdout.lock().await.is_attached();
     let mut reap: Vec<String> = Vec::new();
@@ -320,19 +343,102 @@ async fn reap_idle_sessions(
         {
             session.task.abort();
         }
-        if let Some(cleanup) = session.cleanup {
+        if let Some(cleanup) = &session.cleanup {
             cleanup.router.unregister(&cleanup.acp_session_id).await;
         }
         send_diag(
             "info",
             format!("[reap] closed idle session={session_id} with no client attached"),
         );
+        if let Some(store) = project_store {
+            project_store::report(project_store::go_dormant(
+                &*store.lock().await,
+                &session_id,
+                chrono::Utc::now(),
+            ));
+            if let (Some(automation_store), Some(cleanup)) = (automation_store, &session.cleanup) {
+                automation_runner::close_finished_run_rows(
+                    automation_store,
+                    store,
+                    Some((&session.agent_id, &cleanup.acp_session_id)),
+                )
+                .await;
+            }
+        }
         // Only now: the agent held files open under its workspace for as long as the session
         // lived, and on Windows a removal while it does simply fails.
         if let Some(store) = automation_store {
             automation_runner::settle_worktree_for_session(store, stdout, &session_id).await;
         }
     }
+}
+
+/// Record a session that has just come up and take it into the map.
+///
+/// Unless its row was closed while it was coming up: nothing would own it and no list would show
+/// it, and the idle sweep never closes it while a window is attached. The client was already sent
+/// its `SpawnOk` or `SessionLoadOk`, and needs nothing more: every host path that closes a row
+/// has dropped its own entry first, so it holds nothing waiting on this session. `false` then.
+pub(crate) async fn register_started_session(
+    session_id: String,
+    session: ActiveSession,
+    sessions: &mut SessionMap,
+    agent_connections: &SharedAgentConnections,
+    project_store: Option<&project_store::Store>,
+    automation_store: Option<&automation_runner::Store>,
+    stdout: &crate::ClientOut,
+) -> bool {
+    let recorded = match (
+        project_store,
+        session.project.as_ref(),
+        session.cleanup.as_ref(),
+    ) {
+        (Some(store), Some(project), Some(cleanup)) => project_store::upsert(
+            &*store.lock().await,
+            &project_store::Started {
+                agent_id: &session.agent_id,
+                acp_session_id: &cleanup.acp_session_id,
+                project_path: &automations::canonical_project_path(&project.project_path),
+                cwd: &session.cwd,
+                meta: &project.meta,
+                can_reload: project.can_reload,
+                session_id: &session_id,
+                requested_at: project.requested_at,
+            },
+            chrono::Utc::now(),
+        ),
+        _ => Ok(true),
+    };
+    match recorded {
+        Ok(true) => {}
+        Ok(false) => {
+            send_diag(
+                "info",
+                format!(
+                    "[session] closing session={session_id}, its row was closed while it came up"
+                ),
+            );
+            dispatch::close_session(
+                &session_id,
+                session,
+                agent_connections,
+                automation_store,
+                stdout,
+            )
+            .await;
+            return false;
+        }
+        Err(e) => project_store::report(Err(e)),
+    }
+    sessions.insert(session_id.clone(), session);
+    // Only now can a client adopt it: `ListProjectSessions` reports a row as live when this map
+    // holds its routing id. An automation's run is announced again here and nowhere earlier, after
+    // the row and the entry, so a window already attached finds the session the moment it is told
+    // the run has one.
+    if let Some(store) = automation_store {
+        automation_runner::announce_session(store, stdout, &session_id).await;
+    }
+    true
 }
 
 /// The server proper: dispatch requests until the client channel closes.
@@ -351,6 +457,9 @@ async fn run_server(
     // can insert sessions without holding any lock across the async ACP operations.
     let (spawn_result_tx, mut spawn_result_rx) =
         tokio::sync::mpsc::channel::<(String, ActiveSession)>(8);
+    // Requests answered off the loop hand back what touches state only the loop owns.
+    let (settle_tx, mut settle_rx) = tokio::sync::mpsc::unbounded_channel::<dispatch::Settle>();
+    let _ = dispatch::SETTLE_TX.set(settle_tx.clone());
 
     let (diag_tx, diag_rx) = tokio::sync::mpsc::unbounded_channel::<DiagnosticPayload>();
     let _ = DIAG_TX.set(diag_tx);
@@ -379,12 +488,38 @@ async fn run_server(
         .map_err(|e| send_diag("warn", format!("[automation] store unavailable: {e}")))
         .ok();
 
+    // `None` when it cannot be opened, as above: sessions run, and are simply not recorded.
+    let project_store: Option<project_store::Store> = daemon::dir()
+        .and_then(|dir| project_store::open(&dir))
+        .and_then(|conn| {
+            project_store::reset_on_start(&conn, chrono::Utc::now())?;
+            Ok(Arc::new(tokio::sync::Mutex::new(conn)))
+        })
+        .map_err(|e| send_diag("warn", format!("[project-store] store unavailable: {e}")))
+        .ok();
+    if let Some(store) = &project_store {
+        let _ = project_store::SHARED.set(Arc::clone(store));
+    }
+
     // After the runs above are closed out, so a workspace left by a server that died mid-run is
     // evaluated rather than sitting there for ever.
     if let Some(store) = automation_store.as_ref() {
-        automation_runner::sweep_worktrees(store, &stdout).await;
-        automation_runner::apply_all_retention(store).await;
-        webhook::restart(store).await;
+        Box::pin(automation_runner::sweep_worktrees(store, &stdout)).await;
+        Box::pin(automation_runner::apply_all_retention(store)).await;
+        Box::pin(webhook::restart(store)).await;
+    }
+    // Every run is over by now, `fail_interrupted_runs` having ended the ones this daemon's
+    // predecessor died in, so none of their sessions is running and none is left for a project
+    // open to reload.
+    if let (Some(automation_store), Some(project_store)) =
+        (automation_store.as_ref(), project_store.as_ref())
+    {
+        Box::pin(automation_runner::close_finished_run_rows(
+            automation_store,
+            project_store,
+            None,
+        ))
+        .await;
     }
 
     // Agent discovery (which::which PATH scanning) runs after the handshake so the client does not
@@ -395,11 +530,39 @@ async fn run_server(
 
     // After the handshake so a client of the wrong protocol version never opens a listener, and
     // before the first session so `mcp_servers_for` has an address to inject.
-    let mut gateway_rx = mcp_gateway::start().await;
+    let mut gateway_rx = Box::pin(mcp_gateway::start()).await;
     let mut pending_host_tools = mcp_gateway::PendingHostTools::new();
 
     let mut agents_with_spawn: Vec<agent::registry::DiscoveredAgentWithSpawn> =
         agent::discover_agents(&registry);
+    // Before the first request, because a project opening on this connection loads its sessions
+    // before it lists any agents, and a custom agent missing here would make those loads final.
+    agent::registry::apply_custom_agents(&mut agents_with_spawn);
+    // The queue drains itself. Its slot count is asked of this loop.
+    let mut scheduler_rx = project_store.as_ref().map(|store| {
+        scheduler::start(scheduler::Deps {
+            store: Arc::clone(store),
+            agent_connections: Arc::clone(&agent_connections),
+            settle_tx: settle_tx.clone(),
+            stdout: Arc::clone(&stdout),
+        })
+    });
+    // Once, with the map empty: the tasks the last daemon left in flight are picked up off the loop,
+    // their reloaded sessions arriving through `settle_rx` like any task session.
+    if let Some(store) = project_store.as_ref() {
+        let planned = task_restart::plan(&*store.lock().await);
+        task_restart::spawn(
+            task_turn::Driver {
+                store: Arc::clone(store),
+                agent_connections: Arc::clone(&agent_connections),
+                settle_tx: settle_tx.clone(),
+                stdout: Arc::clone(&stdout),
+                agents: agents_with_spawn.clone(),
+            },
+            planned,
+        );
+    }
+    let mut task_slots = 0;
     let auth_terminals: Arc<
         tokio::sync::Mutex<std::collections::HashMap<String, AuthTerminalState>>,
     > = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
@@ -464,7 +627,14 @@ async fn run_server(
     automations_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
-        let (msg, route) = tokio::select! {
+        // A task session left the map, however it went: a slot is free on this machine.
+        let used = pipeline_settings::used_slots(&sessions);
+        if used < task_slots {
+            scheduler::request_all();
+        }
+        task_slots = used;
+
+        let (msg, route, request_id) = tokio::select! {
             biased;
 
             msg_result = stdin_msg_rx.recv() => {
@@ -499,13 +669,52 @@ async fn run_server(
 
             result = spawn_result_rx.recv() => {
                 if let Some((session_id, session)) = result {
-                    sessions.insert(session_id.clone(), session);
-                    // Only now can a client adopt it: `ListLiveSessions` answers from this map. An
-                    // automation's run is announced again here, carrying the session, so a window
-                    // already attached picks up a session it did not start.
-                    if let Some(store) = automation_store.as_ref() {
-                        automation_runner::announce_session(store, &stdout, &session_id).await;
-                    }
+                    Box::pin(register_started_session(
+                        session_id,
+                        session,
+                        &mut sessions,
+                        &agent_connections,
+                        project_store.as_ref(),
+                        automation_store.as_ref(),
+                        &stdout,
+                    ))
+                    .await;
+                }
+                continue;
+            }
+
+            settled = settle_rx.recv() => {
+                if let Some(settled) = settled {
+                    Box::pin(dispatch::settle(
+                        settled,
+                        &mut sessions,
+                        &mut agents_with_spawn,
+                        &agent_connections,
+                        project_store.as_ref(),
+                        automation_store.as_ref(),
+                        &mut pending_host_tools,
+                    ))
+                    .await;
+                }
+                continue;
+            }
+
+            // A start counts in `in_flight` until `adopt` has its session in the map, so a start
+            // handed over but not settled yet is counted once whichever arm runs first.
+            asked = async {
+                match scheduler_rx.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                if let Some(reply) = asked {
+                    let _ = reply.send(scheduler::Snapshot {
+                        used: pipeline_settings::used_slots(&sessions),
+                        // Read here, with `used`: a start leaves it only once its session is in.
+                        in_flight: task_runner::in_flight(),
+                        busy: scheduler::busy_tasks(&sessions),
+                        agents: agents_with_spawn.clone(),
+                    });
                 }
                 continue;
             }
@@ -518,13 +727,14 @@ async fn run_server(
                 }
             } => {
                 if let Some((call, reply_tx)) = call {
-                    mcp_gateway::handle_host_tool_call(
+                    Box::pin(mcp_gateway::handle_host_tool_call(
                         call,
                         reply_tx,
                         &sessions,
+                        project_store.as_ref(),
                         &mut pending_host_tools,
                         &stdout,
-                    )
+                    ))
                     .await;
                 }
                 continue;
@@ -539,26 +749,47 @@ async fn run_server(
                         .collect()
                 };
                 for agent_id in agents_with_dead {
-                    handle_agent_restart(
+                    Box::pin(handle_agent_restart(
                         agent_id,
                         &agent_connections,
                         &mut sessions,
                         &agents_with_spawn,
+                        project_store.as_ref(),
                         &stdout,
-                    )
+                    ))
                     .await;
+                }
+                // A command loop that ended on a transport error leaves its entry in the map for
+                // the host to cancel, and ends deep inside the session where the store is out of
+                // reach. Its finished task is what shows here. Repeating it is a no-op.
+                if let Some(store) = project_store.as_ref() {
+                    for (session_id, session) in sessions.iter() {
+                        if session.task.is_finished() {
+                            project_store::report(project_store::go_dormant(
+                                &*store.lock().await,
+                                session_id,
+                                chrono::Utc::now(),
+                            ));
+                        }
+                    }
                 }
                 continue;
             }
 
             _ = reap_interval.tick() => {
-                reap_idle_sessions(&mut sessions, &stdout, automation_store.as_ref()).await;
+                Box::pin(reap_idle_sessions(
+                    &mut sessions,
+                    &stdout,
+                    automation_store.as_ref(),
+                    project_store.as_ref(),
+                ))
+                .await;
                 continue;
             }
 
             _ = automations_interval.tick() => {
                 if let Some(store) = automation_store.as_ref() {
-                    automation_runner::tick(
+                    Box::pin(automation_runner::tick(
                         store,
                         automations_floor,
                         automation_runner::Spawner {
@@ -567,9 +798,9 @@ async fn run_server(
                             stdout: &stdout,
                             spawn_result_tx: &spawn_result_tx,
                         },
-                    )
+                    ))
                     .await;
-                    automation_runner::drain_webhook_queues(
+                    Box::pin(automation_runner::drain_webhook_queues(
                         store,
                         automation_runner::Spawner {
                             agents_with_spawn: &mut agents_with_spawn,
@@ -577,16 +808,48 @@ async fn run_server(
                             stdout: &stdout,
                             spawn_result_tx: &spawn_result_tx,
                         },
-                    )
+                    ))
                     .await;
                 }
                 continue;
             }
 
             ended = turn_rx.recv() => {
-                if let (Some(ended), Some(store)) = (ended, automation_store.as_ref()) {
-                    automation_runner::finish_for_session(store, &stdout, ended).await;
-                    automation_runner::drain_webhook_queues(
+                let Some(ended) = ended else { continue };
+                // A task session the daemon prompted before adopting it: held until it is.
+                let ended = if sessions.contains_key(&ended.session_id) {
+                    ended
+                } else {
+                    match task_runner::hold_turn_end(ended) {
+                        Some(ended) => ended,
+                        None => continue,
+                    }
+                };
+                // A task's session: resolve the turn and start the next stage, off the loop.
+                let ending = sessions.get(&ended.session_id);
+                let task_binding = ending.and_then(task_turn::task_of);
+                let role = ending.and_then(task_turn::role_of);
+                if let (Some(store), Some((project_path, task_id))) =
+                    (project_store.as_ref(), task_binding)
+                {
+                    task_turn::spawn(
+                        task_turn::Driver {
+                            store: Arc::clone(store),
+                            agent_connections: Arc::clone(&agent_connections),
+                            settle_tx: settle_tx.clone(),
+                            stdout: Arc::clone(&stdout),
+                            agents: agents_with_spawn.clone(),
+                        },
+                        project_path,
+                        task_id,
+                        role,
+                        ended.stop_reason.clone(),
+                        ended.facts.clone(),
+                    );
+                }
+                if let Some(store) = automation_store.as_ref() {
+                    Box::pin(automation_runner::finish_for_session(store, &stdout, ended)).await;
+                    Box::pin(automation_runner::drain_webhook_queues(
                         store,
                         automation_runner::Spawner {
                             agents_with_spawn: &mut agents_with_spawn,
@@ -594,7 +857,7 @@ async fn run_server(
                             stdout: &stdout,
                             spawn_result_tx: &spawn_result_tx,
                         },
-                    )
+                    ))
                     .await;
                 }
                 continue;
@@ -602,7 +865,7 @@ async fn run_server(
 
             fired = fire_rx.recv() => {
                 if let (Some(fired), Some(store)) = (fired, automation_store.as_ref()) {
-                    let started = automation_runner::start(
+                    let started = Box::pin(automation_runner::start(
                         store,
                         &fired.automation_id,
                         maestro_protocol::RunTrigger::Webhook,
@@ -613,7 +876,7 @@ async fn run_server(
                             stdout: &stdout,
                             spawn_result_tx: &spawn_result_tx,
                         },
-                    )
+                    ))
                     .await;
                     if fired.reply.send(started).is_err() {
                         send_diag("debug", "[webhook] the request gave up before its run opened");
@@ -623,21 +886,50 @@ async fn run_server(
             }
         };
 
-        if !dispatch_message(
+        let reply_sink =
+            client_sink::ClientSink::for_request(route.as_ref().unwrap_or(&stdout), request_id)
+                .await;
+        // Boxed: inlined, its state machine sits in this loop's future on the main thread's stack,
+        // which a debug build on Windows (1 MB) overflows.
+        if !Box::pin(dispatch_message(
             msg,
             &mut sessions,
             &agent_connections,
             &mut agents_with_spawn,
-            route.as_ref().unwrap_or(&stdout),
+            &reply_sink,
             &spawn_result_tx,
+            &settle_tx,
             &auth_terminals,
             &mut pending_host_tools,
             automation_store.as_ref(),
-        )
+            project_store.as_ref(),
+        ))
         .await
         {
             break;
         }
+    }
+
+    // Nothing is live past this point. The rows stay open, so the sessions reload afterwards.
+    if let Some(store) = project_store.as_ref() {
+        // A session blocked on a prompt is mid-turn too, so this covers both.
+        let live_turns: Vec<String> = sessions
+            .iter()
+            .filter(|(_, session)| {
+                session
+                    .turn_active
+                    .load(std::sync::atomic::Ordering::SeqCst)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        project_store::report(project_store::note_live_turns(
+            &*store.lock().await,
+            &live_turns,
+        ));
+        project_store::report(project_store::all_dormant(
+            &*store.lock().await,
+            chrono::Utc::now(),
+        ));
     }
 
     // Abort all active session tasks so agent child processes are killed promptly.

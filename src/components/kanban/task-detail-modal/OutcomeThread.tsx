@@ -71,15 +71,15 @@ function Entry({ comment }: { comment: TaskComment }) {
  * session lives; this is what is left afterwards, which is why it is the only record a Done or
  * archived task has.
  */
-export function OutcomeThread({ taskId }: { taskId: number }) {
-  const { data: comments = [], isLoading } = useTaskCommentsQuery(taskId);
+export function OutcomeThread({ projectId, taskId }: { projectId: number; taskId: number }) {
+  const { data: comments = [], isLoading } = useTaskCommentsQuery(projectId, taskId);
   const addNote = useAddTaskNoteMutation();
   const [draft, setDraft] = useState("");
 
   const submit = () => {
     const body = draft.trim();
     if (!body) return;
-    addNote.mutate({ taskId, body }, { onSuccess: () => setDraft("") });
+    addNote.mutate({ projectId, taskId, body }, { onSuccess: () => setDraft("") });
   };
 
   return (

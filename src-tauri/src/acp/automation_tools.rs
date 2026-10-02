@@ -351,12 +351,14 @@ pub(super) async fn run_automation(
         .await
         .insert((session_id.to_string(), call.request_id.clone()), answer_tx);
 
-    let task_id = {
+    let task = {
         let sessions = app_state.acp.sessions.lock().await;
-        sessions.get(session_id).and_then(|session| session.task_id)
+        sessions
+            .get(session_id)
+            .and_then(|session| session.task_key())
     };
-    if let Some(task_id) = task_id {
-        crate::acp::reader_task::mark_task_blocked(app_state, task_id);
+    if let Some(task) = task {
+        crate::acp::reader_task::mark_task_blocked(app_state, task).await;
     }
 
     let payload = json!({

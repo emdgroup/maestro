@@ -65,7 +65,7 @@ export interface AgentConfig {
  * which is why these were free-text boxes you could typo into a spawn failure. So it makes one:
  * spawn, take the lists off the events the reader already emits, close.
  *
- * `taskId` is null deliberately. `occupied_slots` counts sessions carrying a task id, so a probe
+ * `taskId` is null deliberately. The daemon's slot count takes every session carrying a task id, so a probe
  * can never eat a capacity slot the board was holding for real work.
  *
  * Resolves with whatever arrived rather than throwing when a list is missing — plenty of agents

@@ -87,6 +87,7 @@ export function TaskProfilesDialog({
   function save() {
     onOpenChange(false);
     setOverrides.mutate({
+      projectId: task.project_id,
       taskId: task.id,
       // Empty strings are "use the project default", which is an absence rather than a choice, so
       // they are dropped. `null` is a choice — "skip this stage" — and has to survive the filter,

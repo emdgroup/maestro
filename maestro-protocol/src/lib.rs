@@ -6,10 +6,24 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 11;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
+///
+/// A refused `StartTask` names the agent too, as `auth_required:<agent_id>`, since the window
+/// cannot know which agent the daemon picked for the stage. See [`auth_required_for`].
 pub const AUTH_REQUIRED_ERROR: &str = "auth_required";
+
+/// The error a `StartTask` answers with when `agent_id` needs a sign-in.
+pub fn auth_required_for(agent_id: &str) -> String {
+    format!("{AUTH_REQUIRED_ERROR}:{agent_id}")
+}
+
+/// A window's `session/load` refused because the daemon's startup pass is reloading that session
+/// itself. Not a load failure: the session arrives as `TaskSessionStarted` once it is up, so the
+/// window drops its pending entry and waits. Deliberately not prefixed with
+/// [`SESSION_LOAD_FAILED_ERROR`], which would make the host tear the session down.
+pub const SESSION_RELOADING_ERROR: &str = "session_reloading";
 /// Prefix of the error returned when `session/load` fails.
 ///
 /// `ErrorResponse::session_id` marks an error as *scoped to* a session; this prefix is what marks
@@ -18,6 +32,14 @@ pub const AUTH_REQUIRED_ERROR: &str = "auth_required";
 /// `reader_task` and by substring in `useAcpActivity.ts`, so older deployed servers — which
 /// spell the same string literally — keep working.
 pub const SESSION_LOAD_FAILED_ERROR: &str = "ACP session/load failed";
+/// Prefix of a load failure that trying again cannot fix: the agent no longer has the
+/// conversation, the folder it ran in is gone, or this machine does not know the agent.
+///
+/// Begins with [`SESSION_LOAD_FAILED_ERROR`] so everything that matches a load failure still
+/// matches this one. The server decides, because it holds the agent's error code and the host is
+/// sent only the agent's own wording. It is what lets the host close the conversation's row and
+/// leave open one whose agent crashed or wants signing in to again.
+pub const SESSION_GONE_ERROR: &str = "ACP session/load failed: the session is gone";
 /// Prefix of the error `attach` answers with when the resident server belongs to another build of
 /// Maestro and is in use, so replacing it would end work somebody is doing. `attach --replace`
 /// replaces it regardless. Matched by substring in `PreflightModal.tsx`.
@@ -112,8 +134,14 @@ pub enum ServerRequest {
     PermitResponse(PermissionResponse),
     ElicitationResponse(ElicitationResponse),
     ListAgents(ListAgentsRequest),
-    /// What is this server running right now. Asked by a client that has just attached.
-    ListLiveSessions(ListLiveSessionsRequest),
+    /// Every conversation a project holds, with the live state of the ones running. Asked by a
+    /// client opening the project or reconnecting to it.
+    ListProjectSessions(ListProjectSessionsRequest),
+    /// Change the user's name for a conversation, running or not.
+    RenameSession(RenameSessionRequest),
+    /// The project is done with a conversation nothing is running. `Cancel` is how a running one
+    /// is let go of.
+    CloseProjectSession(CloseProjectSessionRequest),
     /// Wind down: end every session and exit.
     ///
     /// Asked for before an update installs, because a resident server holds its own binary open
@@ -200,6 +228,72 @@ pub enum ServerRequest {
     RequestTakeover(AcquireProjectLockRequest),
     /// The holder's answer to a [`ServerResponse::TakeoverRequested`].
     TakeoverAnswer(TakeoverAnswer),
+    /// Every task of the project, newest first, archived ones included.
+    ListTasks(ProjectRef),
+    GetTask(TaskRef),
+    CreateTask(CreateTaskRequest),
+    UpdateTask(UpdateTaskRequest),
+    ArchiveTask(TaskRef),
+    /// Archive and apply `Cancelled`, in that order.
+    CancelTask(TaskRef),
+    DeleteTask(TaskRef),
+    /// One guarded transition, the guard read under the same lock as the write.
+    ApplyTaskTransition(ApplyTaskTransitionRequest),
+    EndTaskTurn(EndTaskTurnRequest),
+    CloseRefinement(CloseRefinementRequest),
+    RequestTaskExecution(RequestTaskExecutionRequest),
+    /// Queued tasks with no phase, deferred first, then by priority and age.
+    ListQueueCandidates(ListQueueCandidatesRequest),
+    /// Unarchived tasks at `AwaitingMerge` with a pull request number, for the forge sweep.
+    ListTasksAwaitingMerge(ProjectRef),
+    ImportTasks(ImportTasksRequest),
+    /// A task's thread, oldest first.
+    ListTaskComments(TaskRef),
+    /// A `proposal` or `plan` replaces the task's previous one of that kind.
+    AddTaskComment(AddTaskCommentRequest),
+    ListTaskAttachments(TaskRef),
+    AddTaskAttachment(AddTaskAttachmentRequest),
+    DeleteTaskAttachment(DeleteTaskAttachmentRequest),
+    ListTaskRelationships(TaskRef),
+    AddTaskRelationship(AddTaskRelationshipRequest),
+    DeleteTaskRelationship(DeleteTaskRelationshipRequest),
+    ListTaskInstructions(TaskRef),
+    AddTaskInstruction(AddTaskInstructionRequest),
+    ListWorktrees(ListWorktreesRequest),
+    GetWorktree(WorktreeRef),
+    InsertWorktree(InsertWorktreeRequest),
+    UpdateWorktree(UpdateWorktreeRequest),
+    DeleteWorktrees(DeleteWorktreesRequest),
+    ClaimWorktreeForTask(ClaimWorktreeForTaskRequest),
+    GetTaskReview(TaskRef),
+    SaveTaskReview(SaveTaskReviewRequest),
+    ClearTaskReview(TaskRef),
+    /// The project's prompt collection, favorites first, then most recently edited.
+    ListPrompts(ProjectRef),
+    GetPrompt(PromptRef),
+    CreatePrompt(CreatePromptRequest),
+    /// Bumps `updated_at`; leaves the favorite flag alone.
+    UpdatePrompt(UpdatePromptRequest),
+    /// Leaves `updated_at`, and so the order within favorites and others, alone.
+    SetPromptFavorite(SetPromptFavoriteRequest),
+    DeletePrompt(PromptRef),
+    /// Opens an import of an app's rows for a project, staged in memory until `CommitImport`.
+    /// A frame is capped at `MAX_MESSAGE_SIZE`, so the rows travel in `ImportChunk`s.
+    BeginImport(BeginImportRequest),
+    ImportChunk(ImportChunkRequest),
+    /// Applies everything staged under the id, all or nothing, answered with `ImportProjectOk`.
+    CommitImport(ImportRef),
+    /// This machine's agent limit and what it resolves to now.
+    GetCapacity,
+    SetCapacity(CapacitySettings),
+    /// Answered with `AutoModeOk`; `enabled` is ignored.
+    GetAutoMode(ProjectRef),
+    SetAutoMode(AutoModeSetting),
+    /// Take or renew a hold.
+    HoldTask(HoldTaskRequest),
+    /// Drop a hold and let the scheduler look at the task again.
+    ReleaseTaskHold(TaskRef),
+    StartTask(StartTaskRequest),
     /// Heartbeat acknowledgment sent by Tauri in response to a `Ping`.
     Pong {
         seq: u64,
@@ -306,37 +400,90 @@ pub struct SpawnRequest {
     /// deployed binary is per project and can lag the app.
     #[serde(default)]
     pub additional_directories: Vec<String>,
-    /// See [`host_meta`](ListLiveSession::host_meta).
+    /// The project this session belongs to, which is what files it in the server's store.
+    /// `None` is a session that belongs to no project, which gets no row.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub host_meta: Option<serde_json::Value>,
+    pub project_path: Option<String>,
+    /// See [`SessionMeta`].
+    #[serde(default)]
+    pub meta: SessionMeta,
+}
+
+/// What a session is, beyond where it runs. Every field optional.
+///
+/// Typed rather than an opaque blob because the server stores each field in its own column: a
+/// second machine opening the project has to read them, and a reload that sends fewer of them
+/// must not lose the ones the row already holds.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct SessionMeta {
+    /// The user's name for the session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_start_sha: Option<String>,
+    /// The pipeline stage that started the session, as the host serializes its own enum. Opaque
+    /// here, so a new stage never touches the protocol.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct ListAgentsRequest {}
 
-/// Ask the server which sessions it is currently running.
+/// Ask the server for every conversation one project holds.
 ///
-/// Distinct from [`SessionListRequest`], which asks an *agent* what conversations it has stored on
-/// disk. This asks the *server* what is alive in its own process right now, which is the question
-/// a client that has just attached needs answered.
+/// Distinct from [`SessionListRequest`], which asks an *agent* what it has on disk for a folder.
+/// This asks the *server* what the project has opened, which is the one answer a client needs to
+/// adopt the running sessions and reload the dormant ones.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct ListLiveSessionsRequest {}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct ListLiveSessionsResponse {
-    pub sessions: Vec<ListLiveSession>,
+pub struct ListProjectSessionsRequest {
+    /// Canonicalized by the server, which runs on the machine the path exists on.
+    pub project_path: String,
+    /// Closed sessions are only wanted by Session History, which needs their name and folder.
+    #[serde(default)]
+    pub include_closed: bool,
 }
 
-/// One session the server is running, as seen by a client re-adopting it.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListProjectSessionsResponse {
+    pub sessions: Vec<ProjectSession>,
+}
+
+/// One conversation a project holds, running or not.
+///
+/// Keyed by `agent_id` and `acp_session_id`, not by the routing id: that one is minted again on
+/// every reload, so it cannot name a conversation across them.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ListLiveSession {
-    /// The routing key the host minted, under which every later request finds this session.
-    pub session_id: String,
+pub struct ProjectSession {
     pub agent_id: String,
+    pub acp_session_id: String,
+    /// What `session/load` needs, and what Session History reopens in.
     pub cwd: String,
-    /// The agent's own session id, when the session has one. Needed to replay history.
+    #[serde(default)]
+    pub meta: SessionMeta,
+    /// Recorded at spawn, because whether an agent answers `session/load` cannot be asked once
+    /// its session is gone.
+    #[serde(default)]
+    pub can_reload: bool,
+    /// The project no longer has it open. Kept so Session History can still name it.
+    #[serde(default)]
+    pub closed: bool,
+    /// Present while the server is running it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub acp_session_id: Option<String>,
+    pub live: Option<LiveSessionState>,
+}
+
+/// The part of a [`ProjectSession`] that only exists while the server is running it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LiveSessionState {
+    /// The routing id, under which every later request finds this session.
+    pub session_id: String,
     /// Whether the agent is mid-turn on this session right now.
     ///
     /// Decides what a client that has just attached may do to it: a session between turns can be
@@ -344,14 +491,6 @@ pub struct ListLiveSession {
     /// turn in progress.
     #[serde(default)]
     pub turn_active: bool,
-    /// Whatever the host attached at spawn, returned verbatim.
-    ///
-    /// The server never reads it. It exists because the host knows things about a session the
-    /// server has no business knowing — which project and task it belongs to, what the user named
-    /// it — and needs them back when re-adopting a session it did not start in this run. Keeping
-    /// it opaque means adding a field to it never touches the protocol.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub host_meta: Option<serde_json::Value>,
     /// Requests this session is still waiting on an answer to.
     ///
     /// A permission or elicitation prompt outlives the client that was shown it: the agent is
@@ -360,6 +499,30 @@ pub struct ListLiveSession {
     /// again, because the message that carried it went to a client that is gone.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pending_requests: Vec<PendingSessionRequest>,
+}
+
+/// Rename a conversation in the server's store, where every client opening the project reads it.
+///
+/// Names the conversation by its key rather than by a routing id, deliberately: a dormant session
+/// has none, and the request must not be routed as though it belonged to a live one.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct RenameSessionRequest {
+    pub project_path: String,
+    pub agent_id: String,
+    pub acp_session_id: String,
+    pub cwd: String,
+    pub name: String,
+}
+
+/// Close a conversation in the server's store by its key.
+///
+/// `Cancel` names a session by its routing id, and a dormant conversation has none. Without this
+/// one whose load can never succeed would stay open, and be tried again every time the project
+/// is opened.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct CloseProjectSessionRequest {
+    pub agent_id: String,
+    pub acp_session_id: String,
 }
 
 /// A request the server sent a client and is still waiting on, replayed to the next client.
@@ -1012,6 +1175,1097 @@ pub enum KickReason {
     Stale,
 }
 
+// --- Tasks, their threads, worktrees and reviews ---
+//
+// Rows of the daemon's `projects.db`, keyed by project path where the app's tables carried a
+// `projects.id`. Task ids are per project, so every request naming one names the project too.
+// Plain serde: the app mirrors these with its own `specta::Type` structs, as it does `Automation`,
+// so the binary deployed to every remote host does not compile specta in.
+
+/// Deserializes a present `null` as `Some(None)`, so an update can tell "clear this column" from
+/// "leave it alone". Paired with `default`, which gives the absent field its `None`.
+fn clearable<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskStatus {
+    Planning,
+    Queue,
+    InProgress,
+    Review,
+    Done,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskPriority {
+    Urgent,
+    High,
+    Medium,
+    Low,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WorkspaceMode {
+    NewWorktree,
+    RepositoryDirectory,
+    ReuseWorkspace,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BranchMode {
+    Create,
+    Checkout,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskPhase {
+    Spawning,
+    Refining,
+    Drafting,
+    PlanReview,
+    Implementing,
+    Rework,
+    SelfReview,
+    Approval,
+    AwaitingMerge,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PhaseStatus {
+    Running,
+    Blocked,
+    Waiting,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskBall {
+    Agent,
+    User,
+    External,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskCompletion {
+    Merged,
+    MergedViaPR,
+    LocalOnly,
+    NoChanges,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PullRequestCi {
+    Passing,
+    Failing,
+    Pending,
+}
+
+/// The pipeline role a session was started for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AgentRole {
+    Refiner,
+    Planner,
+    Coder,
+    Reviewer,
+}
+
+/// One task, every column the app reads.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Task {
+    pub id: i32,
+    pub project_path: String,
+    pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub status: TaskStatus,
+    pub priority: TaskPriority,
+    pub base_branch: String,
+    #[serde(default)]
+    pub archived_at: Option<String>,
+    #[serde(default)]
+    pub external_id: Option<String>,
+    #[serde(default)]
+    pub is_imported: Option<bool>,
+    #[serde(default)]
+    pub import_source: Option<String>,
+    #[serde(default)]
+    pub skills: Vec<String>,
+    #[serde(default)]
+    pub model_override: Option<String>,
+    #[serde(default)]
+    pub mcp_allowlist: Option<Vec<String>>,
+    #[serde(default)]
+    pub skills_override: Option<Vec<String>>,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    #[serde(default)]
+    pub external_url: Option<String>,
+    #[serde(default)]
+    pub external_updated_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub auto_approve: bool,
+    pub workspace_mode: WorkspaceMode,
+    #[serde(default)]
+    pub workspace_worktree_id: Option<i32>,
+    pub workspace_branch_mode: BranchMode,
+    #[serde(default)]
+    pub workspace_branch: Option<String>,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub permission_mode_override: Option<String>,
+    #[serde(default)]
+    pub execution_start_sha: Option<String>,
+    #[serde(default)]
+    pub phase: Option<TaskPhase>,
+    #[serde(default)]
+    pub phase_status: Option<PhaseStatus>,
+    pub ball: TaskBall,
+    #[serde(default)]
+    pub completion: Option<TaskCompletion>,
+    #[serde(default)]
+    pub execute_requested_at: Option<String>,
+    #[serde(default)]
+    pub pull_request_url: Option<String>,
+    #[serde(default)]
+    pub pull_request_number: Option<i64>,
+    pub review_rounds: i32,
+    pub fix_rounds: i32,
+    #[serde(default)]
+    pub pull_request_ci: Option<PullRequestCi>,
+    /// JSON keyed by role name, stored and returned as the app wrote it.
+    #[serde(default)]
+    pub profile_overrides: Option<String>,
+    /// The phase the last claim took the task from. Equal to `phase` on a `Failed` task when the
+    /// failure is a start that did not come up, which a retry of that phase's stage answers.
+    #[serde(default)]
+    pub claimed_from: Option<TaskPhase>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskRelationship {
+    pub id: i32,
+    pub from_task_id: i32,
+    pub to_task_id: i32,
+    pub relationship_type: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskInstruction {
+    pub id: i32,
+    pub task_id: i32,
+    pub content: String,
+    pub source: String,
+    pub created_at: String,
+}
+
+/// One entry in a task's outcome thread.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskComment {
+    pub id: i32,
+    pub task_id: i32,
+    pub kind: String,
+    pub author: String,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub external_ref: Option<String>,
+    #[serde(default)]
+    pub phase: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskAttachment {
+    pub id: i32,
+    pub task_id: i32,
+    pub filename: String,
+    pub file_path: String,
+    pub file_size: i64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Worktree {
+    pub id: i32,
+    pub project_path: String,
+    /// `None` for a worktree no task owns: a session's, or one an automation kept.
+    #[serde(default)]
+    pub task_id: Option<i32>,
+    pub branch_name: String,
+    #[serde(default)]
+    pub base_branch: Option<String>,
+    /// Relative to the project root. Empty while a session's worktree is reserved but not made.
+    pub path: String,
+    #[serde(default)]
+    pub git_status: Option<String>,
+    pub created_at: String,
+}
+
+/// A task's review, with the per-file comments hanging off it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskReview {
+    pub id: i32,
+    pub task_id: i32,
+    /// `Approve` or `RequestChanges`, as the app wrote it.
+    pub decision: String,
+    #[serde(default)]
+    pub general_feedback: Option<String>,
+    #[serde(default)]
+    pub reviewed_at: Option<String>,
+    pub created_at: String,
+    #[serde(default)]
+    pub comments: Vec<ReviewComment>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReviewComment {
+    pub id: i32,
+    pub review_id: i32,
+    pub file_path: String,
+    pub comment: String,
+    pub created_at: String,
+}
+
+/// A project, for the requests and pushes that need nothing else.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProjectRef {
+    pub project_path: String,
+}
+
+/// One task of one project.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TaskRef {
+    pub project_path: String,
+    pub task_id: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct CreateTaskRequest {
+    pub project_path: String,
+    pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub skills: Vec<String>,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    pub base_branch: String,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    /// `None` is `Medium`, the column default.
+    #[serde(default)]
+    pub priority: Option<TaskPriority>,
+    #[serde(default)]
+    pub auto_approve: bool,
+    pub workspace_mode: WorkspaceMode,
+    #[serde(default)]
+    pub workspace_worktree_id: Option<i32>,
+    pub workspace_branch_mode: BranchMode,
+    #[serde(default)]
+    pub workspace_branch: Option<String>,
+    #[serde(default)]
+    pub model_override: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct UpdateTaskRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub update: TaskUpdate,
+}
+
+/// The columns an update writes. An absent field is left alone; for the `Option<Option<_>>` ones a
+/// `null` clears the column.
+///
+/// One struct for the user's edits, the task settings form, issue sync and the pipeline's own
+/// columns. The pipeline's (`execution_start_sha*`, the pull request fields, `increment_fix_rounds`)
+/// leave `updated_at` alone, because a poll or a spawn is not an edit to the task; any other field
+/// bumps it.
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct TaskUpdate {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<TaskPriority>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub labels: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_approve: Option<bool>,
+    /// Writes `workspace_worktree_id` with it, so leaving `ReuseWorkspace` drops the pin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_mode: Option<WorkspaceMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_worktree_id: Option<i32>,
+    /// Writes `workspace_branch` with it, so `Checkout` drops the name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_branch_mode: Option<BranchMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_branch: Option<String>,
+    /// A manual move: goes through the `ManualMove` transition, and un-archives the task unless
+    /// the move is to `Cancelled`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<TaskStatus>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub model_override: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mcp_allowlist: Option<Option<Vec<String>>>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub skills_override: Option<Option<Vec<String>>>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub permission_mode_override: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub profile_overrides: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub external_updated_at: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub execution_start_sha: Option<Option<String>>,
+    /// Writes `execution_start_sha` only where it is null or empty, so a resumed session keeps the
+    /// anchor its first run recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_start_sha_if_empty: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull_request_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull_request_number: Option<i64>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub pull_request_ci: Option<Option<PullRequestCi>>,
+    /// Count one more CI fix round.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub increment_fix_rounds: bool,
+}
+
+/// Something that happened to a task, mirroring the app's `task::transition::TaskTransition`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskTransition {
+    ManualMove(TaskStatus),
+    ExecutionStarted,
+    SessionReady(AgentRole),
+    SpawnAborted,
+    /// The daemon stopped before a claimed start came up. A hand-off goes back to waiting on its
+    /// agent so the drain starts it again; anything else is put back as `SpawnAborted` would.
+    SpawnInterrupted,
+    AwaitingUserInput,
+    Unblocked,
+    TurnCompleted {
+        is_git_repo: bool,
+        has_changes: Option<bool>,
+        reviewer_pending: bool,
+    },
+    ReviewFinished,
+    ReviewRejected,
+    ArtifactDelivered,
+    Stopped,
+    RefinementClosed,
+    ReworkRequested,
+    MergeConflict,
+    Merged,
+    ApprovedWithoutMerge,
+    PullRequestOpened,
+    PullRequestMerged,
+    PullRequestClosed,
+    PullRequestConflicted,
+    PullRequestMergeable,
+    CiFixRequested,
+    CiFixPushed,
+    Discarded,
+    Cancelled,
+    PhaseFailed,
+}
+
+/// What must hold, read under the store's lock, for a transition to apply. One per guarded
+/// function in the app's `task::transition`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TransitionGuard {
+    /// `apply`: nothing, and a missing task is an error.
+    #[default]
+    Always,
+    /// `apply_if_status`: the task is in one of these columns.
+    Status(Vec<TaskStatus>),
+    /// `claim_for_execution`: a handoff, or claimable and in one of these columns. The event is
+    /// `ExecutionStarted` whatever the request says.
+    Claim(Vec<TaskStatus>),
+    /// `apply_if_spawning`.
+    Spawning,
+    /// `apply_if_active`: the task still has a phase.
+    Active,
+    /// `apply_if_changed`: the transition would change the stored state.
+    Changed,
+    /// The task is in this phase, as `end_self_review` asks of `SelfReview`.
+    Phase(TaskPhase),
+    /// `clear_blocked`: the phase status is `Blocked`.
+    Blocked,
+    /// `fail_if_agent_running`: the phase status is `Running` or `Blocked`.
+    AgentRunning,
+    /// `request_ci_fix`: the ball is `External` and fewer than this many fix rounds were spent.
+    FixRoundsBelow(i32),
+    /// The ball is with this party, as the pull-request sweep asks before moving a task the forge
+    /// holds: a coder may have claimed it between the sweep's read and its write.
+    Ball(TaskBall),
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ApplyTaskTransitionRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub event: TaskTransition,
+    #[serde(default)]
+    pub guard: TransitionGuard,
+    /// Written before the transition, in its transaction, and only if the guard lets it apply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update: Option<TaskUpdate>,
+    /// Appended after the transition, in its transaction, and only if the guard lets it apply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<NewTaskComment>,
+}
+
+/// A task, or `None` where the guard refused or nothing was found.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct OptionalTask {
+    #[serde(default)]
+    pub task: Option<Task>,
+}
+
+/// How an agent's turn on a task ended, as the app classified it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TurnEnding {
+    Completed {
+        is_git_repo: bool,
+        has_changes: Option<bool>,
+        reviewer_pending: bool,
+    },
+    Stalled,
+    Failed,
+    /// A read-only role's deliverable arrived as a request to leave plan mode.
+    ArtifactDelivered,
+}
+
+/// The turn end, under one lock: read the phase, turn a reviewer's reply into its verdict
+/// (counting the round when it rejects), apply the transition while the task still has a phase,
+/// and file the closing message in the thread by what the phase produced.
+///
+/// A CI fix ending at `AwaitingMerge` is not sent here: the daemon pushes it and applies
+/// `CiFixPushed` itself.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct EndTaskTurnRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub ending: TurnEnding,
+    /// The reply read as an approving verdict. Consulted only when the phase is `SelfReview`.
+    #[serde(default)]
+    pub review_approved: bool,
+    pub closing_message: String,
+}
+
+/// Answer the refiner's proposal gate: on accept, the latest proposal becomes the description and
+/// leaves the thread; either way `RefinementClosed` applies.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct CloseRefinementRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub accept: bool,
+}
+
+/// Defer an Execute the host has no slot for: a Planning task moves to Queue, and a task parked
+/// there is stamped with `execute_requested_at` if it has none.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct RequestTaskExecutionRequest {
+    pub project_path: String,
+    pub task_id: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct RequestTaskExecutionResponse {
+    /// `false` when the task moved away first, and the caller should let the claim refuse it.
+    pub deferred: bool,
+}
+
+/// How the machine's agent limit is decided. Serialized as the app's `ConcurrencyMode` is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ConcurrencyMode {
+    /// The number the user set, regardless of what the machine is doing.
+    Hard,
+    /// Derived from the machine's free memory, `max_concurrent_agents` when it cannot be read.
+    #[default]
+    Auto,
+}
+
+/// How many agents may run at once on this machine, shared by every app attached to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CapacitySettings {
+    pub concurrency_mode: ConcurrencyMode,
+    /// The cap in `Hard` mode, and in `Auto` the fallback for a machine that cannot be measured.
+    pub max_concurrent_agents: i32,
+}
+
+/// The stored settings and the limit they resolve to right now.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CapacityStatus {
+    pub settings: CapacitySettings,
+    /// The limit in force, measured when the mode is `Auto`.
+    pub slots: i32,
+    /// Why `slots` is what it is, for the board to show when the queue is not moving.
+    pub reason: String,
+    /// Whether the machine has a stored setting, false while it runs on the default.
+    #[serde(default)]
+    pub stored: bool,
+    /// Slots taken right now, counted as the limit is checked: live task sessions and starts
+    /// still coming up.
+    #[serde(default)]
+    pub used: u32,
+}
+
+/// Whether a project's queued tasks start on their own.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AutoModeSetting {
+    pub project_path: String,
+    pub enabled: bool,
+}
+
+/// Keep the scheduler off a task a user is working with, renewed by the client while the
+/// interaction lasts. A hold not renewed within `ttl_ms` (10 seconds when absent) lapses.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HoldTaskRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttl_ms: Option<u64>,
+}
+
+/// Run one stage of a task: claim it, make or reuse its worktree, spawn the role's agent and send
+/// the prompt.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StartTaskRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub role: AgentRole,
+    /// What the user wrote at a gate, folded into the prompt and not stored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feedback: Option<String>,
+    /// Nobody pressed anything: skip what would stop to ask rather than default it.
+    #[serde(default)]
+    pub unattended: bool,
+    /// Defer the task to the queue rather than start it when the machine has no free slot.
+    #[serde(default)]
+    pub respect_capacity: bool,
+    /// Run this stage on this agent instead of the one its profile picks. Used once, never
+    /// written to the task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StartTaskResponse {
+    /// The routing id of the session started, `None` when the task was deferred to the queue.
+    pub session_id: Option<String>,
+    /// The attachments the prompt went without, each as `<file>: <why>`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped_attachments: Vec<String>,
+}
+
+/// The daemon started a session for a task. Pushed to every window, which adopts it the way it
+/// adopts an automation's.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskSessionStarted {
+    pub project_path: String,
+    pub task_id: i32,
+    pub session_id: String,
+    pub agent_id: String,
+    pub acp_session_id: String,
+    pub role: AgentRole,
+}
+
+/// A pipeline setting changed: a project's auto mode, or with no project the machine's capacity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PipelineSettingsChanged {
+    pub project_path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListQueueCandidatesRequest {
+    pub project_path: String,
+    /// Auto mode. Without it only deferred tasks are candidates.
+    #[serde(default)]
+    pub include_undeferred: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TaskIdList {
+    pub task_ids: Vec<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TaskList {
+    pub tasks: Vec<Task>,
+}
+
+/// Create a task per issue not already imported into the project.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ImportTasksRequest {
+    pub project_path: String,
+    pub base_branch: String,
+    pub issues: Vec<ImportedIssue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ImportedIssue {
+    pub external_id: String,
+    pub title: String,
+    #[serde(default)]
+    pub body: Option<String>,
+    pub url: String,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+    pub priority: TaskPriority,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AddTaskCommentRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    #[serde(flatten)]
+    pub comment: NewTaskComment,
+}
+
+/// A thread entry to write. A `proposal` or `plan` replaces the task's previous one of that kind.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct NewTaskComment {
+    pub kind: String,
+    pub author: String,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub external_ref: Option<String>,
+    #[serde(default)]
+    pub phase: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TaskCommentList {
+    pub comments: Vec<TaskComment>,
+}
+
+/// Returns the existing row when that file is already attached.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AddTaskAttachmentRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub filename: String,
+    pub file_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct DeleteTaskAttachmentRequest {
+    pub project_path: String,
+    pub attachment_id: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TaskAttachmentList {
+    pub attachments: Vec<TaskAttachment>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AddTaskRelationshipRequest {
+    pub project_path: String,
+    pub from_task_id: i32,
+    pub to_task_id: i32,
+    pub relationship_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct DeleteTaskRelationshipRequest {
+    pub project_path: String,
+    pub relationship_id: i32,
+}
+
+/// Every relationship the task is on either end of.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TaskRelationshipList {
+    pub relationships: Vec<TaskRelationship>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AddTaskInstructionRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub content: String,
+    pub source: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TaskInstructionList {
+    pub instructions: Vec<TaskInstruction>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListWorktreesRequest {
+    pub project_path: String,
+    /// Only the worktrees this task owns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct WorktreeList {
+    pub worktrees: Vec<Worktree>,
+}
+
+/// One prompt of a project's collection. The shared collection is the app's and never crosses the
+/// wire, so there is no `shared` here.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Prompt {
+    pub id: i32,
+    pub project_path: String,
+    pub title: String,
+    pub body: String,
+    pub tags: Vec<String>,
+    pub favorite: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct PromptRef {
+    pub project_path: String,
+    pub prompt_id: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct OptionalPrompt {
+    #[serde(default)]
+    pub prompt: Option<Prompt>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct PromptList {
+    pub prompts: Vec<Prompt>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct CreatePromptRequest {
+    pub project_path: String,
+    pub title: String,
+    pub body: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub favorite: bool,
+}
+
+/// An edit: title, body and tags replaced whole. The favorite flag is not an edit and has its own
+/// request.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct UpdatePromptRequest {
+    pub project_path: String,
+    pub prompt_id: i32,
+    pub title: String,
+    pub body: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SetPromptFavoriteRequest {
+    pub project_path: String,
+    pub prompt_id: i32,
+    pub favorite: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct WorktreeRef {
+    pub project_path: String,
+    pub worktree_id: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct OptionalWorktree {
+    #[serde(default)]
+    pub worktree: Option<Worktree>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct InsertWorktreeRequest {
+    pub project_path: String,
+    #[serde(default)]
+    pub task_id: Option<i32>,
+    pub branch_name: String,
+    #[serde(default)]
+    pub base_branch: Option<String>,
+    /// Empty reserves the row's id for a session worktree not made yet.
+    pub path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct UpdateWorktreeRequest {
+    pub project_path: String,
+    pub worktree_id: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct DeleteWorktreesRequest {
+    pub project_path: String,
+    pub worktree_ids: Vec<i32>,
+}
+
+/// Hand a worktree to a task, releasing any other the task owned. An error when the worktree is
+/// gone.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ClaimWorktreeForTaskRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub worktree_id: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct OptionalTaskReview {
+    #[serde(default)]
+    pub review: Option<TaskReview>,
+}
+
+/// Write a task's review.
+///
+/// With `comments` the review is replaced, and its comments with it. Without, it is updated in
+/// place and keeps the comments it has, which is what a merge conflict's feedback needs.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SaveTaskReviewRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub decision: String,
+    #[serde(default)]
+    pub general_feedback: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comments: Option<Vec<ReviewCommentInput>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReviewCommentInput {
+    pub file_path: String,
+    pub comment: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SaveTaskReviewResponse {
+    pub review_id: i32,
+}
+
+/// Everything an app held for one project before the daemon kept it, sent once, applied in one
+/// transaction.
+///
+/// Task, worktree and prompt ids are kept, since they are per project and are embedded in folder
+/// and branch names. The ids of relationships, instructions, comments, attachments, reviews and
+/// review comments are minted again: the daemon numbers those across every project. The
+/// `project_path` inside each row is ignored for the request's own, canonicalized.
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct ImportProjectRequest {
+    pub project_path: String,
+    #[serde(default)]
+    pub tasks: Vec<Task>,
+    #[serde(default)]
+    pub relationships: Vec<TaskRelationship>,
+    #[serde(default)]
+    pub instructions: Vec<TaskInstruction>,
+    #[serde(default)]
+    pub comments: Vec<TaskComment>,
+    #[serde(default)]
+    pub attachments: Vec<TaskAttachment>,
+    #[serde(default)]
+    pub worktrees: Vec<Worktree>,
+    /// Each with its comments; a comment's `review_id` is ignored for the review it sits in.
+    #[serde(default)]
+    pub reviews: Vec<TaskReview>,
+    #[serde(default)]
+    pub prompts: Vec<Prompt>,
+    #[serde(default)]
+    pub sessions: Vec<ImportedSession>,
+    #[serde(default)]
+    pub floors: ImportFloors,
+}
+
+/// The highest id the app ever minted of each kind, deleted rows' included (its
+/// `sqlite_sequence`), so the daemon never hands out a number whose folder or branch may linger.
+/// Each counter ends at the highest of its current value, the highest imported id and this.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ImportFloors {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tasks: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktrees: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompts: Option<i32>,
+}
+
+/// A conversation the app had, imported as a dormant row: open, so the project loads it on its
+/// next open, or closed, so Session History still lists it with its name and folder.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ImportedSession {
+    pub agent_id: String,
+    pub acp_session_id: String,
+    pub cwd: String,
+    #[serde(default)]
+    pub meta: SessionMeta,
+    /// `None` when the app never recorded it, stored as true: the app kept the session to load it
+    /// back, and a load the agent cannot answer closes the row, where false would hide it for good.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub can_reload: Option<bool>,
+    /// Stored closed as of the import.
+    #[serde(default)]
+    pub closed: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct BeginImportRequest {
+    pub project_path: String,
+    /// Each at least the highest id of its kind the import carries.
+    #[serde(default)]
+    pub floors: ImportFloors,
+    /// The sending app installation's stable id. The daemon keeps one import marker per source:
+    /// the same source is refused, another one is merged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct BeginImportResponse {
+    /// Empty when `imported_before`, in which case nothing is staged.
+    pub import_id: String,
+    /// This source, or one from before sources were recorded, imported the project already.
+    #[serde(default)]
+    pub imported_before: bool,
+    /// Another source imported the project first, so this one's rows are merged: each task, worktree
+    /// and prompt id moves up by an offset the daemon reserved now, and every reference moves along.
+    #[serde(default)]
+    pub merge: bool,
+    /// What every imported task id becomes `id + task_offset`, zero unless `merge`. Attachment rows
+    /// are sent with their final project-relative path, so the app copies files to the final id.
+    #[serde(default)]
+    pub task_offset: i32,
+}
+
+/// Rows appended to a staged import. The chunk's `project_path` and `floors` are ignored for the
+/// ones `BeginImport` carried.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ImportChunkRequest {
+    pub import_id: String,
+    pub chunk: ImportProjectRequest,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ImportRef {
+    pub import_id: String,
+}
+
+/// What a chunk's rows may serialize to, well under `MAX_MESSAGE_SIZE`.
+pub const IMPORT_CHUNK_BYTES: usize = 4 * 1024 * 1024;
+
+/// Splits an import's rows into chunks whose JSON stays under `budget`, each list's order kept,
+/// so appending the chunks' lists in order gives the input's back. A row larger than the budget
+/// gets a chunk of its own, which then fails at encode. `floors` are left out: `BeginImport`
+/// carries them.
+pub fn split_import(request: ImportProjectRequest, budget: usize) -> Vec<ImportProjectRequest> {
+    let empty = || ImportProjectRequest {
+        project_path: request.project_path.clone(),
+        ..ImportProjectRequest::default()
+    };
+    // The envelope around the rows: the empty chunk, the frame's own keys and the import id.
+    let base = serde_json::to_vec(&empty()).map_or(0, |bytes| bytes.len()) + 256;
+    let mut chunks = Vec::new();
+    let mut current = empty();
+    let mut size = base;
+    macro_rules! pack {
+        ($($field:ident),*) => {$(
+            for row in request.$field {
+                let len = serde_json::to_vec(&row).map_or(0, |bytes| bytes.len()) + 1;
+                if size + len > budget && size > base {
+                    chunks.push(std::mem::replace(&mut current, empty()));
+                    size = base;
+                }
+                size += len;
+                current.$field.push(row);
+            }
+        )*};
+    }
+    pack!(
+        tasks,
+        relationships,
+        instructions,
+        comments,
+        attachments,
+        worktrees,
+        reviews,
+        prompts,
+        sessions
+    );
+    chunks.push(current);
+    chunks
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ImportProjectResponse {
+    /// False when the project was imported before, in which case nothing was written.
+    pub imported: bool,
+}
+
 // --- Server -> Client ---
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -1025,7 +2279,9 @@ pub enum ServerResponse {
     ElicitationRequest(ElicitationRequest),
     TerminalOutput(TerminalOutput),
     ListAgentsOk(ListAgentsResponse),
-    ListLiveSessionsOk(ListLiveSessionsResponse),
+    ListProjectSessionsOk(ListProjectSessionsResponse),
+    RenameSessionOk,
+    CloseProjectSessionOk,
     ListAutomationsOk(ListAutomationsResponse),
     SaveAutomationOk(Automation),
     DeleteAutomationOk,
@@ -1083,12 +2339,203 @@ pub enum ServerResponse {
     TakeoverRequested(TakeoverRequested),
     /// This client no longer holds its project. Sent to that client alone.
     ProjectKicked(ProjectKicked),
+    ListTasksOk(TaskList),
+    GetTaskOk(OptionalTask),
+    CreateTaskOk(Task),
+    UpdateTaskOk(Task),
+    ArchiveTaskOk(Task),
+    CancelTaskOk(Task),
+    DeleteTaskOk,
+    ApplyTaskTransitionOk(OptionalTask),
+    /// The task when the turn's transition applied, `None` when the task had already been parked.
+    EndTaskTurnOk(OptionalTask),
+    CloseRefinementOk(Task),
+    RequestTaskExecutionOk(RequestTaskExecutionResponse),
+    ListQueueCandidatesOk(TaskIdList),
+    ListTasksAwaitingMergeOk(TaskList),
+    /// The tasks created, not the issues skipped.
+    ImportTasksOk(TaskList),
+    ListTaskCommentsOk(TaskCommentList),
+    AddTaskCommentOk(TaskComment),
+    ListTaskAttachmentsOk(TaskAttachmentList),
+    AddTaskAttachmentOk(TaskAttachment),
+    DeleteTaskAttachmentOk,
+    ListTaskRelationshipsOk(TaskRelationshipList),
+    AddTaskRelationshipOk(TaskRelationship),
+    DeleteTaskRelationshipOk,
+    ListTaskInstructionsOk(TaskInstructionList),
+    AddTaskInstructionOk(TaskInstruction),
+    ListWorktreesOk(WorktreeList),
+    GetWorktreeOk(OptionalWorktree),
+    InsertWorktreeOk(Worktree),
+    UpdateWorktreeOk(Worktree),
+    DeleteWorktreesOk,
+    ClaimWorktreeForTaskOk(Worktree),
+    GetTaskReviewOk(OptionalTaskReview),
+    SaveTaskReviewOk(SaveTaskReviewResponse),
+    ClearTaskReviewOk,
+    ListPromptsOk(PromptList),
+    GetPromptOk(OptionalPrompt),
+    CreatePromptOk(Prompt),
+    UpdatePromptOk(Prompt),
+    SetPromptFavoriteOk(Prompt),
+    DeletePromptOk,
+    BeginImportOk(BeginImportResponse),
+    ImportChunkOk,
+    ImportProjectOk(ImportProjectResponse),
+    /// Some task of the project changed. Pushed to every client, whoever wrote it, so a second
+    /// window refetches its board.
+    TasksChanged(ProjectRef),
+    /// A task's thread changed.
+    TaskCommentsChanged(TaskRef),
+    /// Some worktree row of the project changed.
+    WorktreesChanged(ProjectRef),
+    /// Some prompt of the project's collection changed.
+    PromptsChanged(ProjectRef),
+    GetCapacityOk(CapacityStatus),
+    SetCapacityOk,
+    AutoModeOk(AutoModeSetting),
+    SetAutoModeOk,
+    HoldTaskOk,
+    ReleaseTaskHoldOk,
+    StartTaskOk(StartTaskResponse),
+    /// Pushed to every window, which re-reads what it shows and drains its queue.
+    PipelineSettingsChanged(PipelineSettingsChanged),
+    /// Pushed to every window: nobody owns the session yet, so it does not route by its id.
+    TaskSessionStarted(TaskSessionStarted),
     /// Periodic heartbeat from maestro-server. Tauri responds with `Pong { seq }`.
     Ping {
         seq: u64,
     },
     /// Unsolicited diagnostic event from maestro-server for logging and observability.
     Diagnostic(DiagnosticPayload),
+}
+
+impl ServerResponse {
+    /// Whether this answers a request, as opposed to being pushed or streamed unasked.
+    ///
+    /// No wildcard arm on purpose: a new variant has to be classified before the crate compiles,
+    /// because a reply mistaken for a push never resolves the request waiting on it.
+    pub fn is_reply(&self) -> bool {
+        match self {
+            Self::SessionUpdate(_)
+            | Self::PermissionRequest(_)
+            | Self::ElicitationRequest(_)
+            | Self::TerminalOutput(_)
+            | Self::AutomationRunChanged(_)
+            | Self::ConfigOptionUpdated(_)
+            | Self::TurnEnded(_)
+            | Self::AuthTerminalExit(_)
+            | Self::AgentConnectionLost(_)
+            | Self::HostToolCall(_)
+            | Self::ProjectLocksChanged
+            | Self::TakeoverRequested(_)
+            | Self::ProjectKicked(_)
+            | Self::TasksChanged(_)
+            | Self::TaskCommentsChanged(_)
+            | Self::WorktreesChanged(_)
+            | Self::PromptsChanged(_)
+            | Self::PipelineSettingsChanged(_)
+            | Self::TaskSessionStarted(_)
+            | Self::Ping { .. }
+            | Self::Diagnostic(_) => false,
+            Self::HandshakeOk(_)
+            | Self::SpawnOk(_)
+            | Self::Error(_)
+            | Self::ListAgentsOk(_)
+            | Self::ListProjectSessionsOk(_)
+            | Self::RenameSessionOk
+            | Self::CloseProjectSessionOk
+            | Self::ListAutomationsOk(_)
+            | Self::SaveAutomationOk(_)
+            | Self::DeleteAutomationOk
+            | Self::ListAutomationRunsOk(_)
+            | Self::DeleteAutomationRunOk
+            | Self::SetRunRetentionOk
+            | Self::WebhookSettingsOk(_)
+            | Self::RollWebhookSecretOk(_)
+            | Self::ListWebhookDeliveriesOk(_)
+            | Self::ServerStatusOk(_)
+            | Self::PreviewScheduleOk(_)
+            | Self::SetModelOk(_)
+            | Self::SetModeOk(_)
+            | Self::SetConfigOptionOk(_)
+            | Self::FileSearchOk(_)
+            | Self::FileReadOk(_)
+            | Self::SessionListOk(_)
+            | Self::SessionLoadOk(_)
+            | Self::SessionCloseOk
+            | Self::SessionDeleteOk
+            | Self::PreInitializeOk(_)
+            | Self::AuthenticateOk
+            | Self::LogoutOk
+            | Self::CheckToolsOk(_)
+            | Self::SetToolPathOk(_)
+            | Self::TestToolPathOk(_)
+            | Self::InstallSkillsOk(_)
+            | Self::ListMcpServersOk(_)
+            | Self::SaveMcpServersOk
+            | Self::SetMcpSecretsOk
+            | Self::TestMcpServerOk(_)
+            | Self::ListSkillsOk(_)
+            | Self::ApplySkillOk
+            | Self::DeleteSkillOk
+            | Self::DetectInstalledAgentsOk(_)
+            | Self::DetectProjectAgentsOk(_)
+            | Self::AcquireProjectLockOk(_)
+            | Self::ProjectLocksOk(_)
+            | Self::TakeoverResultOk(_)
+            | Self::ListTasksOk(_)
+            | Self::GetTaskOk(_)
+            | Self::CreateTaskOk(_)
+            | Self::UpdateTaskOk(_)
+            | Self::ArchiveTaskOk(_)
+            | Self::CancelTaskOk(_)
+            | Self::DeleteTaskOk
+            | Self::ApplyTaskTransitionOk(_)
+            | Self::EndTaskTurnOk(_)
+            | Self::CloseRefinementOk(_)
+            | Self::RequestTaskExecutionOk(_)
+            | Self::ListQueueCandidatesOk(_)
+            | Self::ListTasksAwaitingMergeOk(_)
+            | Self::ImportTasksOk(_)
+            | Self::ListTaskCommentsOk(_)
+            | Self::AddTaskCommentOk(_)
+            | Self::ListTaskAttachmentsOk(_)
+            | Self::AddTaskAttachmentOk(_)
+            | Self::DeleteTaskAttachmentOk
+            | Self::ListTaskRelationshipsOk(_)
+            | Self::AddTaskRelationshipOk(_)
+            | Self::DeleteTaskRelationshipOk
+            | Self::ListTaskInstructionsOk(_)
+            | Self::AddTaskInstructionOk(_)
+            | Self::ListWorktreesOk(_)
+            | Self::GetWorktreeOk(_)
+            | Self::InsertWorktreeOk(_)
+            | Self::UpdateWorktreeOk(_)
+            | Self::DeleteWorktreesOk
+            | Self::ClaimWorktreeForTaskOk(_)
+            | Self::GetTaskReviewOk(_)
+            | Self::SaveTaskReviewOk(_)
+            | Self::ClearTaskReviewOk
+            | Self::ListPromptsOk(_)
+            | Self::GetPromptOk(_)
+            | Self::CreatePromptOk(_)
+            | Self::UpdatePromptOk(_)
+            | Self::SetPromptFavoriteOk(_)
+            | Self::DeletePromptOk
+            | Self::BeginImportOk(_)
+            | Self::ImportChunkOk
+            | Self::ImportProjectOk(_)
+            | Self::GetCapacityOk(_)
+            | Self::SetCapacityOk
+            | Self::AutoModeOk(_)
+            | Self::SetAutoModeOk
+            | Self::HoldTaskOk
+            | Self::ReleaseTaskHoldOk
+            | Self::StartTaskOk(_) => true,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -1224,9 +2671,13 @@ pub struct SessionLoadRequest {
     /// See [`SpawnRequest::additional_directories`].
     #[serde(default)]
     pub additional_directories: Vec<String>,
-    /// See [`host_meta`](ListLiveSession::host_meta).
+    /// The project this session belongs to, which is what files it in the server's store.
+    /// `None` is a session that belongs to no project, which gets no row.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub host_meta: Option<serde_json::Value>,
+    pub project_path: Option<String>,
+    /// See [`SessionMeta`].
+    #[serde(default)]
+    pub meta: SessionMeta,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -1451,6 +2902,12 @@ pub async fn read_message<R: AsyncRead + Unpin>(
 pub fn read_message_sync<R: std::io::Read>(
     stream: &mut R,
 ) -> Result<MaestroRpcMessage, Box<dyn std::error::Error + Send + Sync>> {
+    read_message_sync_as(stream)
+}
+
+fn read_message_sync_as<R: std::io::Read, T: serde::de::DeserializeOwned>(
+    stream: &mut R,
+) -> Result<T, Box<dyn std::error::Error + Send + Sync>> {
     let mut len_buf = [0u8; MSG_LEN_SIZE];
     stream.read_exact(&mut len_buf)?;
     let len = u32::from_le_bytes(len_buf) as usize;
@@ -1464,6 +2921,76 @@ pub fn read_message_sync<R: std::io::Read>(
     let mut body = vec![0u8; len];
     stream.read_exact(&mut body)?;
     Ok(serde_json::from_slice(&body)?)
+}
+
+/// Pairs a reply with the request it answers. Rides as a top-level `rpc_id` key beside
+/// `direction` and `type`, and is absent on anything unprompted.
+///
+/// Not `id` and not `request_id`: the message is flattened into the same object, and payloads
+/// already own both (`Automation.id`, `PermissionRequest.request_id`). A shared key fails to decode.
+pub type RequestId = u64;
+
+#[derive(Serialize)]
+struct OutgoingFrame<'a> {
+    #[serde(rename = "rpc_id", skip_serializing_if = "Option::is_none")]
+    id: Option<RequestId>,
+    #[serde(flatten)]
+    message: &'a MaestroRpcMessage,
+}
+
+#[derive(Deserialize)]
+struct IncomingFrame {
+    #[serde(rename = "rpc_id", default)]
+    id: Option<RequestId>,
+    #[serde(flatten)]
+    message: MaestroRpcMessage,
+}
+
+/// A whole frame, length prefix included, ready to be written as it stands.
+///
+/// Synchronous and `Send` in its error so both the host's `serialize_message` and the server's
+/// spawned tasks can call it directly.
+pub fn encode_message(
+    id: Option<RequestId>,
+    message: &MaestroRpcMessage,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    let body = serde_json::to_vec(&OutgoingFrame { id, message })?;
+    if body.len() > MAX_MESSAGE_SIZE {
+        return Err(format!(
+            "Message too large to send: {} bytes (max {})",
+            body.len(),
+            MAX_MESSAGE_SIZE
+        )
+        .into());
+    }
+    let mut frame = Vec::with_capacity(MSG_LEN_SIZE + body.len());
+    frame.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    frame.extend_from_slice(&body);
+    Ok(frame)
+}
+
+/// The inverse of [`encode_message`] for a frame's body, the length prefix already stripped.
+pub fn decode_message(
+    body: &[u8],
+) -> Result<(Option<RequestId>, MaestroRpcMessage), serde_json::Error> {
+    let frame: IncomingFrame = serde_json::from_slice(body)?;
+    Ok((frame.id, frame.message))
+}
+
+/// [`read_message`], keeping the request id the frame carried.
+pub async fn read_message_with_id<R: AsyncRead + Unpin>(
+    stream: &mut R,
+) -> Result<(Option<RequestId>, MaestroRpcMessage), Box<dyn std::error::Error>> {
+    let frame: IncomingFrame = read_frame(stream).await?;
+    Ok((frame.id, frame.message))
+}
+
+/// [`read_message_sync`], keeping the request id the frame carried.
+pub fn read_message_with_id_sync<R: std::io::Read>(
+    stream: &mut R,
+) -> Result<(Option<RequestId>, MaestroRpcMessage), Box<dyn std::error::Error + Send + Sync>> {
+    let frame: IncomingFrame = read_message_sync_as(stream)?;
+    Ok((frame.id, frame.message))
 }
 
 // --- CDN registry types — used by maestro-server for agent discovery ---
@@ -1537,6 +3064,784 @@ pub struct UvxDistribution {
 mod tests {
     use super::*;
 
+    fn id_samples() -> Vec<MaestroRpcMessage> {
+        let mut samples = vec![
+            MaestroRpcMessage::Response(ServerResponse::TerminalOutput(TerminalOutput {
+                session_id: "session".to_string(),
+                terminal_id: "terminal".to_string(),
+                bytes: vec![0, 27, 91, 255],
+            })),
+            MaestroRpcMessage::Request(ServerRequest::Shutdown),
+            MaestroRpcMessage::Response(ServerResponse::SessionCloseOk),
+            MaestroRpcMessage::Response(ServerResponse::Ping { seq: u64::MAX }),
+            MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                message: "no".to_string(),
+                session_id: None,
+            })),
+            MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+                agent_id: "claude-acp".to_string(),
+                session_id: "session".to_string(),
+                cwd: "/tmp".to_string(),
+                additional_directories: vec!["~/other".to_string()],
+                project_path: None,
+                meta: SessionMeta::default(),
+            })),
+            MaestroRpcMessage::Response(ServerResponse::SessionUpdate(SessionUpdate {
+                session_id: "session".to_string(),
+                payload: serde_json::json!({
+                    "project": 3,
+                    "nested": {"id": 9, "type": "inner", "list": [1, null, 2.5]},
+                }),
+            })),
+            // Payloads with a top-level `id` and `request_id` of their own, which the frame's key
+            // must not collide with.
+            MaestroRpcMessage::Response(ServerResponse::SaveAutomationOk(Automation {
+                id: "automation-1".to_string(),
+                project_path: "/srv/shop".to_string(),
+                name: "Nightly".to_string(),
+                prompt: "Run the checks".to_string(),
+                agent_id: "claude-acp".to_string(),
+                cron: None,
+                timezone: "UTC".to_string(),
+                enabled: false,
+                model: None,
+                permission_mode: None,
+                effort: None,
+                workspace: AutomationWorkspace::NewWorktree {
+                    base_branch: "main".to_string(),
+                },
+                webhook_enabled: false,
+                webhook_overlap: WebhookOverlap::default(),
+                webhook_secret: None,
+                next_due_at: None,
+            })),
+            MaestroRpcMessage::Response(ServerResponse::TakeoverRequested(TakeoverRequested {
+                request_id: "takeover-1".to_string(),
+                project_path: "/srv/shop".to_string(),
+                requester_label: "laptop".to_string(),
+            })),
+        ];
+        samples.extend(task_messages());
+        samples.extend(pipeline_messages());
+        samples.extend(prompt_messages());
+        samples.extend(import_messages());
+        samples
+    }
+
+    fn import_messages() -> Vec<MaestroRpcMessage> {
+        vec![
+            MaestroRpcMessage::Request(ServerRequest::BeginImport(BeginImportRequest {
+                project_path: "/srv/shop".to_string(),
+                floors: ImportFloors {
+                    tasks: Some(12),
+                    ..ImportFloors::default()
+                },
+                source_id: Some("install-1".to_string()),
+            })),
+            MaestroRpcMessage::Response(ServerResponse::BeginImportOk(BeginImportResponse {
+                import_id: "import-1".to_string(),
+                imported_before: false,
+                merge: true,
+                task_offset: 40,
+            })),
+            MaestroRpcMessage::Response(ServerResponse::ImportChunkOk),
+            MaestroRpcMessage::Request(ServerRequest::CommitImport(ImportRef {
+                import_id: "import-1".to_string(),
+            })),
+            MaestroRpcMessage::Request(ServerRequest::ImportChunk(ImportChunkRequest {
+                import_id: "import-1".to_string(),
+                chunk: sample_import(),
+            })),
+            MaestroRpcMessage::Response(ServerResponse::ImportProjectOk(ImportProjectResponse {
+                imported: false,
+            })),
+        ]
+    }
+
+    fn sample_import() -> ImportProjectRequest {
+        ImportProjectRequest {
+            project_path: "/srv/shop".to_string(),
+            tasks: vec![sample_task()],
+            relationships: vec![],
+            instructions: vec![],
+            comments: vec![TaskComment {
+                id: 8,
+                task_id: 3,
+                kind: "outcome".to_string(),
+                author: "agent".to_string(),
+                body: Some("Done".to_string()),
+                external_ref: None,
+                phase: None,
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+            }],
+            attachments: vec![],
+            worktrees: vec![],
+            reviews: vec![TaskReview {
+                id: 2,
+                task_id: 3,
+                decision: "RequestChanges".to_string(),
+                general_feedback: None,
+                reviewed_at: None,
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+                comments: vec![ReviewComment {
+                    id: 5,
+                    review_id: 2,
+                    file_path: "src/lib.rs".to_string(),
+                    comment: "Name this".to_string(),
+                    created_at: "2026-01-01T00:00:00Z".to_string(),
+                }],
+            }],
+            prompts: vec![sample_prompt()],
+            sessions: vec![ImportedSession {
+                agent_id: "claude-acp".to_string(),
+                acp_session_id: "acp-1".to_string(),
+                cwd: "/srv/shop".to_string(),
+                meta: sample_meta(),
+                can_reload: None,
+                closed: true,
+            }],
+            floors: ImportFloors::default(),
+        }
+    }
+
+    #[test]
+    fn an_import_answer_is_a_reply() {
+        assert!(
+            ServerResponse::ImportProjectOk(ImportProjectResponse { imported: true }).is_reply()
+        );
+    }
+
+    #[test]
+    fn an_import_larger_than_a_frame_splits_into_chunks_under_budget() {
+        let mut request = sample_import();
+        let row = request.tasks.remove(0);
+        let comment = request.comments.remove(0);
+        for id in 0..9_000 {
+            let mut task = row.clone();
+            task.id = id;
+            task.description = Some("x".repeat(2_000));
+            request.tasks.push(task);
+            let mut comment = comment.clone();
+            comment.task_id = id;
+            request.comments.push(comment);
+        }
+        let total = serde_json::to_vec(&request).unwrap().len();
+        assert!(total > MAX_MESSAGE_SIZE, "{total}");
+
+        let budget = IMPORT_CHUNK_BYTES;
+        let chunks = split_import(
+            serde_json::from_slice(&serde_json::to_vec(&request).unwrap()).unwrap(),
+            budget,
+        );
+        assert!(chunks.len() > 4, "{}", chunks.len());
+        let mut joined = ImportProjectRequest {
+            project_path: request.project_path.clone(),
+            ..ImportProjectRequest::default()
+        };
+        for chunk in chunks {
+            let message =
+                MaestroRpcMessage::Request(ServerRequest::ImportChunk(ImportChunkRequest {
+                    import_id: "00000000-0000-4000-8000-000000000000".to_string(),
+                    chunk,
+                }));
+            let frame = encode_message(Some(u64::MAX), &message).unwrap();
+            assert!(frame.len() < budget, "{}", frame.len());
+            let MaestroRpcMessage::Request(ServerRequest::ImportChunk(ImportChunkRequest {
+                chunk,
+                ..
+            })) = message
+            else {
+                unreachable!()
+            };
+            assert_eq!(chunk.project_path, request.project_path);
+            joined.tasks.extend(chunk.tasks);
+            joined.relationships.extend(chunk.relationships);
+            joined.instructions.extend(chunk.instructions);
+            joined.comments.extend(chunk.comments);
+            joined.attachments.extend(chunk.attachments);
+            joined.worktrees.extend(chunk.worktrees);
+            joined.reviews.extend(chunk.reviews);
+            joined.prompts.extend(chunk.prompts);
+            joined.sessions.extend(chunk.sessions);
+        }
+        assert_eq!(joined, request);
+    }
+
+    fn sample_prompt() -> Prompt {
+        Prompt {
+            id: 3,
+            project_path: "/srv/shop".to_string(),
+            title: "Review".to_string(),
+            body: "Review the diff".to_string(),
+            tags: vec!["review".to_string()],
+            favorite: true,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-02T00:00:00Z".to_string(),
+        }
+    }
+
+    fn prompt_messages() -> Vec<MaestroRpcMessage> {
+        let prompt = PromptRef {
+            project_path: "/srv/shop".to_string(),
+            prompt_id: 3,
+        };
+        vec![
+            MaestroRpcMessage::Request(ServerRequest::ListPrompts(ProjectRef {
+                project_path: "/srv/shop".to_string(),
+            })),
+            MaestroRpcMessage::Request(ServerRequest::CreatePrompt(CreatePromptRequest {
+                project_path: "/srv/shop".to_string(),
+                title: "Review".to_string(),
+                body: "Review the diff".to_string(),
+                tags: vec!["review".to_string()],
+                favorite: true,
+            })),
+            MaestroRpcMessage::Request(ServerRequest::UpdatePrompt(UpdatePromptRequest {
+                project_path: "/srv/shop".to_string(),
+                prompt_id: 3,
+                title: "Review".to_string(),
+                body: "Review the diff".to_string(),
+                tags: vec![],
+            })),
+            MaestroRpcMessage::Request(ServerRequest::SetPromptFavorite(
+                SetPromptFavoriteRequest {
+                    project_path: "/srv/shop".to_string(),
+                    prompt_id: 3,
+                    favorite: false,
+                },
+            )),
+            MaestroRpcMessage::Request(ServerRequest::DeletePrompt(prompt)),
+            MaestroRpcMessage::Response(ServerResponse::ListPromptsOk(PromptList {
+                prompts: vec![sample_prompt()],
+            })),
+            MaestroRpcMessage::Response(ServerResponse::GetPromptOk(OptionalPrompt {
+                prompt: None,
+            })),
+            MaestroRpcMessage::Response(ServerResponse::CreatePromptOk(sample_prompt())),
+            MaestroRpcMessage::Response(ServerResponse::DeletePromptOk),
+            MaestroRpcMessage::Response(ServerResponse::PromptsChanged(ProjectRef {
+                project_path: "/srv/shop".to_string(),
+            })),
+        ]
+    }
+
+    #[test]
+    fn prompt_pushes_are_not_replies_and_prompt_answers_are() {
+        assert!(!ServerResponse::PromptsChanged(ProjectRef {
+            project_path: "/srv/shop".to_string(),
+        })
+        .is_reply());
+        assert!(ServerResponse::SetPromptFavoriteOk(sample_prompt()).is_reply());
+        assert!(ServerResponse::DeletePromptOk.is_reply());
+    }
+
+    fn sample_task() -> Task {
+        Task {
+            id: 3,
+            project_path: "/srv/shop".to_string(),
+            title: "Fix login".to_string(),
+            description: Some("It fails".to_string()),
+            status: TaskStatus::Review,
+            priority: TaskPriority::High,
+            base_branch: "main".to_string(),
+            archived_at: None,
+            external_id: Some("jira:SHOP-1".to_string()),
+            is_imported: Some(true),
+            import_source: Some("jira".to_string()),
+            skills: vec!["rust".to_string()],
+            model_override: None,
+            mcp_allowlist: Some(vec!["maestro".to_string()]),
+            skills_override: None,
+            labels: vec!["bug".to_string()],
+            external_url: None,
+            external_updated_at: None,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-02T00:00:00Z".to_string(),
+            auto_approve: false,
+            workspace_mode: WorkspaceMode::ReuseWorkspace,
+            workspace_worktree_id: Some(4),
+            workspace_branch_mode: BranchMode::Create,
+            workspace_branch: None,
+            agent_id: Some("claude-acp".to_string()),
+            permission_mode_override: None,
+            execution_start_sha: Some("abc123".to_string()),
+            phase: Some(TaskPhase::AwaitingMerge),
+            phase_status: Some(PhaseStatus::Waiting),
+            ball: TaskBall::External,
+            completion: None,
+            execute_requested_at: None,
+            pull_request_url: Some("https://example.com/pr/9".to_string()),
+            pull_request_number: Some(9),
+            review_rounds: 1,
+            fix_rounds: 0,
+            pull_request_ci: Some(PullRequestCi::Pending),
+            profile_overrides: Some(r#"{"Planner":null}"#.to_string()),
+            claimed_from: None,
+        }
+    }
+
+    /// Payloads carrying an `id` of their own, a transition with a guard, a composite step and a
+    /// push, which is what the `rpc_id` round trip and `is_reply` have to hold for.
+    fn task_messages() -> Vec<MaestroRpcMessage> {
+        vec![
+            MaestroRpcMessage::Response(ServerResponse::CreateTaskOk(sample_task())),
+            MaestroRpcMessage::Response(ServerResponse::GetTaskOk(OptionalTask { task: None })),
+            MaestroRpcMessage::Request(ServerRequest::UpdateTask(UpdateTaskRequest {
+                project_path: "/srv/shop".to_string(),
+                task_id: 3,
+                update: TaskUpdate {
+                    title: Some("Fix login".to_string()),
+                    description: Some(None),
+                    status: Some(TaskStatus::Queue),
+                    pull_request_ci: Some(None),
+                    execution_start_sha: Some(Some("abc123".to_string())),
+                    increment_fix_rounds: true,
+                    ..TaskUpdate::default()
+                },
+            })),
+            MaestroRpcMessage::Request(ServerRequest::ApplyTaskTransition(
+                ApplyTaskTransitionRequest {
+                    project_path: "/srv/shop".to_string(),
+                    task_id: 3,
+                    event: TaskTransition::TurnCompleted {
+                        is_git_repo: true,
+                        has_changes: None,
+                        reviewer_pending: false,
+                    },
+                    guard: TransitionGuard::Status(vec![TaskStatus::Planning, TaskStatus::Queue]),
+                    update: None,
+                    comment: None,
+                },
+            )),
+            MaestroRpcMessage::Request(ServerRequest::ApplyTaskTransition(
+                ApplyTaskTransitionRequest {
+                    project_path: "/srv/shop".to_string(),
+                    task_id: 3,
+                    event: TaskTransition::SessionReady(AgentRole::Coder),
+                    guard: TransitionGuard::Phase(TaskPhase::SelfReview),
+                    update: None,
+                    comment: None,
+                },
+            )),
+            MaestroRpcMessage::Request(ServerRequest::ApplyTaskTransition(
+                ApplyTaskTransitionRequest {
+                    project_path: "/srv/shop".to_string(),
+                    task_id: 3,
+                    event: TaskTransition::CiFixRequested,
+                    guard: TransitionGuard::FixRoundsBelow(3),
+                    update: Some(TaskUpdate {
+                        increment_fix_rounds: true,
+                        execution_start_sha_if_empty: Some("abc123".to_string()),
+                        ..TaskUpdate::default()
+                    }),
+                    comment: Some(NewTaskComment {
+                        kind: "ci".to_string(),
+                        author: "maestro".to_string(),
+                        body: Some("CI failed".to_string()),
+                        external_ref: None,
+                        phase: Some("AwaitingMerge".to_string()),
+                    }),
+                },
+            )),
+            MaestroRpcMessage::Request(ServerRequest::AddTaskComment(AddTaskCommentRequest {
+                project_path: "/srv/shop".to_string(),
+                task_id: 3,
+                comment: NewTaskComment {
+                    kind: "plan".to_string(),
+                    author: "agent".to_string(),
+                    body: Some("Plan".to_string()),
+                    external_ref: None,
+                    phase: None,
+                },
+            })),
+            MaestroRpcMessage::Request(ServerRequest::ApplyTaskTransition(
+                ApplyTaskTransitionRequest {
+                    project_path: "/srv/shop".to_string(),
+                    task_id: 3,
+                    event: TaskTransition::Stopped,
+                    guard: TransitionGuard::Always,
+                    update: None,
+                    comment: None,
+                },
+            )),
+            MaestroRpcMessage::Request(ServerRequest::EndTaskTurn(EndTaskTurnRequest {
+                project_path: "/srv/shop".to_string(),
+                task_id: 3,
+                ending: TurnEnding::Completed {
+                    is_git_repo: true,
+                    has_changes: Some(true),
+                    reviewer_pending: true,
+                },
+                review_approved: false,
+                closing_message: "Done.".to_string(),
+            })),
+            MaestroRpcMessage::Response(ServerResponse::InsertWorktreeOk(Worktree {
+                id: 4,
+                project_path: "/srv/shop".to_string(),
+                task_id: None,
+                branch_name: "maestro/3-fix-login".to_string(),
+                base_branch: Some("main".to_string()),
+                path: String::new(),
+                git_status: None,
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+            })),
+            MaestroRpcMessage::Response(ServerResponse::TasksChanged(ProjectRef {
+                project_path: "/srv/shop".to_string(),
+            })),
+            MaestroRpcMessage::Response(ServerResponse::TaskCommentsChanged(TaskRef {
+                project_path: "/srv/shop".to_string(),
+                task_id: 3,
+            })),
+        ]
+    }
+
+    #[test]
+    fn roundtrip_task_messages() {
+        for message in task_messages() {
+            let json = serde_json::to_string(&message).unwrap();
+            let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+            assert_eq!(message, back);
+            assert_eq!(message.session_id(), None);
+        }
+    }
+
+    fn pipeline_messages() -> Vec<MaestroRpcMessage> {
+        vec![
+            MaestroRpcMessage::Request(ServerRequest::GetCapacity),
+            MaestroRpcMessage::Request(ServerRequest::SetCapacity(CapacitySettings {
+                concurrency_mode: ConcurrencyMode::Hard,
+                max_concurrent_agents: 2,
+            })),
+            MaestroRpcMessage::Response(ServerResponse::GetCapacityOk(CapacityStatus {
+                settings: CapacitySettings {
+                    concurrency_mode: ConcurrencyMode::Auto,
+                    max_concurrent_agents: 3,
+                },
+                slots: 4,
+                reason: "4 slots, 2.6 GB free".to_string(),
+                stored: true,
+                used: 1,
+            })),
+            MaestroRpcMessage::Request(ServerRequest::SetAutoMode(AutoModeSetting {
+                project_path: "/srv/shop".to_string(),
+                enabled: true,
+            })),
+            MaestroRpcMessage::Request(ServerRequest::HoldTask(HoldTaskRequest {
+                project_path: "/srv/shop".to_string(),
+                task_id: 3,
+                ttl_ms: None,
+            })),
+            MaestroRpcMessage::Request(ServerRequest::ReleaseTaskHold(TaskRef {
+                project_path: "/srv/shop".to_string(),
+                task_id: 3,
+            })),
+            MaestroRpcMessage::Request(ServerRequest::StartTask(StartTaskRequest {
+                project_path: "/srv/shop".to_string(),
+                task_id: 3,
+                role: AgentRole::Planner,
+                feedback: Some("Split the migration out".to_string()),
+                unattended: false,
+                respect_capacity: true,
+                agent_id: Some("codex-acp".to_string()),
+            })),
+            MaestroRpcMessage::Response(ServerResponse::StartTaskOk(StartTaskResponse {
+                session_id: Some("session-9".to_string()),
+                skipped_attachments: vec!["spec.pdf: not found".to_string()],
+            })),
+            MaestroRpcMessage::Response(ServerResponse::PipelineSettingsChanged(
+                PipelineSettingsChanged { project_path: None },
+            )),
+            MaestroRpcMessage::Response(ServerResponse::TaskSessionStarted(TaskSessionStarted {
+                project_path: "/srv/shop".to_string(),
+                task_id: 3,
+                session_id: "session-9".to_string(),
+                agent_id: "claude-acp".to_string(),
+                acp_session_id: "conversation-9".to_string(),
+                role: AgentRole::Coder,
+            })),
+        ]
+    }
+
+    #[test]
+    fn roundtrip_pipeline_messages() {
+        for message in pipeline_messages() {
+            let json = serde_json::to_string(&message).unwrap();
+            let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+            assert_eq!(message, back);
+            // A started session is broadcast: nobody owns it until a window adopts it.
+            assert_eq!(message.session_id(), None);
+        }
+    }
+
+    #[test]
+    fn auth_required_for_names_the_agent() {
+        let message = auth_required_for("claude-acp");
+        assert_eq!(message, "auth_required:claude-acp");
+        assert_eq!(
+            message.strip_prefix(&format!("{AUTH_REQUIRED_ERROR}:")),
+            Some("claude-acp")
+        );
+    }
+
+    #[test]
+    fn start_task_defaults_what_the_button_leaves_out() {
+        let json = r#"{"direction":"request","type":"start_task","project_path":"/srv/shop","task_id":3,"role":"Coder"}"#;
+        let MaestroRpcMessage::Request(ServerRequest::StartTask(request)) =
+            serde_json::from_str(json).unwrap()
+        else {
+            panic!("not a start_task");
+        };
+        assert_eq!(request.feedback, None);
+        assert!(!request.unattended && !request.respect_capacity);
+        assert_eq!(request.agent_id, None);
+    }
+
+    #[test]
+    fn pipeline_pushes_are_not_replies_and_answers_are() {
+        assert!(!ServerResponse::TaskSessionStarted(TaskSessionStarted {
+            project_path: "/srv/shop".to_string(),
+            task_id: 3,
+            session_id: "s".to_string(),
+            agent_id: "a".to_string(),
+            acp_session_id: "c".to_string(),
+            role: AgentRole::Coder,
+        })
+        .is_reply());
+        assert!(
+            !ServerResponse::PipelineSettingsChanged(PipelineSettingsChanged {
+                project_path: Some("/srv/shop".to_string()),
+            })
+            .is_reply()
+        );
+        assert!(ServerResponse::StartTaskOk(StartTaskResponse {
+            session_id: None,
+            skipped_attachments: vec![],
+        })
+        .is_reply());
+        assert!(ServerResponse::HoldTaskOk.is_reply());
+    }
+
+    #[test]
+    fn task_pushes_are_not_replies_and_task_answers_are() {
+        assert!(!ServerResponse::TasksChanged(ProjectRef {
+            project_path: "/srv/shop".to_string(),
+        })
+        .is_reply());
+        assert!(!ServerResponse::WorktreesChanged(ProjectRef {
+            project_path: "/srv/shop".to_string(),
+        })
+        .is_reply());
+        assert!(ServerResponse::EndTaskTurnOk(OptionalTask { task: None }).is_reply());
+        assert!(ServerResponse::DeleteWorktreesOk.is_reply());
+    }
+
+    /// `null` clears a column and an absent key leaves it alone, which a plain `Option<Option<_>>`
+    /// cannot tell apart on the way in.
+    #[test]
+    fn task_update_tells_a_cleared_column_from_an_untouched_one() {
+        let json = r#"{"direction":"request","type":"update_task","project_path":"/srv/shop","task_id":3,"update":{"pull_request_ci":null,"description":"New"}}"#;
+        let MaestroRpcMessage::Request(ServerRequest::UpdateTask(request)) =
+            serde_json::from_str(json).unwrap()
+        else {
+            panic!("expected an update_task request");
+        };
+        assert_eq!(request.update.pull_request_ci, Some(None));
+        assert_eq!(request.update.description, Some(Some("New".to_string())));
+        assert_eq!(request.update.execution_start_sha, None);
+        assert!(!request.update.increment_fix_rounds);
+    }
+
+    #[test]
+    fn a_transition_without_a_guard_is_unguarded() {
+        let json = r#"{"direction":"request","type":"apply_task_transition","project_path":"/srv/shop","task_id":3,"event":{"ManualMove":"Queue"}}"#;
+        let MaestroRpcMessage::Request(ServerRequest::ApplyTaskTransition(request)) =
+            serde_json::from_str(json).unwrap()
+        else {
+            panic!("expected an apply_task_transition request");
+        };
+        assert_eq!(request.event, TaskTransition::ManualMove(TaskStatus::Queue));
+        assert_eq!(request.guard, TransitionGuard::Always);
+    }
+
+    #[tokio::test]
+    async fn request_id_round_trips_with_and_without_id() {
+        for id in [None, Some(0), Some(u64::MAX)] {
+            for message in id_samples() {
+                let frame = encode_message(id, &message).unwrap();
+                let body = &frame[MSG_LEN_SIZE..];
+                assert_eq!(
+                    body.len(),
+                    u32::from_le_bytes(frame[..4].try_into().unwrap()) as usize
+                );
+                let json: serde_json::Value = serde_json::from_slice(body).unwrap();
+                assert_eq!(json.get("rpc_id").and_then(|value| value.as_u64()), id);
+
+                assert_eq!(decode_message(body).unwrap(), (id, message));
+                let (read_id, read) = read_message_with_id(&mut frame.as_slice()).await.unwrap();
+                let (sync_id, sync) = read_message_with_id_sync(&mut frame.as_slice()).unwrap();
+                assert_eq!((read_id, sync_id), (id, id));
+                assert_eq!(read, sync);
+
+                // The id-unaware readers must keep working against a peer that sends ids.
+                let plain = read_message(&mut frame.as_slice()).await.unwrap();
+                assert_eq!(plain, read);
+                assert_eq!(read_message_sync(&mut frame.as_slice()).unwrap(), read);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn frame_without_id_key_decodes_to_none_and_matches_the_old_encoding() {
+        for message in id_samples() {
+            let mut old = Vec::new();
+            write_message(&mut old, &message).await.unwrap();
+            assert_eq!(old, encode_message(None, &message).unwrap());
+            assert_eq!(
+                read_message_with_id(&mut old.as_slice()).await.unwrap(),
+                (None, message)
+            );
+        }
+    }
+
+    #[test]
+    fn is_reply_separates_answers_from_pushes() {
+        assert!(ServerResponse::SessionCloseOk.is_reply());
+        assert!(ServerResponse::Error(ErrorResponse {
+            message: "no".to_string(),
+            session_id: None,
+        })
+        .is_reply());
+        assert!(ServerResponse::HandshakeOk(HandshakeResponse {
+            protocol_version: PROTOCOL_VERSION,
+        })
+        .is_reply());
+        assert!(!ServerResponse::Ping { seq: 1 }.is_reply());
+        assert!(!ServerResponse::ProjectLocksChanged.is_reply());
+        assert!(!ServerResponse::TerminalOutput(TerminalOutput {
+            session_id: "session".to_string(),
+            terminal_id: "terminal".to_string(),
+            bytes: vec![1],
+        })
+        .is_reply());
+    }
+
+    fn sample_meta() -> SessionMeta {
+        SessionMeta {
+            session_name: Some("Fix login".to_string()),
+            task_id: Some(7),
+            task_name: Some("Login".to_string()),
+            branch_name: Some("maestro/login".to_string()),
+            session_start_sha: Some("abc123".to_string()),
+            role: Some("Coder".to_string()),
+        }
+    }
+
+    fn project_session_messages() -> Vec<MaestroRpcMessage> {
+        let live = ProjectSession {
+            agent_id: "claude-acp".to_string(),
+            acp_session_id: "conversation-1".to_string(),
+            cwd: "/srv/shop".to_string(),
+            meta: sample_meta(),
+            can_reload: true,
+            closed: false,
+            live: Some(LiveSessionState {
+                session_id: "routing-1".to_string(),
+                turn_active: true,
+                pending_requests: Vec::new(),
+            }),
+        };
+        let dormant = ProjectSession {
+            meta: SessionMeta::default(),
+            closed: true,
+            live: None,
+            ..live.clone()
+        };
+        vec![
+            MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+                agent_id: "claude-acp".to_string(),
+                session_id: "routing-1".to_string(),
+                cwd: "/srv/shop".to_string(),
+                additional_directories: Vec::new(),
+                project_path: Some("/srv/shop".to_string()),
+                meta: sample_meta(),
+            })),
+            MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
+                agent_id: "claude-acp".to_string(),
+                session_id: "routing-1".to_string(),
+                resume_session_id: "conversation-1".to_string(),
+                cwd: "/srv/shop".to_string(),
+                additional_directories: Vec::new(),
+                project_path: Some("/srv/shop".to_string()),
+                meta: sample_meta(),
+            })),
+            MaestroRpcMessage::Request(ServerRequest::ListProjectSessions(
+                ListProjectSessionsRequest {
+                    project_path: "/srv/shop".to_string(),
+                    include_closed: true,
+                },
+            )),
+            MaestroRpcMessage::Request(ServerRequest::RenameSession(RenameSessionRequest {
+                project_path: "/srv/shop".to_string(),
+                agent_id: "claude-acp".to_string(),
+                acp_session_id: "conversation-1".to_string(),
+                cwd: "/srv/shop".to_string(),
+                name: "Fix login".to_string(),
+            })),
+            MaestroRpcMessage::Response(ServerResponse::ListProjectSessionsOk(
+                ListProjectSessionsResponse {
+                    sessions: vec![live, dormant],
+                },
+            )),
+            MaestroRpcMessage::Response(ServerResponse::RenameSessionOk),
+            MaestroRpcMessage::Request(ServerRequest::CloseProjectSession(
+                CloseProjectSessionRequest {
+                    agent_id: "claude-acp".to_string(),
+                    acp_session_id: "conversation-1".to_string(),
+                },
+            )),
+            MaestroRpcMessage::Response(ServerResponse::CloseProjectSessionOk),
+        ]
+    }
+
+    #[test]
+    fn roundtrip_project_session_messages() {
+        for message in project_session_messages() {
+            let json = serde_json::to_string(&message).unwrap();
+            let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+            assert_eq!(message, back);
+        }
+    }
+
+    #[test]
+    fn spawn_request_without_project_keys_still_deserializes() {
+        let json = r#"{"direction":"request","type":"spawn","agent_id":"claude-acp","session_id":"sess-1","cwd":"/tmp"}"#;
+        let MaestroRpcMessage::Request(ServerRequest::Spawn(request)) =
+            serde_json::from_str(json).unwrap()
+        else {
+            panic!("expected a spawn request");
+        };
+        assert_eq!(request.project_path, None);
+        assert_eq!(request.meta, SessionMeta::default());
+    }
+
+    #[test]
+    fn project_session_requests_are_not_session_routed_and_responses_are_replies() {
+        for message in project_session_messages() {
+            match &message {
+                MaestroRpcMessage::Request(
+                    ServerRequest::ListProjectSessions(_)
+                    | ServerRequest::RenameSession(_)
+                    | ServerRequest::CloseProjectSession(_),
+                ) => assert_eq!(message.session_id(), None),
+                MaestroRpcMessage::Response(response) => {
+                    assert!(response.is_reply());
+                    assert_eq!(message.session_id(), None);
+                }
+                MaestroRpcMessage::Request(_) => {}
+            }
+        }
+    }
+
     #[test]
     fn roundtrip_handshake() {
         let req = MaestroRpcMessage::Request(ServerRequest::Handshake(HandshakeRequest {
@@ -1561,7 +3866,8 @@ mod tests {
             session_id: "sess-1".to_string(),
             cwd: "/home/user/project".to_string(),
             additional_directories: Vec::new(),
-            host_meta: None,
+            project_path: None,
+            meta: SessionMeta::default(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
@@ -1743,7 +4049,8 @@ mod tests {
             session_id: "sess-99".to_string(),
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
-            host_meta: None,
+            project_path: None,
+            meta: SessionMeta::default(),
         }));
 
         let mut buf: Vec<u8> = Vec::new();
@@ -1915,7 +4222,8 @@ mod tests {
             session_id: "sess-1".to_string(),
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
-            host_meta: None,
+            project_path: None,
+            meta: SessionMeta::default(),
         }));
         let resp = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "sess-1".to_string(),

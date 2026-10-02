@@ -1,9 +1,10 @@
+use crate::acp::connection_server::{query_via_server, reply};
 use crate::acp::session_types::AgentAuthInfo;
 use crate::acp::transport_types::serialize_message;
 use crate::core::AppState;
 use maestro_protocol::{
     AuthTerminalInputRequest, AuthenticateRequest, KillAuthTerminalRequest, LogoutRequest,
-    MaestroRpcMessage, ServerRequest, SpawnAuthTerminalRequest,
+    MaestroRpcMessage, ServerRequest, ServerResponse, SpawnAuthTerminalRequest,
 };
 use std::sync::Arc;
 use tauri::{Emitter, State};
@@ -54,62 +55,30 @@ pub async fn acp_authenticate(
     method_id: String,
     connection: crate::acp::ConnectionKey,
 ) -> Result<(), String> {
-    let (writer_tx, authenticate_pending) = {
-        let servers = app_state.acp.connection_servers.lock().await;
-        let server = servers
-            .get(&connection)
-            .ok_or_else(|| format!("No connection server for connection {:?}", connection))?;
-        (
-            server.writer_tx.clone(),
-            server.pending.authenticate.clone(),
-        )
-    };
-
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    {
-        let mut guard = authenticate_pending
-            .lock()
-            .map_err(|e| format!("Lock poisoned: {}", e))?;
-        if guard.is_some() {
-            return Err("Authentication already in progress".to_string());
-        }
-        *guard = Some(tx);
-    }
-
     // Always use device code flow — browser launch from a subprocess is unreliable
     // (xdg-open returns immediately and the subprocess exits before auth completes).
     // The URL/code is shown in the modal's output area where the user can open it manually.
     let force_no_browser = true;
-    let req = MaestroRpcMessage::Request(ServerRequest::Authenticate(AuthenticateRequest {
-        agent_id: agent_id.clone(),
-        method_id: method_id.clone(),
-        force_no_browser,
-    }));
-    let bytes = serialize_message(&req)?;
-    writer_tx
-        .send(bytes)
-        .await
-        .map_err(|_| "Connection server writer channel closed".to_string())?;
-
-    // 5-minute timeout — OAuth flows may require browser interaction.
-    let result = tokio::time::timeout(std::time::Duration::from_secs(300), rx).await;
-    match result {
-        Err(_) => {
-            if let Ok(mut guard) = authenticate_pending.lock() {
-                guard.take();
-            }
-            Err("Authentication timed out".to_string())
-        }
-        Ok(inner) => {
-            inner.map_err(|_| "Authentication response channel dropped".to_string())??;
-            // Mark as authenticated in state.
-            let mut map = app_state.acp.agent_auth_info.lock().await;
-            if let Some(info) = map.get_mut(&(connection, agent_id)) {
-                info.authenticated = true;
-            }
-            Ok(())
-        }
+    query_via_server(
+        connection,
+        &app_state,
+        &format!("No connection server for connection {:?}", connection),
+        MaestroRpcMessage::Request(ServerRequest::Authenticate(AuthenticateRequest {
+            agent_id: agent_id.clone(),
+            method_id,
+            force_no_browser,
+        })),
+        reply!(ServerResponse::AuthenticateOk => ()),
+        // 5-minute timeout — OAuth flows may require browser interaction.
+        300,
+        "Authentication timed out",
+    )
+    .await?;
+    let mut map = app_state.acp.agent_auth_info.lock().await;
+    if let Some(info) = map.get_mut(&(connection, agent_id)) {
+        info.authenticated = true;
     }
+    Ok(())
 }
 
 #[tauri::command]
@@ -119,51 +88,23 @@ pub async fn acp_logout(
     agent_id: String,
     connection: crate::acp::ConnectionKey,
 ) -> Result<(), String> {
-    let (writer_tx, logout_pending) = {
-        let servers = app_state.acp.connection_servers.lock().await;
-        let server = servers
-            .get(&connection)
-            .ok_or_else(|| format!("No connection server for connection {:?}", connection))?;
-        (server.writer_tx.clone(), server.pending.logout.clone())
-    };
-
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    {
-        let mut guard = logout_pending
-            .lock()
-            .map_err(|e| format!("Lock poisoned: {}", e))?;
-        if guard.is_some() {
-            return Err("Logout already in progress".to_string());
-        }
-        *guard = Some(tx);
+    query_via_server(
+        connection,
+        &app_state,
+        &format!("No connection server for connection {:?}", connection),
+        MaestroRpcMessage::Request(ServerRequest::Logout(LogoutRequest {
+            agent_id: agent_id.clone(),
+        })),
+        reply!(ServerResponse::LogoutOk => ()),
+        30,
+        "Logout timed out",
+    )
+    .await?;
+    let mut map = app_state.acp.agent_auth_info.lock().await;
+    if let Some(info) = map.get_mut(&(connection, agent_id)) {
+        info.authenticated = false;
     }
-
-    let req = MaestroRpcMessage::Request(ServerRequest::Logout(LogoutRequest {
-        agent_id: agent_id.clone(),
-    }));
-    let bytes = serialize_message(&req)?;
-    writer_tx
-        .send(bytes)
-        .await
-        .map_err(|_| "Connection server writer channel closed".to_string())?;
-
-    let result = tokio::time::timeout(std::time::Duration::from_secs(30), rx).await;
-    match result {
-        Err(_) => {
-            if let Ok(mut guard) = logout_pending.lock() {
-                guard.take();
-            }
-            Err("Logout timed out".to_string())
-        }
-        Ok(inner) => {
-            inner.map_err(|_| "Logout response channel dropped".to_string())??;
-            let mut map = app_state.acp.agent_auth_info.lock().await;
-            if let Some(info) = map.get_mut(&(connection, agent_id)) {
-                info.authenticated = false;
-            }
-            Ok(())
-        }
-    }
+    Ok(())
 }
 
 #[tauri::command]

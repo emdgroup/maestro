@@ -39,6 +39,19 @@ export function projectLockHolder(error: unknown): string {
   return message.slice(start + PROJECT_LOCKED_PREFIX.length).trim() || "another machine";
 }
 
+/** Defined as `IMPORT_FAILED_PREFIX` in `src-tauri/src/project/import.rs`. */
+const IMPORT_FAILED_PREFIX = "IMPORT_FAILED:";
+
+/**
+ * What to show when a project's board could not be moved to its server, which keeps the project
+ * closed. Null for any other failure.
+ */
+export function importFailure(error: unknown): string | null {
+  const message = getErrorMessage(error);
+  const start = message.indexOf(IMPORT_FAILED_PREFIX);
+  return start === -1 ? null : message.slice(start + IMPORT_FAILED_PREFIX.length);
+}
+
 /**
  * Create a standardized error toast handler for React Query mutations
  * @param actionName - Human-readable description of the failed action (e.g., "Failed to create task")

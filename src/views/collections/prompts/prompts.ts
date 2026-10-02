@@ -1,6 +1,6 @@
 import type { Prompt } from "@/types/bindings";
 
-export type PromptFilter = "all" | "favorites" | "shared" | "project";
+export type PromptFilter = "all" | "favorites";
 
 /** Prompts matching the filter, the tag and the query (title, text or tag, case-insensitive). */
 export function filterPrompts(
@@ -12,10 +12,7 @@ export function filterPrompts(
   const needle = query.trim().toLowerCase();
   return prompts.filter(
     (prompt) =>
-      (filter === "all" ||
-        (filter === "favorites" && prompt.favorite) ||
-        (filter === "shared" && prompt.shared) ||
-        (filter === "project" && !prompt.shared)) &&
+      (filter === "all" || prompt.favorite) &&
       (tag === null || prompt.tags.includes(tag)) &&
       (!needle ||
         [prompt.title, prompt.body, ...prompt.tags].some((text) =>

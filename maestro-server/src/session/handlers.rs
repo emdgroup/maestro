@@ -208,6 +208,16 @@ macro_rules! configure_acp_builder {
 
 pub(crate) use configure_acp_builder;
 
+/// The agent's answer: the option chosen, or cancelled when there is none.
+fn outcome(option_id: Option<String>) -> RequestPermissionOutcome {
+    match option_id {
+        Some(id) => RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+            PermissionOptionId::new(id),
+        )),
+        None => RequestPermissionOutcome::Cancelled,
+    }
+}
+
 impl ConnectionHandlers {
     pub fn new(stdout: crate::ClientOut) -> (Self, Arc<SessionRouter>) {
         let router = Arc::new(SessionRouter::default());
@@ -246,6 +256,24 @@ impl ConnectionHandlers {
 
         let payload =
             serde_json::to_value(&request).map_err(|e| acp::Error::new(-32603, e.to_string()))?;
+
+        // A task session's request is settled here when it can be, and never reaches a window.
+        let bound = super::task_gate::task_of(&state, &maestro_sid).await;
+        if let Some((task, role)) = &bound {
+            if let Some(answer) = super::task_gate::settle_permission(
+                task,
+                *role,
+                &maestro_sid,
+                &payload,
+                &self.stdout,
+            )
+            .await
+            {
+                return responder.respond(RequestPermissionResponse::new(outcome(answer)));
+            }
+        }
+        let task = bound.map(|(task, _)| task);
+
         // Kept as well as sent: the client shown this may be gone before it answers, and the
         // request is what the next one has to be shown to be able to.
         let request_out = MaestroPermissionRequest {
@@ -266,14 +294,16 @@ impl ConnectionHandlers {
             .await
             .insert(request_id, (request_out, tx));
 
+        let stdout = Arc::clone(&self.stdout);
         cx.spawn(async move {
-            let outcome = match rx.await {
-                Ok(Some(id)) => RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                    PermissionOptionId::new(id),
-                )),
-                Ok(None) | Err(_) => RequestPermissionOutcome::Cancelled,
+            let answer = match rx.await {
+                Ok(answer) => {
+                    super::task_gate::unblock(&task, &stdout).await;
+                    answer
+                }
+                Err(_) => None,
             };
-            let _ = responder.respond(RequestPermissionResponse::new(outcome));
+            let _ = responder.respond(RequestPermissionResponse::new(outcome(answer)));
             Ok(())
         })?;
         Ok(())
@@ -290,6 +320,7 @@ impl ConnectionHandlers {
         let payload = serde_json::to_value(&notification.update)
             .map_err(|e| acp::Error::new(-32603, e.to_string()))?;
         crate::helpers::note_session_update(&maestro_sid, &payload);
+        crate::turn::note_update(&maestro_sid, &payload);
         let msg = MaestroRpcMessage::Response(ServerResponse::SessionUpdate(SessionUpdate {
             session_id: maestro_sid,
             payload,
@@ -363,6 +394,19 @@ impl ConnectionHandlers {
         let (tx, rx) = oneshot::channel::<serde_json::Value>();
 
         let payload = request.params().clone();
+        // A question to a task's agent stops the task until a user answers it.
+        let task = super::task_gate::task_of(&state, &maestro_sid)
+            .await
+            .map(|(task, _)| task);
+        if let Some(task) = &task {
+            super::task_gate::transition(
+                task,
+                maestro_protocol::TaskTransition::AwaitingUserInput,
+                maestro_protocol::TransitionGuard::Changed,
+                &self.stdout,
+            )
+            .await;
+        }
         let request_out = MaestroElicitationRequest {
             session_id: maestro_sid,
             request_id: request_id.clone(),
@@ -382,9 +426,13 @@ impl ConnectionHandlers {
             .await
             .insert(request_id, (request_out, tx));
 
+        let stdout = Arc::clone(&self.stdout);
         cx.spawn(async move {
             let response = match rx.await {
-                Ok(r) => r,
+                Ok(r) => {
+                    super::task_gate::unblock(&task, &stdout).await;
+                    r
+                }
                 Err(_) => {
                     let _ = responder
                         .respond_with_error(acp::Error::new(-32603, "elicitation channel closed"));

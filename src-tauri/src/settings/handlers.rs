@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::acp::connection_server::{query_project_store, query_via_server, reply};
+use crate::acp::transport::{MaestroRpcMessage, ServerRequest, ServerResponse};
 use crate::core::{logging, AppState};
 use crate::models::{AppSettings, ConnectionCapacitySettings};
 use crate::settings::models::LogLocation;
@@ -91,39 +93,147 @@ pub fn save_settings(app_state: State<Arc<AppState>>, settings: AppSettings) -> 
     Ok(())
 }
 
-/// How many agents may run at once on one connection.
+/// How many agents may run at once on one connection, as its daemon stores it.
 #[tauri::command]
 #[specta::specta]
-pub fn get_connection_capacity(
-    app_state: State<Arc<AppState>>,
+pub async fn get_connection_capacity(
+    app_state: State<'_, Arc<AppState>>,
     connection: crate::acp::ConnectionKey,
 ) -> Result<ConnectionCapacitySettings, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    crate::core::settings::load_connection_capacity(&conn, connection)
+    let status = query_via_server(
+        connection,
+        &app_state,
+        &format!("No connection server for connection {connection:?}"),
+        MaestroRpcMessage::Request(ServerRequest::GetCapacity),
+        reply!(ServerResponse::GetCapacityOk(status) => status),
+        15,
+        "The connection's server did not answer within 15s",
+    )
+    .await?;
+    Ok(ConnectionCapacitySettings {
+        concurrency_mode: status.settings.concurrency_mode.into(),
+        max_concurrent_agents: status.settings.max_concurrent_agents,
+    })
 }
 
+/// The daemon answers with `PipelineSettingsChanged`, which every window turns into
+/// `settings-changed`, so raising a limit can start work at once.
 #[tauri::command]
 #[specta::specta]
-pub fn save_connection_capacity(
-    app_state: State<Arc<AppState>>,
+pub async fn save_connection_capacity(
+    app_state: State<'_, Arc<AppState>>,
     connection: crate::acp::ConnectionKey,
     settings: ConnectionCapacitySettings,
 ) -> Result<(), String> {
-    {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        crate::core::settings::save_connection_capacity(&conn, connection, &settings)?;
-    }
+    query_via_server(
+        connection,
+        &app_state,
+        &format!("No connection server for connection {connection:?}"),
+        MaestroRpcMessage::Request(ServerRequest::SetCapacity(
+            maestro_protocol::CapacitySettings {
+                concurrency_mode: settings.concurrency_mode.into(),
+                max_concurrent_agents: settings.max_concurrent_agents,
+            },
+        )),
+        reply!(ServerResponse::SetCapacityOk => ()),
+        15,
+        "The connection's server did not answer within 15s",
+    )
+    .await
+}
 
-    // Same reason `save_settings` emits: raising a limit has to be able to start work immediately,
-    // or the change sits inert until a task happens to move.
-    app_state.app_handle.emit("settings-changed", ()).ok();
-    Ok(())
+/// Carry this connection's limit from the app's `connection_settings` row, where builds before the
+/// daemon kept it, into a daemon never told one. Once: after it the daemon has a stored setting.
+pub(crate) async fn seed_connection_capacity(
+    app_state: &Arc<AppState>,
+    connection: crate::acp::ConnectionKey,
+) -> Result<(), String> {
+    use rusqlite::OptionalExtension;
+    let row = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {e}"))?
+        .query_row(
+            "SELECT concurrency_mode, max_concurrent_agents FROM connection_settings
+             WHERE connection_key = ?1",
+            [connection.storage_id()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?)),
+        )
+        .optional()
+        .map_err(|e| format!("Failed to read the old agent limit: {e}"))?;
+    let Some((mode, max_concurrent_agents)) = row else {
+        return Ok(());
+    };
+    let status = query_via_server(
+        connection,
+        app_state,
+        &format!("No connection server for connection {connection:?}"),
+        MaestroRpcMessage::Request(ServerRequest::GetCapacity),
+        reply!(ServerResponse::GetCapacityOk(status) => status),
+        15,
+        "The connection's server did not answer within 15s",
+    )
+    .await?;
+    if status.stored {
+        return Ok(());
+    }
+    query_via_server(
+        connection,
+        app_state,
+        &format!("No connection server for connection {connection:?}"),
+        MaestroRpcMessage::Request(ServerRequest::SetCapacity(
+            maestro_protocol::CapacitySettings {
+                concurrency_mode: if mode == "Hard" {
+                    maestro_protocol::ConcurrencyMode::Hard
+                } else {
+                    maestro_protocol::ConcurrencyMode::Auto
+                },
+                max_concurrent_agents,
+            },
+        )),
+        reply!(ServerResponse::SetCapacityOk => ()),
+        15,
+        "The connection's server did not answer within 15s",
+    )
+    .await
+}
+
+/// Whether the project's queued tasks start on their own. The project's, kept by its daemon.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_auto_mode(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+) -> Result<bool, String> {
+    query_project_store(
+        &app_state,
+        project_id,
+        |project_path| ServerRequest::GetAutoMode(maestro_protocol::ProjectRef { project_path }),
+        reply!(ServerResponse::AutoModeOk(setting) => setting.enabled),
+    )
+    .await
+}
+
+/// Answered by `PipelineSettingsChanged` like the capacity, so the queue drains at once.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_auto_mode(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    enabled: bool,
+) -> Result<(), String> {
+    query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::SetAutoMode(maestro_protocol::AutoModeSetting {
+                project_path,
+                enabled,
+            })
+        },
+        reply!(ServerResponse::SetAutoModeOk => ()),
+    )
+    .await
 }
 
 /// The levels the UI offers, quietest first.

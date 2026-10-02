@@ -373,19 +373,29 @@ impl From<maestro_protocol::AutomationRun> for AutomationRun {
 }
 
 /// Which server to ask, and what this project is called on it.
+///
+/// Read from the `projects` row alone: every task, worktree and review request comes through here,
+/// and building a `GitConnection` for each would look up the connection's credentials to no end.
 pub(crate) async fn target(
     app_state: &Arc<AppState>,
     project_id: i32,
 ) -> Result<(ConnectionKey, String), String> {
-    let (project, _) = crate::core::get_project_with_git_conn(app_state, project_id).await?;
-    Ok((
-        ConnectionKey::from_all_ids(
-            project.connection_id,
-            project.wsl_connection_id,
-            project.docker_connection_id,
-        ),
-        project.path,
-    ))
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {e}"))?;
+    conn.query_row(
+        "SELECT path, connection_id, wsl_connection_id, docker_connection_id
+         FROM projects WHERE id = ?1",
+        [project_id],
+        |row| {
+            Ok((
+                ConnectionKey::from_all_ids(row.get(1)?, row.get(2)?, row.get(3)?),
+                row.get(0)?,
+            ))
+        },
+    )
+    .map_err(|e| format!("Project {project_id} not found: {e}"))
 }
 
 /// A project's automations, and the one thing about the machine running them the editor has to
@@ -510,7 +520,7 @@ pub async fn adopt_automation_session(
     session_id: String,
 ) -> Result<bool, String> {
     let (connection_key, _) = target(&app_state, project_id).await?;
-    let adopted = crate::acp::session_ops::adopt_live_sessions(
+    let adopted = crate::acp::session_ops::attach_project_sessions(
         connection_key,
         project_id,
         Some(&session_id),

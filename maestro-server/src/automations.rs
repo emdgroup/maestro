@@ -211,16 +211,21 @@ pub fn canonical_project_path(path: &str) -> String {
     let resolved = std::fs::canonicalize(path)
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|_| path.to_string());
-    // Windows hands back a verbatim path, which no other part of Maestro ever shows or stores.
-    let resolved = resolved
-        .strip_prefix(r"\\?\")
-        .unwrap_or(&resolved)
-        .replace('\\', "/");
+    let resolved = strip_verbatim(&resolved).replace('\\', "/");
     let trimmed = resolved.trim_end_matches('/');
     if trimmed.is_empty() {
         resolved
     } else {
         trimmed.to_string()
+    }
+}
+
+/// Windows hands back a verbatim path, which no other part of Maestro ever shows or stores. A share
+/// comes back as `\\?\UNC\server\share`, whose plain spelling is `\\server\share`.
+fn strip_verbatim(path: &str) -> String {
+    match path.strip_prefix(r"\\?\UNC\") {
+        Some(share) => format!(r"\\{share}"),
+        None => path.strip_prefix(r"\\?\").unwrap_or(path).to_string(),
     }
 }
 
@@ -995,6 +1000,29 @@ pub fn count_running(conn: &Connection) -> u32 {
 
 /// Called once at startup. The sessions they named are gone with the process that held them, so a
 /// row still saying "running" would be a spinner nothing will ever stop.
+/// The conversations finished runs happened in, as `(agent_id, agent_session_id)`: every one, or
+/// only the one named.
+pub fn finished_run_sessions(
+    conn: &Connection,
+    key: Option<(&str, &str)>,
+) -> Result<Vec<(String, String)>, String> {
+    let (agent_id, agent_session_id) = key.unzip();
+    let mut statement = conn
+        .prepare(
+            "SELECT agent_id, agent_session_id FROM runs
+             WHERE status != 'running' AND agent_id IS NOT NULL AND agent_session_id IS NOT NULL
+               AND (?1 IS NULL OR (agent_id = ?1 AND agent_session_id = ?2))",
+        )
+        .map_err(|e| format!("cannot list the sessions of finished runs: {e}"))?;
+    let rows = statement
+        .query_map(params![agent_id, agent_session_id], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .map_err(|e| format!("cannot list the sessions of finished runs: {e}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("cannot read the session of a finished run: {e}"))
+}
+
 pub fn fail_interrupted_runs(conn: &Connection) -> Result<usize, String> {
     conn.execute(
         "UPDATE runs SET status = 'failed', finished_at = ?, error = ?
@@ -1010,6 +1038,16 @@ pub fn fail_interrupted_runs(conn: &Connection) -> Result<usize, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_verbatim_share_keeps_its_two_slashes() {
+        assert_eq!(
+            strip_verbatim(r"\\?\UNC\server\share\p").replace('\\', "/"),
+            "//server/share/p"
+        );
+        assert_eq!(strip_verbatim(r"\\?\C:\p"), r"C:\p");
+        assert_eq!(strip_verbatim("/home/p"), "/home/p");
+    }
 
     fn store() -> Connection {
         let conn = Connection::open_in_memory().expect("in-memory database");
@@ -1315,6 +1353,49 @@ mod tests {
         assert_eq!(
             list_runs(&conn, "/p", None).expect("runs")[0].status,
             AutomationRunStatus::Failed
+        );
+    }
+
+    #[test]
+    fn only_finished_runs_name_their_sessions() {
+        let conn = store();
+        let saved = save(&conn, "/p", &automation("a", None)).expect("save");
+        let attach = |run: &AutomationRun, number: u32| {
+            attach_session(
+                &conn,
+                &run.id,
+                &format!("session-{number}"),
+                &format!("agent-session-{number}"),
+                "claude-acp",
+                "/p",
+                true,
+            )
+            .expect("attach");
+        };
+        let finished = start_run(&conn, &saved, RunTrigger::Manual).expect("start");
+        attach(&finished, 1);
+        finish_run(
+            &conn,
+            &finished.id,
+            AutomationRunStatus::Succeeded,
+            None,
+            None,
+        )
+        .expect("end");
+        let running = start_run(&conn, &saved, RunTrigger::Manual).expect("start");
+        attach(&running, 2);
+        start_run(&conn, &saved, RunTrigger::Manual).expect("a run with no session yet");
+
+        let expected = vec![("claude-acp".to_string(), "agent-session-1".to_string())];
+        assert_eq!(finished_run_sessions(&conn, None).expect("all"), expected);
+        assert_eq!(
+            finished_run_sessions(&conn, Some(("claude-acp", "agent-session-1"))).expect("one"),
+            expected
+        );
+        assert!(
+            finished_run_sessions(&conn, Some(("claude-acp", "agent-session-2")))
+                .expect("running")
+                .is_empty()
         );
     }
 }

@@ -1,27 +1,5 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::str::FromStr;
-
-/// SQL SELECT clause for all task columns, matching Task::from_row column order.
-///
-/// Column order: id(0), project_id(1), title(2), description(3), status(4), priority(5),
-/// base_branch(6), archived_at(7), external_id(8), is_imported(9), import_source(10),
-/// skills(11), model_override(12), mcp_allowlist(13), skills_override(14), labels(15),
-/// external_url(16), external_updated_at(17), created_at(18), updated_at(19),
-/// auto_approve(20), workspace_mode(21), agent_id(22), permission_mode_override(23),
-/// execution_start_sha(24), phase(25), phase_status(26), ball(27), completion(28),
-/// execute_requested_at(29), pull_request_url(30), pull_request_number(31), review_rounds(32),
-/// fix_rounds(33), pull_request_ci(34), profile_overrides(35), workspace_worktree_id(36),
-/// workspace_branch_mode(37), workspace_branch(38)
-pub const TASK_SELECT: &str = "SELECT id, project_id, title, description, status, priority, \
-     base_branch, archived_at, external_id, is_imported, import_source, skills, \
-     model_override, mcp_allowlist, skills_override, labels, \
-     external_url, external_updated_at, created_at, updated_at, \
-     auto_approve, workspace_mode, agent_id, permission_mode_override, \
-     execution_start_sha, phase, phase_status, ball, completion, execute_requested_at, \
-     pull_request_url, pull_request_number, review_rounds, fix_rounds, \
-     pull_request_ci, profile_overrides, workspace_worktree_id, \
-     workspace_branch_mode, workspace_branch FROM tasks";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -80,8 +58,8 @@ pub struct Task {
     pub execution_start_sha: Option<String>,
     /// Pipeline activity, orthogonal to `status`. `status` is the board column; these three are
     /// what is happening inside it. `None` means no pipeline activity, in which case
-    /// `phase_status` is `None` and `ball` is `TaskBall::None`. Written only via
-    /// `task::transition`, never by ad-hoc SQL.
+    /// `phase_status` is `None` and `ball` is `TaskBall::None`. Written only by the daemon's
+    /// transition table (`maestro-server/src/task_store/transition.rs`).
     #[specta(optional)]
     pub phase: Option<TaskPhase>,
     #[specta(optional)]
@@ -117,6 +95,10 @@ pub struct Task {
     /// backend decides on its own.
     #[specta(optional)]
     pub profile_overrides: Option<String>,
+    /// The phase the last claim took the task from. Equal to `phase` on a `Failed` task when the
+    /// stage that phase hands to failed to start, rather than failing at its work.
+    #[specta(optional)]
+    pub claimed_from: Option<TaskPhase>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -186,117 +168,6 @@ pub enum TaskPriority {
     None,
 }
 
-impl FromStr for TaskPriority {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Urgent" => Ok(TaskPriority::Urgent),
-            "High" => Ok(TaskPriority::High),
-            "Medium" => Ok(TaskPriority::Medium),
-            "Low" => Ok(TaskPriority::Low),
-            "None" => Ok(TaskPriority::None),
-            _ => Ok(TaskPriority::Medium),
-        }
-    }
-}
-
-impl FromStr for TaskStatus {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Planning" => Ok(TaskStatus::Planning),
-            "Queue" => Ok(TaskStatus::Queue),
-            "InProgress" => Ok(TaskStatus::InProgress),
-            "Review" => Ok(TaskStatus::Review),
-            "Done" => Ok(TaskStatus::Done),
-            "Cancelled" => Ok(TaskStatus::Cancelled),
-            _ => Ok(TaskStatus::Planning),
-        }
-    }
-}
-
-impl Task {
-    pub fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
-        Ok(Task {
-            id: row.get(0)?,
-            project_id: row.get(1)?,
-            title: row.get(2)?,
-            description: row.get(3)?,
-            status: row
-                .get::<_, String>(4)?
-                .parse()
-                .unwrap_or(TaskStatus::Planning),
-            priority: row
-                .get::<_, String>(5)?
-                .parse()
-                .unwrap_or(TaskPriority::Medium),
-            base_branch: row.get::<_, String>(6)?,
-            archived_at: row.get(7)?,
-            external_id: row.get(8)?,
-            is_imported: row.get(9)?,
-            import_source: row.get(10)?,
-            skills: serde_json::from_str(&row.get::<_, String>(11)?).unwrap_or_default(),
-            model_override: row.get(12)?,
-            mcp_allowlist: row
-                .get::<_, Option<String>>(13)?
-                .and_then(|s| serde_json::from_str(&s).ok()),
-            skills_override: row
-                .get::<_, Option<String>>(14)?
-                .and_then(|s| serde_json::from_str(&s).ok()),
-            labels: serde_json::from_str(
-                &row.get::<_, String>(15)
-                    .unwrap_or_else(|_| "[]".to_string()),
-            )
-            .unwrap_or_default(),
-            external_url: row.get(16)?,
-            external_updated_at: row.get(17)?,
-            created_at: row.get(18)?,
-            updated_at: row.get(19)?,
-            auto_approve: row.get::<_, bool>(20).unwrap_or(false),
-            workspace_mode: row
-                .get::<_, String>(21)
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(WorkspaceMode::NewWorktree),
-            workspace_worktree_id: row.get(36)?,
-            workspace_branch_mode: row
-                .get::<_, String>(37)
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(BranchMode::Create),
-            workspace_branch: row.get(38)?,
-            agent_id: row.get(22)?,
-            permission_mode_override: row.get(23)?,
-            execution_start_sha: row.get(24)?,
-            phase: row
-                .get::<_, Option<String>>(25)?
-                .and_then(|s| s.parse().ok()),
-            phase_status: row
-                .get::<_, Option<String>>(26)?
-                .and_then(|s| s.parse().ok()),
-            ball: row
-                .get::<_, String>(27)
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(TaskBall::None),
-            completion: row
-                .get::<_, Option<String>>(28)?
-                .and_then(|s| s.parse().ok()),
-            execute_requested_at: row.get(29)?,
-            pull_request_url: row.get(30)?,
-            pull_request_number: row.get(31)?,
-            review_rounds: row.get(32)?,
-            fix_rounds: row.get(33)?,
-            pull_request_ci: row
-                .get::<_, Option<String>>(34)?
-                .and_then(|s| s.parse().ok()),
-            profile_overrides: row.get(35)?,
-        })
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct CreateTaskRequest {
@@ -322,31 +193,6 @@ pub enum WorkspaceMode {
     ReuseWorkspace,
 }
 
-impl WorkspaceMode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            WorkspaceMode::NewWorktree => "NewWorktree",
-            WorkspaceMode::RepositoryDirectory => "RepositoryDirectory",
-            WorkspaceMode::ReuseWorkspace => "ReuseWorkspace",
-        }
-    }
-}
-
-impl FromStr for WorkspaceMode {
-    type Err = ();
-
-    /// Unknown values fall back to `NewWorktree`, matching the column default: an unreadable mode
-    /// must not be resolved to the repository directory, where an agent would write into the
-    /// user's own checkout.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "RepositoryDirectory" => Ok(WorkspaceMode::RepositoryDirectory),
-            "ReuseWorkspace" => Ok(WorkspaceMode::ReuseWorkspace),
-            _ => Ok(WorkspaceMode::NewWorktree),
-        }
-    }
-}
-
 /// Which branch a `NewWorktree` workspace ends up on: one created for it, or one that already
 /// exists.
 ///
@@ -361,30 +207,6 @@ pub enum BranchMode {
     Checkout,
 }
 
-impl BranchMode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            BranchMode::Create => "Create",
-            BranchMode::Checkout => "Checkout",
-        }
-    }
-}
-
-impl FromStr for BranchMode {
-    type Err = ();
-
-    /// Unknown values fall back to `Create`, matching the column default. Same reasoning as
-    /// `WorkspaceMode`: an unreadable value must not resolve to the option that puts an agent onto
-    /// a branch somebody else may be working on.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Checkout" => Ok(BranchMode::Checkout),
-            _ => Ok(BranchMode::Create),
-        }
-    }
-}
-
-// Copy/PartialEq so the transition table can compare and pass statuses by value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[specta(export)]
 #[serde(rename_all = "PascalCase")]
@@ -508,152 +330,181 @@ pub enum PullRequestCi {
     Pending,
 }
 
-// Unlike TaskStatus and TaskPriority above, these three reject unknown input rather than falling
-// back to a default. `from_row` reads phase and phase_status into an Option and discards the
-// error, so a stray value becomes "no phase" instead of silently claiming to be a real one; a
-// fallback variant would invent activity that never happened.
-impl FromStr for TaskPhase {
-    type Err = String;
+/// `From` both ways between an app enum and its `maestro_protocol` twin, which carries no specta
+/// `Type` so the binary deployed to every remote host does not compile specta in.
+macro_rules! wire_enum {
+    ($app:ty, $wire:ty, [$($variant:ident),* $(,)?]) => {
+        impl From<$wire> for $app {
+            fn from(value: $wire) -> Self {
+                type Wire = $wire;
+                match value {
+                    $(Wire::$variant => Self::$variant,)*
+                }
+            }
+        }
+        impl From<$app> for $wire {
+            fn from(value: $app) -> Self {
+                type App = $app;
+                match value {
+                    $(App::$variant => Self::$variant,)*
+                }
+            }
+        }
+    };
+}
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Spawning" => Ok(TaskPhase::Spawning),
-            "Refining" => Ok(TaskPhase::Refining),
-            "Drafting" => Ok(TaskPhase::Drafting),
-            "PlanReview" => Ok(TaskPhase::PlanReview),
-            "Implementing" => Ok(TaskPhase::Implementing),
-            "Rework" => Ok(TaskPhase::Rework),
-            "SelfReview" => Ok(TaskPhase::SelfReview),
-            "Approval" => Ok(TaskPhase::Approval),
-            "AwaitingMerge" => Ok(TaskPhase::AwaitingMerge),
-            other => Err(format!("Unknown task phase: {}", other)),
+use maestro_protocol as wire;
+
+wire_enum!(
+    TaskStatus,
+    wire::TaskStatus,
+    [Planning, Queue, InProgress, Review, Done, Cancelled]
+);
+wire_enum!(
+    TaskPriority,
+    wire::TaskPriority,
+    [Urgent, High, Medium, Low, None]
+);
+wire_enum!(
+    WorkspaceMode,
+    wire::WorkspaceMode,
+    [NewWorktree, RepositoryDirectory, ReuseWorkspace]
+);
+wire_enum!(BranchMode, wire::BranchMode, [Create, Checkout]);
+wire_enum!(
+    TaskPhase,
+    wire::TaskPhase,
+    [
+        Spawning,
+        Refining,
+        Drafting,
+        PlanReview,
+        Implementing,
+        Rework,
+        SelfReview,
+        Approval,
+        AwaitingMerge
+    ]
+);
+wire_enum!(
+    PhaseStatus,
+    wire::PhaseStatus,
+    [Running, Blocked, Waiting, Failed]
+);
+wire_enum!(TaskBall, wire::TaskBall, [Agent, User, External, None]);
+wire_enum!(
+    TaskCompletion,
+    wire::TaskCompletion,
+    [Merged, MergedViaPR, LocalOnly, NoChanges]
+);
+wire_enum!(
+    PullRequestCi,
+    wire::PullRequestCi,
+    [Passing, Failing, Pending]
+);
+wire_enum!(
+    crate::project::profiles::AgentRole,
+    wire::AgentRole,
+    [Refiner, Planner, Coder, Reviewer]
+);
+
+impl Task {
+    /// The daemon's row, filed under the project the request named: it keys tasks by path, and
+    /// this app by `projects.id`.
+    pub fn from_wire(task: wire::Task, project_id: i32) -> Self {
+        Task {
+            id: task.id,
+            project_id,
+            title: task.title,
+            description: task.description,
+            status: task.status.into(),
+            priority: task.priority.into(),
+            base_branch: task.base_branch,
+            archived_at: task.archived_at,
+            external_id: task.external_id,
+            is_imported: task.is_imported,
+            import_source: task.import_source,
+            skills: task.skills,
+            model_override: task.model_override,
+            mcp_allowlist: task.mcp_allowlist,
+            skills_override: task.skills_override,
+            labels: task.labels,
+            external_url: task.external_url,
+            external_updated_at: task.external_updated_at,
+            created_at: task.created_at,
+            updated_at: task.updated_at,
+            auto_approve: task.auto_approve,
+            workspace_mode: task.workspace_mode.into(),
+            workspace_worktree_id: task.workspace_worktree_id,
+            workspace_branch_mode: task.workspace_branch_mode.into(),
+            workspace_branch: task.workspace_branch,
+            agent_id: task.agent_id,
+            permission_mode_override: task.permission_mode_override,
+            execution_start_sha: task.execution_start_sha,
+            phase: task.phase.map(Into::into),
+            phase_status: task.phase_status.map(Into::into),
+            ball: task.ball.into(),
+            completion: task.completion.map(Into::into),
+            execute_requested_at: task.execute_requested_at,
+            pull_request_url: task.pull_request_url,
+            pull_request_number: task.pull_request_number,
+            review_rounds: task.review_rounds,
+            fix_rounds: task.fix_rounds,
+            pull_request_ci: task.pull_request_ci.map(Into::into),
+            profile_overrides: task.profile_overrides,
+            claimed_from: task.claimed_from.map(Into::into),
         }
     }
 }
 
-impl FromStr for PhaseStatus {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Running" => Ok(PhaseStatus::Running),
-            "Blocked" => Ok(PhaseStatus::Blocked),
-            "Waiting" => Ok(PhaseStatus::Waiting),
-            "Failed" => Ok(PhaseStatus::Failed),
-            other => Err(format!("Unknown phase status: {}", other)),
+impl From<wire::TaskRelationship> for TaskRelationship {
+    fn from(row: wire::TaskRelationship) -> Self {
+        TaskRelationship {
+            id: row.id,
+            from_task_id: row.from_task_id,
+            to_task_id: row.to_task_id,
+            relationship_type: row.relationship_type,
+            created_at: row.created_at,
         }
     }
 }
 
-impl FromStr for TaskBall {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Agent" => Ok(TaskBall::Agent),
-            "User" => Ok(TaskBall::User),
-            "External" => Ok(TaskBall::External),
-            "None" => Ok(TaskBall::None),
-            other => Err(format!("Unknown task ball: {}", other)),
+impl From<wire::TaskInstruction> for TaskInstruction {
+    fn from(row: wire::TaskInstruction) -> Self {
+        TaskInstruction {
+            id: row.id,
+            task_id: row.task_id,
+            content: row.content,
+            source: row.source,
+            created_at: row.created_at,
         }
     }
 }
 
-impl FromStr for TaskCompletion {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Merged" => Ok(TaskCompletion::Merged),
-            "MergedViaPR" => Ok(TaskCompletion::MergedViaPR),
-            "LocalOnly" => Ok(TaskCompletion::LocalOnly),
-            "NoChanges" => Ok(TaskCompletion::NoChanges),
-            other => Err(format!("Unknown task completion: {}", other)),
+impl From<wire::TaskComment> for TaskComment {
+    fn from(row: wire::TaskComment) -> Self {
+        TaskComment {
+            id: row.id,
+            task_id: row.task_id,
+            kind: row.kind,
+            author: row.author,
+            body: row.body,
+            external_ref: row.external_ref,
+            phase: row.phase,
+            created_at: row.created_at,
         }
     }
 }
 
-impl FromStr for PullRequestCi {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Passing" => Ok(PullRequestCi::Passing),
-            "Failing" => Ok(PullRequestCi::Failing),
-            "Pending" => Ok(PullRequestCi::Pending),
-            other => Err(format!("Unknown pull request CI state: {}", other)),
-        }
-    }
-}
-
-impl TaskPhase {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            TaskPhase::Spawning => "Spawning",
-            TaskPhase::Refining => "Refining",
-            TaskPhase::Drafting => "Drafting",
-            TaskPhase::PlanReview => "PlanReview",
-            TaskPhase::Implementing => "Implementing",
-            TaskPhase::Rework => "Rework",
-            TaskPhase::SelfReview => "SelfReview",
-            TaskPhase::Approval => "Approval",
-            TaskPhase::AwaitingMerge => "AwaitingMerge",
-        }
-    }
-}
-
-impl PhaseStatus {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            PhaseStatus::Running => "Running",
-            PhaseStatus::Blocked => "Blocked",
-            PhaseStatus::Waiting => "Waiting",
-            PhaseStatus::Failed => "Failed",
-        }
-    }
-}
-
-impl TaskBall {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            TaskBall::Agent => "Agent",
-            TaskBall::User => "User",
-            TaskBall::External => "External",
-            TaskBall::None => "None",
-        }
-    }
-}
-
-impl TaskCompletion {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            TaskCompletion::Merged => "Merged",
-            TaskCompletion::MergedViaPR => "MergedViaPR",
-            TaskCompletion::LocalOnly => "LocalOnly",
-            TaskCompletion::NoChanges => "NoChanges",
-        }
-    }
-}
-
-impl PullRequestCi {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            PullRequestCi::Passing => "Passing",
-            PullRequestCi::Failing => "Failing",
-            PullRequestCi::Pending => "Pending",
-        }
-    }
-}
-
-impl TaskStatus {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            TaskStatus::Planning => "Planning",
-            TaskStatus::Queue => "Queue",
-            TaskStatus::InProgress => "InProgress",
-            TaskStatus::Review => "Review",
-            TaskStatus::Done => "Done",
-            TaskStatus::Cancelled => "Cancelled",
+impl From<wire::TaskAttachment> for TaskAttachment {
+    fn from(row: wire::TaskAttachment) -> Self {
+        TaskAttachment {
+            id: row.id,
+            task_id: row.task_id,
+            filename: row.filename,
+            file_path: row.file_path,
+            file_size: row.file_size,
+            created_at: row.created_at,
         }
     }
 }

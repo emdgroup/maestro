@@ -17,7 +17,8 @@ use agent_client_protocol_schema::v1::{
 use maestro_protocol::{
     AuthMethodInfo, ErrorResponse, MaestroRpcMessage, PromptCapabilitiesInfo, ServerResponse,
     SessionListEntry, SessionModeState as ProtocolSessionModeState,
-    SessionModelState as ProtocolSessionModelState, AUTH_REQUIRED_ERROR, SESSION_LOAD_FAILED_ERROR,
+    SessionModelState as ProtocolSessionModelState, AUTH_REQUIRED_ERROR, SESSION_GONE_ERROR,
+    SESSION_LOAD_FAILED_ERROR,
 };
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
@@ -358,6 +359,7 @@ pub(crate) async fn create_session_on_connection(
     let session_state = Arc::new(SharedSessionState {
         pending_permissions: Arc::clone(&pending_permissions),
         pending_elicitations: Arc::clone(&pending_elicitations),
+        task: Default::default(),
     });
 
     conn.router
@@ -409,7 +411,7 @@ pub(crate) async fn create_session_on_connection(
             agent_id: String::new(),
             cwd: String::new(),
             additional_directories: Vec::new(),
-            host_meta: None,
+            project: None,
             turn_active,
             idle_marked: false,
         },
@@ -459,6 +461,7 @@ pub(crate) async fn load_session_on_connection(
     let session_state = Arc::new(SharedSessionState {
         pending_permissions: Arc::clone(&pending_permissions),
         pending_elicitations: Arc::clone(&pending_elicitations),
+        task: Default::default(),
     });
 
     // Register the route before sending the request so that history notifications
@@ -496,7 +499,17 @@ pub(crate) async fn load_session_on_connection(
             let _ = send_response(
                 &stdout,
                 &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                    message: format!("{}: {}", SESSION_LOAD_FAILED_ERROR, e),
+                    // Only the agent saying it has no such conversation is final. Every other
+                    // failure, a crash or a lapsed sign-in among them, may succeed next time.
+                    message: format!(
+                        "{}: {}",
+                        if e.code == acp::schema::v1::ErrorCode::ResourceNotFound {
+                            SESSION_GONE_ERROR
+                        } else {
+                            SESSION_LOAD_FAILED_ERROR
+                        },
+                        e
+                    ),
                     session_id: Some(maestro_session_id.clone()),
                 })),
             )
@@ -574,7 +587,7 @@ pub(crate) async fn load_session_on_connection(
             agent_id: String::new(),
             cwd: String::new(),
             additional_directories: Vec::new(),
-            host_meta: None,
+            project: None,
             turn_active,
             idle_marked: false,
         },

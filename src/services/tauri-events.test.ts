@@ -7,12 +7,12 @@ import { renderHook } from "@testing-library/react";
  * each registering the same event looked identical to one component registering it once.
  */
 const registrations = vi.hoisted(
-  () => [] as Array<{ event: string; handler: () => void; unlisten: () => void }>,
+  () => [] as Array<{ event: string; handler: (e: unknown) => void; unlisten: () => void }>,
 );
 const unlistened = vi.hoisted(() => [] as string[]);
 
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: (event: string, handler: () => void) => {
+  listen: (event: string, handler: (e: unknown) => void) => {
     const unlisten = () => unlistened.push(event);
     registrations.push({ event, handler, unlisten });
     return Promise.resolve(unlisten);
@@ -29,6 +29,7 @@ import { useServerEventSync } from "./tauri-events";
 import { taskQueryKeys } from "./task.service";
 import { worktreeQueryKeys } from "./worktree.service";
 import { executionQueryKeys } from "./execution.service";
+import { promptQueryKeys } from "./prompt.service";
 
 /** `listen` resolves on a microtask, so nothing is registered until the queue drains. */
 async function flush() {
@@ -38,9 +39,9 @@ async function flush() {
 
 const eventsRegistered = () => registrations.map((r) => r.event);
 
-function fire(event: string) {
+function fire(event: string, payload: unknown = { project_id: null }) {
   for (const registration of registrations) {
-    if (registration.event === event) registration.handler();
+    if (registration.event === event) registration.handler({ payload });
   }
 }
 
@@ -87,6 +88,41 @@ describe("useServerEventSync", () => {
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: taskQueryKeys.lists() });
   });
 
+  it("invalidates that project's per-task queries on tasks-changed", async () => {
+    renderHook(() => useServerEventSync(7));
+    await flush();
+
+    fire("tasks-changed", { project_id: 7 });
+
+    for (const kind of ["relationships", "instructions", "attachments", "commitMessage"]) {
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["tasks", kind, 7] });
+    }
+    // The prefix matches the keys the hooks use.
+    expect(taskQueryKeys.attachments(7, 3).slice(0, 3)).toEqual(["tasks", "attachments", 7]);
+    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ["tasks", "comments", 7] });
+  });
+
+  it("invalidates every project's per-task queries when tasks-changed names none", async () => {
+    renderHook(() => useServerEventSync(7));
+    await flush();
+
+    fire("tasks-changed", { project_id: null });
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["tasks", "attachments"] });
+  });
+
+  it("ignores another project's tasks-changed and worktrees-changed", async () => {
+    renderHook(() => useServerEventSync(7));
+    await flush();
+
+    fire("tasks-changed", { project_id: 8 });
+    fire("worktrees-changed", { project_id: 8 });
+    expect(invalidateQueries).not.toHaveBeenCalled();
+
+    fire("tasks-changed", { project_id: 7 });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: taskQueryKeys.lists() });
+  });
+
   it("invalidates the whole worktree prefix on worktrees-changed", async () => {
     renderHook(() => useServerEventSync(7));
     await flush();
@@ -105,6 +141,22 @@ describe("useServerEventSync", () => {
     expect(invalidateQueries).toHaveBeenCalledWith({
       queryKey: executionQueryKeys.activeSessions(7),
     });
+  });
+
+  it("refetches only the prompt collection that changed", async () => {
+    renderHook(() => useServerEventSync(7));
+    await flush();
+
+    fire("prompts-changed", { collection: "shared", project_id: null });
+    expect(invalidateQueries).toHaveBeenLastCalledWith({ queryKey: promptQueryKeys.shared });
+
+    fire("prompts-changed", { collection: "project", project_id: 7 });
+    expect(invalidateQueries).toHaveBeenLastCalledWith({ queryKey: promptQueryKeys.project(7) });
+
+    // A project the app could not name: every project's list, never the shared one.
+    fire("prompts-changed", { collection: "project", project_id: null });
+    expect(invalidateQueries).toHaveBeenLastCalledWith({ queryKey: promptQueryKeys.projects });
+    expect(invalidateQueries).toHaveBeenCalledTimes(3);
   });
 
   /**

@@ -92,7 +92,7 @@ fn resolve_data_dir(app: &tauri::App) -> Result<std::path::PathBuf, String> {
 ///
 /// The sessions those relays carried keep running, in a daemon this app never owned. Clearing
 /// `acp.sessions` discards the host's bookkeeping for them and nothing else; the next run adopts
-/// them back through `adopt_live_sessions`.
+/// them back through `attach_project_sessions`.
 async fn stop_connection_servers(state: &Arc<AppState>) {
     state.acp.sessions.lock().await.clear();
     state.acp.connection_servers.lock().await.clear();
@@ -204,12 +204,6 @@ fn main() {
                 let handle = window.app_handle().clone();
                 tauri::async_runtime::spawn(async move {
                     let state = handle.state::<Arc<AppState>>();
-
-                    // Block saves triggered by session events during shutdown — state.json was
-                    // already written on the last spawn before close was requested.
-                    state
-                        .is_closing
-                        .store(true, std::sync::atomic::Ordering::Relaxed);
 
                     stop_connection_servers(&state).await;
                     handle.exit(0);

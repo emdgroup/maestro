@@ -18,7 +18,12 @@ import {
 import { useSelectedProjectActions, applyProjectStartupTab } from "@/store/projectStore";
 import type { ConnectionKey } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
-import { getErrorMessage, isProjectLockedError, projectLockHolder } from "@/lib/error-utils";
+import {
+  getErrorMessage,
+  importFailure,
+  isProjectLockedError,
+  projectLockHolder,
+} from "@/lib/error-utils";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
 import { Folder, Loader2, Container } from "lucide-react";
 import { ConnectionHeader } from "../connection-list/ConnectionHeader";
@@ -36,7 +41,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 
 export function ProjectList() {
   const { activeConnection, preflightStatus } = useConnectionContext();
@@ -62,11 +68,49 @@ export function ProjectList() {
   const [showFilePickerModal, setShowFilePickerModal] = useState(false);
   const [showCloneDialog, setShowCloneDialog] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [projectLoading, setProjectLoading] = useState(false);
+  const [projectLoading, setLoading] = useState(false);
   const [takeover, setTakeover] = useState<{ projectId: number; holder: string } | null>(null);
   const [waitingOn, setWaitingOn] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const setProjectLoading = (loading: boolean) => {
+    setLoading(loading);
+    if (!loading) setImporting(false);
+  };
   const { setSelectedProject } = useSelectedProjectActions();
   const { mutateAsync: requestTakeover } = useRequestProjectTakeover();
+
+  // The first open after the upgrade moves the project's board from this app into its server.
+  // Another window opening another project emits the same event, so only this one's counts.
+  const openingId = useRef<number | null>(null);
+  useEffect(() => {
+    const unlisten = listen<number>("project-importing", ({ payload }) => {
+      if (payload === openingId.current) setImporting(true);
+    });
+    return () => {
+      void unlisten.then((stop) => stop());
+    };
+  }, []);
+
+  // Any other prime failure is benign, but a failed import keeps the project closed.
+  const primeProject = (projectId: number) => {
+    openingId.current = projectId;
+    return api.primeProjectServer(projectId).catch((error: unknown) => {
+      if (importFailure(error) !== null) throw error;
+    });
+  };
+
+  const reportOpenFailure = (projectId: number, error: unknown) => {
+    const failure = importFailure(error);
+    if (failure === null) {
+      toast.error(`Failed to open project: ${getErrorMessage(error)}`);
+      return;
+    }
+    // The open took the project's lock before the import failed; Retry takes it again.
+    void api.releaseActiveProjectLock().catch(console.error);
+    toast.error(failure, {
+      action: { label: "Retry", onClick: () => void handleProjectClick(projectId) },
+    });
+  };
 
   const { mutateAsync: createProject } = useCreateProject();
   const { mutate: removeProject } = useDeleteProject(connectionQueryKey(activeConnectionKey));
@@ -107,10 +151,13 @@ export function ProjectList() {
       setTakeover({ projectId: created.id, holder: projectLockHolder(error) });
       return;
     }
-    await Promise.all([
-      api.primeProjectServer(created.id).catch(() => {}),
-      applyProjectStartupTab(project.id),
-    ]);
+    try {
+      await Promise.all([primeProject(created.id), applyProjectStartupTab(project.id)]);
+    } catch (error) {
+      setShowFilePickerModal(false);
+      reportOpenFailure(created.id, error);
+      return;
+    }
     setSelectedProject(project, isGitRepo);
     setShowFilePickerModal(false);
   };
@@ -205,7 +252,7 @@ export function ProjectList() {
           wslConnectionId: project.wsl_connection_id,
           dockerConnectionId: project.docker_connection_id ?? null,
         }),
-        api.primeProjectServer(projectId).catch(() => {}),
+        primeProject(projectId),
         applyProjectStartupTab(project.id),
       ]);
       setSelectedProject(project, isGitRepo);
@@ -213,7 +260,7 @@ export function ProjectList() {
       if (isProjectLockedError(error)) {
         setTakeover({ projectId, holder: projectLockHolder(error) });
       } else {
-        toast.error(`Failed to open project: ${getErrorMessage(error)}`);
+        reportOpenFailure(projectId, error);
       }
     } finally {
       setProjectLoading(false);
@@ -295,7 +342,11 @@ export function ProjectList() {
             <div className="flex flex-col items-center justify-center h-full gap-3 py-8">
               <Loader2 className="size-5 animate-spin text-muted-foreground" />
               <span className="text-sm text-muted-foreground">
-                {waitingOn ? `Waiting for Maestro on ${waitingOn}…` : "Warming up…"}
+                {waitingOn
+                  ? `Waiting for Maestro on ${waitingOn}…`
+                  : importing
+                    ? "Moving this project's board to its server…"
+                    : "Warming up…"}
               </span>
             </div>
           )}

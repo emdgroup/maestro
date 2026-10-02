@@ -1,24 +1,28 @@
 //! Low-level ACP transport primitives: frame parsing, serialization, and read/write sources.
 
-use crate::acp::transport::{
-    read_message, write_message, MaestroRpcMessage, ServerRequest, ServerResponse,
-};
+use crate::acp::transport::{write_message, MaestroRpcMessage, ServerRequest, ServerResponse};
+use maestro_protocol::{decode_message, encode_message, read_message_with_id, RequestId};
 use russh::ChannelMsg;
 use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::ChildStdin;
 
 pub(crate) fn serialize_message(msg: &MaestroRpcMessage) -> Result<Vec<u8>, String> {
-    let json_bytes =
-        serde_json::to_vec(msg).map_err(|e| format!("Failed to serialize ACP message: {}", e))?;
+    serialize_message_with_id(None, msg)
+}
+
+/// Frame `msg` under `id`, which the server echoes on the reply so it can be told apart from
+/// every other reply of its type.
+pub(crate) fn serialize_message_with_id(
+    id: Option<RequestId>,
+    msg: &MaestroRpcMessage,
+) -> Result<Vec<u8>, String> {
+    let frame =
+        encode_message(id, msg).map_err(|e| format!("Failed to serialize ACP message: {}", e))?;
     if !matches!(msg, MaestroRpcMessage::Request(ServerRequest::Pong { .. })) {
-        if let Ok(json) = std::str::from_utf8(&json_bytes) {
+        if let Some(Ok(json)) = frame.get(4..).map(std::str::from_utf8) {
             log::trace!("[acp] >> {json}");
         }
     }
-    let len = json_bytes.len() as u32;
-    let mut frame = Vec::with_capacity(4 + json_bytes.len());
-    frame.extend_from_slice(&len.to_le_bytes());
-    frame.extend_from_slice(&json_bytes);
     Ok(frame)
 }
 
@@ -37,9 +41,18 @@ pub(crate) enum AcpReadSource {
 
 impl AcpReadSource {
     pub(crate) async fn next_message(&mut self) -> Option<MaestroRpcMessage> {
+        self.next_message_with_id()
+            .await
+            .map(|(_, message)| message)
+    }
+
+    /// The next message, with the request id its frame carried when it answers a request.
+    pub(crate) async fn next_message_with_id(
+        &mut self,
+    ) -> Option<(Option<RequestId>, MaestroRpcMessage)> {
         match self {
             AcpReadSource::Local { reader } => loop {
-                match read_message(reader).await {
+                match read_message_with_id(reader).await {
                     Ok(msg) => {
                         return Some(msg);
                     }
@@ -59,13 +72,13 @@ impl AcpReadSource {
                 }
             },
             AcpReadSource::Remote { read_half, msg_buf } => loop {
-                if let Some(msg) = try_parse_acp_frame(msg_buf) {
+                if let Some(msg) = try_parse_message(msg_buf) {
                     return Some(msg);
                 }
                 match read_half.wait().await {
                     Some(ChannelMsg::Data { data }) => {
                         msg_buf.extend_from_slice(&data);
-                        if let Some(msg) = try_parse_acp_frame(msg_buf) {
+                        if let Some(msg) = try_parse_message(msg_buf) {
                             return Some(msg);
                         }
                     }
@@ -104,6 +117,15 @@ pub(crate) async fn perform_handshake(source: &mut AcpReadSource) -> Result<(), 
 /// Generic over the message type so the exec channel, which shares this framing but carries its
 /// own messages, can reuse it.
 pub(crate) fn try_parse_acp_frame<T: serde::de::DeserializeOwned>(buf: &mut Vec<u8>) -> Option<T> {
+    serde_json::from_slice::<T>(&take_frame_body(buf)?).ok()
+}
+
+/// [`try_parse_acp_frame`] for the server's own messages, keeping the request id beside them.
+fn try_parse_message(buf: &mut Vec<u8>) -> Option<(Option<RequestId>, MaestroRpcMessage)> {
+    decode_message(&take_frame_body(buf)?).ok()
+}
+
+fn take_frame_body(buf: &mut Vec<u8>) -> Option<Vec<u8>> {
     if buf.len() < 4 {
         return None;
     }
@@ -114,7 +136,7 @@ pub(crate) fn try_parse_acp_frame<T: serde::de::DeserializeOwned>(buf: &mut Vec<
     // Drain first so a corrupt frame never loops — caller retries with the next frame.
     let frame_bytes = buf[4..4 + len].to_vec();
     buf.drain(..4 + len);
-    serde_json::from_slice::<T>(&frame_bytes).ok()
+    Some(frame_bytes)
 }
 
 /// Low-level write + flush to a `BufWriter<ChildStdin>`.

@@ -1,6 +1,6 @@
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { useSaveSettings, useSettings } from "@/services/settings.service";
+import { useAutoMode, useSetAutoMode } from "@/services/settings.service";
 import { cn } from "@/lib/utils";
 
 /**
@@ -9,27 +9,17 @@ import { cn } from "@/lib/utils";
  * Lives on the board rather than in the app header because it only governs what the board does —
  * on the Agents, Worktrees and Settings tabs it is a control with no visible subject.
  *
- * The flag is read from and written to the settings table rather than held here, because
- * `drain_ready_queue` gates on the stored `auto_mode`. Saving emits `settings-changed`, which
- * `useQueueDrain` listens for — draining here as well would throw the answer away.
+ * The flag is the project's, kept by its daemon rather than held here, because the scheduler
+ * gates on it and drains the queue itself. Setting it pushes `settings-changed` to every window,
+ * which refetches the flag.
  */
-export function AutoModeToggle() {
-  const { data: appSettings } = useSettings();
-  const saveSettings = useSaveSettings({ successToast: false });
+export function AutoModeToggle({ projectId }: { projectId: number | null }) {
+  const { data: autoMode = false, isSuccess } = useAutoMode(projectId);
+  const setAutoMode = useSetAutoMode();
 
-  const autoMode = appSettings?.auto_mode ?? false;
-
-  const handleToggle = async () => {
-    if (!appSettings) return;
-    try {
-      await saveSettings.mutateAsync({
-        ...appSettings,
-        auto_mode: !autoMode,
-        updated_at: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.error("[auto-mode] failed to persist auto_mode:", err);
-    }
+  const handleToggle = () => {
+    if (projectId === null) return;
+    setAutoMode.mutate({ projectId, enabled: !autoMode });
   };
 
   return (
@@ -40,7 +30,7 @@ export function AutoModeToggle() {
             variant="ghost"
             size="sm"
             onClick={handleToggle}
-            disabled={!appSettings}
+            disabled={!isSuccess || setAutoMode.isPending}
             className={cn(
               "h-8 gap-1.5 px-2.5 text-xs font-medium",
               autoMode

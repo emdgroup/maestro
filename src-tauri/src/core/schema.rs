@@ -1,9 +1,9 @@
 use rusqlite::{Connection, Result as SqlResult};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: u32 = 30;
+pub const SCHEMA_VERSION: u32 = 32;
 
-pub const SCHEMA_V30_FULL: &str = r#"
+pub const SCHEMA_V32_FULL: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -36,7 +36,9 @@ CREATE TABLE IF NOT EXISTS projects (
     last_opened TEXT,
     connection_id INTEGER REFERENCES ssh_connections(id) ON DELETE SET NULL,
     wsl_connection_id INTEGER REFERENCES wsl_connections(id) ON DELETE SET NULL,
-    docker_connection_id INTEGER REFERENCES docker_connections(id) ON DELETE SET NULL
+    docker_connection_id INTEGER REFERENCES docker_connections(id) ON DELETE SET NULL,
+    -- When this app sent its rows for the project to the project's daemon, which is asked once.
+    daemon_imported_at TEXT
 );
 
 -- Tasks table: stores individual tasks for projects
@@ -273,7 +275,8 @@ CREATE TABLE IF NOT EXISTS templates (
     created_at TEXT NOT NULL
 );
 
--- A NULL project_id is a shared prompt, listed in every project.
+-- The shared prompt collection is the rows with a NULL project_id. Rows with one are project
+-- prompts from earlier builds, which the daemon now holds; they wait for the phase 4 import.
 CREATE TABLE IF NOT EXISTS prompts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
@@ -281,14 +284,8 @@ CREATE TABLE IF NOT EXISTS prompts (
     body TEXT NOT NULL,
     tags TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-
--- Favorites are per project: a shared prompt starred in one project is not starred in another.
-CREATE TABLE IF NOT EXISTS prompt_favorites (
-    prompt_id INTEGER NOT NULL REFERENCES prompts(id) ON DELETE CASCADE,
-    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    PRIMARY KEY (prompt_id, project_id)
+    updated_at TEXT NOT NULL,
+    favorite INTEGER NOT NULL DEFAULT 0
 );
 
 -- Indexes for performance
@@ -374,7 +371,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
 
     if current_version == 0 {
         // Fresh install: create full schema
-        conn.execute_batch(SCHEMA_V30_FULL)?;
+        conn.execute_batch(SCHEMA_V32_FULL)?;
     } else if current_version < 22 {
         // Legacy drop-recreate: no data to preserve before V22
         conn.execute_batch(
@@ -397,7 +394,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
             PRAGMA foreign_keys = ON;
         "#,
         )?;
-        conn.execute_batch(SCHEMA_V30_FULL)?;
+        conn.execute_batch(SCHEMA_V32_FULL)?;
     } else {
         // current_version >= 22: apply incremental migrations.
         // Committing the migrations and the version bump together means a failure part-way
@@ -441,7 +438,54 @@ fn run_migrations(conn: &Connection, from: u32) -> SqlResult<()> {
     if from < 30 {
         migrate_to_v30(conn)?;
     }
+    if from < 31 {
+        migrate_to_v31(conn)?;
+    }
+    if from < 32 {
+        migrate_to_v32(conn)?;
+    }
     Ok(())
+}
+
+/// The stamp the phase 4 import leaves on a project, so it is sent to the daemon once.
+fn migrate_to_v32(conn: &Connection) -> SqlResult<()> {
+    let column_exists: bool = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('projects') WHERE name = 'daemon_imported_at'",
+        [],
+        |row| row.get::<_, i32>(0),
+    )? > 0;
+    if !column_exists {
+        conn.execute_batch("ALTER TABLE projects ADD COLUMN daemon_imported_at TEXT;")?;
+    }
+    Ok(())
+}
+
+/// A favorite becomes a column on the prompt, and `prompt_favorites` goes. A project prompt keeps
+/// the star its own project gave it, for the phase 4 import to carry into the daemon. A shared
+/// prompt starts unstarred: its stars were per project, and no one of them speaks for all.
+fn migrate_to_v31(conn: &Connection) -> SqlResult<()> {
+    let column_exists: bool = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('prompts') WHERE name = 'favorite'",
+        [],
+        |row| row.get::<_, i32>(0),
+    )? > 0;
+    if !column_exists {
+        conn.execute_batch("ALTER TABLE prompts ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0;")?;
+    }
+    let favorites_exist: bool = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'prompt_favorites'",
+        [],
+        |row| row.get::<_, i32>(0),
+    )? > 0;
+    if favorites_exist {
+        conn.execute_batch(
+            "UPDATE prompts SET favorite = 1 WHERE project_id IS NOT NULL AND EXISTS (
+                 SELECT 1 FROM prompt_favorites f
+                 WHERE f.prompt_id = prompts.id AND f.project_id = prompts.project_id
+             );",
+        )?;
+    }
+    conn.execute_batch("DROP TABLE IF EXISTS prompt_favorites;")
 }
 
 /// Saved prompts, one project's or shared by all of them, and which projects starred each.
@@ -745,12 +789,12 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 30);
+        assert_eq!(version, 32);
         assert!(tables.contains(&"docker_connections".to_string()));
         assert!(tables.contains(&"connection_settings".to_string()));
         assert!(tables.contains(&"templates".to_string()));
         assert!(tables.contains(&"prompts".to_string()));
-        assert!(tables.contains(&"prompt_favorites".to_string()));
+        assert!(!tables.contains(&"prompt_favorites".to_string()));
 
         // Verify worktrees table has expected columns
         let worktree_columns: Vec<String> = conn
@@ -883,6 +927,87 @@ mod tests {
             surviving, 1,
             "migrating from v22 must not drop project rows"
         );
+        assert_eq!(read_user_version(&conn), SCHEMA_VERSION);
+    }
+
+    /// v30 -> v31 keeps a project prompt's own star on its row, drops the shared prompts' stars and
+    /// the per-project table, and keeps every prompt row. Run twice, since the step must be safe to
+    /// re-run.
+    #[test]
+    fn test_migration_to_v31_moves_the_favorite_onto_the_prompt() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        // Put prompts back into its v30 shape.
+        conn.execute_batch(
+            "ALTER TABLE prompts DROP COLUMN favorite;
+             CREATE TABLE prompt_favorites (
+                 prompt_id INTEGER NOT NULL REFERENCES prompts(id) ON DELETE CASCADE,
+                 project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                 PRIMARY KEY (prompt_id, project_id)
+             );
+             INSERT INTO projects (id, name, path, created_at, updated_at)
+                 VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01'),
+                        (2, 'other', '/tmp/other', '2026-01-01', '2026-01-01');
+             INSERT INTO prompts (id, project_id, title, body, created_at, updated_at)
+                 VALUES (1, NULL, 'shared', 'b', '2026-01-01', '2026-01-01'),
+                        (2, 1, 'own', 'b', '2026-01-01', '2026-01-01'),
+                        (3, 1, 'unstarred', 'b', '2026-01-01', '2026-01-01');
+             -- 3 is starred only from project 2, which a project prompt never showed in.
+             INSERT INTO prompt_favorites VALUES (1, 1), (2, 1), (3, 2);",
+        )
+        .unwrap();
+
+        for _ in 0..2 {
+            conn.execute("PRAGMA user_version = 30", []).unwrap();
+            initialize_schema(&conn).unwrap();
+        }
+
+        let rows: Vec<(i32, Option<i32>, bool)> = conn
+            .prepare("SELECT id, project_id, favorite FROM prompts ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            vec![(1, None, false), (2, Some(1), true), (3, Some(1), false)]
+        );
+        let favorites_table: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name = 'prompt_favorites'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(favorites_table, 0);
+    }
+
+    /// v31 -> v32 adds the import stamp to every project row, and is safe to re-run.
+    #[test]
+    fn test_migration_to_v32_adds_the_import_stamp() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        conn.execute_batch(
+            "ALTER TABLE projects DROP COLUMN daemon_imported_at;
+             INSERT INTO projects (id, name, path, created_at, updated_at)
+                 VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01');",
+        )
+        .unwrap();
+
+        for _ in 0..2 {
+            conn.execute("PRAGMA user_version = 31", []).unwrap();
+            initialize_schema(&conn).unwrap();
+        }
+
+        let stamp: Option<String> = conn
+            .query_row(
+                "SELECT daemon_imported_at FROM projects WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stamp, None);
         assert_eq!(read_user_version(&conn), SCHEMA_VERSION);
     }
 

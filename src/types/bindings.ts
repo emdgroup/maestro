@@ -189,11 +189,12 @@ async createTask(request: CreateTaskRequest) : Promise<Result<Task, string>> {
 }
 },
 /**
- * Update a task's status or other fields
+ * Update a task's status or other fields. A status is a manual move, which un-archives the task
+ * unless it is sent to `Cancelled`.
  */
-async updateTask(taskId: number, updates: UpdateTaskRequest) : Promise<Result<Task, string>> {
+async updateTask(projectId: number, taskId: number, updates: UpdateTaskRequest) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("update_task", { taskId, updates }) };
+    return { status: "ok", data: await TAURI_INVOKE("update_task", { projectId, taskId, updates }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -202,9 +203,9 @@ async updateTask(taskId: number, updates: UpdateTaskRequest) : Promise<Result<Ta
 /**
  * Archive a task by setting its archived_at timestamp
  */
-async archiveTask(taskId: number) : Promise<Result<Task, string>> {
+async archiveTask(projectId: number, taskId: number) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("archive_task", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("archive_task", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -213,31 +214,31 @@ async archiveTask(taskId: number) : Promise<Result<Task, string>> {
 /**
  * Delete a task by id
  */
-async deleteTask(taskId: number) : Promise<Result<null, string>> {
+async deleteTask(projectId: number, taskId: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_task", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_task", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Get relationships for a task
+ * Get every relationship the task is on either end of
  */
-async listTaskRelationships(taskId: number) : Promise<Result<TaskRelationship[], string>> {
+async listTaskRelationships(projectId: number, taskId: number) : Promise<Result<TaskRelationship[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_task_relationships", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_task_relationships", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Add a relationship between two tasks
+ * Add a relationship between two tasks of one project
  */
-async addTaskRelationship(fromTaskId: number, toTaskId: number, relationshipType: string) : Promise<Result<TaskRelationship, string>> {
+async addTaskRelationship(projectId: number, fromTaskId: number, toTaskId: number, relationshipType: string) : Promise<Result<TaskRelationship, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("add_task_relationship", { fromTaskId, toTaskId, relationshipType }) };
+    return { status: "ok", data: await TAURI_INVOKE("add_task_relationship", { projectId, fromTaskId, toTaskId, relationshipType }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -246,9 +247,9 @@ async addTaskRelationship(fromTaskId: number, toTaskId: number, relationshipType
 /**
  * Remove a task relationship
  */
-async deleteTaskRelationship(relationshipId: number) : Promise<Result<null, string>> {
+async deleteTaskRelationship(projectId: number, relationshipId: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_task_relationship", { relationshipId }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_task_relationship", { projectId, relationshipId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -257,9 +258,9 @@ async deleteTaskRelationship(relationshipId: number) : Promise<Result<null, stri
 /**
  * Get instructions log for a task
  */
-async listTaskInstructions(taskId: number) : Promise<Result<TaskInstruction[], string>> {
+async listTaskInstructions(projectId: number, taskId: number) : Promise<Result<TaskInstruction[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_task_instructions", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_task_instructions", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -268,9 +269,9 @@ async listTaskInstructions(taskId: number) : Promise<Result<TaskInstruction[], s
 /**
  * Add an instruction entry to a task's log
  */
-async addTaskInstruction(taskId: number, content: string, source: string) : Promise<Result<TaskInstruction, string>> {
+async addTaskInstruction(projectId: number, taskId: number, content: string, source: string) : Promise<Result<TaskInstruction, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("add_task_instruction", { taskId, content, source }) };
+    return { status: "ok", data: await TAURI_INVOKE("add_task_instruction", { projectId, taskId, content, source }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -278,14 +279,10 @@ async addTaskInstruction(taskId: number, content: string, source: string) : Prom
 },
 /**
  * Read a task's thread, oldest first.
- * 
- * Ordered by `id` rather than `created_at`: two entries written in the same phase transition can
- * share a timestamp to the second, and a thread that reorders itself on reload is worse than one
- * that is merely approximate about when things happened.
  */
-async listTaskComments(taskId: number) : Promise<Result<TaskComment[], string>> {
+async listTaskComments(projectId: number, taskId: number) : Promise<Result<TaskComment[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_task_comments", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_task_comments", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -298,9 +295,9 @@ async listTaskComments(taskId: number) : Promise<Result<TaskComment[], string>> 
  * the record of what an agent concluded — letting a user post one by hand would make "the plan
  * the gate approved" something anybody could forge after the fact.
  */
-async addTaskNote(taskId: number, body: string) : Promise<Result<TaskComment, string>> {
+async addTaskNote(projectId: number, taskId: number, body: string) : Promise<Result<TaskComment, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("add_task_note", { taskId, body }) };
+    return { status: "ok", data: await TAURI_INVOKE("add_task_note", { projectId, taskId, body }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -360,7 +357,7 @@ async saveSettings(settings: AppSettings) : Promise<Result<null, string>> {
 }
 },
 /**
- * How many agents may run at once on one connection.
+ * How many agents may run at once on one connection, as its daemon stores it.
  */
 async getConnectionCapacity(connection: ConnectionKey) : Promise<Result<ConnectionCapacitySettings, string>> {
     try {
@@ -370,9 +367,35 @@ async getConnectionCapacity(connection: ConnectionKey) : Promise<Result<Connecti
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * The daemon answers with `PipelineSettingsChanged`, which every window turns into
+ * `settings-changed`, so raising a limit can start work at once.
+ */
 async saveConnectionCapacity(connection: ConnectionKey, settings: ConnectionCapacitySettings) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("save_connection_capacity", { connection, settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Whether the project's queued tasks start on their own. The project's, kept by its daemon.
+ */
+async getAutoMode(projectId: number) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_auto_mode", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Answered by `PipelineSettingsChanged` like the capacity, so the queue drains at once.
+ */
+async setAutoMode(projectId: number, enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_auto_mode", { projectId, enabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -441,25 +464,6 @@ async getWorktreeDiffStats(projectId: number, worktreePath: string, diffTarget: 
 async createWorktree(projectId: number, taskId: number | null, baseBranch: string, newBranchName: string | null, uniqueSuffix: boolean, repoPath: string, pullRequest: number | null) : Promise<Result<Worktree, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("create_worktree", { projectId, taskId, baseBranch, newBranchName, uniqueSuffix, repoPath, pullRequest }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Hand an existing worktree to a task, for a task whose workspace mode is `ReuseWorkspace`.
- * 
- * Everything that asks "where does task N work" — the review panel, the approve/merge queries,
- * the archive prompt, the diff gate — finds the answer through `worktrees.task_id`. Rather than
- * teach each of them about a second pin, a task that reuses a workspace takes ownership of it
- * when it starts, and all of those keep working unchanged.
- * 
- * Any worktree the task owned before is released rather than left behind, so the one-worktree-
- * per-task assumption those queries make (`LIMIT 1`) still holds after a task switches workspace.
- */
-async claimWorktreeForTask(taskId: number, worktreeId: number) : Promise<Result<Worktree, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("claim_worktree_for_task", { taskId, worktreeId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -553,42 +557,9 @@ async spawnInteractiveExecution(projectId: number, branchName: string | null, re
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Pick the tasks that should be started next on this project's host.
- * 
- * Returns ids for the frontend to run rather than starting anything itself: only Rust can decide
- * *which* tasks run, because the limit is per host and a host serves every project pointed at it,
- * but only the frontend can start one — spawning means a worktree, an ACP session and a prompt.
- */
-async drainReadyQueue(projectId: number, projectPath: string) : Promise<Result<number[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("drain_ready_queue", { projectId, projectPath }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async getQueueCapacity(projectId: number) : Promise<Result<QueueCapacity, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_queue_capacity", { projectId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Ask whether a manually-executed task can start now.
- * 
- * Advisory, not a gate: `claim_for_execution` remains the authority on whether a task is startable
- * at all. This answers the narrower question of whether the host has room, so that Execute can keep
- * D24's promise — never refuse, but defer against a fixed limit rather than quietly exceeding it.
- * 
- * Deferring moves a Planning task into Queue, because that is where the promise is kept: the
- * scheduler only draws from Queue, so a deferred task left in Planning would wait forever.
- */
-async requestTaskExecution(projectId: number, taskId: number) : Promise<Result<ExecuteDecision, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("request_task_execution", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -720,9 +691,9 @@ async closePtySession(sessionId: string) : Promise<Result<null, string>> {
  * 
  * Returns a typed ReviewResult with success flag and review_id.
  */
-async saveTaskReview(taskId: number, decision: string, generalFeedback: string | null, perFileComments: ([string, string])[] | null) : Promise<Result<ReviewResult, string>> {
+async saveTaskReview(projectId: number, taskId: number, decision: string, generalFeedback: string | null, perFileComments: ([string, string])[] | null) : Promise<Result<ReviewResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_task_review", { taskId, decision, generalFeedback, perFileComments }) };
+    return { status: "ok", data: await TAURI_INVOKE("save_task_review", { projectId, taskId, decision, generalFeedback, perFileComments }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -736,20 +707,9 @@ async saveTaskReview(taskId: number, decision: string, generalFeedback: string |
  * 
  * Returns a typed ReviewResult with success flag, review_id, and updated task_status.
  */
-async requestChanges(taskId: number, generalFeedback: string | null, perFileComments: ([string, string])[] | null) : Promise<Result<ReviewResult, string>> {
+async requestChanges(projectId: number, taskId: number, generalFeedback: string | null, perFileComments: ([string, string])[] | null) : Promise<Result<ReviewResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("request_changes", { taskId, generalFeedback, perFileComments }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Get the current review (with comments) for a task
- */
-async getTaskReview(taskId: number) : Promise<Result<TaskReviewWithComments | null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_task_review", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("request_changes", { projectId, taskId, generalFeedback, perFileComments }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -759,9 +719,9 @@ async getTaskReview(taskId: number) : Promise<Result<TaskReviewWithComments | nu
  * Clear the review and its comments for a task after feedback has been injected into the agent.
  * Prevents stale comments from appearing in subsequent review cycles or being re-injected on cold starts.
  */
-async clearTaskReview(taskId: number) : Promise<Result<null, string>> {
+async clearTaskReview(projectId: number, taskId: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("clear_task_review", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("clear_task_review", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -772,9 +732,9 @@ async clearTaskReview(taskId: number) : Promise<Result<null, string>> {
  * Reads .maestro/commit-template.txt from the project path; falls back to the default template.
  * Returns the resolved string with all variables substituted.
  */
-async resolveCommitMessage(taskId: number) : Promise<Result<string, string>> {
+async resolveCommitMessage(projectId: number, taskId: number) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("resolve_commit_message", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("resolve_commit_message", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -791,9 +751,9 @@ async resolveCommitMessage(taskId: number) : Promise<Result<string, string>> {
  * 
  * Returns a typed MergeResult with success flag, task_status, and conflicts.
  */
-async approveTaskAndMerge(taskId: number, mergeStrategy: string, includeUntracked: boolean, commitMessage: string) : Promise<Result<MergeResult, string>> {
+async approveTaskAndMerge(projectId: number, taskId: number, mergeStrategy: string, includeUntracked: boolean, commitMessage: string) : Promise<Result<MergeResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("approve_task_and_merge", { taskId, mergeStrategy, includeUntracked, commitMessage }) };
+    return { status: "ok", data: await TAURI_INVOKE("approve_task_and_merge", { projectId, taskId, mergeStrategy, includeUntracked, commitMessage }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -912,9 +872,9 @@ async openPullRequestForBranch(projectId: number, branch: string, base: string, 
  * 
  * Returns the updated Task.
  */
-async rejectReview(taskId: number, action: string) : Promise<Result<Task, string>> {
+async rejectReview(projectId: number, taskId: number, action: string) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("reject_review", { taskId, action }) };
+    return { status: "ok", data: await TAURI_INVOKE("reject_review", { projectId, taskId, action }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1088,16 +1048,21 @@ async deleteTemplate(id: number) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async listPrompts(projectId: number) : Promise<Result<Prompt[], string>> {
+/**
+ * One collection: the app's shared one, or the project's from its daemon. Favorites first, then
+ * most recently edited.
+ */
+async listPrompts(projectId: number, shared: boolean) : Promise<Result<Prompt[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_prompts", { projectId }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_prompts", { projectId, shared }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Create a prompt, or replace the one `prompt.id` names.
+ * Create a prompt in the collection `prompt.shared` names, or replace the one `prompt.id` names
+ * there.
  */
 async savePrompt(projectId: number, prompt: PromptInput) : Promise<Result<Prompt, string>> {
     try {
@@ -1107,25 +1072,29 @@ async savePrompt(projectId: number, prompt: PromptInput) : Promise<Result<Prompt
     else return { status: "error", error: e  as any };
 }
 },
-async setPromptFavorite(projectId: number, id: number, favorite: boolean) : Promise<Result<Prompt, string>> {
+async setPromptFavorite(projectId: number, id: number, shared: boolean, favorite: boolean) : Promise<Result<Prompt, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("set_prompt_favorite", { projectId, id, favorite }) };
+    return { status: "ok", data: await TAURI_INVOKE("set_prompt_favorite", { projectId, id, shared, favorite }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async setPromptShared(projectId: number, id: number, shared: boolean) : Promise<Result<Prompt, string>> {
+/**
+ * Copy a prompt into the other collection: from the shared one (`shared`) into the project's, or
+ * back. The copy is a new, unstarred row; the original stays, and nothing links the two.
+ */
+async copyPrompt(projectId: number, id: number, shared: boolean) : Promise<Result<Prompt, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("set_prompt_shared", { projectId, id, shared }) };
+    return { status: "ok", data: await TAURI_INVOKE("copy_prompt", { projectId, id, shared }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async deletePrompt(id: number) : Promise<Result<null, string>> {
+async deletePrompt(projectId: number, id: number, shared: boolean) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_prompt", { id }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_prompt", { projectId, id, shared }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1461,11 +1430,12 @@ async stopResidentServers() : Promise<Result<number, string>> {
 }
 },
 /**
- * Update task-level configuration overrides
+ * Update task-level configuration overrides. Every field is written, so an absent one clears its
+ * column.
  */
-async updateTaskSettings(taskId: number, settings: TaskConfigRequest) : Promise<Result<null, string>> {
+async updateTaskSettings(projectId: number, taskId: number, settings: TaskConfigRequest) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("update_task_settings", { taskId, settings }) };
+    return { status: "ok", data: await TAURI_INVOKE("update_task_settings", { projectId, taskId, settings }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1487,9 +1457,9 @@ async updateTaskSettings(taskId: number, settings: TaskConfigRequest) : Promise<
  * falls back to the project default in `ProfilesDocument::resolve`, which is the behaviour we
  * want anyway, and validating here would only move the same outcome earlier.
  */
-async setTaskProfileOverrides(taskId: number, overrides: Partial<{ [key in string]: string | null }>) : Promise<Result<null, string>> {
+async setTaskProfileOverrides(projectId: number, taskId: number, overrides: Partial<{ [key in string]: string | null }>) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("set_task_profile_overrides", { taskId, overrides }) };
+    return { status: "ok", data: await TAURI_INVOKE("set_task_profile_overrides", { projectId, taskId, overrides }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2176,8 +2146,11 @@ async closeAcpSession(agentId: string, sessionId: string, cwd: string, connectio
 }
 },
 /**
- * Recover a lost task session by reloading it from the stored snapshot in `.maestro/state.json`.
+ * Recover a lost task session from the daemon's row for it.
  * Used when the task is InProgress in the DB but has no live session (process died, connection dropped).
+ * 
+ * Goes through the same attach a project open does, because the daemon may still be running the
+ * session: loading it a second time would leave an agent nothing routes to.
  */
 async recoverTaskSession(taskId: number, projectId: number) : Promise<Result<string, string>> {
     try {
@@ -2615,7 +2588,7 @@ async getProjectCodeHostingStatus(projectId: number) : Promise<Result<CodeHostin
 },
 /**
  * Batch-import remote issues as Backlog tasks for a project, skipping any that have already
- * been imported (by external_id + project_id). Returns the list of newly-created tasks.
+ * been imported (by external_id within the project). Returns the list of newly-created tasks.
  */
 async importTasks(projectId: number, issues: RemoteIssue[], baseBranch: string) : Promise<Result<Task[], string>> {
     try {
@@ -2629,9 +2602,9 @@ async importTasks(projectId: number, issues: RemoteIssue[], baseBranch: string) 
  * Update a task's title, description, labels, and external_updated_at from a remote issue.
  * This is the "Update task" action in the Changed tab — performs a non-destructive content overwrite.
  */
-async updateTaskFromRemote(taskId: number, issue: RemoteIssue) : Promise<Result<Task, string>> {
+async updateTaskFromRemote(projectId: number, taskId: number, issue: RemoteIssue) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("update_task_from_remote", { taskId, issue }) };
+    return { status: "ok", data: await TAURI_INVOKE("update_task_from_remote", { projectId, taskId, issue }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2641,9 +2614,9 @@ async updateTaskFromRemote(taskId: number, issue: RemoteIssue) : Promise<Result<
  * Advance a task's external_updated_at to the remote value, clearing the "changed" flag
  * without modifying title, description, or labels.
  */
-async dismissTaskChange(taskId: number, remoteUpdatedAt: string) : Promise<Result<Task, string>> {
+async dismissTaskChange(projectId: number, taskId: number, remoteUpdatedAt: string) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("dismiss_task_change", { taskId, remoteUpdatedAt }) };
+    return { status: "ok", data: await TAURI_INVOKE("dismiss_task_change", { projectId, taskId, remoteUpdatedAt }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2776,33 +2749,49 @@ async listBitbucketProjects() : Promise<Result<BitbucketProjectOption[], string>
 }
 },
 /**
- * Get attachments for a task
+ * Get attachments for a task, each `file_path` absolute on the project's machine.
  */
-async listTaskAttachments(taskId: number) : Promise<Result<TaskAttachment[], string>> {
+async listTaskAttachments(projectId: number, taskId: number) : Promise<Result<TaskAttachment[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_task_attachments", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_task_attachments", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Add an attachment record for a task
+ * Copy a file the user picked on this machine into the project, on whichever machine the project
+ * lives, and record it for the task. Every machine and every agent then reads the same copy.
+ * 
+ * A file with the same name and size as one the task already has is taken to be that file, and
+ * its row is returned rather than a second copy, which would be sent in every prompt twice.
  */
-async addTaskAttachment(taskId: number, filename: string, filePath: string) : Promise<Result<TaskAttachment, string>> {
+async addTaskAttachment(projectId: number, taskId: number, filename: string, filePath: string) : Promise<Result<TaskAttachment, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("add_task_attachment", { taskId, filename, filePath }) };
+    return { status: "ok", data: await TAURI_INVOKE("add_task_attachment", { projectId, taskId, filename, filePath }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Remove an attachment record by id
+ * Remove an attachment record by id. The daemon deletes the project's copy with it.
  */
-async deleteTaskAttachment(attachmentId: number) : Promise<Result<null, string>> {
+async deleteTaskAttachment(projectId: number, attachmentId: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_task_attachment", { attachmentId }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_task_attachment", { projectId, attachmentId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The prompt block for each of a task's attachments, in order, read from the project's copy on
+ * the project's machine.
+ */
+async prepareTaskAttachments(projectId: number, attachments: TaskAttachment[]) : Promise<Result<PreparedTaskAttachment[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("prepare_task_attachments", { projectId, attachments }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2828,12 +2817,11 @@ async proxyImage(projectId: number, imageUrl: string) : Promise<Result<string, s
  * An ACP session is torn down through `tear_down_session`, the same helper `end_acp_session` uses;
  * a PTY session replicates the `close_pty_session` logic. A task with no live session is not an
  * error: its session may have died on its own, and the worktree it left behind is exactly what
- * still needs discarding. After all async work is done, updates the task status via the sync DB
- * mutex (never held across an await point).
+ * still needs discarding.
  */
-async interruptTask(taskId: number) : Promise<Result<null, string>> {
+async interruptTask(projectId: number, taskId: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("interrupt_task", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("interrupt_task", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2856,9 +2844,9 @@ async interruptTask(taskId: number) : Promise<Result<null, string>> {
  * Only a definite `Some(false)` blocks. `None` means the question could not be answered — a
  * non-git project, a missing worktree — and is treated as no evidence, matching `classify_turn`.
  */
-async sendTaskToReview(taskId: number, force: boolean) : Promise<Result<Task | null, string>> {
+async sendTaskToReview(projectId: number, taskId: number, force: boolean) : Promise<Result<Task | null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("send_task_to_review", { taskId, force }) };
+    return { status: "ok", data: await TAURI_INVOKE("send_task_to_review", { projectId, taskId, force }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2875,49 +2863,26 @@ async sendTaskToReview(taskId: number, force: boolean) : Promise<Result<Task | n
  * Returns `None` when the task has already left `SelfReview` — the verdict landed while the user
  * was pressing the button, and it must not be dragged back to a gate it has passed.
  */
-async endSelfReview(taskId: number) : Promise<Result<Task | null, string>> {
+async endSelfReview(projectId: number, taskId: number) : Promise<Result<Task | null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("end_self_review", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("end_self_review", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Claims a task for execution, before anything is spawned.
+ * Run one stage of a task in the daemon: claim it, make or reuse its worktree, spawn the role's
+ * agent and send the prompt. `None` means the task was deferred to the queue for want of a slot.
  * 
- * The claim is the start of the spawn, not the end of it. The task keeps its column and takes the
- * `Spawning` phase, which does three things at once: the board shows that the task is being
- * started, the queue drain stops re-picking it, and a spawn that fails leaves it where the user
- * launched it rather than stranded in In Progress.
- * 
- * Returns `None` when the task is not in a column execution can start from, or when it is already
- * being spawned. The second case is what stops two clicks, or a click racing the auto-mode drain,
- * from building two sessions for one task.
+ * The session itself reaches this window as `TaskSessionStarted`, adopted like an automation's.
+ * A sign-in the agent needs fails this with `auth_required:<agent_id>`, which the board turns into
+ * its sign-in prompt; the daemon has given the claim back by then. `agent_id` overrides the agent
+ * for this start only, and is written nowhere.
  */
-async markTaskExecutionStarted(taskId: number) : Promise<Result<Task | null, string>> {
+async startTask(projectId: number, taskId: number, role: AgentRole, feedback: string | null, unattended: boolean, respectCapacity: boolean, agentId: string | null) : Promise<Result<StartTaskResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("mark_task_execution_started", { taskId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Records that the session is up and the agent is working.
- * 
- * The role decides where that leaves the task — a refiner stays in the backlog, a coder moves to
- * In Progress — and the mapping lives in `transition::resolve` so the four spawn paths cannot
- * disagree about it.
- * 
- * Guarded on the task still being the one that was claimed: a user who dragged the card away
- * mid-spawn, or stopped it, must not have that undone by a session that finished starting
- * afterwards. `None` tells the caller its session no longer belongs to anything and should be
- * torn down.
- */
-async markTaskSessionReady(taskId: number, role: AgentRole) : Promise<Result<Task | null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("mark_task_session_ready", { taskId, role }) };
+    return { status: "ok", data: await TAURI_INVOKE("start_task", { projectId, taskId, role, feedback, unattended, respectCapacity, agentId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2934,24 +2899,9 @@ async markTaskSessionReady(taskId: number, role: AgentRole) : Promise<Result<Tas
  * The proposal stays in the thread either way. The thread is append-only and is the record of what
  * was suggested; a rejected proposal is part of that history, not a mistake to erase.
  */
-async closeRefinement(taskId: number, accept: boolean) : Promise<Result<Task, string>> {
+async closeRefinement(projectId: number, taskId: number, accept: boolean) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("close_refinement", { taskId, accept }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Releases a claim whose spawn never completed.
- * 
- * `failed` separates the two ways that happens. A spawn that errored leaves the card red at
- * `Spawning`/`Failed` so the user can see it and retry; a spawn the user cancelled at a prompt
- * simply parks the task again, because nothing went wrong.
- */
-async releaseTaskExecutionClaim(taskId: number, failed: boolean) : Promise<Result<Task | null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("release_task_execution_claim", { taskId, failed }) };
+    return { status: "ok", data: await TAURI_INVOKE("close_refinement", { projectId, taskId, accept }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2965,37 +2915,31 @@ async releaseTaskExecutionClaim(taskId: number, failed: boolean) : Promise<Resul
  * window or a killed renderer never sends one, and a task nothing can start is worse than one
  * started a moment early.
  */
-async holdTask(taskId: number) : Promise<Result<null, string>> {
+async holdTask(projectId: number, taskId: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("hold_task", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("hold_task", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Release a hold, and tell the scheduler to look again.
- * 
- * The event matters. A drag that ends where it started changes nothing, so it emits no
- * `tasks-changed` — without this the task would sit unscheduled until some unrelated thing
- * happened to move the board, which is the stalled-queue failure this design keeps running into.
- * It is deliberately not `tasks-changed`: nothing changed, and refetching the board to say so
- * would be a cost paid on every drag.
+ * Release a hold. The daemon's scheduler looks at the queue again when one is released.
  */
-async releaseTaskHold(taskId: number) : Promise<Result<null, string>> {
+async releaseTaskHold(projectId: number, taskId: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("release_task_hold", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("release_task_hold", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Cancel a task: sets status=Cancelled and archived_at in one statement
+ * Cancel a task: archives it and applies `Cancelled`.
  */
-async cancelTask(taskId: number) : Promise<Result<Task, string>> {
+async cancelTask(projectId: number, taskId: number) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cancel_task", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("cancel_task", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -3540,8 +3484,7 @@ export type ConcurrencyMode =
  * 
  * The default, because the limit exists to stop auto-mode starting agents a host has no
  * memory for — and a fixed number chosen before anyone knew what the machine looks like
- * cannot do that. A host that cannot be measured falls back to the fixed number; see
- * `resolve_capacity`.
+ * cannot do that. A host that cannot be measured falls back to the fixed number.
  */
 "Auto"
 /**
@@ -3625,23 +3568,6 @@ export type DockerConnection = { id: number; container_name: string; image_name:
 export type DockerContainer = { id: string; name: string; image: string; state: DockerContainerState }
 export type DockerContainerState = "Running" | "Stopped"
 export type EnterKeyBehavior = "send_prompt" | "new_line"
-export type ExecuteDecision = { verdict: ExecuteVerdict; reason: string }
-/**
- * What a manual Execute should do about a host that is already full.
- * 
- * It never refuses. Which of the other two applies depends on what kind of limit is in force: a
- * fixed number the user chose is a rule and can be deferred against, while a figure derived from
- * live memory is a reading, and a user who knows their machine is fine should not be blocked by it.
- */
-export type ExecuteVerdict = "Start" | 
-/**
- * The task has been marked and queued; the scheduler takes it before its own picks.
- */
-"Deferred" | 
-/**
- * Over a memory-derived limit. Start anyway, having said so.
- */
-"Warn"
 /**
  * Session kind: an ACP-managed AI agent or a user-controlled PTY shell.
  * 
@@ -3854,6 +3780,12 @@ export type PhaseStatus = "Running" | "Blocked" | "Waiting" | "Failed"
 export type PreflightResult = { agents: DiscoveredAgent[]; tool_checks: ToolCheckEntry[] }
 export type PreparedAttachment = { display_name: string; local_path: string; content_block: JsonValue }
 /**
+ * One task attachment made ready for a prompt. `content_block` is set when it can be sent;
+ * otherwise `rejection` says why a file that is there cannot be, and neither is set for a file
+ * that is not on the project's machine at all.
+ */
+export type PreparedTaskAttachment = { content_block: JsonValue | null; rejection: string | null }
+/**
  * The project's profiles, plus which one each role uses by default.
  */
 export type ProfilesDocument = { profiles?: AgentProfile[]; 
@@ -3966,23 +3898,20 @@ from_fork: boolean;
  * produced the row, so on GitHub that command is never called at all.
  */
 detail: PullRequestRowDetail | null }
-export type Prompt = { id: number; title: string; body: string; tags: string[]; 
+export type Prompt = { 
 /**
- * Listed in every project rather than only the one it was saved in.
+ * Unique within its collection only: the two stores mint ids independently.
  */
-shared: boolean; 
+id: number; title: string; body: string; tags: string[]; 
 /**
- * Starred in the project it was read for.
+ * In the app's shared collection rather than the project's.
  */
-favorite: boolean; created_at: string; updated_at: string }
+shared: boolean; favorite: boolean; created_at: string; updated_at: string }
 /**
- * What the editor sends. `id` is `None` for a new prompt.
+ * What the editor sends. `id` is `None` for a new prompt, and `shared` names the collection it is
+ * saved in; saving never moves a prompt between collections.
  */
-export type PromptInput = { id: number | null; title: string; body: string; tags: string[]; shared: boolean; 
-/**
- * Starred in the project it is saved from. Other projects' stars are left alone.
- */
-favorite: boolean }
+export type PromptInput = { id: number | null; title: string; body: string; tags: string[]; shared: boolean; favorite: boolean }
 /**
  * A Maestro branch with no worktree and nothing on the remote holding it — the only kind this
  * offers to delete.
@@ -4065,7 +3994,6 @@ export type ResolvedProfile = { profile_id: string; agent_id: string; model?: st
  * Human-readable notes about what was dropped, for the UI to show. Empty is the happy path.
  */
 warnings: string[] }
-export type ReviewCommentEntry = { file_path: string; comment: string }
 /**
  * Typed response for save_task_review and request_changes IPC commands
  */
@@ -4085,7 +4013,7 @@ export type RunTrigger = "schedule" | "manual" | "webhook"
  */
 export type SessionListEntryDto = { session_id: string; title: string | null; updated_at: string | null; 
 /**
- * Directory the session ran in, relative to the project root, from `.maestro/state.json`.
+ * Directory the session ran in, relative to the project root, from the daemon's row for it.
  * `Some("")` is the project root itself; `None` means no folder was ever recorded.
  */
 folder: string | null }
@@ -4158,6 +4086,18 @@ export type SshAuthMethod =
  * Saved SSH connection for quick reconnection
  */
 export type SshConnection = { id: number; connection_string: string; username: string; host: string; port: number; auth_method: SshAuthMethod; display_name: string | null; last_used_at: string; created_at: string }
+/**
+ * What `start_task` answers with.
+ */
+export type StartTaskResult = { 
+/**
+ * The session started, `None` when the task was deferred to the queue.
+ */
+session_id: string | null; 
+/**
+ * The attachments the prompt went without, each as `<file>: <why>`.
+ */
+skipped_attachments: string[] }
 export type TAURI_CHANNEL<TSend> = null
 export type Task = { id: number; project_id: number; title: string; description?: string | null; status: TaskStatus; priority: TaskPriority; base_branch: string; archived_at?: string | null; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; labels: string[]; external_url?: string | null; external_updated_at?: string | null; created_at: string; updated_at: string; auto_approve: boolean; 
 /**
@@ -4184,8 +4124,8 @@ workspace_branch?: string | null; agent_id?: string | null; permission_mode_over
 /**
  * Pipeline activity, orthogonal to `status`. `status` is the board column; these three are
  * what is happening inside it. `None` means no pipeline activity, in which case
- * `phase_status` is `None` and `ball` is `TaskBall::None`. Written only via
- * `task::transition`, never by ad-hoc SQL.
+ * `phase_status` is `None` and `ball` is `TaskBall::None`. Written only by the daemon's
+ * transition table (`maestro-server/src/task_store/transition.rs`).
  */
 phase?: TaskPhase | null; phase_status?: PhaseStatus | null; ball: TaskBall; 
 /**
@@ -4224,7 +4164,12 @@ pull_request_ci?: PullRequestCi | null;
  * when it names nothing. `role_is_skipped` parses it on the Rust side, for the one stage the
  * backend decides on its own.
  */
-profile_overrides?: string | null }
+profile_overrides?: string | null; 
+/**
+ * The phase the last claim took the task from. Equal to `phase` on a `Failed` task when the
+ * stage that phase hands to failed to start, rather than failing at its work.
+ */
+claimed_from?: TaskPhase | null }
 export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
 /**
  * Who the pipeline is blocked on — not who owns the ticket.
@@ -4277,10 +4222,6 @@ export type TaskInstruction = { id: number; task_id: number; content: string; so
 export type TaskPhase = "Spawning" | "Refining" | "Drafting" | "PlanReview" | "Implementing" | "Rework" | "SelfReview" | "Approval" | "AwaitingMerge"
 export type TaskPriority = "Urgent" | "High" | "Medium" | "Low" | "None"
 export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
-/**
- * Response for get_task_review: review with all comments
- */
-export type TaskReviewWithComments = { decision: string; general_feedback: string | null; comments: ReviewCommentEntry[]; created_at: string }
 export type TaskStatus = "Planning" | "Queue" | "InProgress" | "Review" | "Done" | "Cancelled"
 export type Template = { id: number; name: string; 
 /**
@@ -4292,7 +4233,7 @@ export type TerminalColorMode = "follow_theme" | "default"
 export type ToolCheckEntry = { tool: string; available: boolean; version: string | null; required_by: string[]; mandatory: boolean; configured_path: string | null; resolved_path: string | null; source: string; error: string | null }
 /**
  * Fields that can be updated on a task. All fields are optional — only non-None fields
- * are included in the SQL UPDATE. Grouped into a struct to work around the specta
+ * are written. Grouped into a struct to work around the specta
  * 10-argument limit on #[tauri::command] functions.
  */
 export type UpdateTaskRequest = { status: string | null; description: string | null; title: string | null; priority: string | null; base_branch: string | null; skills: string[] | null; agent_id: string | null; labels: string[] | null; auto_approve: boolean | null; 

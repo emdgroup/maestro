@@ -41,7 +41,7 @@ export function PlanGate({
   /** `feedback` empty means "start over"; with text it means "this plan, but address this". */
   onReplan: (feedback: string) => void;
 }) {
-  const { data: comments } = useTaskCommentsQuery(open ? task.id : undefined);
+  const { data: comments } = useTaskCommentsQuery(task.project_id, open ? task.id : undefined);
   const projectId = useSelectedProject()?.id;
   const [feedback, setFeedback] = useState("");
 

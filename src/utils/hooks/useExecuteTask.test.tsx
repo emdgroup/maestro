@@ -6,15 +6,11 @@ import type { ConnectionKey, Task, TaskAttachment } from "@/types/bindings";
 
 const api = vi.hoisted(() => ({
   resolveAgentProfile: vi.fn(),
-  listTaskAttachments: vi.fn(),
-  validateAttachment: vi.fn(),
-  prepareExternalAttachments: vi.fn(),
-  listTaskComments: vi.fn(),
-  getTaskReview: vi.fn(),
-  sendAcpPromptStructured: vi.fn(),
-  clearTaskReview: vi.fn(),
   checkWorktreeDirty: vi.fn(),
-  cancelAcpSession: vi.fn(),
+  stashWorktree: vi.fn(),
+  listWorktreesWithStatus: vi.fn(),
+  listTaskAttachments: vi.fn(),
+  prepareTaskAttachments: vi.fn(),
 }));
 
 const toast = vi.hoisted(() => ({
@@ -24,51 +20,25 @@ const toast = vi.hoisted(() => ({
   warning: vi.fn(),
 }));
 
-const mutations = vi.hoisted(() => ({
-  markExecutionStarted: vi.fn(),
-  markSessionReady: vi.fn(),
-  releaseClaim: vi.fn(),
-  deleteAttachment: vi.fn(),
-  claimWorktree: vi.fn(),
-  spawnAcpSession: vi.fn(),
-}));
+const startTask = vi.hoisted(() => vi.fn());
+const setAuthRequired = vi.hoisted(() => vi.fn());
+const deleteAttachment = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/tauri-utils", () => ({ api }));
 vi.mock("sonner", () => ({ toast }));
-
-vi.mock("@tauri-apps/api/event", () => ({
-  listen: (event: string, handler: (e: { payload: unknown }) => void) => {
-    // The hook waits on this before it will send a prompt, so the handshake has to complete or
-    // every test would sit out the 30s timeout.
-    if (event.startsWith("acp://spawn-ok/")) queueMicrotask(() => handler({ payload: null }));
-    return Promise.resolve(() => {});
-  },
+vi.mock("@/services/task.service", () => ({
+  startTask,
+  useDeleteTaskAttachmentMutation: () => ({ mutateAsync: deleteAttachment }),
 }));
-
-vi.mock("@/hooks/useResolveWorktree", () => ({
-  useResolveWorktree: () => ({ resolveWorktree: vi.fn() }),
-}));
-
 vi.mock("@/services/worktree.service", () => ({
-  useClaimWorktreeForTaskMutation: () => ({ mutateAsync: mutations.claimWorktree }),
   worktreeQueryKeys: { list: (id: number) => ["worktrees", id] },
 }));
-
 vi.mock("@/services/execution.service", () => ({
-  useSpawnAcpSessionMutation: () => ({ mutateAsync: mutations.spawnAcpSession }),
   useActiveSessionsQuery: () => ({ data: [] }),
   useAgentDiscoveryQuery: () => ({ data: { agents: [{ id: "claude" }] } }),
 }));
-
-vi.mock("@/services/task.service", () => ({
-  useMarkTaskExecutionStartedMutation: () => ({ mutateAsync: mutations.markExecutionStarted }),
-  useMarkTaskSessionReadyMutation: () => ({ mutateAsync: mutations.markSessionReady }),
-  useReleaseTaskExecutionClaimMutation: () => ({ mutateAsync: mutations.releaseClaim }),
-  useDeleteTaskAttachmentMutation: () => ({ mutateAsync: mutations.deleteAttachment }),
-}));
-
-vi.mock("@/services/project.service", () => ({
-  useProjectSettings: () => ({ data: { default_agent: "claude" } }),
+vi.mock("@/store/boardStore", () => ({
+  useBoardStore: { getState: () => ({ setAuthRequired }) },
 }));
 
 import { useExecuteTask } from "./useExecuteTask";
@@ -76,26 +46,11 @@ import { useExecuteTask } from "./useExecuteTask";
 const TASK = {
   id: 3,
   title: "Fix the thing",
-  description: "do it",
   status: "Queue",
   phase: null,
   agent_id: "claude",
   workspace_mode: "RepositoryDirectory",
 } as Task;
-
-function attachment(id: number, filename: string): TaskAttachment {
-  return {
-    id,
-    task_id: TASK.id,
-    filename,
-    file_path: `/tmp/${filename}`,
-    file_size: 10,
-    created_at: "now",
-  };
-}
-
-const GONE = attachment(1, "gone.md");
-const PRESENT = attachment(2, "here.md");
 
 function render() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -111,157 +66,169 @@ function render() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  api.resolveAgentProfile.mockResolvedValue(null);
-  api.listTaskAttachments.mockResolvedValue([GONE, PRESENT]);
-  api.validateAttachment.mockImplementation((path: string) =>
-    path === GONE.file_path
-      ? Promise.reject(new Error(`Cannot read '${path}': No such file or directory`))
-      : Promise.resolve({ size_bytes: 10, rejection: null }),
-  );
-  api.prepareExternalAttachments.mockResolvedValue([]);
-  api.listTaskComments.mockResolvedValue([]);
-  api.getTaskReview.mockResolvedValue(null);
-  api.sendAcpPromptStructured.mockResolvedValue(undefined);
-  api.clearTaskReview.mockResolvedValue(undefined);
   api.checkWorktreeDirty.mockResolvedValue({ modified_count: 0, untracked_count: 0 });
-  api.cancelAcpSession.mockResolvedValue(undefined);
-  mutations.markExecutionStarted.mockResolvedValue(true);
-  mutations.markSessionReady.mockResolvedValue(true);
-  mutations.releaseClaim.mockResolvedValue(undefined);
-  mutations.deleteAttachment.mockResolvedValue(undefined);
-  mutations.spawnAcpSession.mockResolvedValue({ session_id: "42" });
+  api.resolveAgentProfile.mockResolvedValue(null);
+  startTask.mockResolvedValue({ session_id: "42", skipped_attachments: [] });
+  api.listTaskAttachments.mockResolvedValue([]);
+  deleteAttachment.mockResolvedValue(undefined);
 });
 
-describe("useExecuteTask with an attachment whose file is gone", () => {
-  /**
-   * The check runs before the claim, so parking is a plain return: nothing was built, so there is
-   * no session to cancel and no claim to hand back.
-   */
-  it("parks without claiming or spawning anything", async () => {
+describe("useExecuteTask", () => {
+  it("asks the daemon to start the stage", async () => {
     const { result } = render();
-
-    let started: Promise<void>;
-    act(() => {
-      started = result.current.execute(TASK);
-    });
-
-    await waitFor(() => expect(result.current.missingAttachments).not.toBeNull());
-    expect(result.current.missingAttachments).toEqual([
-      expect.objectContaining({ id: GONE.id, filename: "gone.md", file_path: GONE.file_path }),
-    ]);
-
-    await act(async () => {
-      result.current.onAttachmentsPark();
-      await started;
-    });
-
-    expect(mutations.markExecutionStarted).not.toHaveBeenCalled();
-    expect(mutations.spawnAcpSession).not.toHaveBeenCalled();
-    expect(api.cancelAcpSession).not.toHaveBeenCalled();
-    expect(mutations.releaseClaim).not.toHaveBeenCalled();
-  });
-
-  it("continues with the attachments that survive and drops the dead rows", async () => {
-    const { result } = render();
-
-    let started: Promise<void>;
-    act(() => {
-      started = result.current.execute(TASK);
-    });
-
-    await waitFor(() => expect(result.current.missingAttachments).not.toBeNull());
-
-    await act(async () => {
-      result.current.onAttachmentsContinue();
-      await started;
-    });
-
-    expect(api.prepareExternalAttachments).toHaveBeenCalledWith(
-      "42",
-      [{ path: PRESENT.file_path, is_image: false }],
-      true,
-    );
-    expect(mutations.deleteAttachment).toHaveBeenCalledTimes(1);
-    expect(mutations.deleteAttachment).toHaveBeenCalledWith({
-      attachmentId: GONE.id,
-      taskId: TASK.id,
-    });
-    expect(mutations.markSessionReady).toHaveBeenCalledWith({ taskId: TASK.id, role: "Coder" });
-  });
-
-  /**
-   * Nobody renders the dialog on an unattended start, so awaiting it would hang the task at
-   * `Spawning` with the claim never released. The rows are left alone — skipping them for one run
-   * is not the same consent as deleting them.
-   */
-  it("skips them with a warning when nobody can be asked", async () => {
-    const { result } = render();
-
-    await act(async () => {
-      await result.current.execute(TASK, { unattended: true });
-    });
-
-    expect(result.current.missingAttachments).toBeNull();
-    expect(api.prepareExternalAttachments).toHaveBeenCalledWith(
-      "42",
-      [{ path: PRESENT.file_path, is_image: false }],
-      true,
-    );
-    expect(mutations.deleteAttachment).not.toHaveBeenCalled();
-    expect(toast.warning).toHaveBeenCalled();
-    expect(mutations.markSessionReady).toHaveBeenCalled();
-  });
-
-  /**
-   * A `rejection` means the file is on disk but too big to send. It breaks the start the same way,
-   * so it is offered here — but the row still points at a real file, so Continue must not delete it.
-   */
-  it("keeps the row of a file that exists but is too big", async () => {
-    api.validateAttachment.mockImplementation((path: string) =>
-      Promise.resolve({
-        size_bytes: 10,
-        rejection: path === GONE.file_path ? "Image is over 10 MB" : null,
+    await act(() =>
+      result.current.execute(TASK, {
+        role: "Planner",
+        feedback: " shorter ",
+        respectCapacity: true,
       }),
     );
+    expect(startTask).toHaveBeenCalledWith(7, 3, "Planner", "shorter", false, true, null);
+    expect(toast.success).toHaveBeenCalled();
+  });
+
+  it("says a deferred start is queued", async () => {
+    startTask.mockResolvedValue({ session_id: null, skipped_attachments: [] });
     const { result } = render();
+    await act(() => result.current.execute(TASK));
+    expect(toast.info).toHaveBeenCalledWith(expect.stringContaining("will start when an agent"));
+  });
+
+  it("opens the sign-in prompt for the agent the daemon names", async () => {
+    startTask.mockRejectedValue(new Error("auth_required:gemini"));
+    const { result } = render();
+    await act(() => result.current.execute(TASK));
+    expect(setAuthRequired).toHaveBeenCalledWith("3", "gemini", { type: "local" }, null);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("offers the agent picker and starts again with the choice", async () => {
+    startTask
+      .mockRejectedValueOnce(new Error('No agent to run the Implementation stage of "x".'))
+      .mockResolvedValueOnce({ session_id: "42", skipped_attachments: [] });
+    const { result } = render();
+
+    let started: Promise<void>;
+    act(() => {
+      started = result.current.execute(TASK, { canPickAgent: true });
+    });
+    await waitFor(() => expect(result.current.agentPickerTask).not.toBeNull());
+    await act(async () => {
+      result.current.onAgentPicked("codex");
+      await started;
+    });
+
+    expect(startTask).toHaveBeenCalledTimes(2);
+    expect(startTask).toHaveBeenLastCalledWith(7, 3, "Coder", null, false, false, "codex");
+    expect(toast.success).toHaveBeenCalled();
+  });
+
+  it("asks about uncommitted work on a click and not on a handoff", async () => {
+    api.checkWorktreeDirty.mockResolvedValue({ modified_count: 2, untracked_count: 0 });
+    const { result } = render();
+
+    await act(() => result.current.execute(TASK, { unattended: true }));
+    expect(api.checkWorktreeDirty).not.toHaveBeenCalled();
 
     let started: Promise<void>;
     act(() => {
       started = result.current.execute(TASK);
     });
+    await waitFor(() => expect(result.current.dirtyDialogOpen).toBe(true));
+    await act(async () => {
+      result.current.onDirtyCancel();
+      await started;
+    });
+    expect(startTask).toHaveBeenCalledTimes(1);
+  });
 
+  it("does not ask about uncommitted work when the planner runs first", async () => {
+    api.checkWorktreeDirty.mockResolvedValue({ modified_count: 2, untracked_count: 0 });
+    api.resolveAgentProfile.mockResolvedValue({ agent_id: "claude" });
+    const { result } = render();
+    await act(() => result.current.execute(TASK));
+    expect(api.checkWorktreeDirty).not.toHaveBeenCalled();
+    expect(startTask).toHaveBeenCalledTimes(1);
+  });
+});
+
+function attachment(id: number, filename: string): TaskAttachment {
+  return {
+    id,
+    task_id: TASK.id,
+    filename,
+    file_path: `/tmp/repo/.maestro/attachments/tasks/3/${filename}`,
+    file_size: 10,
+    created_at: "now",
+  };
+}
+
+const GONE = attachment(1, "gone.md");
+const BIG = attachment(2, "big.png");
+const FINE = attachment(3, "fine.md");
+
+describe("useExecuteTask with attachments it cannot send", () => {
+  beforeEach(() => {
+    api.listTaskAttachments.mockResolvedValue([GONE, BIG, FINE]);
+    api.prepareTaskAttachments.mockResolvedValue([
+      { content_block: null, rejection: null },
+      { content_block: null, rejection: "Image too large" },
+      { content_block: { type: "text", text: "ok" }, rejection: null },
+    ]);
+  });
+
+  const startAndWaitForDialog = async (result: ReturnType<typeof render>["result"]) => {
+    let started!: Promise<void>;
+    act(() => {
+      started = result.current.execute(TASK);
+    });
     await waitFor(() => expect(result.current.missingAttachments).not.toBeNull());
+    // Wrapped, or the async function would wait on the start it hands back.
+    return { started };
+  };
 
+  it("offers the missing and the oversized, and starts nothing when cancelled", async () => {
+    const { result } = render();
+    const { started } = await startAndWaitForDialog(result);
+    expect(api.prepareTaskAttachments).toHaveBeenCalledWith(7, [GONE, BIG, FINE]);
+    expect(result.current.missingAttachments).toEqual([
+      expect.objectContaining({ id: GONE.id, missing: true }),
+      expect.objectContaining({ id: BIG.id, problem: "Image too large", missing: false }),
+    ]);
+    await act(async () => {
+      result.current.onAttachmentsCancel();
+      await started;
+    });
+    expect(startTask).not.toHaveBeenCalled();
+    expect(deleteAttachment).not.toHaveBeenCalled();
+  });
+
+  it("removes only the missing copies on Continue, then starts", async () => {
+    const { result } = render();
+    const { started } = await startAndWaitForDialog(result);
     await act(async () => {
       result.current.onAttachmentsContinue();
       await started;
     });
-
-    expect(api.prepareExternalAttachments).toHaveBeenCalledWith(
-      "42",
-      [{ path: PRESENT.file_path, is_image: false }],
-      true,
-    );
-    expect(mutations.deleteAttachment).not.toHaveBeenCalled();
+    expect(deleteAttachment).toHaveBeenCalledTimes(1);
+    expect(deleteAttachment).toHaveBeenCalledWith({ projectId: 7, attachmentId: 1, taskId: 3 });
+    expect(startTask).toHaveBeenCalled();
+    expect(result.current.missingAttachments).toBeNull();
   });
 
-  it("asks nothing when every file is readable", async () => {
-    api.validateAttachment.mockResolvedValue({ size_bytes: 10, rejection: null });
+  it("asks nothing on an unattended start", async () => {
     const { result } = render();
+    await act(() => result.current.execute(TASK, { unattended: true }));
+    expect(api.listTaskAttachments).not.toHaveBeenCalled();
+    expect(startTask).toHaveBeenCalled();
+  });
 
-    await act(async () => {
-      await result.current.execute(TASK);
-    });
-
+  it("starts without asking when the check cannot run", async () => {
+    api.prepareTaskAttachments.mockRejectedValue(new Error("connection lost"));
+    const { result } = render();
+    await act(() => result.current.execute(TASK));
     expect(result.current.missingAttachments).toBeNull();
-    expect(api.prepareExternalAttachments).toHaveBeenCalledWith(
-      "42",
-      [
-        { path: GONE.file_path, is_image: false },
-        { path: PRESENT.file_path, is_image: false },
-      ],
-      true,
-    );
-    expect(mutations.deleteAttachment).not.toHaveBeenCalled();
+    expect(deleteAttachment).not.toHaveBeenCalled();
+    expect(startTask).toHaveBeenCalled();
   });
 });

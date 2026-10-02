@@ -4,13 +4,15 @@
 use crate::acp::manager::log_server_diagnostic;
 use crate::acp::replay::{emit_or_buffer_payload, push_config_init_to_buffer};
 use crate::acp::session_types::{
-    PendingChannels, PendingReply, ReaderTaskContext, RestorableSession,
+    PendingReply, PendingRequests, ReaderTaskContext, RestorableSession,
 };
 use crate::acp::transport::{
     FileReadResponse, FileSearchResponse, MaestroRpcMessage, PromptCapabilitiesInfo, ServerRequest,
     ServerResponse, SessionModeState, SessionModelState,
 };
 use crate::acp::transport_types::{serialize_message, AcpReadSource};
+use crate::acp::TaskKey;
+use maestro_protocol::{TaskTransition, TransitionGuard};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -52,13 +54,6 @@ pub(crate) fn spawn_reader_task(
         replay_buffer,
         initialized,
         completion_filter,
-        declared_complete,
-        user_interrupted,
-        closing_message,
-        session_name,
-        agent_id,
-        project_id,
-        task_id,
     } = ctx;
     tokio::spawn(async move {
         let mut source = source;
@@ -98,9 +93,8 @@ pub(crate) fn spawn_reader_task(
 
             update_session_from_response(&session_id, &msg, &app_state).await;
 
-            // Off the reader loop for the same reason `resolve_turn_end` is: a `canvas_await`
-            // blocks until the user acts, and nothing else on this session could arrive
-            // meanwhile — including the answer itself.
+            // Off the reader loop: a `canvas_await` blocks until the user acts, and nothing else
+            // on this session could arrive meanwhile, including the answer itself.
             if let MaestroRpcMessage::Response(ServerResponse::HostToolCall(call)) = msg {
                 let state = Arc::clone(&app_state);
                 let owned_session_id = session_id.clone();
@@ -110,49 +104,7 @@ pub(crate) fn spawn_reader_task(
                 continue;
             }
 
-            if let MaestroRpcMessage::Response(ServerResponse::PermissionRequest(ref perm_req)) =
-                msg
-            {
-                if let Some(tid) = task_id {
-                    if handle_permission_request(&app_state, tid, &session_id, perm_req).await {
-                        continue;
-                    }
-                }
-            }
-
-            if let MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(_)) = msg {
-                if let Some(tid) = task_id {
-                    mark_task_blocked(&app_state, tid);
-                }
-            }
-
-            // Resolving the turn touches the DB and, for remote projects, runs `git rev-parse`
-            // and `git diff` over SSH with no timeout. Run it off the reader loop so it can
-            // never delay — or with a wedged connection, indefinitely withhold — the
-            // `acp://turn-ended` emit below that takes the UI out of "thinking".
-            if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
-                if let Some(tid) = task_id {
-                    let state = Arc::clone(&app_state);
-                    let stop_reason = turn_ended.stop_reason.clone();
-                    // Read and reset: a declaration applies only to the turn it appeared in.
-                    let declared =
-                        declared_complete.swap(false, std::sync::atomic::Ordering::AcqRel);
-                    let interrupted =
-                        user_interrupted.swap(false, std::sync::atomic::Ordering::AcqRel);
-                    // Drained here rather than in the spawned task, so the accumulator is empty
-                    // before the next turn starts writing into it.
-                    let closing = closing_message
-                        .lock()
-                        .map(|mut m| m.take())
-                        .unwrap_or_default();
-                    tokio::spawn(async move {
-                        resolve_turn_end(&state, tid, &stop_reason, declared, interrupted, closing)
-                            .await;
-                    });
-                }
-            }
-
-            if let Some(native_id) = handle_server_message(
+            handle_server_message(
                 msg,
                 &session_id,
                 &app_handle,
@@ -164,34 +116,10 @@ pub(crate) fn spawn_reader_task(
                 &replay_buffer,
                 &initialized,
                 &completion_filter,
-                &declared_complete,
-                &closing_message,
-            ) {
-                if let (Some(pid), Some(ref name)) = (project_id, &session_name) {
-                    if let Ok(conn) = app_state.db.lock() {
-                        if let Err(e) = crate::acp::session_ops::upsert_session_alias(
-                            &conn, pid, &agent_id, &native_id, name,
-                        ) {
-                            log::warn!(
-                                "Could not record the session alias for {}: {}",
-                                native_id,
-                                e
-                            );
-                        }
-                    }
-                }
-                // SpawnOk received — acp_session_id is now set; persist so sessions survive restart.
-                if let Some(pid) = project_id {
-                    tokio::spawn(crate::project::handlers::save_current_sessions_for_project(
-                        Arc::clone(&app_state),
-                        pid,
-                    ));
-                }
-            }
+            );
         }
 
-        remove_session_and_persist(&app_state, &session_id).await;
-        fail_task_if_still_running(&app_state, task_id);
+        app_state.acp.sessions.lock().await.remove(&session_id);
         app_state.app_handle.emit("sessions-changed", ()).ok();
         if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", session_id), ()) {
             log::warn!("[acp] emit session-ended/{session_id} failed: {e}");
@@ -199,740 +127,66 @@ pub(crate) fn spawn_reader_task(
     });
 }
 
-/// Record that the agent is stopped waiting on the user, so the card says so after a reload.
-///
-/// `apply_if_changed` matters here rather than being a nicety: with auto-approve off a session
-/// raises permission requests constantly, and every write emits `tasks-changed`, which refetches
-/// the whole board.
-pub(crate) fn mark_task_blocked(app_state: &crate::core::AppState, task_id: i32) {
-    let changed = {
-        let Ok(conn) = app_state.db.lock() else {
-            return;
-        };
-        match crate::task::transition::apply_if_changed(
-            &conn,
-            task_id,
-            crate::task::transition::TaskTransition::AwaitingUserInput,
-        ) {
-            Ok(result) => result.is_some(),
-            Err(e) => {
-                log::warn!("[acp] could not mark task {task_id} blocked: {e}");
-                false
-            }
-        }
-    };
-    if changed {
-        app_state.app_handle.emit("tasks-changed", ()).ok();
-    }
-}
-
-/// Drop a session the agent side ended, and rewrite `.maestro/state.json` so the next
-/// `prime_project_server` does not restore it.
-///
-/// Every removal here is an ending nothing else observes — no IPC command ran, so none of the
-/// `save_current_sessions_for_project` calls on the user-driven paths fire. Without this the
-/// snapshot keeps listing a session whose agent is gone, and opening the project brings back a
-/// ghost of it. Returns the removed entry, which is the last place its task id is available.
-async fn remove_session_and_persist(
+/// Apply `event` to the session's task in the daemon and wait for it, logging a failure. Never
+/// from the shared reader, which is also what delivers the daemon's reply.
+pub(crate) async fn transition_task(
     app_state: &Arc<crate::core::AppState>,
-    session_id: &str,
-) -> Option<crate::acp::AcpProcess> {
-    let removed = app_state.acp.sessions.lock().await.remove(session_id);
-    if let Some(project_id) = removed.as_ref().and_then(|session| session.project_id) {
-        tokio::spawn(crate::project::handlers::save_current_sessions_for_project(
-            Arc::clone(app_state),
-            project_id,
-        ));
-    }
-    removed
-}
-
-/// A session's reader has ended. If the pipeline still believes an agent is working the task,
-/// record the failure.
-///
-/// Without this a session that dies mid-phase leaves the card looking healthy, and a session that
-/// dies while blocked leaves it pulsing for an answer nothing will ever consume. Tasks that moved
-/// on under their own power — merged, stopped, parked at a review gate — are left untouched.
-fn fail_task_if_still_running(app_state: &crate::core::AppState, task_id: Option<i32>) {
-    let Some(task_id) = task_id else {
-        return;
-    };
-    let changed = {
-        let Ok(conn) = app_state.db.lock() else {
-            return;
-        };
-        match crate::task::transition::fail_if_agent_running(&conn, task_id) {
-            Ok(result) => result.is_some(),
-            Err(e) => {
-                log::warn!("[acp] could not record phase failure for task {task_id}: {e}");
-                false
-            }
-        }
-    };
-    if changed {
-        app_state.app_handle.emit("tasks-changed", ()).ok();
-    }
-}
-
-/// Decide what a turn ending means for the task, and record it.
-///
-/// A turn ending is not the same as the work being finished: an agent that stops to ask a
-/// question ends its turn exactly like one that finished the job. `classify_turn` weighs the stop
-/// reason, whether the agent declared completion, and whether the repository actually changed.
-async fn resolve_turn_end(
-    app_state: &crate::core::AppState,
-    task_id: i32,
-    stop_reason: &str,
-    declared_complete: bool,
-    user_interrupted: bool,
-    closing_message: String,
+    task: TaskKey,
+    event: TaskTransition,
+    guard: TransitionGuard,
 ) {
-    use crate::acp::completion::{classify_turn, TurnOutcome};
-    use crate::task::transition::{self, TaskTransition};
-
-    let is_git_repo = is_task_project_git_repo(app_state, task_id).await;
-
-    // The phase the agent was in, read before the transition rewrites it — the outcome belongs to
-    // the phase that produced it, not the one the task lands in.
-    let phase: Option<String> = {
-        let Ok(conn) = app_state.db.lock() else {
-            return;
-        };
-        conn.query_row("SELECT phase FROM tasks WHERE id = ?", [task_id], |row| {
-            row.get(0)
-        })
-        .unwrap_or(None)
-    };
-
-    // Three of the four roles write nothing, so asking whether the repository changed cannot say
-    // anything about whether they finished — and asking anyway is actively wrong: a clean tree
-    // would read as `Some(false)` and stall a refiner that had just produced a perfectly good
-    // proposal.
-    let writes = matches!(
-        phase.as_deref(),
-        Some("Implementing") | Some("Rework") | Some("AwaitingMerge")
-    );
-
-    // A declared completion used to skip this call, on the grounds that the agent was believed
-    // either way. It no longer is: an agent that declares itself done having changed nothing goes
-    // to Done as `NoChanges` rather than opening an empty review, and that is precisely the case
-    // the answer is needed for.
-    //
-    // Skipped outright for an interrupted turn — `classify_turn` ignores it either way, and the
-    // answer costs a `git diff` that runs over SSH for a remote project.
-    let has_changes = if !user_interrupted && writes && is_git_repo && stop_reason == "end_turn" {
-        task_has_changes(app_state, task_id).await
-    } else {
-        None
-    };
-
-    let outcome = classify_turn(
-        stop_reason,
-        declared_complete,
-        has_changes,
-        user_interrupted,
-    );
-
-    // A review agent finishing is not "the phase is done, advance" — its reply *is* the decision,
-    // so it routes past `TurnCompleted` entirely.
-    // An agent fixing a red build is already on an open pull request, so its turn ending means
-    // "push what you changed", not "advance the task". Nothing else moves: the PR stays open and
-    // the branch stays its head, which is the point of fixing rather than re-approving.
-    if phase.as_deref() == Some("AwaitingMerge") && outcome == TurnOutcome::Complete {
-        if let Err(e) = crate::git::merge::push_ci_fix(app_state, task_id).await {
-            log::error!("Could not push the CI fix for task {}: {}", task_id, e);
-            let Ok(conn) = app_state.db.lock() else {
-                return;
-            };
-            if let Err(e) = transition::apply_if_active(&conn, task_id, TaskTransition::PhaseFailed)
-            {
-                // The push already failed and was reported above. Failing to record that leaves
-                // the task showing as running with nothing behind it, which the user cannot act
-                // on and no later sweep corrects.
-                log::error!("Could not mark task {} as failed: {}", task_id, e);
-            }
-        }
-        // Both paths moved the task and neither reaches the emit below. A successful push cleared
-        // `pull_request_ci`, which the board only learns by refetching — and the point of clearing
-        // it is to get the pull request poll off its steady rate, which it cannot do from a stale
-        // cache. A failed push parked the task and is equally invisible without this.
-        app_state.app_handle.emit("tasks-changed", ()).ok();
-        return;
-    }
-
-    let event = if phase.as_deref() == Some("SelfReview") && outcome == TurnOutcome::Complete {
-        let Ok(conn) = app_state.db.lock() else {
-            return;
-        };
-        review_verdict_event(&conn, task_id, &closing_message)
-    } else {
-        match outcome {
-            TurnOutcome::Complete => TaskTransition::TurnCompleted {
-                is_git_repo,
-                has_changes,
-                reviewer_pending: writes && reviewer_should_run(app_state, task_id).await,
-            },
-            TurnOutcome::Stalled => TaskTransition::AwaitingUserInput,
-            TurnOutcome::Failed => TaskTransition::PhaseFailed,
-            TurnOutcome::Ignore => return,
-        }
-    };
-
-    let changed = {
-        let Ok(conn) = app_state.db.lock() else {
-            return;
-        };
-
-        // Guarded on the task still having a live phase, because this runs detached: by the time
-        // it lands the user may have stopped the session or moved the card, and every one of those
-        // parks the task. The column cannot express it — each role works in a different one, and
-        // Planning is both where a refiner runs and where a stopped task ends up.
-        let changed = match transition::apply_if_active(&conn, task_id, event) {
-            Ok(result) => result.is_some(),
-            Err(e) => {
-                log::warn!("[acp] could not resolve turn end for task {task_id}: {e}");
-                false
-            }
-        };
-
-        // Only when the transition applied. A turn resolved against a task the user already moved
-        // has no claim on its record either.
-        //
-        // Filed by whether the phase produced anything, not by which phase it was: `kind_for_phase`
-        // answers "what does this role deliver", which is the wrong question for a turn that failed
-        // or stopped to ask something. It put a session-limit error in the thread as a reviewer's
-        // verdict.
-        if changed {
-            let phase = phase.as_deref();
-            if outcome == TurnOutcome::Complete {
-                crate::task::comments::record_outcome(&conn, task_id, phase, &closing_message);
-            } else {
-                crate::task::comments::record_unfinished(&conn, task_id, phase, &closing_message);
-            }
-        }
-
-        changed
-    };
-
-    if changed {
-        app_state.app_handle.emit("tasks-changed", ()).ok();
-        app_state
-            .app_handle
-            .emit("task-comments-changed", task_id)
-            .ok();
-    }
-}
-
-/// Whether a review agent should look at this task before the user does.
-///
-/// Three conditions, all necessary. The project must define a `Reviewer` profile, which is how a
-/// team opts in — a project without one keeps the pipeline it had. The task must not have turned
-/// the stage off for itself, which is the same opt-out one task at a time. And the loop must have
-/// rounds left, or a reviewer would be started only to have its verdict escalated anyway.
-///
-/// So the work of the last rework round reaches the user unreviewed, deliberately: by then they
-/// are the reviewer, and the alternative is paying an agent for a verdict nobody may act on.
-pub(crate) async fn reviewer_should_run(app_state: &crate::core::AppState, task_id: i32) -> bool {
-    use crate::acp::completion::review_rounds_remain;
-
-    let Ok(Some((project_id, rounds, overrides))) = ({
-        app_state.db.lock().map(|conn| {
-            conn.query_row(
-                "SELECT project_id, review_rounds, profile_overrides FROM tasks WHERE id = ?",
-                [task_id],
-                |row| {
-                    Ok((
-                        row.get::<_, i32>(0)?,
-                        row.get::<_, i32>(1)?,
-                        row.get::<_, Option<String>>(2)?,
-                    ))
-                },
-            )
-            .ok()
-        })
-    }) else {
-        return false;
-    };
-
-    if !review_rounds_remain(rounds) {
-        return false;
-    }
-
-    if crate::project::profiles::role_is_skipped(
-        overrides.as_deref(),
-        crate::project::profiles::AgentRole::Reviewer,
-    ) {
-        log::debug!("[acp] task {task_id} skips review, so it goes straight to the user");
-        return false;
-    }
-
-    crate::project::profiles::has_profile_for_role(
+    if let Err(e) = crate::task::ops::apply_transition_on_server(
         app_state,
-        project_id,
-        crate::project::profiles::AgentRole::Reviewer,
-    )
-    .await
-}
-
-/// Turn the review agent's reply into the transition it implies, counting the round if the loop
-/// is going round again.
-///
-/// The count is incremented here rather than when the coder starts, because this is the moment the
-/// decision to spend another round is taken. Counting at the start would let a rejected task that
-/// never got a coder — the app closed, the host was full — be rejected again for free.
-fn review_verdict_event(
-    conn: &rusqlite::Connection,
-    task_id: i32,
-    reply: &str,
-) -> crate::task::transition::TaskTransition {
-    use crate::acp::completion::{
-        classify_verdict, review_rounds_remain, ReviewVerdict, REVIEW_ROUND_CAP,
-    };
-    use crate::task::transition::TaskTransition;
-
-    if classify_verdict(reply) == ReviewVerdict::Approved {
-        return TaskTransition::ReviewFinished;
-    }
-
-    let rounds: i32 = conn
-        .query_row(
-            "SELECT review_rounds FROM tasks WHERE id = ?",
-            [task_id],
-            |row| row.get(0),
-        )
-        .unwrap_or(REVIEW_ROUND_CAP);
-
-    // The backstop rather than the primary guard: `reviewer_should_run` already refuses to start a
-    // reviewer with no rounds left, so reaching this means one was started another way.
-    if !review_rounds_remain(rounds) {
-        log::info!(
-            "Task {} hit the review round cap ({}); escalating to the user",
-            task_id,
-            REVIEW_ROUND_CAP
-        );
-        return TaskTransition::ReviewFinished;
-    }
-
-    if let Err(e) = conn.execute(
-        "UPDATE tasks SET review_rounds = review_rounds + 1 WHERE id = ?",
-        [task_id],
-    ) {
-        // Failing to count would make the loop unbounded, which is the one thing it must not be.
-        log::error!("Could not count a review round for task {}: {}", task_id, e);
-        return TaskTransition::ReviewFinished;
-    }
-
-    TaskTransition::ReviewRejected
-}
-
-/// Whether the agent has changed anything since it started, measured against
-/// `execution_start_sha` — the baseline captured at spawn and preserved across resumes, so this
-/// covers the whole task rather than the turn.
-///
-/// Returns `None` when the answer cannot be established, which `classify_turn` reads as "no
-/// evidence" and treats the same as a non-git project.
-pub(crate) async fn task_has_changes(
-    app_state: &crate::core::AppState,
-    task_id: i32,
-) -> Option<bool> {
-    let (project_id, start_sha, workspace_mode, worktree_path) = {
-        let conn = app_state.db.lock().ok()?;
-        let row: (i32, Option<String>, String, Option<String>) = conn
-            .query_row(
-                "SELECT t.project_id, t.execution_start_sha, t.workspace_mode, \
-                    (SELECT path FROM worktrees WHERE task_id = t.id LIMIT 1) \
-                 FROM tasks t WHERE t.id = ?",
-                [task_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-            )
-            .ok()?;
-        row
-    };
-
-    // Both worktree modes leave the row here: a reused workspace is claimed by the task when it
-    // starts, exactly so that lookups like this one keep working.
-    let isolated = workspace_mode != crate::models::WorkspaceMode::RepositoryDirectory.as_str();
-
-    // An isolated task whose worktree row has gone missing must report no evidence rather than
-    // fall through to the project root: the root is a different tree, and any unrelated dirt in
-    // it — an untracked `.maestro/`, a half-finished edit — reads as work this agent did and
-    // sends the task to review with a diff it had nothing to do with.
-    if isolated && worktree_path.is_none() {
-        log::warn!("[acp] task {task_id} is isolated but has no worktree row; skipping diff gate");
-        return None;
-    }
-
-    let start_sha = start_sha.filter(|sha| !sha.is_empty())?;
-    let (_project, git_conn) = crate::core::get_project_with_git_conn(app_state, project_id)
-        .await
-        .ok()?;
-
-    // Worktree paths are stored relative to the repo; a task without one runs in the project root.
-    let cwd = match worktree_path {
-        Some(path) => format!("{}/{}", git_conn.path(), path),
-        None => git_conn.path().to_string(),
-    };
-
-    // `Commit` never consults the remote; passed for signature uniformity, and resolving it is a
-    // cached map lookup after the first call.
-    let remote = crate::git::remote::project_remote(app_state, project_id).await;
-    match crate::git::worktree_query::diff_stats_in(
-        &git_conn,
-        &cwd,
-        &crate::models::DiffTarget::Commit { sha: start_sha },
-        &remote,
+        task.project_id,
+        task.task_id,
+        event,
+        guard,
     )
     .await
     {
-        Ok(stats) => Some(stats.has_changes()),
-        // Most often the start commit no longer exists, because the agent rebased or amended over
-        // it. `None` sends this to `classify_turn` as "unknown", which completes the turn — the
-        // alternative is calling work the agent did invisible on the strength of a failed command.
-        Err(e) => {
-            log::warn!("[acp] diff gate for task {task_id} could not read the diff: {e}");
-            None
-        }
-    }
-}
-
-/// `(project_id, path, connection_id, wsl_connection_id, docker_connection_id)`
-type ProjectLocationRow = (i32, String, Option<i32>, Option<i32>, Option<i32>);
-
-pub(crate) async fn is_task_project_git_repo(
-    app_state: &crate::core::AppState,
-    task_id: i32,
-) -> bool {
-    let result: Option<ProjectLocationRow> =
-        app_state.db.lock().ok().and_then(|conn| {
-            conn.query_row(
-            "SELECT p.id, p.path, p.connection_id, p.wsl_connection_id, p.docker_connection_id \
-             FROM tasks t JOIN projects p ON t.project_id = p.id \
-             WHERE t.id = ?",
-            [task_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
-        ).ok()
-        });
-
-    let Some((project_id, path, connection_id, wsl_connection_id, docker_connection_id)) = result
-    else {
-        return true;
-    };
-
-    if connection_id.is_none() && wsl_connection_id.is_none() && docker_connection_id.is_none() {
-        return std::path::Path::new(&path).join(".git").exists();
-    }
-
-    match crate::core::get_project_with_git_conn(app_state, project_id).await {
-        Ok((_project, git_conn)) => {
-            crate::git::run_git_in_dir(&git_conn, &path, &["rev-parse", "--is-inside-work-tree"])
-                .await
-                .map(|output| output.trim() == "true")
-                .unwrap_or(false)
-        }
-        Err(_) => false,
-    }
-}
-
-/// Decide what the board does with a permission request, and report whether it answered.
-///
-/// `true` means the request is settled and must not reach the UI. `false` leaves it for the user,
-/// having first marked the task blocked so the card says the agent is stopped.
-///
-/// Both readers go through here, and that is the point. They did not before: the shared reader —
-/// which is the *ordinary local path*, since a connection server serves every session on a
-/// connection and only a directly-spawned session gets its own loop — called auto-approve alone.
-/// So the plan interception was written, tested, and never once ran outside SSH. Two call sites
-/// that must agree on which of three answers a request gets will not stay agreeing, so there is
-/// now one.
-async fn handle_permission_request(
-    app_state: &Arc<crate::core::AppState>,
-    task_id: i32,
-    session_id: &str,
-    perm_req: &crate::acp::transport::PermissionRequest,
-) -> bool {
-    if try_auto_approve_permission(app_state, task_id, session_id, perm_req).await {
-        return true;
-    }
-    if try_conclude_plan_mode_phase(app_state, task_id, session_id, perm_req).await {
-        return true;
-    }
-    // Nobody answered for it: the agent is stopped until the user does.
-    mark_task_blocked(app_state, task_id);
-    false
-}
-
-async fn try_auto_approve_permission(
-    app_state: &Arc<crate::core::AppState>,
-    task_id: i32,
-    session_id: &str,
-    perm_req: &crate::acp::transport::PermissionRequest,
-) -> bool {
-    let phase = app_state.db.lock().ok().and_then(|conn| {
-        conn.query_row("SELECT phase FROM tasks WHERE id = ?", [task_id], |row| {
-            row.get::<_, Option<String>>(0)
-        })
-        .ok()
-    });
-
-    let Some(phase) = phase else { return false };
-
-    // There used to be a per-task `auto_approve` flag in front of this, and a checkbox on the card
-    // driving it. It said the same thing twice: a role's permission mode already decides whether
-    // the agent stops to ask, and a task carrying "Tasks" through this pipeline wants the workflow
-    // to run. Two switches that can disagree about one question is how a task ended up in a mode
-    // that prompts with nothing allowed to answer.
-    //
-    // The phase is the whole gate now, and it is the right one: it already encodes whether the role
-    // running may write.
-    //
-    // Auto-approve is a coder's affordance: it exists so a task that has been told to get on with
-    // it is not stopped by a prompt for an edit it was always going to be allowed to make. It must
-    // not answer for a role that exists *because* it cannot write.
-    //
-    // The request that matters is `ExitPlanMode`. In plan mode an agent's writes are refused
-    // outright rather than prompted, so it is close to the only permission a read-only role ever
-    // asks for — and the `allow_always` option this function prefers means "leave plan mode and
-    // stop asking". Approving it handed the read-only guarantee back: a live run had the *planner*
-    // implement its own task, tests and all, and then stop at the plan gate to ask whether the plan
-    // was any good.
-    //
-    // Refusing sends it to the user as a blocked task, which is the decision the gates are built
-    // on being human in the first place.
-    let read_only = phase
-        .as_deref()
-        .and_then(|p| p.parse::<crate::models::TaskPhase>().ok())
-        .is_some_and(|p| p.is_read_only());
-    if read_only {
-        log::debug!(
-            "[acp] not auto-approving a permission request for task {task_id}: \
-             {phase:?} is a read-only phase"
+        log::warn!(
+            "[acp] could not apply {event:?} to task {} of project {}: {e}",
+            task.task_id,
+            task.project_id
         );
-        return false;
     }
-
-    let option_id = perm_req
-        .payload
-        .get("options")
-        .and_then(|v| v.as_array())
-        .and_then(|opts| {
-            opts.iter()
-                .find_map(|opt| {
-                    let kind = opt.get("kind").and_then(|v| v.as_str())?;
-                    if kind == "allow_always" {
-                        return opt
-                            .get("optionId")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                    }
-                    None
-                })
-                .or_else(|| {
-                    opts.iter().find_map(|opt| {
-                        let kind = opt.get("kind").and_then(|v| v.as_str())?;
-                        if kind == "allow_once" {
-                            return opt
-                                .get("optionId")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string());
-                        }
-                        None
-                    })
-                })
-                .or_else(|| {
-                    opts.iter().find_map(|opt| {
-                        let kind = opt.get("kind").and_then(|v| v.as_str())?;
-                        if kind.contains("allow") {
-                            return opt
-                                .get("optionId")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string());
-                        }
-                        None
-                    })
-                })
-        });
-
-    let Some(oid) = option_id else { return false };
-
-    let response = MaestroRpcMessage::Request(ServerRequest::PermitResponse(
-        crate::acp::transport::PermissionResponse {
-            session_id: session_id.to_string(),
-            request_id: perm_req.request_id.clone(),
-            option_id: Some(oid),
-        },
-    ));
-    let _ = crate::acp::write_to_acp_session(app_state, session_id, &response).await;
-    true
 }
 
-/// File a read-only role's deliverable and move the task on from it.
+/// Record that the agent is stopped waiting on the user, for the waits only this window knows of:
+/// a `canvas_await` and a `run_automation` question. The daemon marks its own permission requests
+/// and questions.
 ///
-/// Split out from `try_conclude_plan_mode_phase` for the ordinary reason: everything above it in
-/// that function is a session and a payload, and none of this needed either. Which is how the bug
-/// below survived — the decision could not be tested without spawning an agent.
-///
-/// The three read-only phases are not interchangeable here. `is_read_only` admits `SelfReview`, so
-/// a plan-mode reviewer reaches this path, but `ArtifactDelivered` has arms only for `Drafting` and
-/// `Refining` and falls through to "change nothing". The caller then closes the session, leaving a
-/// task marked `Running` with no agent behind it and a reply that — though already filed as a
-/// verdict by `kind_for_phase` — never reached `classify_verdict`. The loop could not reject.
-///
-/// That is not an exotic configuration: with no `permission_mode` on the profile a read-only role
-/// takes the first of `READ_ONLY_MODES` its agent offers, so plan mode is the *default* a reviewer
-/// runs in.
-///
-/// The verdict is read off the plan payload because that is what the request carries. The reviewer's
-/// prose would be the better source, but the `tool_call` announcing `ExitPlanMode` resets the
-/// closing message before the permission request arrives. A plan that does not open with the verdict
-/// line classifies as `Approved`, which is the documented safe direction — the human gate, not
-/// another coder round on a guess.
-fn conclude_read_only_phase(
-    conn: &rusqlite::Connection,
-    task_id: i32,
-    phase: Option<&str>,
-    text: &str,
-) -> Result<Option<crate::models::Task>, String> {
-    // Order matters: the thread entry is what the gate reads, so a transition that lands without
-    // it would open a gate with nothing in it — the defect this whole path exists to close.
-    crate::task::comments::record_outcome(conn, task_id, phase, text);
-
-    let event = if phase == Some("SelfReview") {
-        review_verdict_event(conn, task_id, text)
-    } else {
-        crate::task::transition::TaskTransition::ArtifactDelivered
-    };
-    crate::task::transition::apply_if_active(conn, task_id, event)
+/// Awaited, so a caller that marks, shows the question and then clears on the answer applies the
+/// two in that order.
+pub(crate) async fn mark_task_blocked(app_state: &Arc<crate::core::AppState>, task: TaskKey) {
+    transition_task(
+        app_state,
+        task,
+        TaskTransition::AwaitingUserInput,
+        TransitionGuard::Changed,
+    )
+    .await;
 }
 
-/// Take a plan-mode agent's exit request as the end of its phase, and close the session.
-///
-/// An agent held in a read-only mode has no way to say "I am finished": its conclusion arrives as a
-/// request to leave that mode, mid-turn, with the plan attached. Both obvious answers to that
-/// request are wrong, and wrong in a way no wording of the prompt fixes. Granting it hands a
-/// read-only role write access — a live run had the *planner* implement its own task, tests and
-/// all, and then stop at the gate to ask whether the plan was any good. Refusing it makes the agent
-/// reread its plan, polish it and ask again, so the gate never opens.
-///
-/// The way out is that this is not a question to answer at all. The plan is a *deliverable*, and
-/// the session that produced it has no further part to play: a project can put a different agent
-/// behind `Planner` and `Coder`, on a different model or a different vendor entirely, so approving
-/// a plan cannot mean "let this session continue" — there may be no session to continue into. So
-/// the request is read as the artifact: keep the plan, refuse the mode change, and end the session.
-/// What the user approves later is a plan on the board, and approving it starts a fresh coder.
-///
-/// Ending it rather than interrupting the turn is deliberate. An interrupted planner is a live
-/// agent sitting in plan mode with nothing to do, holding a subprocess and an agent slot for however
-/// many days pass before someone looks at the gate — and still able to be prompted into
-/// implementing the work it was supposed to only describe.
-///
-/// Narrow on purpose, and narrow on the payload rather than on the session's mode. The first version
-/// asked whether the session was currently held in `plan`, which is a question the host cannot
-/// reliably answer — the cached mode is only as fresh as the last `SetModeOk` or
-/// `current_mode_update` the agent chose to send. The plan in the payload is the better
-/// discriminator and needs no cache: a request to write a file does not carry one, so a refiner or
-/// reviewer running in `default` asking for permission to write still reaches the user as the real
-/// question it is. `rawInput.plan` rather than a tool name, so this is not about one agent's
-/// vocabulary.
-async fn try_conclude_plan_mode_phase(
+/// Fail the task if an agent was still working it, for a session this window ended or could not
+/// load. Spawned, because a caller may be on the shared reader that delivers the daemon's reply.
+/// A dead agent is the daemon's to report.
+pub(crate) fn fail_task_if_still_running(
     app_state: &Arc<crate::core::AppState>,
-    task_id: i32,
-    session_id: &str,
-    perm_req: &crate::acp::transport::PermissionRequest,
-) -> bool {
-    let Some(plan) = perm_req
-        .payload
-        .get("toolCall")
-        .and_then(|call| call.get("rawInput"))
-        .and_then(|input| input.get("plan"))
-        .and_then(|plan| plan.as_str())
-        .map(str::trim)
-        .filter(|plan| !plan.is_empty())
-    else {
-        log::debug!(
-            "[acp] task {task_id}: permission request carries no plan, leaving it to the user"
-        );
-        return false;
-    };
-
-    let recorded = {
-        let Ok(conn) = app_state.db.lock() else {
-            return false;
-        };
-        let phase: Option<String> = conn
-            .query_row("SELECT phase FROM tasks WHERE id = ?", [task_id], |row| {
-                row.get(0)
-            })
-            .unwrap_or(None);
-
-        let read_only_phase = phase
-            .as_deref()
-            .and_then(|p| p.parse::<crate::models::TaskPhase>().ok())
-            .is_some_and(|p| p.is_read_only());
-        if !read_only_phase {
-            log::debug!("[acp] task {task_id}: {phase:?} may write, so its plan is not a gate");
-            return false;
-        }
-
-        conclude_read_only_phase(&conn, task_id, phase.as_deref(), plan)
-    };
-
-    match recorded {
-        // Told to the board before the session is closed below. Both halves are needed and the
-        // order is not cosmetic: closing the session emits `sessions-changed` on its own, so a
-        // board that has been told the session is gone but not that the task reached its gate
-        // renders the phase it still believes is running with no agent behind it — which is
-        // exactly the shape of a crashed session. The card said "Session lost" and offered
-        // Recover, with the finished plan sitting unreachable behind it.
-        Ok(Some(_)) => {
-            app_state.app_handle.emit("tasks-changed", ()).ok();
-            app_state
-                .app_handle
-                .emit("task-comments-changed", task_id)
-                .ok();
-        }
-        Ok(None) => return false,
-        Err(e) => {
-            log::warn!("[acp] could not close the read-only phase of task {task_id}: {e}");
-            return false;
-        }
-    }
-
-    let refusal = perm_req
-        .payload
-        .get("options")
-        .and_then(|v| v.as_array())
-        .and_then(|options| {
-            options.iter().find_map(|option| {
-                let kind = option.get("kind").and_then(|v| v.as_str())?;
-                kind.contains("reject")
-                    .then(|| option.get("optionId").and_then(|v| v.as_str()))
-                    .flatten()
-                    .map(str::to_string)
-            })
+    task: Option<TaskKey>,
+) {
+    if let Some(task) = task {
+        let app_state = Arc::clone(app_state);
+        tokio::spawn(async move {
+            transition_task(
+                &app_state,
+                task,
+                TaskTransition::PhaseFailed,
+                TransitionGuard::AgentRunning,
+            )
+            .await;
         });
-
-    // An agent that offers no refusal is left unanswered rather than granted: the session is closed
-    // below either way, and the one thing that must not happen is the mode changing.
-    if let Some(option_id) = refusal {
-        let response = MaestroRpcMessage::Request(ServerRequest::PermitResponse(
-            crate::acp::transport::PermissionResponse {
-                session_id: session_id.to_string(),
-                request_id: perm_req.request_id.clone(),
-                option_id: Some(option_id),
-            },
-        ));
-        if let Err(e) = crate::acp::write_to_acp_session(app_state, session_id, &response).await {
-            log::warn!("[acp] could not refuse the mode change for task {task_id}: {e}");
-        }
     }
-
-    // After the transition, not before: ending a session runs `fail_if_agent_running`, which would
-    // turn the card red if the task were still `Running`. It is a no-op against the `Waiting` the
-    // gate above just wrote, which is the ordering this depends on.
-    crate::acp::session_handlers::end_acp_session(app_state, session_id).await;
-    log::info!("[acp] took the plan for task {task_id} and closed its planning session");
-
-    true
 }
 
 fn emit_session_init_events(
@@ -984,8 +238,6 @@ fn handle_server_message(
     replay_buffer: &crate::acp::session_types::ReplayBuffer,
     initialized: &Arc<std::sync::Mutex<bool>>,
     completion_filter: &Arc<std::sync::Mutex<crate::acp::completion::CompletionMarkerFilter>>,
-    declared_complete: &Arc<std::sync::atomic::AtomicBool>,
-    closing_message: &Arc<std::sync::Mutex<crate::acp::completion::ClosingMessage>>,
 ) -> Option<String> {
     match msg {
         MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd)) => {
@@ -1004,24 +256,13 @@ fn handle_server_message(
                     }
                 }
             }
-            // Strip the completion marker, so it is removed from what the user sees while
-            // recording that the agent declared the task done.
+            // Strip the completion marker, so it is removed from what the user sees.
             let payload_opt = crate::acp::completion::strip_completion_marker_from_payload(
                 upd.payload,
                 completion_filter,
-                declared_complete,
             );
 
             if let Some(payload) = payload_opt {
-                // After stripping, so the marker never reaches the outcome thread either.
-                crate::acp::completion::track_closing_message(
-                    &payload,
-                    payload
-                        .get("content")
-                        .and_then(|c| c.get("text"))
-                        .and_then(|t| t.as_str()),
-                    closing_message,
-                );
                 emit_or_buffer_payload(payload, replay_buffer, app_handle, session_id);
             }
         }
@@ -1322,22 +563,6 @@ fn extract_session_id(msg: &MaestroRpcMessage) -> Option<String> {
     }
 }
 
-/// Hand an error to a request waiting in `slot`, if one is. Returns whether one was.
-fn fail_pending<T>(slot: &crate::acp::session_types::PendingReply<T>, message: &str) -> bool {
-    let Ok(mut guard) = slot.lock() else {
-        return false;
-    };
-    match guard.take() {
-        Some(tx) => {
-            if tx.send(Err(message.to_string())).is_err() {
-                log::debug!("an automation request gave up before its error arrived");
-            }
-            true
-        }
-        None => false,
-    }
-}
-
 /// How much is kept for one session nobody here holds yet, and for how many such sessions.
 ///
 /// Most of what lands unclaimed is for a session that is already gone, or belongs to a project
@@ -1378,19 +603,100 @@ pub(crate) async fn take_unclaimed(
         .unwrap_or_default()
 }
 
-/// Route a shared-reader message to the correct per-session handler or to
-/// connection-level pending channels (PreInitialize, SessionList, SessionClose, etc.).
+/// Which of this app's projects on `connection_key` a daemon's canonical path names.
+fn project_id_for_path(
+    app_state: &crate::core::AppState,
+    connection_key: crate::acp::ConnectionKey,
+    canonical_path: &str,
+) -> Option<i32> {
+    let conn = app_state.db.lock().ok()?;
+    let mut statement = conn
+        .prepare(
+            "SELECT id, path, connection_id, wsl_connection_id, docker_connection_id FROM projects",
+        )
+        .ok()?;
+    let rows: Vec<(i32, String, crate::acp::ConnectionKey)> = statement
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                crate::acp::ConnectionKey::from_all_ids(row.get(2)?, row.get(3)?, row.get(4)?),
+            ))
+        })
+        .ok()?
+        .filter_map(Result::ok)
+        .collect();
+    // A local Windows path resolves to the case the directory has on disk, not the case it was
+    // opened with.
+    let ignore_case = cfg!(windows) && connection_key == crate::acp::ConnectionKey::Local;
+    match_project_path(rows, connection_key, canonical_path, ignore_case)
+}
+
+/// Compared with separators and a trailing slash tidied, the part of the daemon's
+/// `canonical_project_path` this side can reproduce.
+///
+/// A project opened through a symlink does not match, and its pushes carry no id. That is safe:
+/// a push naming no project is refetched by every window, which costs a request and loses nothing.
+fn match_project_path(
+    rows: Vec<(i32, String, crate::acp::ConnectionKey)>,
+    connection_key: crate::acp::ConnectionKey,
+    canonical_path: &str,
+    ignore_case: bool,
+) -> Option<i32> {
+    fn tidy(path: &str) -> String {
+        let path = path
+            .strip_prefix(r"\\?\")
+            .unwrap_or(path)
+            .replace('\\', "/");
+        path.trim_end_matches('/').to_string()
+    }
+    let wanted = tidy(canonical_path);
+    rows.into_iter()
+        .find(|(_, path, key)| {
+            *key == connection_key
+                && if ignore_case {
+                    tidy(path).eq_ignore_ascii_case(&wanted)
+                } else {
+                    tidy(path) == wanted
+                }
+        })
+        .map(|(id, _, _)| id)
+}
+
+/// Route a shared-reader message that carries no request id: to its session's handler when it
+/// names one, and otherwise as the unprompted event it is. Replies that do carry an id never
+/// reach here, see `deliver_reply`.
 pub(crate) async fn handle_shared_server_message(
     msg: MaestroRpcMessage,
     connection_key: crate::acp::ConnectionKey,
     app_handle: &tauri::AppHandle,
     app_state: &Arc<crate::core::AppState>,
-    pending: &PendingChannels,
+    pending: &PendingRequests,
 ) {
     // Session-bearing messages: extract session_id, borrow caches from AcpProcess,
     // then call the existing single-session handler.
     if let Some(session_id) = extract_session_id(&msg) {
+        // A request made for this session whose reply names none, a file search or read, cannot
+        // be answered once the session has failed.
+        if let MaestroRpcMessage::Response(ServerResponse::Error(error)) = &msg {
+            pending.fail_session(&session_id, &error.message);
+        }
         update_session_from_response(&session_id, &msg, app_state).await;
+
+        // The shared prompt tools need no session, and the daemon sends each one to a single
+        // window (`ClientSink::write_to_one`), so whichever window gets it answers, held or not.
+        if let MaestroRpcMessage::Response(ServerResponse::HostToolCall(call)) = &msg {
+            if crate::acp::host_tools::is_prompt_tool(&call.name) {
+                if let MaestroRpcMessage::Response(ServerResponse::HostToolCall(call)) = msg {
+                    let state = Arc::clone(app_state);
+                    tokio::spawn(async move {
+                        crate::acp::host_tools::answer_prompt_tool(&state, connection_key, call)
+                            .await;
+                    });
+                }
+                return;
+            }
+        }
 
         // Before the cache borrow below: this needs none of it, and the shared reader serves
         // every session on the connection, so a `canvas_await` answered inline would block all
@@ -1418,6 +724,15 @@ pub(crate) async fn handle_shared_server_message(
             }
         }
 
+        if is_reloading_session_error(&msg) {
+            // The daemon's startup pass is reloading this conversation itself and announces it with
+            // `TaskSessionStarted`, which adopts it. So this load's entry goes, and neither the task
+            // nor the row is touched.
+            app_state.acp.sessions.lock().await.remove(&session_id);
+            app_handle.emit("sessions-changed", ()).ok();
+            return;
+        }
+
         let caches = {
             let sessions = app_state.acp.sessions.lock().await;
             sessions.get(&session_id).map(|s| {
@@ -1430,13 +745,8 @@ pub(crate) async fn handle_shared_server_message(
                     Arc::clone(&s.replay_buffer),
                     Arc::clone(&s.initialized),
                     Arc::clone(&s.completion_filter),
-                    Arc::clone(&s.declared_complete),
-                    Arc::clone(&s.user_interrupted),
-                    Arc::clone(&s.closing_message),
-                    s.session_name.clone(),
                     s.agent_id_meta.clone(),
-                    s.project_id,
-                    s.task_id,
+                    s.task_key(),
                 )
             })
         };
@@ -1449,55 +759,10 @@ pub(crate) async fn handle_shared_server_message(
             replay,
             initialized,
             completion_filter,
-            declared_complete,
-            user_interrupted,
-            closing_message,
-            session_name,
             agent_id,
-            pid,
-            task_id,
+            task,
         )) = caches
         {
-            if let MaestroRpcMessage::Response(ServerResponse::PermissionRequest(ref perm_req)) =
-                msg
-            {
-                if let Some(tid) = task_id {
-                    if handle_permission_request(app_state, tid, &session_id, perm_req).await {
-                        return;
-                    }
-                }
-            }
-
-            if let MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(_)) = msg {
-                if let Some(tid) = task_id {
-                    mark_task_blocked(app_state, tid);
-                }
-            }
-
-            // Off the reader loop — see the matching comment in `spawn_reader_task`. This
-            // path is worse: the shared reader serves every session on the connection, so
-            // one task's hung `git rev-parse` would stall turn-ended for all of them.
-            if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
-                if let Some(tid) = task_id {
-                    let state = Arc::clone(app_state);
-                    let stop_reason = turn_ended.stop_reason.clone();
-                    let declared =
-                        declared_complete.swap(false, std::sync::atomic::Ordering::AcqRel);
-                    let interrupted =
-                        user_interrupted.swap(false, std::sync::atomic::Ordering::AcqRel);
-                    // Drained here rather than in the spawned task, so the accumulator is empty
-                    // before the next turn starts writing into it.
-                    let closing = closing_message
-                        .lock()
-                        .map(|mut m| m.take())
-                        .unwrap_or_default();
-                    tokio::spawn(async move {
-                        resolve_turn_end(&state, tid, &stop_reason, declared, interrupted, closing)
-                            .await;
-                    });
-                }
-            }
-
             // If the agent completed a turn without needing auth, it has valid credentials.
             // This covers token-configured agents that never go through the explicit auth flow.
             if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
@@ -1537,7 +802,8 @@ pub(crate) async fn handle_shared_server_message(
                 MaestroRpcMessage::Response(ServerResponse::PermissionRequest(_))
             );
             let is_session_load_error = is_fatal_session_error(&msg);
-            let native_id = handle_server_message(
+            let is_gone = is_gone_session_error(&msg);
+            handle_server_message(
                 msg,
                 &session_id,
                 app_handle,
@@ -1549,8 +815,6 @@ pub(crate) async fn handle_shared_server_message(
                 &replay,
                 &initialized,
                 &completion_filter,
-                &declared_complete,
-                &closing_message,
             );
             if is_permission_request {
                 let sessions = app_state.acp.sessions.lock().await;
@@ -1560,39 +824,35 @@ pub(crate) async fn handle_shared_server_message(
                         .store(true, Ordering::Release);
                 }
             }
-            if let Some(native_id) = native_id {
-                if let (Some(project_id_val), Some(ref name)) = (pid, &session_name) {
-                    if let Ok(conn) = app_state.db.lock() {
-                        if let Err(e) = crate::acp::session_ops::upsert_session_alias(
-                            &conn,
-                            project_id_val,
-                            &agent_id,
-                            &native_id,
-                            name,
-                        ) {
-                            log::warn!(
-                                "Could not record the session alias for {}: {}",
-                                native_id,
-                                e
-                            );
-                        }
-                    }
-                }
-                // SpawnOk received — acp_session_id is now set; persist so sessions survive restart.
-                if let Some(project_id_val) = pid {
-                    tokio::spawn(crate::project::handlers::save_current_sessions_for_project(
-                        Arc::clone(app_state),
-                        project_id_val,
-                    ));
-                }
-            }
             if is_session_load_error {
                 // Session load failed (agent no longer has this session). Remove from the in-memory
                 // map so getActiveSessions no longer lists it, then notify the frontend.
-                remove_session_and_persist(app_state, &session_id).await;
-                fail_task_if_still_running(app_state, task_id);
+                app_state.acp.sessions.lock().await.remove(&session_id);
+                fail_task_if_still_running(app_state, task);
                 if let Err(e) = app_handle.emit("sessions-changed", ()) {
                     log::warn!("[acp] emit sessions-changed failed: {e}");
+                }
+                let acp_session_id = acp_sid.lock().ok().and_then(|id| id.clone());
+                if let (true, Some(acp_session_id)) = (is_gone, acp_session_id) {
+                    // Off this task: the reply comes back through the reader this runs on.
+                    tokio::spawn({
+                        let app_state = Arc::clone(app_state);
+                        async move {
+                            if let Err(e) =
+                                crate::acp::connection_server::query_close_project_session_via_server(
+                                    connection_key,
+                                    maestro_protocol::CloseProjectSessionRequest {
+                                        agent_id,
+                                        acp_session_id,
+                                    },
+                                    &app_state,
+                                )
+                                .await
+                            {
+                                log::warn!("[acp] could not close a session that is gone: {e}");
+                            }
+                        }
+                    });
                 }
             }
         } else {
@@ -1618,137 +878,75 @@ pub(crate) async fn handle_shared_server_message(
 
     // Sessionless messages.
     match msg {
-        MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(resp)) => {
-            let agents: Vec<crate::acp::registry::DiscoveredAgent> = resp
-                .agents
-                .into_iter()
-                .map(|a| crate::acp::registry::DiscoveredAgent {
-                    id: a.id,
-                    name: a.name,
-                    icon: a.icon,
-                    spawn_deps: a.spawn_deps,
-                })
-                .collect();
-            log::debug!(
-                "[registry] ListAgentsOk: {} agents: {:?}",
-                agents.len(),
-                agents.iter().map(|a| &a.id).collect::<Vec<_>>()
-            );
-            if let Ok(mut guard) = pending.list_agents.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(agents));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::ListLiveSessionsOk(resp)) => {
-            if let Ok(mut guard) = pending.live_sessions.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::ListAutomationsOk(resp)) => {
-            if let Ok(mut guard) = pending.automations.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::SaveAutomationOk(resp)) => {
-            if let Ok(mut guard) = pending.save_automation.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::DeleteAutomationOk) => {
-            if let Ok(mut guard) = pending.delete_automation.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::ListAutomationRunsOk(resp)) => {
-            if let Ok(mut guard) = pending.automation_runs.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::DeleteAutomationRunOk) => {
-            if let Ok(mut guard) = pending.delete_automation_run.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::SetRunRetentionOk) => {
-            if let Ok(mut guard) = pending.set_run_retention.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::WebhookSettingsOk(resp)) => {
-            if let Ok(mut guard) = pending.webhook_settings.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::ServerStatusOk(resp)) => {
-            if let Ok(mut guard) = pending.server_status.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::RollWebhookSecretOk(resp)) => {
-            if let Ok(mut guard) = pending.roll_webhook_secret.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::ListWebhookDeliveriesOk(resp)) => {
-            if let Ok(mut guard) = pending.webhook_deliveries.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::PreviewScheduleOk(resp)) => {
-            if let Ok(mut guard) = pending.preview_schedule.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
         // Unsolicited: the clock started this, not the window. Named by project rather than sent
         // to a particular view, because the run belongs to a project whether or not it is open.
         MaestroRpcMessage::Response(ServerResponse::AutomationRunChanged(run)) => {
             crate::core::emit_or_log(app_handle, "automation-run-changed", &run);
         }
-        MaestroRpcMessage::Response(ServerResponse::AcquireProjectLockOk(resp)) => {
-            if let Ok(mut guard) = pending.acquire_project_lock.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
+        // Pushed to every window on the daemon after any write, this one's included, for every
+        // project there: `project_id` is which of this app's projects it is, `null` for one it
+        // does not have.
+        MaestroRpcMessage::Response(ServerResponse::TasksChanged(project)) => {
+            let project_id = project_id_for_path(app_state, connection_key, &project.project_path);
+            crate::core::emit_or_log(
+                app_handle,
+                "tasks-changed",
+                &serde_json::json!({ "project_id": project_id }),
+            );
+        }
+        MaestroRpcMessage::Response(ServerResponse::WorktreesChanged(project)) => {
+            let project_id = project_id_for_path(app_state, connection_key, &project.project_path);
+            crate::core::emit_or_log(
+                app_handle,
+                "worktrees-changed",
+                &serde_json::json!({ "project_id": project_id }),
+            );
+        }
+        MaestroRpcMessage::Response(ServerResponse::PromptsChanged(project)) => {
+            let project_id = project_id_for_path(app_state, connection_key, &project.project_path);
+            // `project_id` is null when the path matches no project this app knows of.
+            crate::core::emit_or_log(
+                app_handle,
+                "prompts-changed",
+                &serde_json::json!({ "collection": "project", "project_id": project_id }),
+            );
+        }
+        // Only the window holding the project takes the session over. Adopting asks the daemon
+        // for its row, and a reply comes back through this reader, so it runs on a task of its own.
+        MaestroRpcMessage::Response(ServerResponse::TaskSessionStarted(started)) => {
+            let held = app_state
+                .active_project_lock
+                .lock()
+                .ok()
+                .and_then(|held| *held);
+            let project_id = project_id_for_path(app_state, connection_key, &started.project_path);
+            if let Some(project_id) =
+                crate::acp::session_ops::task_session_target(held, connection_key, project_id)
+            {
+                tokio::spawn(crate::acp::session_ops::adopt_task_session(
+                    connection_key,
+                    project_id,
+                    started.task_id,
+                    started.session_id,
+                    Arc::clone(app_state),
+                ));
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::ProjectLocksOk(resp)) => {
-            if let Ok(mut guard) = pending.project_locks.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
+        // The machine's capacity or a project's auto mode: either can let the queue move.
+        MaestroRpcMessage::Response(ServerResponse::PipelineSettingsChanged(_)) => {
+            crate::core::emit_or_log(app_handle, "settings-changed", &());
         }
-        MaestroRpcMessage::Response(ServerResponse::TakeoverResultOk(resp)) => {
-            if let Ok(mut guard) = pending.takeover.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp.granted));
-                }
-            }
+        // Named by project as well, since task ids are per project.
+        MaestroRpcMessage::Response(ServerResponse::TaskCommentsChanged(task)) => {
+            let project_id = project_id_for_path(app_state, connection_key, &task.project_path);
+            crate::core::emit_or_log(
+                app_handle,
+                "task-comments-changed",
+                &serde_json::json!({ "project_id": project_id, "task_id": task.task_id }),
+            );
+        }
+        MaestroRpcMessage::Response(response @ ServerResponse::TakeoverResultOk(_)) => {
+            pending.deliver_takeover(response);
         }
         // Unsolicited, like a run changing: some window somewhere opened or left a project.
         MaestroRpcMessage::Response(ServerResponse::ProjectLocksChanged) => {
@@ -1767,10 +965,33 @@ pub(crate) async fn handle_shared_server_message(
             );
         }
         MaestroRpcMessage::Response(ServerResponse::ProjectKicked(kicked)) => {
-            if let Ok(mut held) = app_state.active_project_lock.lock() {
-                if held.is_some_and(|(_, key)| key == connection_key) {
-                    *held = None;
-                }
+            let released = match app_state.active_project_lock.lock() {
+                Ok(mut held) => match *held {
+                    Some((project_id, key)) if key == connection_key => {
+                        *held = None;
+                        Some(project_id)
+                    }
+                    _ => None,
+                },
+                Err(_) => None,
+            };
+            // The daemon keeps running these for whoever holds the project now, and may reload
+            // them under new ids. Kept here, they would be taken for that window's sessions the
+            // next time this one opens the project, and prompt ids nothing routes.
+            if let Some(project_id) = released {
+                let entries: Vec<String> = app_state
+                    .acp
+                    .sessions
+                    .lock()
+                    .await
+                    .iter()
+                    .filter(|(_, process)| {
+                        process.project_id == Some(project_id)
+                            && process.connection_key == connection_key
+                    })
+                    .map(|(session_id, _)| session_id.clone())
+                    .collect();
+                crate::acp::session_ops::forget_sessions(app_state, &entries).await;
             }
             crate::core::emit_or_log(
                 app_handle,
@@ -1780,182 +1001,6 @@ pub(crate) async fn handle_shared_server_message(
                     "reason": kicked.reason,
                 }),
             );
-        }
-        MaestroRpcMessage::Response(ServerResponse::SessionListOk(resp)) => {
-            if let Ok(mut guard) = pending.session_list.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::SessionCloseOk) => {
-            if let Ok(mut guard) = pending.session_close.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::SessionDeleteOk) => {
-            if let Ok(mut guard) = pending.session_delete.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::CheckToolsOk(resp)) => {
-            if let Ok(mut guard) = pending.check_tools.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::SetToolPathOk(resp)) => {
-            if let Ok(mut guard) = pending.set_tool_path.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::TestToolPathOk(resp)) => {
-            if let Ok(mut guard) = pending.test_tool_path.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::InstallSkillsOk(resp)) => {
-            if let Ok(mut guard) = pending.install_skills.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::ListMcpServersOk(resp)) => {
-            if let Ok(mut guard) = pending.list_mcp_servers.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::SaveMcpServersOk) => {
-            if let Ok(mut guard) = pending.save_mcp_servers.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::SetMcpSecretsOk) => {
-            if let Ok(mut guard) = pending.set_mcp_secrets.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::TestMcpServerOk(resp)) => {
-            if let Ok(mut guard) = pending.test_mcp_server.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::ListSkillsOk(resp)) => {
-            if let Ok(mut guard) = pending.list_skills.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::ApplySkillOk) => {
-            if let Ok(mut guard) = pending.apply_skill.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::DeleteSkillOk) => {
-            if let Ok(mut guard) = pending.delete_skill.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(resp)) => {
-            log::debug!(
-                "[registry] DetectInstalledAgentsOk: {:?}",
-                resp.agents.iter().map(|a| &a.agent_id).collect::<Vec<_>>()
-            );
-            if let Ok(mut guard) = pending.detect_installed.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::DetectProjectAgentsOk(resp)) => {
-            if let Ok(mut guard) = pending.detect_project.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(resp)) => {
-            let agent_id = resp.agent_id.clone();
-            let supports = (
-                resp.supports_session_list,
-                resp.supports_session_load,
-                resp.supports_session_close,
-                resp.supports_session_delete,
-            );
-            // Store auth info before sending the response to avoid a race.
-            // Preserve authenticated=true if the agent was already authenticated this session
-            // (e.g., after terminal auth, the retry spawns a new session and re-sends PreInitializeOk).
-            let mut auth_map = app_state.acp.agent_auth_info.lock().await;
-            let prev_authenticated = auth_map
-                .get(&(connection_key, agent_id.clone()))
-                .map(|info| info.authenticated)
-                .unwrap_or(false);
-            let auth_info = crate::acp::session_types::AgentAuthInfo {
-                auth_methods: resp
-                    .auth_methods
-                    .iter()
-                    .map(|m| crate::acp::session_types::AuthMethodDto {
-                        id: m.id.clone(),
-                        name: m.name.clone(),
-                        description: m.description.clone(),
-                        method_type: m.method_type.clone(),
-                        args: m.args.clone(),
-                    })
-                    .collect(),
-                supports_logout: resp.supports_auth_logout,
-                authenticated: prev_authenticated,
-            };
-            auth_map.insert((connection_key, agent_id.clone()), auth_info);
-            drop(auth_map);
-            let tx = pending
-                .pre_init
-                .lock()
-                .ok()
-                .and_then(|mut map| map.remove(&resp.agent_id));
-            if let Some(tx) = tx {
-                let _ = tx.send(Ok(resp));
-            }
-            log::debug!(
-                "[acp] pre-initialize-ok agent_id={agent_id} session_list={} session_load={} session_close={} session_delete={}",
-                supports.0, supports.1, supports.2, supports.3
-            );
-        }
-        MaestroRpcMessage::Response(ServerResponse::AuthenticateOk) => {
-            if let Ok(mut guard) = pending.authenticate.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::LogoutOk) => {
-            if let Ok(mut guard) = pending.logout.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
         }
         MaestroRpcMessage::Response(ServerResponse::AuthTerminalExit(exit)) => {
             let conn_key_id = match connection_key {
@@ -1989,9 +1034,7 @@ pub(crate) async fn handle_shared_server_message(
             for session_id_str in &lost.affected_session_ids {
                 {
                     let session_id = session_id_str.clone();
-                    // The removed entry is the only place the task id is still available.
-                    let removed = remove_session_and_persist(app_state, &session_id).await;
-                    fail_task_if_still_running(app_state, removed.and_then(|s| s.task_id));
+                    app_state.acp.sessions.lock().await.remove(&session_id);
                     if let Err(e) =
                         app_handle.emit(&format!("acp://session-ended/{}", session_id), ())
                     {
@@ -2006,39 +1049,6 @@ pub(crate) async fn handle_shared_server_message(
                 lost.affected_session_ids
             );
             app_state.app_handle.emit("sessions-changed", ()).ok();
-        }
-        MaestroRpcMessage::Response(ServerResponse::FileSearchOk(FileSearchResponse { files })) => {
-            // Deliver to the first connection session that has a pending file search.
-            let sessions = app_state.acp.sessions.lock().await;
-            for (_, session) in sessions
-                .iter()
-                .filter(|(_, s)| s.connection_key == connection_key)
-            {
-                if let Ok(mut guard) = session.pending_file_search.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Ok(files));
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::FileReadOk(FileReadResponse { content })) => {
-            let sessions = app_state.acp.sessions.lock().await;
-            for (_, session) in sessions
-                .iter()
-                .filter(|(_, s)| s.connection_key == connection_key)
-            {
-                if let Ok(mut guard) = session.pending_file_read.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Ok(content));
-                        }
-                        break;
-                    }
-                }
-            }
         }
         MaestroRpcMessage::Response(ServerResponse::Diagnostic(diag)) => {
             log_server_diagnostic(&diag.level, &diag.message);
@@ -2064,192 +1074,73 @@ pub(crate) async fn handle_shared_server_message(
                 .ok();
         }
         MaestroRpcMessage::Response(ServerResponse::Error(err)) => {
-            // Try pending automation requests first, then session ops, then file ops, then
-            // PreInitialize, then emit globally. An automation request refused with a reason the
-            // user should read (a run still going cannot be deleted) must not end in a timeout.
-            let mut resolved = fail_pending(&pending.automations, &err.message)
-                || fail_pending(&pending.save_automation, &err.message)
-                || fail_pending(&pending.delete_automation, &err.message)
-                || fail_pending(&pending.automation_runs, &err.message)
-                || fail_pending(&pending.preview_schedule, &err.message)
-                || fail_pending(&pending.delete_automation_run, &err.message)
-                || fail_pending(&pending.set_run_retention, &err.message)
-                || fail_pending(&pending.webhook_settings, &err.message)
-                || fail_pending(&pending.server_status, &err.message)
-                || fail_pending(&pending.roll_webhook_secret, &err.message)
-                || fail_pending(&pending.webhook_deliveries, &err.message)
-                || fail_pending(&pending.list_mcp_servers, &err.message)
-                || fail_pending(&pending.save_mcp_servers, &err.message)
-                || fail_pending(&pending.list_skills, &err.message)
-                || fail_pending(&pending.apply_skill, &err.message)
-                || fail_pending(&pending.delete_skill, &err.message);
-
-            // Pending SessionList / SessionClose / CheckTools
-            if !resolved {
-                if let Ok(mut guard) = pending.session_list.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.session_close.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.check_tools.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.set_tool_path.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.install_skills.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.test_tool_path.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.detect_installed.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.detect_project.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-
-            if !resolved {
+            // No id and no session: nothing says which request this answers, so every session
+            // on the connection is told.
+            let session_ids: Vec<String> = {
                 let sessions = app_state.acp.sessions.lock().await;
-                'outer: for (_, session) in sessions
+                sessions
                     .iter()
                     .filter(|(_, s)| s.connection_key == connection_key)
+                    .map(|(id, _)| id.clone())
+                    .collect()
+            };
+            for session_id in session_ids {
+                if let Err(e) =
+                    app_handle.emit(&format!("acp://session-error/{}", session_id), &err.message)
                 {
-                    if let Ok(mut guard) = session.pending_file_search.lock() {
-                        if guard.is_some() {
-                            if let Some(tx) = guard.take() {
-                                let _ = tx.send(Err(err.message.clone()));
-                            }
-                            resolved = true;
-                            break 'outer;
-                        }
-                    }
-                    if let Ok(mut guard) = session.pending_file_read.lock() {
-                        if guard.is_some() {
-                            if let Some(tx) = guard.take() {
-                                let _ = tx.send(Err(err.message.clone()));
-                            }
-                            resolved = true;
-                            break 'outer;
-                        }
-                    }
-                }
-            }
-            if !resolved {
-                // Try pending ListAgents.
-                if let Ok(mut guard) = pending.list_agents.lock() {
-                    if let Some(tx) = guard.take() {
-                        let _ = tx.send(Err(err.message.clone()));
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.authenticate.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.logout.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                // Try pending PreInitialize.
-                let pre_init_tx = pending.pre_init.lock().ok().and_then(|mut map| {
-                    let key = map.keys().next().cloned()?;
-                    map.remove(&key)
-                });
-                if let Some(tx) = pre_init_tx {
-                    let _ = tx.send(Err(err.message));
-                } else {
-                    // Emit as session-error for all connection sessions.
-                    let session_ids: Vec<String> = {
-                        let sessions = app_state.acp.sessions.lock().await;
-                        sessions
-                            .iter()
-                            .filter(|(_, s)| s.connection_key == connection_key)
-                            .map(|(id, _)| id.clone())
-                            .collect()
-                    };
-                    for session_id in session_ids {
-                        if let Err(e) = app_handle
-                            .emit(&format!("acp://session-error/{}", session_id), &err.message)
-                        {
-                            log::error!("[acp] emit session-error/{session_id} failed: {e}");
-                        }
-                    }
+                    log::error!("[acp] emit session-error/{session_id} failed: {e}");
                 }
             }
         }
         _ => {}
+    }
+}
+
+/// Hand a reply to the request whose id it carries.
+async fn deliver_reply(
+    id: maestro_protocol::RequestId,
+    response: ServerResponse,
+    connection_key: crate::acp::ConnectionKey,
+    app_state: &Arc<crate::core::AppState>,
+    pending: &PendingRequests,
+) {
+    if let ServerResponse::PreInitializeOk(resp) = &response {
+        // Store auth info before sending the response to avoid a race.
+        // Preserve authenticated=true if the agent was already authenticated this session
+        // (e.g., after terminal auth, the retry spawns a new session and re-sends PreInitializeOk).
+        let mut auth_map = app_state.acp.agent_auth_info.lock().await;
+        let key = (connection_key, resp.agent_id.clone());
+        let prev_authenticated = auth_map
+            .get(&key)
+            .map(|info| info.authenticated)
+            .unwrap_or(false);
+        let auth_info = crate::acp::session_types::AgentAuthInfo {
+            auth_methods: resp
+                .auth_methods
+                .iter()
+                .map(|m| crate::acp::session_types::AuthMethodDto {
+                    id: m.id.clone(),
+                    name: m.name.clone(),
+                    description: m.description.clone(),
+                    method_type: m.method_type.clone(),
+                    args: m.args.clone(),
+                })
+                .collect(),
+            supports_logout: resp.supports_auth_logout,
+            authenticated: prev_authenticated,
+        };
+        auth_map.insert(key, auth_info);
+        log::debug!(
+            "[acp] pre-initialize-ok agent_id={} session_list={} session_load={} session_close={} session_delete={}",
+            resp.agent_id,
+            resp.supports_session_list,
+            resp.supports_session_load,
+            resp.supports_session_close,
+            resp.supports_session_delete
+        );
+    }
+    if !pending.deliver(id, response) {
+        log::debug!("[acp] dropped the reply to request {id}: nothing is waiting on it any more");
     }
 }
 
@@ -2262,7 +1153,7 @@ pub(crate) fn spawn_shared_reader_task(
     writer_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
     app_handle: tauri::AppHandle,
     app_state: Arc<crate::core::AppState>,
-    pending: PendingChannels,
+    pending: PendingRequests,
     ended: Arc<tokio::sync::Notify>,
 ) {
     tokio::spawn(async move {
@@ -2320,13 +1211,13 @@ pub(crate) fn spawn_shared_reader_task(
             }
         });
 
-        while let Some(msg) = source.next_message().await {
+        while let Some((id, msg)) = source.next_message_with_id().await {
             match &msg {
                 MaestroRpcMessage::Response(ServerResponse::Ping { .. })
                 | MaestroRpcMessage::Response(ServerResponse::TerminalOutput(_)) => {}
                 _ => {
                     if let Ok(json) = serde_json::to_string(&msg) {
-                        log::trace!("[acp] << {connection_key:?} {json}");
+                        log::trace!("[acp] << {connection_key:?} id={id:?} {json}");
                     }
                 }
             }
@@ -2351,11 +1242,22 @@ pub(crate) fn spawn_shared_reader_task(
                 }
                 continue;
             }
+            // A reply to a session-scoped request never carries an id, so one that names a
+            // session is left to the routing every session message takes.
+            if let (Some(id), None) = (id, extract_session_id(&msg)) {
+                if let MaestroRpcMessage::Response(response) = msg {
+                    deliver_reply(id, response, connection_key, &app_state, &pending).await;
+                }
+                continue;
+            }
             handle_shared_server_message(msg, connection_key, &app_handle, &app_state, &pending)
                 .await;
         }
 
         watchdog_alive.store(false, Ordering::Relaxed);
+        // Nothing will answer them now, and leaving them to their timeouts holds the caller for
+        // as long as five minutes.
+        pending.fail_all("The connection to the server closed before it answered");
         ended.notify_one();
 
         // Server process died — clean up all shared sessions for this connection.
@@ -2402,12 +1304,8 @@ pub(crate) fn spawn_shared_reader_task(
                 if acp_session_id.is_some() && is_ssh {
                     restorable.push(RestorableSession {
                         session_id: session_id.clone(),
-                        agent_id: s.agent_id_meta.clone(),
                         acp_session_id,
-                        cwd: s.cwd.clone(),
-                        session_name: s.session_name.clone(),
                         project_id: s.project_id,
-                        task_id: s.task_id,
                     });
                 } else {
                     unrestorable.push(session_id.clone());
@@ -2489,10 +1387,82 @@ fn is_fatal_session_error(msg: &MaestroRpcMessage) -> bool {
     )
 }
 
+/// Whether a load failed for a reason no later attempt gets past, so the daemon's row for the
+/// conversation should be closed.
+///
+/// An open row is loaded again every time the project is opened, which is right for an agent that
+/// crashed or wants signing in to again and wrong for a conversation that no longer exists. The
+/// daemon tells the two apart, because it holds the agent's error code and this side is sent only
+/// the agent's wording. A load that could not be sent at all, a connection that is down, never
+/// produces this message, so an unreachable host keeps its sessions.
+fn is_gone_session_error(msg: &MaestroRpcMessage) -> bool {
+    matches!(
+        msg,
+        MaestroRpcMessage::Response(ServerResponse::Error(e))
+            if e.session_id.is_some()
+                && e.message.starts_with(maestro_protocol::SESSION_GONE_ERROR)
+    )
+}
+
+/// Whether a load was refused because the daemon is reloading that session itself.
+fn is_reloading_session_error(msg: &MaestroRpcMessage) -> bool {
+    matches!(
+        msg,
+        MaestroRpcMessage::Response(ServerResponse::Error(e))
+            if e.session_id.is_some()
+                && e.message.starts_with(maestro_protocol::SESSION_RELOADING_ERROR)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::task::transition::TaskTransition;
+
+    mod project_paths {
+        use super::*;
+        use crate::acp::ConnectionKey;
+
+        fn rows() -> Vec<(i32, String, ConnectionKey)> {
+            vec![
+                (1, r"C:\Users\Dev\Shop\".to_string(), ConnectionKey::Local),
+                (2, "/srv/shop".to_string(), ConnectionKey::Ssh { id: 7 }),
+                (
+                    3,
+                    "/home/dev/shop/".to_string(),
+                    ConnectionKey::Wsl { id: 2 },
+                ),
+            ]
+        }
+
+        #[test]
+        fn a_local_windows_path_matches_whatever_its_case_and_prefix() {
+            let found = |path, ignore_case| {
+                match_project_path(rows(), ConnectionKey::Local, path, ignore_case)
+            };
+            assert_eq!(found(r"\\?\C:\users\dev\shop", true), Some(1));
+            assert_eq!(found("C:/Users/Dev/Shop", false), Some(1));
+            assert_eq!(found(r"C:\users\dev\shop", false), None);
+        }
+
+        #[test]
+        fn a_remote_path_matches_exactly_on_its_own_connection() {
+            let ssh = ConnectionKey::Ssh { id: 7 };
+            let wsl = ConnectionKey::Wsl { id: 2 };
+            assert_eq!(
+                match_project_path(rows(), ssh, "/srv/shop/", false),
+                Some(2)
+            );
+            assert_eq!(match_project_path(rows(), ssh, "/srv/Shop", false), None);
+            assert_eq!(
+                match_project_path(rows(), wsl, "/home/dev/shop", false),
+                Some(3)
+            );
+            assert_eq!(
+                match_project_path(rows(), ConnectionKey::Ssh { id: 8 }, "/srv/shop", false),
+                None
+            );
+        }
+    }
 
     mod fatal_session_errors {
         use super::*;
@@ -2503,6 +1473,43 @@ mod tests {
                 message: message.to_string(),
                 session_id: session_id.map(str::to_string),
             }))
+        }
+
+        /// Every gone session is a failed load, so the entry is torn down either way. Only the one
+        /// the daemon calls gone costs the conversation its row.
+        #[test]
+        fn only_a_session_the_daemon_calls_gone_closes_its_row() {
+            let gone = error(
+                "ACP session/load failed: the session is gone: Resource not found: 558e4705",
+                Some("session-3"),
+            );
+            assert!(is_fatal_session_error(&gone));
+            assert!(is_gone_session_error(&gone));
+
+            for retryable in [
+                "ACP session/load failed: Authentication required",
+                "ACP session/load failed: Internal error",
+            ] {
+                let message = error(retryable, Some("session-3"));
+                assert!(is_fatal_session_error(&message));
+                assert!(!is_gone_session_error(&message));
+            }
+            assert!(!is_gone_session_error(&error(
+                "ACP session/load failed: the session is gone",
+                None,
+            )));
+        }
+
+        /// The daemon's own reload is not a failed load: the task is not failed and the row stays.
+        #[test]
+        fn a_load_the_daemon_is_reloading_is_not_a_failure() {
+            let reloading = error(
+                "session_reloading: the server is reloading this session itself",
+                Some("session-3"),
+            );
+            assert!(is_reloading_session_error(&reloading));
+            assert!(!is_fatal_session_error(&reloading));
+            assert!(!is_gone_session_error(&reloading));
         }
 
         #[test]
@@ -2533,180 +1540,5 @@ mod tests {
                 None,
             )));
         }
-    }
-
-    /// A task with a reviewer running on it, in the state both routes to a verdict find it.
-    fn under_review(rounds: i32) -> rusqlite::Connection {
-        let conn = rusqlite::Connection::open_in_memory().expect("open db");
-        crate::core::schema::initialize_schema(&conn).expect("schema");
-        conn.execute(
-            "INSERT INTO projects (id, name, path, created_at, updated_at) \
-             VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01')",
-            [],
-        )
-        .expect("insert project");
-        conn.execute(
-            "INSERT INTO tasks (id, project_id, title, status, base_branch, phase, phase_status, \
-             ball, review_rounds, created_at, updated_at) \
-             VALUES (1, 1, 'demo task', 'Review', 'main', 'SelfReview', 'Running', 'Agent', ?, \
-             '2026-01-01', '2026-01-01')",
-            [rounds],
-        )
-        .expect("insert task");
-        conn
-    }
-
-    fn rounds_on(conn: &rusqlite::Connection) -> i32 {
-        conn.query_row("SELECT review_rounds FROM tasks WHERE id = 1", [], |row| {
-            row.get(0)
-        })
-        .expect("read rounds")
-    }
-
-    /// Both routes a reviewer can finish by — its turn ending, and the plan-mode exit request it
-    /// has instead — land here, and this is the only place the round is counted. It had no test
-    /// until the arithmetic in it turned out to be wrong.
-    #[test]
-    fn asking_for_changes_spends_a_round_and_sends_the_task_back() {
-        let conn = under_review(0);
-
-        let event = review_verdict_event(&conn, 1, "CHANGES REQUESTED\n\nThe null check is gone.");
-
-        assert_eq!(event, TaskTransition::ReviewRejected);
-        assert_eq!(
-            rounds_on(&conn),
-            1,
-            "the decision to spend a round is taken here"
-        );
-    }
-
-    /// Approval is free: it ends the loop rather than going round again, so counting it would
-    /// charge a task for the round that did not happen.
-    #[test]
-    fn approval_costs_nothing_and_ends_the_loop() {
-        let conn = under_review(1);
-
-        let event = review_verdict_event(&conn, 1, "APPROVED\n\nReads well.");
-
-        assert_eq!(event, TaskTransition::ReviewFinished);
-        assert_eq!(rounds_on(&conn), 1);
-    }
-
-    /// The last round the cap allows is still spent; the one after it goes to the user with the
-    /// verdict intact rather than starting a coder nobody bounded.
-    #[test]
-    fn the_round_after_the_cap_goes_to_the_user() {
-        use crate::acp::completion::REVIEW_ROUND_CAP;
-
-        let conn = under_review(REVIEW_ROUND_CAP - 1);
-        assert_eq!(
-            review_verdict_event(&conn, 1, "CHANGES REQUESTED\n\nstill wrong"),
-            TaskTransition::ReviewRejected,
-            "the last round the cap allows must still be spent"
-        );
-        assert_eq!(rounds_on(&conn), REVIEW_ROUND_CAP);
-
-        assert_eq!(
-            review_verdict_event(&conn, 1, "CHANGES REQUESTED\n\nstill wrong"),
-            TaskTransition::ReviewFinished,
-            "and the next one escalates instead"
-        );
-        assert_eq!(
-            rounds_on(&conn),
-            REVIEW_ROUND_CAP,
-            "an escalation is not a round"
-        );
-    }
-
-    /// A reviewer in plan mode delivers through `ExitPlanMode`, and its payload is a plan rather
-    /// than the verdict line. Unparseable is `Approved` by design — the human gate, not another
-    /// coder round on a guess.
-    #[test]
-    fn a_plan_that_is_not_a_verdict_reaches_the_user_rather_than_a_coder() {
-        let conn = under_review(0);
-
-        let event = review_verdict_event(&conn, 1, "1. Fix the null check\n2. Add a test");
-
-        assert_eq!(event, TaskTransition::ReviewFinished);
-        assert_eq!(rounds_on(&conn), 0);
-    }
-
-    fn state_of(conn: &rusqlite::Connection) -> (String, Option<String>, Option<String>, String) {
-        conn.query_row(
-            "SELECT status, phase, phase_status, ball FROM tasks WHERE id = 1",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-        )
-        .expect("read state")
-    }
-
-    /// The join `try_conclude_plan_mode_phase` makes, and the one that was wrong. Testing
-    /// `review_verdict_event` and the transition table separately said nothing about it: both were
-    /// correct on their own while the path between them sent a reviewer to the wrong one.
-    #[test]
-    fn a_plan_mode_reviewer_asking_for_changes_goes_back_to_a_coder() {
-        let conn = under_review(0);
-
-        let moved = conclude_read_only_phase(
-            &conn,
-            1,
-            Some("SelfReview"),
-            "CHANGES REQUESTED\n\nThe null check is gone.",
-        )
-        .expect("apply");
-
-        assert!(
-            moved.is_some(),
-            "the task must move; the caller closes the session either way"
-        );
-        let (status, phase, phase_status, ball) = state_of(&conn);
-        assert_eq!(
-            (
-                status.as_str(),
-                phase.as_deref(),
-                phase_status.as_deref(),
-                ball.as_str()
-            ),
-            ("InProgress", Some("Rework"), Some("Waiting"), "Agent"),
-            "a rejected review is a handoff back to a coder, not a gate"
-        );
-        assert_eq!(rounds_on(&conn), 1);
-
-        let filed: String = conn
-            .query_row(
-                "SELECT kind FROM task_comments WHERE task_id = 1 ORDER BY id DESC LIMIT 1",
-                [],
-                |row| row.get(0),
-            )
-            .expect("read comment");
-        assert_eq!(filed, "verdict", "and it is filed as what it is");
-    }
-
-    /// The other two read-only phases still take the artifact route — the point is that the phase
-    /// decides, not that everything now goes through the verdict path.
-    #[test]
-    fn a_planner_still_delivers_its_plan_to_the_gate() {
-        let conn = under_review(0);
-        conn.execute(
-            "UPDATE tasks SET status = 'InProgress', phase = 'Drafting' WHERE id = 1",
-            [],
-        )
-        .expect("move to drafting");
-
-        conclude_read_only_phase(&conn, 1, Some("Drafting"), "1. Fix it\n2. Test it")
-            .expect("apply")
-            .expect("the task must move");
-
-        let (status, phase, phase_status, ball) = state_of(&conn);
-        assert_eq!(
-            (
-                status.as_str(),
-                phase.as_deref(),
-                phase_status.as_deref(),
-                ball.as_str()
-            ),
-            ("InProgress", Some("PlanReview"), Some("Waiting"), "User")
-        );
-        assert_eq!(rounds_on(&conn), 0, "a plan is not a review round");
     }
 }

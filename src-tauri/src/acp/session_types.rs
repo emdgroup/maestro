@@ -1,14 +1,9 @@
 //! Core ACP session and transport data types.
 
-use crate::acp::transport::{
-    CheckToolsResponse, PreInitializeResponse, PromptCapabilitiesInfo, SessionListOkResponse,
-    ToolCheckResult,
-};
-use maestro_protocol::{
-    DetectInstalledAgentsResponse, DetectProjectAgentsResponse, InstallSkillsResponse,
-};
+use crate::acp::transport::{PromptCapabilitiesInfo, ServerResponse};
+use maestro_protocol::RequestId;
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::io::BufWriter;
 use tokio::process::{Child, ChildStdin};
@@ -17,10 +12,6 @@ use tokio::sync::oneshot;
 /// Reply slot for a request that can only be in flight one at a time.
 /// `None` means no request is outstanding.
 pub type PendingReply<T> = Arc<std::sync::Mutex<Option<oneshot::Sender<Result<T, String>>>>>;
-
-/// Reply slots for requests that can be in flight concurrently, keyed by request id.
-pub type PendingReplyMap<T> =
-    Arc<std::sync::Mutex<HashMap<String, oneshot::Sender<Result<T, String>>>>>;
 
 /// Session-update payloads held until the frontend listener registers and drains them.
 ///
@@ -51,17 +42,16 @@ pub struct AgentAuthInfo {
     pub authenticated: bool,
 }
 
-/// Metadata captured for sessions that were active when the connection server died.
-/// Used to reload them after SSH reconnects via the session/load mechanism.
+/// A session that was active when an SSH connection's server was lost, parked until the
+/// connection comes back or gives up.
+///
+/// Only what it takes to tell the frontend how it ended: the daemon's own rows are what brings the
+/// conversation back.
 pub struct RestorableSession {
     pub session_id: String,
-    pub agent_id: String,
-    /// None when the session hadn't received SpawnOk yet — cannot be restored.
+    /// None when the session hadn't received SpawnOk yet, so the daemon has no row for it.
     pub acp_session_id: Option<String>,
-    pub cwd: String,
-    pub session_name: Option<String>,
     pub project_id: Option<i32>,
-    pub task_id: Option<i32>,
 }
 
 /// Write transport for a live ACP session.
@@ -76,91 +66,125 @@ pub enum AcpTransportWriter {
     SharedServer(tokio::sync::mpsc::Sender<Vec<u8>>),
 }
 
-/// Pending oneshot channels for a shared `ConnectionServer`.
-/// Arc-wrapped so the reader task can hold clones without borrowing the server.
-#[derive(Clone)]
-pub struct PendingChannels {
-    pub pre_init: PendingReplyMap<PreInitializeResponse>,
-    pub list_agents: PendingReply<Vec<crate::acp::registry::DiscoveredAgent>>,
-    pub live_sessions: PendingReply<maestro_protocol::ListLiveSessionsResponse>,
-    pub automations: PendingReply<maestro_protocol::ListAutomationsResponse>,
-    pub save_automation: PendingReply<maestro_protocol::Automation>,
-    pub delete_automation: PendingReply<()>,
-    pub automation_runs: PendingReply<maestro_protocol::ListAutomationRunsResponse>,
-    pub delete_automation_run: PendingReply<()>,
-    pub set_run_retention: PendingReply<()>,
-    pub webhook_settings: PendingReply<maestro_protocol::WebhookStatus>,
-    pub server_status: PendingReply<maestro_protocol::ServerStatus>,
-    pub roll_webhook_secret: PendingReply<maestro_protocol::Automation>,
-    pub webhook_deliveries: PendingReply<maestro_protocol::ListWebhookDeliveriesResponse>,
-    pub preview_schedule: PendingReply<maestro_protocol::PreviewScheduleResponse>,
-    pub session_list: PendingReply<SessionListOkResponse>,
-    pub session_close: PendingReply<()>,
-    pub session_delete: PendingReply<()>,
-    pub check_tools: PendingReply<CheckToolsResponse>,
-    pub set_tool_path: PendingReply<ToolCheckResult>,
-    pub test_tool_path: PendingReply<ToolCheckResult>,
-    pub install_skills: PendingReply<InstallSkillsResponse>,
-    pub list_mcp_servers: PendingReply<maestro_protocol::McpServerList>,
-    pub save_mcp_servers: PendingReply<()>,
-    pub set_mcp_secrets: PendingReply<()>,
-    pub test_mcp_server: PendingReply<maestro_protocol::McpTestResult>,
-    pub list_skills: PendingReply<maestro_protocol::SkillList>,
-    pub apply_skill: PendingReply<()>,
-    pub delete_skill: PendingReply<()>,
-    pub detect_installed: PendingReply<DetectInstalledAgentsResponse>,
-    pub detect_project: PendingReply<DetectProjectAgentsResponse>,
-    pub authenticate: PendingReply<()>,
-    pub logout: PendingReply<()>,
-    pub acquire_project_lock: PendingReply<maestro_protocol::AcquireProjectLockResponse>,
-    pub project_locks: PendingReply<maestro_protocol::ListProjectLocksResponse>,
-    pub takeover: PendingReply<bool>,
+/// A request waiting for the reply that carries its id.
+struct Waiter {
+    /// Set for a request made on a session's behalf, so an error scoped to that session can fail it.
+    session_id: Option<String>,
+    sender: oneshot::Sender<Result<ServerResponse, String>>,
 }
 
-impl Default for PendingChannels {
-    fn default() -> Self {
-        Self::new()
+/// The requests one `ConnectionServer` has sent and not yet heard back on, keyed by the id the
+/// server echoes on its reply. Clones share the same state, so the reader task holds one.
+#[derive(Clone, Default)]
+pub struct PendingRequests {
+    next_id: Arc<AtomicU64>,
+    waiting: Arc<std::sync::Mutex<HashMap<RequestId, Waiter>>>,
+    /// The one request answered by type rather than by id: `TakeoverResultOk` is written by a
+    /// timer or by another client's answer, neither of which knows the id that asked.
+    takeover: Arc<std::sync::Mutex<Option<RequestId>>>,
+    /// Why nothing registered from now on can be answered, set once the reader has ended. A
+    /// caller that cloned this just before would otherwise register after `fail_all` had swept,
+    /// and wait out its whole timeout on a connection that is gone.
+    closed: Arc<std::sync::Mutex<Option<String>>>,
+}
+
+/// A poisoned lock here still guards a usable map, and refusing it would strand every waiter.
+fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+impl PendingRequests {
+    pub fn register(
+        &self,
+        session_id: Option<&str>,
+    ) -> (RequestId, oneshot::Receiver<Result<ServerResponse, String>>) {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
+        let (sender, receiver) = oneshot::channel();
+        // Held across the insert so `fail_all` cannot sweep between the check and it.
+        let closed = lock(&self.closed);
+        if let Some(reason) = closed.as_ref() {
+            if sender.send(Err(reason.clone())).is_err() {
+                log::debug!("[acp] request {id} was dropped before it could be refused");
+            }
+            return (id, receiver);
+        }
+        lock(&self.waiting).insert(
+            id,
+            Waiter {
+                session_id: session_id.map(str::to_owned),
+                sender,
+            },
+        );
+        (id, receiver)
     }
-}
 
-impl PendingChannels {
-    pub fn new() -> Self {
-        Self {
-            pre_init: Arc::new(std::sync::Mutex::new(HashMap::new())),
-            list_agents: Arc::new(std::sync::Mutex::new(None)),
-            live_sessions: Arc::new(std::sync::Mutex::new(None)),
-            automations: Arc::new(std::sync::Mutex::new(None)),
-            save_automation: Arc::new(std::sync::Mutex::new(None)),
-            delete_automation: Arc::new(std::sync::Mutex::new(None)),
-            automation_runs: Arc::new(std::sync::Mutex::new(None)),
-            delete_automation_run: Arc::new(std::sync::Mutex::new(None)),
-            set_run_retention: Arc::new(std::sync::Mutex::new(None)),
-            webhook_settings: Arc::new(std::sync::Mutex::new(None)),
-            server_status: Arc::new(std::sync::Mutex::new(None)),
-            roll_webhook_secret: Arc::new(std::sync::Mutex::new(None)),
-            webhook_deliveries: Arc::new(std::sync::Mutex::new(None)),
-            preview_schedule: Arc::new(std::sync::Mutex::new(None)),
-            session_list: Arc::new(std::sync::Mutex::new(None)),
-            session_close: Arc::new(std::sync::Mutex::new(None)),
-            session_delete: Arc::new(std::sync::Mutex::new(None)),
-            check_tools: Arc::new(std::sync::Mutex::new(None)),
-            set_tool_path: Arc::new(std::sync::Mutex::new(None)),
-            test_tool_path: Arc::new(std::sync::Mutex::new(None)),
-            install_skills: Arc::new(std::sync::Mutex::new(None)),
-            list_mcp_servers: Arc::new(std::sync::Mutex::new(None)),
-            save_mcp_servers: Arc::new(std::sync::Mutex::new(None)),
-            set_mcp_secrets: Arc::new(std::sync::Mutex::new(None)),
-            test_mcp_server: Arc::new(std::sync::Mutex::new(None)),
-            list_skills: Arc::new(std::sync::Mutex::new(None)),
-            apply_skill: Arc::new(std::sync::Mutex::new(None)),
-            delete_skill: Arc::new(std::sync::Mutex::new(None)),
-            detect_installed: Arc::new(std::sync::Mutex::new(None)),
-            detect_project: Arc::new(std::sync::Mutex::new(None)),
-            authenticate: Arc::new(std::sync::Mutex::new(None)),
-            logout: Arc::new(std::sync::Mutex::new(None)),
-            acquire_project_lock: Arc::new(std::sync::Mutex::new(None)),
-            project_locks: Arc::new(std::sync::Mutex::new(None)),
-            takeover: Arc::new(std::sync::Mutex::new(None)),
+    /// Stop waiting on `id`, so a reply that still arrives is dropped instead of kept for nobody.
+    pub fn forget(&self, id: RequestId) {
+        lock(&self.waiting).remove(&id);
+    }
+
+    /// Hand `response` to the request it answers, an `Error` as that request's failure. Returns
+    /// whether anything was still waiting on `id`.
+    pub fn deliver(&self, id: RequestId, response: ServerResponse) -> bool {
+        let Some(waiter) = lock(&self.waiting).remove(&id) else {
+            return false;
+        };
+        let outcome = match response {
+            ServerResponse::Error(error) => Err(error.message),
+            other => Ok(other),
+        };
+        if waiter.sender.send(outcome).is_err() {
+            log::debug!("[acp] request {id} gave up as its reply arrived");
+        }
+        true
+    }
+
+    /// Make `id` the request the next id-less `TakeoverResultOk` answers. Refused while an
+    /// earlier takeover is still waiting, since the two replies could not be told apart.
+    pub fn claim_takeover(&self, id: RequestId) -> bool {
+        let mut takeover = lock(&self.takeover);
+        if takeover.is_some_and(|held| lock(&self.waiting).contains_key(&held)) {
+            return false;
+        }
+        *takeover = Some(id);
+        true
+    }
+
+    pub fn deliver_takeover(&self, response: ServerResponse) {
+        let claimed = lock(&self.takeover).take();
+        if let Some(id) = claimed {
+            self.deliver(id, response);
+        }
+    }
+
+    pub fn fail_session(&self, session_id: &str, message: &str) {
+        self.fail_where(message, |waiter| {
+            waiter.session_id.as_deref() == Some(session_id)
+        });
+    }
+
+    /// Fail everything waiting, and everything that registers afterwards.
+    pub fn fail_all(&self, message: &str) {
+        let mut closed = lock(&self.closed);
+        *closed = Some(message.to_string());
+        self.fail_where(message, |_| true);
+    }
+
+    fn fail_where(&self, message: &str, matches: impl Fn(&Waiter) -> bool) {
+        let mut waiting = lock(&self.waiting);
+        let ids: Vec<RequestId> = waiting
+            .iter()
+            .filter(|(_, waiter)| matches(waiter))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            if let Some(waiter) = waiting.remove(&id) {
+                if waiter.sender.send(Err(message.to_string())).is_err() {
+                    log::debug!("[acp] request {id} gave up before it could be failed");
+                }
+            }
         }
     }
 }
@@ -177,7 +201,7 @@ pub struct ConnectionServer {
     /// Channel to the writer task (framed bytes → child stdin / SSH channel).
     /// Cloned into each session's `AcpTransportWriter::SharedServer`.
     pub writer_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
-    pub pending: PendingChannels,
+    pub pending: PendingRequests,
     /// Unix timestamp (seconds) of the last `Ping` received from maestro-server.
     /// Zero until the first ping arrives. Checked by the heartbeat watchdog.
     pub last_ping_at: Arc<std::sync::atomic::AtomicU64>,
@@ -260,21 +284,8 @@ pub struct AcpProcess {
     /// Set to `true` when SpawnOk or SessionLoadOk is received. Used by drain to avoid
     /// emitting `replay-drained` before the session is ready (empty buffer race).
     pub initialized: Arc<std::sync::Mutex<bool>>,
-    /// Strips the completion marker from `agent_message_chunk` text and reports when the agent
-    /// declares the task done.
+    /// Strips the completion marker from `agent_message_chunk` text before it is shown.
     pub completion_filter: Arc<std::sync::Mutex<super::completion::CompletionMarkerFilter>>,
-    /// Set when the agent emits the completion marker. Read and reset on each turn ending, so it
-    /// only applies to the turn it appeared in.
-    pub declared_complete: Arc<AtomicBool>,
-    /// Set when the user pressed stop on this session, and read and reset by the next turn ending.
-    ///
-    /// The stop reason cannot carry this: agents disagree about what an interrupted turn reports —
-    /// some answer `cancelled`, some `end_turn` — and an `end_turn` from a coder that had already
-    /// touched files reads as a finished phase, which hands the task straight to the next role. So
-    /// the interrupt is recorded where it is known first-hand rather than inferred from the reply.
-    pub user_interrupted: Arc<AtomicBool>,
-    /// The agent's last run of prose before the turn ends, drained into the task's outcome thread.
-    pub closing_message: Arc<std::sync::Mutex<super::completion::ClosingMessage>>,
     /// Session capability flags from SpawnOk. Used by get_active_sessions.
     pub session_capabilities: SessionCapabilitiesInfo,
     /// Raw config_options catalog from SpawnOk/SessionLoadOk/config updates.
@@ -287,7 +298,24 @@ pub struct AcpProcess {
     pub has_pending_permission: Arc<AtomicBool>,
 }
 
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+/// A session's task as the daemon keys it: task ids are per project, so the number alone does not
+/// name one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TaskKey {
+    pub project_id: i32,
+    pub task_id: i32,
+}
+
+impl TaskKey {
+    pub fn of(project_id: Option<i32>, task_id: Option<i32>) -> Option<Self> {
+        Some(Self {
+            project_id: project_id?,
+            task_id: task_id?,
+        })
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct TaskMetadata {
     pub task_id: Option<i32>,
     pub task_name: Option<String>,
@@ -301,23 +329,36 @@ pub struct TaskMetadata {
     pub role: Option<crate::project::profiles::SessionRole>,
 }
 
-/// What the host knows about a session that `maestro-server` does not.
-///
-/// Handed over at spawn as an opaque blob the server stores and never reads, and handed back by
-/// `ListLiveSessions`. It exists because a session now outlives the app run that started it: on
-/// re-adopting one, the host has only what the server can tell it — an id, an agent, a working
-/// directory — and none of what makes that session belong to a project, a task or a name in the
-/// sidebar.
-///
-/// Deliberately not a protocol type. Adding a field here is a change to two functions in this
-/// crate rather than a `PROTOCOL_VERSION` bump and a redeploy on every connection.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionHostMeta {
-    pub project_id: Option<i32>,
-    pub session_name: Option<String>,
-    pub connection_key: crate::acp::ConnectionKey,
-    #[serde(default)]
-    pub task: TaskMetadata,
+impl TaskMetadata {
+    /// What the daemon stores against the conversation. A `None` here keeps what its row already
+    /// holds, so a reload that knows less than the spawn did loses nothing.
+    pub fn to_session_meta(&self, session_name: Option<String>) -> maestro_protocol::SessionMeta {
+        maestro_protocol::SessionMeta {
+            session_name,
+            task_id: self.task_id,
+            task_name: self.task_name.clone(),
+            branch_name: self.branch_name.clone(),
+            session_start_sha: self.session_start_sha.clone(),
+            // The protocol carries the role as text so a new stage never touches it.
+            role: self
+                .role
+                .as_ref()
+                .and_then(|role| serde_json::to_string(role).ok()),
+        }
+    }
+
+    pub fn from_session_meta(meta: &maestro_protocol::SessionMeta) -> Self {
+        TaskMetadata {
+            task_id: meta.task_id,
+            task_name: meta.task_name.clone(),
+            branch_name: meta.branch_name.clone(),
+            session_start_sha: meta.session_start_sha.clone(),
+            role: meta
+                .role
+                .as_deref()
+                .and_then(|role| serde_json::from_str(role).ok()),
+        }
+    }
 }
 
 /// Parameters for constructing an `AcpProcess`. Separates the plain data fields
@@ -348,7 +389,6 @@ pub struct SessionRequest {
     pub session_id: String,
     pub session_name: Option<String>,
     pub project_id: Option<i32>,
-    pub task_id: Option<i32>,
     pub app_state: Arc<crate::core::AppState>,
 }
 
@@ -364,16 +404,13 @@ pub struct ReaderTaskContext {
     pub replay_buffer: ReplayBuffer,
     pub initialized: Arc<std::sync::Mutex<bool>>,
     pub completion_filter: Arc<std::sync::Mutex<super::completion::CompletionMarkerFilter>>,
-    pub declared_complete: Arc<AtomicBool>,
-    pub user_interrupted: Arc<AtomicBool>,
-    pub closing_message: Arc<std::sync::Mutex<super::completion::ClosingMessage>>,
-    pub session_name: Option<String>,
-    pub agent_id: String,
-    pub project_id: Option<i32>,
-    pub task_id: Option<i32>,
 }
 
 impl AcpProcess {
+    pub fn task_key(&self) -> Option<TaskKey> {
+        TaskKey::of(self.project_id, self.task_id)
+    }
+
     pub fn create(
         params: AcpProcessParams,
         session_id: String,
@@ -394,11 +431,6 @@ impl AcpProcess {
         let completion_filter = Arc::new(std::sync::Mutex::new(
             super::completion::CompletionMarkerFilter::new(),
         ));
-        let declared_complete = Arc::new(AtomicBool::new(false));
-        let user_interrupted = Arc::new(AtomicBool::new(false));
-        let closing_message = Arc::new(std::sync::Mutex::new(
-            super::completion::ClosingMessage::default(),
-        ));
         let ctx = ReaderTaskContext {
             session_id,
             app_handle,
@@ -411,13 +443,6 @@ impl AcpProcess {
             replay_buffer: Arc::clone(&replay_buffer),
             initialized: Arc::clone(&initialized),
             completion_filter: Arc::clone(&completion_filter),
-            declared_complete: Arc::clone(&declared_complete),
-            user_interrupted: Arc::clone(&user_interrupted),
-            closing_message: Arc::clone(&closing_message),
-            session_name: params.session_name.clone(),
-            agent_id: params.agent_id.clone(),
-            project_id: params.project_id,
-            task_id: params.task.task_id,
         };
         let process = Self {
             writer: params.writer,
@@ -442,14 +467,139 @@ impl AcpProcess {
             replay_buffer,
             initialized,
             completion_filter,
-            declared_complete,
-            user_interrupted,
-            closing_message,
             session_capabilities: SessionCapabilitiesInfo::default(),
             config_options: Vec::new(),
             prompt_capabilities: None,
             has_pending_permission: Arc::new(AtomicBool::new(false)),
         };
         (process, ctx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::acp::transport::ErrorResponse;
+
+    fn error(message: &str) -> ServerResponse {
+        ServerResponse::Error(ErrorResponse {
+            message: message.to_string(),
+            session_id: None,
+        })
+    }
+
+    /// What the typed slots could not do: the second request of a type used to wait for the
+    /// slot the first held, and an answer went to whichever of them happened to be in it.
+    #[test]
+    fn two_requests_of_one_type_are_answered_by_id() {
+        let pending = PendingRequests::default();
+        let (first, mut first_reply) = pending.register(None);
+        let (second, mut second_reply) = pending.register(None);
+
+        assert!(pending.deliver(second, ServerResponse::SessionCloseOk));
+        assert!(
+            first_reply.try_recv().is_err(),
+            "the first is still waiting"
+        );
+        assert_eq!(
+            second_reply.try_recv(),
+            Ok(Ok(ServerResponse::SessionCloseOk))
+        );
+
+        assert!(pending.deliver(first, ServerResponse::SessionDeleteOk));
+        assert_eq!(
+            first_reply.try_recv(),
+            Ok(Ok(ServerResponse::SessionDeleteOk))
+        );
+    }
+
+    #[test]
+    fn an_error_fails_only_the_request_it_names() {
+        let pending = PendingRequests::default();
+        let (refused, mut refused_reply) = pending.register(None);
+        let (_other, mut other_reply) = pending.register(None);
+
+        assert!(pending.deliver(refused, error("a run still going cannot be deleted")));
+
+        assert_eq!(
+            refused_reply.try_recv(),
+            Ok(Err("a run still going cannot be deleted".to_string()))
+        );
+        assert!(other_reply.try_recv().is_err(), "the other is untouched");
+    }
+
+    #[test]
+    fn a_reply_after_its_request_timed_out_is_dropped() {
+        let pending = PendingRequests::default();
+        let (id, _reply) = pending.register(None);
+        pending.forget(id);
+
+        assert!(!pending.deliver(id, ServerResponse::SessionCloseOk));
+    }
+
+    #[test]
+    fn the_reader_ending_fails_everything_waiting() {
+        let pending = PendingRequests::default();
+        let (_first, mut first_reply) = pending.register(None);
+        let (_second, mut second_reply) = pending.register(Some("session-1"));
+
+        pending.fail_all("gone");
+
+        assert_eq!(first_reply.try_recv(), Ok(Err("gone".to_string())));
+        assert_eq!(second_reply.try_recv(), Ok(Err("gone".to_string())));
+
+        let (_late, mut late_reply) = pending.register(None);
+        assert_eq!(late_reply.try_recv(), Ok(Err("gone".to_string())));
+    }
+
+    #[test]
+    fn a_session_error_fails_that_session_and_no_other() {
+        let pending = PendingRequests::default();
+        let (_mine, mut mine) = pending.register(Some("session-1"));
+        let (_theirs, mut theirs) = pending.register(Some("session-2"));
+        let (_unscoped, mut unscoped) = pending.register(None);
+
+        pending.fail_session("session-1", "agent died");
+
+        assert_eq!(mine.try_recv(), Ok(Err("agent died".to_string())));
+        assert!(theirs.try_recv().is_err());
+        assert!(unscoped.try_recv().is_err());
+    }
+
+    #[test]
+    fn a_takeover_is_answered_without_an_id_and_only_one_waits_at_a_time() {
+        let pending = PendingRequests::default();
+        let (first, mut first_reply) = pending.register(None);
+        let (second, _second_reply) = pending.register(None);
+        let granted =
+            || ServerResponse::TakeoverResultOk(maestro_protocol::TakeoverResult { granted: true });
+
+        assert!(pending.claim_takeover(first));
+        assert!(
+            !pending.claim_takeover(second),
+            "the first is still waiting"
+        );
+
+        pending.deliver_takeover(granted());
+        assert_eq!(first_reply.try_recv(), Ok(Ok(granted())));
+        assert!(pending.claim_takeover(second), "and then the next may ask");
+    }
+
+    /// The role crosses the protocol as text, and has to come back as the type it left as.
+    #[test]
+    fn task_metadata_survives_the_daemon_s_row() {
+        let task = TaskMetadata {
+            task_id: Some(7),
+            task_name: Some("Fix the crash".to_string()),
+            branch_name: Some("maestro/task-7".to_string()),
+            session_start_sha: Some("abc123".to_string()),
+            role: Some(crate::project::profiles::SessionRole {
+                role: crate::project::profiles::AgentRole::Reviewer,
+                profile_id: Some("strict".to_string()),
+            }),
+        };
+        let meta = task.to_session_meta(Some("Review".to_string()));
+        assert_eq!(meta.session_name.as_deref(), Some("Review"));
+        assert_eq!(TaskMetadata::from_session_meta(&meta), task);
     }
 }

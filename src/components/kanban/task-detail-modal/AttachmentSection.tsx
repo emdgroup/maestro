@@ -1,8 +1,11 @@
 import { FileWarning, Paperclip, Upload, X } from "lucide-react";
 import { toast } from "sonner";
-import type { TaskAttachment } from "@/types/bindings";
-import { api } from "@/lib/tauri-utils";
+import type { ConnectionKey, TaskAttachment } from "@/types/bindings";
+import { connectionKeyFromProject } from "@/lib/connection-utils";
+import { openFileWithConnection } from "@/lib/file-opener";
 import { cn } from "@/lib/utils";
+import { useSelectedProject } from "@/store/projectStore";
+import { useWslConnections } from "@/services/connection.service";
 import { Button } from "@/ui/button";
 import { ZoomableContent } from "@/ui/zoomable-content";
 import {
@@ -27,9 +30,11 @@ function formatFileSize(bytes: number): string {
 function AttachmentThumbnail({
   attachment,
   projectId,
+  openAttachment,
 }: {
   attachment: TaskAttachment;
   projectId: number;
+  openAttachment: OpenAttachment;
 }) {
   const { data: src, isPending } = useProxyImageQuery(projectId, attachment.file_path);
 
@@ -68,18 +73,32 @@ function AttachmentThumbnail({
   );
 }
 
+type OpenAttachment = (filePath: string) => Promise<void>;
+
 /**
- * Attachments record where the user's file actually lives rather than copying it, so the path is
- * a host path and opening it is `openPathNative` — not [openFileWithConnection], which would go
- * looking for it on the remote of an SSH project. A file that has since moved surfaces as the
- * rejection below.
+ * An attachment is a copy in the project, on the project's machine, so it opens the way any other
+ * project file does: natively when the project is local, and through a host copy (or the WSL share)
+ * when it is not. A file that has since gone surfaces as the toast below.
  */
-async function openAttachment(filePath: string) {
-  try {
-    await api.openPathNative(filePath);
-  } catch (e) {
-    toast.error(`Could not open ${filePath}`, { description: String(e) });
-  }
+function useOpenAttachment(): OpenAttachment {
+  const project = useSelectedProject();
+  const { data: wslConnections } = useWslConnections();
+  const connection: ConnectionKey = project ? connectionKeyFromProject(project) : { type: "local" };
+  const wslDistroName =
+    connection.type === "wsl"
+      ? wslConnections?.find((c) => c.id === connection.id)?.distro_name
+      : undefined;
+
+  return async (filePath: string) => {
+    try {
+      await openFileWithConnection(connection, filePath, {
+        sshConnectionId: connection.type === "ssh" ? connection.id : undefined,
+        wslDistroName,
+      });
+    } catch (e) {
+      toast.error(`Could not open ${filePath}`, { description: String(e) });
+    }
+  };
 }
 
 interface AttachmentSectionProps {
@@ -105,8 +124,9 @@ export function AttachmentSection({
   onPickFiles,
   isDragging,
 }: AttachmentSectionProps) {
-  const { data: attachments = [] } = useTaskAttachmentsQuery(taskId);
+  const { data: attachments = [] } = useTaskAttachmentsQuery(projectId, taskId);
   const removeAttachment = useDeleteTaskAttachmentMutation();
+  const openAttachment = useOpenAttachment();
 
   const imageAtts = attachments.filter((a: TaskAttachment) => isImage(a.filename));
   const fileAtts = attachments.filter((a: TaskAttachment) => !isImage(a.filename));
@@ -128,7 +148,11 @@ export function AttachmentSection({
             <div className="flex flex-wrap gap-2">
               {imageAtts.map((att: TaskAttachment) => (
                 <div key={att.id} className="relative group">
-                  <AttachmentThumbnail attachment={att} projectId={projectId} />
+                  <AttachmentThumbnail
+                    attachment={att}
+                    projectId={projectId}
+                    openAttachment={openAttachment}
+                  />
                   {isEditable && (
                     <Button
                       variant="ghost"
@@ -136,7 +160,11 @@ export function AttachmentSection({
                       aria-label={`Remove ${att.filename}`}
                       className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-background border border-border opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={() =>
-                        removeAttachment.mutate({ attachmentId: att.id, taskId: att.task_id })
+                        removeAttachment.mutate({
+                          projectId,
+                          attachmentId: att.id,
+                          taskId: att.task_id,
+                        })
                       }
                       disabled={removeAttachment.isPending}
                     >
@@ -170,7 +198,11 @@ export function AttachmentSection({
                       aria-label={`Remove ${att.filename}`}
                       className="h-6 w-6 shrink-0"
                       onClick={() =>
-                        removeAttachment.mutate({ attachmentId: att.id, taskId: att.task_id })
+                        removeAttachment.mutate({
+                          projectId,
+                          attachmentId: att.id,
+                          taskId: att.task_id,
+                        })
                       }
                       disabled={removeAttachment.isPending}
                     >

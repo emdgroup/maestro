@@ -1,189 +1,278 @@
+use crate::acp::connection_server::{query_project_store, reply};
+use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 use crate::models::TaskAttachment;
-use chrono::Utc;
-use rusqlite::{Connection, OptionalExtension};
+use maestro_protocol::{AddTaskAttachmentRequest, DeleteTaskAttachmentRequest, TaskRef};
+use serde::{Deserialize, Serialize};
+use specta::Type;
+use std::collections::HashSet;
+use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
 
-/// Get attachments for a task
+/// Where a task's attachments are copied, relative to the project root. The daemon deletes a
+/// copy under here when its row goes; a deleted task's folder is left behind.
+pub(crate) const TASK_ATTACHMENTS_DIR: &str = ".maestro/attachments/tasks";
+
+/// Where a task's copy of `name` goes, relative to the project: the name itself, or the first
+/// `stem-N.ext` no other attachment of the task holds.
+pub(crate) fn attachment_relative_path(task_id: i32, name: &str, taken: &HashSet<&str>) -> String {
+    let dir = format!("{TASK_ATTACHMENTS_DIR}/{task_id}");
+    let plain = format!("{dir}/{name}");
+    if !taken.contains(plain.as_str()) {
+        return plain;
+    }
+    let path = Path::new(name);
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or(name);
+    let extension = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| format!(".{e}"))
+        .unwrap_or_default();
+    (1..)
+        .map(|n| format!("{dir}/{stem}-{n}{extension}"))
+        .find(|candidate| !taken.contains(candidate.as_str()))
+        .unwrap_or(plain)
+}
+
+/// A row's path as an absolute path on the project's machine. Rows written before attachments were
+/// copied hold the host path the user picked, which is kept as it is: on any machine but that host
+/// it names nothing, and shows as missing.
+pub(crate) fn on_project_machine(project_path: &str, file_path: &str) -> String {
+    if file_path.starts_with('/') || Path::new(file_path).is_absolute() {
+        return file_path.to_string();
+    }
+    if project_path.contains('\\') {
+        format!(
+            "{}\\{}",
+            project_path.trim_end_matches('\\'),
+            file_path.replace('/', "\\")
+        )
+    } else {
+        format!("{}/{}", project_path.trim_end_matches('/'), file_path)
+    }
+}
+
+fn resolved(attachment: maestro_protocol::TaskAttachment, project_path: &str) -> TaskAttachment {
+    let mut attachment: TaskAttachment = attachment.into();
+    attachment.file_path = on_project_machine(project_path, &attachment.file_path);
+    attachment
+}
+
+async fn list_rows(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    task_id: i32,
+) -> Result<Vec<maestro_protocol::TaskAttachment>, String> {
+    let list = query_project_store(
+        app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::ListTaskAttachments(TaskRef {
+                project_path,
+                task_id,
+            })
+        },
+        reply!(ServerResponse::ListTaskAttachmentsOk(list) => list),
+    )
+    .await?;
+    Ok(list.attachments)
+}
+
+/// Get attachments for a task, each `file_path` absolute on the project's machine.
 #[tauri::command]
 #[specta::specta]
-pub fn list_task_attachments(
-    app_state: State<Arc<AppState>>,
+pub async fn list_task_attachments(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
 ) -> Result<Vec<TaskAttachment>, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, task_id, filename, file_path, file_size, created_at \
-             FROM task_attachments WHERE task_id = ? ORDER BY created_at ASC",
-        )
-        .map_err(|e| e.to_string())?;
-
-    let rows = stmt
-        .query_map([task_id], |row| {
-            Ok(TaskAttachment {
-                id: row.get(0)?,
-                task_id: row.get(1)?,
-                filename: row.get(2)?,
-                file_path: row.get(3)?,
-                file_size: row.get(4)?,
-                created_at: row.get(5)?,
-            })
-        })
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-
-    Ok(rows)
+    let (_, project_path) = crate::project::automations::target(&app_state, project_id).await?;
+    let rows = list_rows(&app_state, project_id, task_id).await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| resolved(row, &project_path))
+        .collect())
 }
 
-/// Record an attachment for a task, returning the existing row when that file is already on it.
+/// Copy a file the user picked on this machine into the project, on whichever machine the project
+/// lives, and record it for the task. Every machine and every agent then reads the same copy.
 ///
-/// The guard lives here rather than at the call sites so every caller is covered: a re-attach is
-/// not an error, but a second row would be a second copy of the file in every prompt the task
-/// ever sends.
-///
-/// Takes a `&Connection` so the select and the insert cannot interleave — every IPC command
-/// shares one `Mutex<Connection>` and the caller holds it across both.
-// ponytail: SQL guard, not a `UNIQUE(task_id, file_path)` index — the index would cost a schema
-// bump plus a decision on duplicates already in users' databases. Add it if a second connection
-// ever writes this table.
-pub fn add(
-    conn: &Connection,
-    task_id: i32,
-    filename: &str,
-    file_path: &str,
-) -> Result<TaskAttachment, String> {
-    let file_size = std::fs::metadata(file_path)
-        .map(|m| m.len() as i64)
-        .unwrap_or(0);
-
-    let existing = conn
-        .query_row(
-            "SELECT id, filename, file_size, created_at FROM task_attachments \
-             WHERE task_id = ? AND file_path = ?",
-            rusqlite::params![task_id, file_path],
-            |row| {
-                Ok(TaskAttachment {
-                    id: row.get(0)?,
-                    task_id,
-                    filename: row.get(1)?,
-                    file_path: file_path.to_string(),
-                    file_size: row.get(2)?,
-                    created_at: row.get(3)?,
-                })
-            },
-        )
-        .optional()
-        .map_err(|e| e.to_string())?;
-    if let Some(existing) = existing {
-        return Ok(existing);
-    }
-
-    let now = Utc::now().to_rfc3339();
-    conn.execute(
-        "INSERT INTO task_attachments (task_id, filename, file_path, file_size, created_at) VALUES (?, ?, ?, ?, ?)",
-        rusqlite::params![task_id, filename, file_path, file_size, &now],
-    )
-    .map_err(|e| e.to_string())?;
-
-    Ok(TaskAttachment {
-        id: conn.last_insert_rowid() as i32,
-        task_id,
-        filename: filename.to_string(),
-        file_path: file_path.to_string(),
-        file_size,
-        created_at: now,
-    })
-}
-
-/// Add an attachment record for a task
+/// A file with the same name and size as one the task already has is taken to be that file, and
+/// its row is returned rather than a second copy, which would be sent in every prompt twice.
 #[tauri::command]
 #[specta::specta]
-pub fn add_task_attachment(
-    app_state: State<Arc<AppState>>,
+pub async fn add_task_attachment(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
     filename: String,
     file_path: String,
 ) -> Result<TaskAttachment, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    add(&conn, task_id, &filename, &file_path)
+    let (project, conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let source = Path::new(&file_path);
+    let size = tokio::fs::metadata(source)
+        .await
+        .map_err(|e| format!("Cannot read '{file_path}': {e}"))?
+        .len();
+
+    let existing = list_rows(&app_state, project_id, task_id).await?;
+    // ponytail: name and size stand in for identity; hash the contents if two differing files of
+    // one name and size ever need to be told apart.
+    if let Some(same) = existing
+        .iter()
+        .find(|row| row.filename == filename && u64::try_from(row.file_size) == Ok(size))
+    {
+        return Ok(resolved(same.clone(), &project.path));
+    }
+
+    let name = source
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| format!("'{file_path}' names no file"))?;
+    let taken: HashSet<&str> = existing.iter().map(|row| row.file_path.as_str()).collect();
+    let relative = attachment_relative_path(task_id, name, &taken);
+    let dir = on_project_machine(&project.path, &format!("{TASK_ATTACHMENTS_DIR}/{task_id}"));
+    let dest = on_project_machine(&project.path, &relative);
+    crate::acp::attachment_handlers::copy_to_machine(&app_state, &conn, source, &dir, &dest)
+        .await?;
+
+    let attachment = query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::AddTaskAttachment(AddTaskAttachmentRequest {
+                project_path,
+                task_id,
+                filename,
+                file_path: relative,
+            })
+        },
+        reply!(ServerResponse::AddTaskAttachmentOk(attachment) => attachment),
+    )
+    .await?;
+    Ok(resolved(attachment, &project.path))
 }
 
-/// Remove an attachment record by id
+/// Remove an attachment record by id. The daemon deletes the project's copy with it.
 #[tauri::command]
 #[specta::specta]
-pub fn delete_task_attachment(
-    app_state: State<Arc<AppState>>,
+pub async fn delete_task_attachment(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     attachment_id: i32,
 ) -> Result<(), String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    conn.execute("DELETE FROM task_attachments WHERE id = ?", [attachment_id])
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::DeleteTaskAttachment(DeleteTaskAttachmentRequest {
+                project_path,
+                attachment_id,
+            })
+        },
+        reply!(ServerResponse::DeleteTaskAttachmentOk => ()),
+    )
+    .await
+}
+
+/// One task attachment made ready for a prompt. `content_block` is set when it can be sent;
+/// otherwise `rejection` says why a file that is there cannot be, and neither is set for a file
+/// that is not on the project's machine at all.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct PreparedTaskAttachment {
+    pub content_block: Option<serde_json::Value>,
+    pub rejection: Option<String>,
+}
+
+/// The prompt block for each of a task's attachments, in order, read from the project's copy on
+/// the project's machine.
+#[tauri::command]
+#[specta::specta]
+pub async fn prepare_task_attachments(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    attachments: Vec<TaskAttachment>,
+) -> Result<Vec<PreparedTaskAttachment>, String> {
+    let (_, conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let mut prepared = Vec::with_capacity(attachments.len());
+    for attachment in attachments {
+        // An unreachable machine is an error, not a missing file: the caller offers to delete the
+        // rows of missing ones.
+        if !crate::connectivity::files::try_exists(&conn, &attachment.file_path).await? {
+            prepared.push(PreparedTaskAttachment {
+                content_block: None,
+                rejection: None,
+            });
+            continue;
+        }
+        let block = crate::acp::attachment_handlers::task_attachment_block(
+            &conn,
+            &attachment.file_path,
+            attachment.file_size,
+        )
+        .await;
+        prepared.push(match block {
+            Ok(block) => PreparedTaskAttachment {
+                content_block: Some(block),
+                rejection: None,
+            },
+            Err(reason) => PreparedTaskAttachment {
+                content_block: None,
+                rejection: Some(reason),
+            },
+        });
+    }
+    Ok(prepared)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::schema::initialize_schema;
 
-    fn db_with_task() -> (Connection, i32) {
-        let conn = Connection::open_in_memory().expect("open in-memory database");
-        initialize_schema(&conn).expect("initialize schema");
-        conn.execute(
-            "INSERT INTO projects (id, name, path, created_at, updated_at) \
-             VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01')",
-            [],
-        )
-        .expect("insert project");
-        conn.execute(
-            "INSERT INTO tasks (id, project_id, title, status, base_branch, created_at, updated_at) \
-             VALUES (1, 1, 'demo task', 'Queue', 'main', '2026-01-01', '2026-01-01')",
-            [],
-        )
-        .expect("insert task");
-        (conn, 1)
-    }
-
-    fn count(conn: &Connection, task_id: i32) -> i64 {
-        conn.query_row(
-            "SELECT COUNT(*) FROM task_attachments WHERE task_id = ?",
-            [task_id],
-            |row| row.get(0),
-        )
-        .expect("count attachments")
-    }
-
-    /// A duplicated row costs a duplicated content block in every prompt the task sends.
     #[test]
-    fn attaching_the_same_file_twice_leaves_one_row() {
-        let (conn, task_id) = db_with_task();
+    fn a_copy_lands_under_the_task_and_steps_aside_for_a_taken_name() {
+        let mut taken = HashSet::new();
+        assert_eq!(
+            attachment_relative_path(4, "notes.txt", &taken),
+            ".maestro/attachments/tasks/4/notes.txt"
+        );
 
-        let first = add(&conn, task_id, "notes.txt", "/tmp/notes.txt").unwrap();
-        let second = add(&conn, task_id, "notes.txt", "/tmp/notes.txt").unwrap();
+        taken.insert(".maestro/attachments/tasks/4/notes.txt");
+        taken.insert(".maestro/attachments/tasks/4/notes-1.txt");
+        assert_eq!(
+            attachment_relative_path(4, "notes.txt", &taken),
+            ".maestro/attachments/tasks/4/notes-2.txt"
+        );
+        assert_eq!(
+            attachment_relative_path(5, "notes.txt", &taken),
+            ".maestro/attachments/tasks/5/notes.txt",
+            "another task's folder is its own"
+        );
 
-        assert_eq!(first.id, second.id);
-        assert_eq!(count(&conn, task_id), 1);
+        taken.insert(".maestro/attachments/tasks/4/Makefile");
+        assert_eq!(
+            attachment_relative_path(4, "Makefile", &taken),
+            ".maestro/attachments/tasks/4/Makefile-1"
+        );
     }
 
     #[test]
-    fn a_different_path_is_a_different_attachment() {
-        let (conn, task_id) = db_with_task();
-
-        add(&conn, task_id, "notes.txt", "/tmp/notes.txt").unwrap();
-        add(&conn, task_id, "notes.txt", "/tmp/other/notes.txt").unwrap();
-
-        assert_eq!(count(&conn, task_id), 2);
+    fn a_relative_row_resolves_against_the_project_in_its_own_separator() {
+        let relative = ".maestro/attachments/tasks/4/notes.txt";
+        assert_eq!(
+            on_project_machine("/home/me/repo/", relative),
+            "/home/me/repo/.maestro/attachments/tasks/4/notes.txt"
+        );
+        assert_eq!(
+            on_project_machine(r"C:\repo", relative),
+            r"C:\repo\.maestro\attachments\tasks\4\notes.txt"
+        );
+        assert_eq!(
+            on_project_machine("/home/me/repo", "/tmp/picked.txt"),
+            "/tmp/picked.txt",
+            "a row from before copying keeps the host path it holds"
+        );
     }
 }

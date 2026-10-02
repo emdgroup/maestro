@@ -53,6 +53,22 @@ pub struct Worktree {
     pub created_at: String,
 }
 
+impl Worktree {
+    /// The daemon's row, filed under the project the request named, as `Task::from_wire` does.
+    pub fn from_wire(worktree: maestro_protocol::Worktree, project_id: i32) -> Self {
+        Worktree {
+            id: worktree.id,
+            project_id,
+            task_id: worktree.task_id,
+            branch_name: worktree.branch_name,
+            base_branch: worktree.base_branch,
+            path: worktree.path,
+            git_status: worktree.git_status,
+            created_at: worktree.created_at,
+        }
+    }
+}
+
 /// View model for the Worktrees view — enriched with task info and derived status fields
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -146,7 +162,7 @@ pub struct SessionListEntryDto {
     pub session_id: String,
     pub title: Option<String>,
     pub updated_at: Option<String>,
-    /// Directory the session ran in, relative to the project root, from `.maestro/state.json`.
+    /// Directory the session ran in, relative to the project root, from the daemon's row for it.
     /// `Some("")` is the project root itself; `None` means no folder was ever recorded.
     pub folder: Option<String>,
 }

@@ -2,10 +2,8 @@ import { useState } from "react";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
-import { useUpdateTask } from "@/services/task.service";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { Button } from "@/ui/button";
-import { Checkbox } from "@/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -29,28 +27,29 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
   const { data: discovery } = useAgentDiscoveryQuery(connection);
   const { data: projectSettings } = useProjectSettings(projectId ?? undefined);
   const updateSettings = useUpdateProjectSettings();
-  const updateTask = useUpdateTask();
   const [selected, setSelected] = useState<string | null>(null);
-  const [saveAsDefault, setSaveAsDefault] = useState(true);
 
   const agents = discovery?.agents ?? [];
 
-  function handleApply() {
+  // The choice becomes the project default and is also passed to this start. The default is written
+  // first so a failure has toasted before the start reports what is still missing.
+  async function handleApply() {
     if (!selected) return;
-    updateTask.mutate({ taskId: task.id, updates: { agent_id: selected } });
-    if (saveAsDefault && projectId) {
-      updateSettings.mutate({
-        projectId,
-        config: {
-          default_agent: selected,
-          startup_tab: projectSettings?.startup_tab ?? null,
-          default_workspace_mode: projectSettings?.default_workspace_mode ?? "NewWorktree",
-          // Carried through for the same reason as the fields above: the command takes the whole
-          // config, so anything omitted here is written away.
-          remote_name: projectSettings?.remote_name ?? null,
-          base_branch: projectSettings?.base_branch ?? null,
-        },
-      });
+    if (projectId) {
+      await updateSettings
+        .mutateAsync({
+          projectId,
+          config: {
+            default_agent: selected,
+            startup_tab: projectSettings?.startup_tab ?? null,
+            default_workspace_mode: projectSettings?.default_workspace_mode ?? "NewWorktree",
+            // Carried through for the same reason as the fields above: the command takes the whole
+            // config, so anything omitted here is written away.
+            remote_name: projectSettings?.remote_name ?? null,
+            base_branch: projectSettings?.base_branch ?? null,
+          },
+        })
+        .catch(() => {});
     }
     proceed(selected);
     onClose();
@@ -71,7 +70,7 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
               Naming the wrong cause would send the user to fix something that is not broken. */}
           <DialogDescription>
             Nothing this project is configured to use is installed here. Pick an agent to run "
-            {task.title}".
+            {task.title}". It becomes this project's default.
           </DialogDescription>
         </DialogHeader>
 
@@ -101,14 +100,6 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
             <p className="text-xs text-muted-foreground text-center py-4">No agents discovered</p>
           )}
         </div>
-
-        <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-foreground">
-          <Checkbox
-            checked={saveAsDefault}
-            onCheckedChange={(checked) => setSaveAsDefault(checked === true)}
-          />
-          Set as default for this project
-        </label>
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>

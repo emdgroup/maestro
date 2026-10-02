@@ -16,12 +16,14 @@ const HEARTBEAT_MS = 5_000;
  * stop — a window closed mid-drag never sends a release, and a task nothing can start is a worse
  * outcome than one started a moment early.
  */
-export function useTaskHold(taskId: number | null, active: boolean) {
+export function useTaskHold(projectId: number | null, taskId: number | null, active: boolean) {
   useEffect(() => {
-    if (!active || taskId === null) return;
+    if (!active || projectId === null || taskId === null) return;
 
     const beat = () => {
-      api.holdTask(taskId).catch((err) => console.warn("[hold] failed to hold task:", err));
+      api
+        .holdTask(projectId, taskId)
+        .catch((err) => console.warn("[hold] failed to hold task:", err));
     };
 
     beat();
@@ -30,7 +32,9 @@ export function useTaskHold(taskId: number | null, active: boolean) {
     return () => {
       clearInterval(timer);
       // Best-effort: the TTL is what actually guarantees the task comes back.
-      api.releaseTaskHold(taskId).catch((err) => console.warn("[hold] failed to release:", err));
+      api
+        .releaseTaskHold(projectId, taskId)
+        .catch((err) => console.warn("[hold] failed to release:", err));
     };
-  }, [taskId, active]);
+  }, [projectId, taskId, active]);
 }

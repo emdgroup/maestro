@@ -381,6 +381,21 @@ pub async fn preflight_connection(
         });
     }
 
+    // A limit set before the daemon kept it is carried over the first time it is reachable.
+    {
+        let app_state = Arc::clone(&*app_state);
+        tokio::spawn(async move {
+            if let Err(e) =
+                crate::settings::handlers::seed_connection_capacity(&app_state, connection_key)
+                    .await
+            {
+                log::warn!(
+                    "[preflight] carrying the agent limit to {connection_key:?} failed: {e}"
+                );
+            }
+        });
+    }
+
     {
         let mut cache = app_state.acp.discovery_cache.lock().await;
         let maestro_server_path = cache

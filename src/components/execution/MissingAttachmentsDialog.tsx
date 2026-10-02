@@ -16,7 +16,7 @@ export interface UnusableAttachment {
   filename: string;
   file_path: string;
   problem: string;
-  /** The file is gone from disk, as opposed to present but unsendable — only these get removed. */
+  /** The project's copy is gone, as opposed to present but unsendable. Only these get removed. */
   missing: boolean;
 }
 
@@ -24,20 +24,20 @@ interface MissingAttachmentsDialogProps {
   open: boolean;
   files: UnusableAttachment[];
   onContinue: () => void;
-  onPark: () => void;
+  onCancel: () => void;
 }
 
 export function MissingAttachmentsDialog({
   open,
   files,
   onContinue,
-  onPark,
+  onCancel,
 }: MissingAttachmentsDialogProps) {
   return (
     <AlertDialog
       open={open}
       onOpenChange={(open) => {
-        if (!open) onPark();
+        if (!open) onCancel();
       }}
     >
       <AlertDialogContent>
@@ -50,8 +50,8 @@ export function MissingAttachmentsDialog({
           </AlertDialogTitle>
           <AlertDialogDescription>
             {files.some((file) => file.missing)
-              ? "Continuing sends the prompt without them, and removes the ones whose file is gone from the task."
-              : "Continuing sends the prompt without them. They stay attached to the task."}
+              ? "Continuing starts the task without them, and removes the ones whose file is gone from the task."
+              : "Continuing starts the task without them. They stay attached to the task."}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <ul className="space-y-2 text-sm">
@@ -66,7 +66,7 @@ export function MissingAttachmentsDialog({
           ))}
         </ul>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={onPark}>Park task</AlertDialogCancel>
+          <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
           <Button size="sm" onClick={onContinue}>
             Continue without them
           </Button>

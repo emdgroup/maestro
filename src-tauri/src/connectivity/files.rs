@@ -110,7 +110,19 @@ pub async fn try_dir_exists(conn: &GitConnection, path: &str) -> Result<bool, St
     if is_local(conn) {
         return Ok(std::path::Path::new(path).is_dir());
     }
-    let output = run_on(conn, None, "test", &["-d", path]).await?;
+    remote_test(conn, "-d", path).await
+}
+
+/// [`exists`], distinguishing "no" from "could not ask" as [`try_dir_exists`] does.
+pub async fn try_exists(conn: &GitConnection, path: &str) -> Result<bool, String> {
+    if is_local(conn) {
+        return Ok(std::path::Path::new(path).exists());
+    }
+    remote_test(conn, "-e", path).await
+}
+
+async fn remote_test(conn: &GitConnection, flag: &str, path: &str) -> Result<bool, String> {
+    let output = run_on(conn, None, "test", &[flag, path]).await?;
     match output.exit_code {
         0 => Ok(true),
         // `test` reports "no" with exactly 1. Any other code came from the transport — an

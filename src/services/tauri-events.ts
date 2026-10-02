@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
-import { taskQueryKeys } from "@/services/task.service";
+import { concernsProject, taskQueryKeys } from "@/services/task.service";
 import { worktreeQueryKeys } from "@/services/worktree.service";
 import { executionQueryKeys } from "@/services/execution.service";
 import { automationQueryKeys } from "@/services/automation.service";
@@ -28,20 +28,48 @@ export function useServerEventSync(projectId: number | undefined) {
     let cancelled = false;
     const unlisteners: Array<() => void> = [];
 
-    const subscribe = (event: string, invalidate: () => void) => {
-      void listen(event, invalidate).then((unlisten) => {
+    // `tasks-changed` and `worktrees-changed` name the project they concern; another project's
+    // change is not this window's to refetch.
+    type Payload = { project_id?: number | null; collection?: "shared" | "project" };
+    const subscribe = (
+      event: string,
+      invalidate: (payload: Payload) => void,
+      projectScoped = false,
+    ) => {
+      const handler = ({ payload }: { payload: unknown }) => {
+        if (!projectScoped || concernsProject(payload as Payload, projectId))
+          invalidate((payload ?? {}) as Payload);
+      };
+      void listen(event, handler).then((unlisten) => {
         if (cancelled) unlisten();
         else unlisteners.push(unlisten);
       });
     };
 
-    subscribe("tasks-changed", () => {
-      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
-    });
+    // The open task's own queries too, so an edit from another machine reaches its detail modal.
+    // Comments have their own event.
+    subscribe(
+      "tasks-changed",
+      (payload) => {
+        void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+        const id = payload.project_id ?? null;
+        for (const kind of ["relationships", "instructions", "attachments", "commitMessage"]) {
+          const queryKey = [...taskQueryKeys.base, kind];
+          void queryClient.invalidateQueries({
+            queryKey: id === null ? queryKey : [...queryKey, id],
+          });
+        }
+      },
+      true,
+    );
 
-    subscribe("worktrees-changed", () => {
-      void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
-    });
+    subscribe(
+      "worktrees-changed",
+      () => {
+        void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
+      },
+      true,
+    );
 
     // An agent changed them through Maestro's MCP tools, with no mutation here to invalidate.
     subscribe("automations-changed", () => {
@@ -52,8 +80,17 @@ export function useServerEventSync(projectId: number | undefined) {
       void queryClient.invalidateQueries({ queryKey: templateQueryKeys.list });
     });
 
-    subscribe("prompts-changed", () => {
-      void queryClient.invalidateQueries({ queryKey: promptQueryKeys.base });
+    // `collection` says which one changed. A project's push with no `project_id` names a path this
+    // app could not match to a project, so every project's list is refetched rather than none.
+    subscribe("prompts-changed", (payload) => {
+      const id = payload.project_id ?? null;
+      const queryKey =
+        payload.collection === "shared"
+          ? promptQueryKeys.shared
+          : id === null
+            ? promptQueryKeys.projects
+            : promptQueryKeys.project(id);
+      void queryClient.invalidateQueries({ queryKey });
     });
 
     // Keyed on the project, so there is nothing to listen for until one is open.

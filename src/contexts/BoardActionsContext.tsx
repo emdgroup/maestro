@@ -54,7 +54,7 @@ export function BoardActionsProvider({ children }: { children: ReactNode }) {
     onDirtyCancel,
     missingAttachments,
     onAttachmentsContinue,
-    onAttachmentsPark,
+    onAttachmentsCancel,
     agentPickerTask,
     onAgentPicked,
     onAgentPickerCancel,
@@ -123,7 +123,7 @@ export function BoardActionsProvider({ children }: { children: ReactNode }) {
         open={missingAttachments !== null}
         files={missingAttachments ?? []}
         onContinue={onAttachmentsContinue}
-        onPark={onAttachmentsPark}
+        onCancel={onAttachmentsCancel}
       />
       {agentPickerTask && (
         <AgentPickerModal

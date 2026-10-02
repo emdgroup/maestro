@@ -314,7 +314,7 @@ describe("TaskCard abandon", () => {
       );
     await userEvent.click(confirm!);
 
-    expect(interrupt.mutate).toHaveBeenCalledWith(42);
+    expect(interrupt.mutate).toHaveBeenCalledWith({ projectId: 1, taskId: 42 });
   });
 
   /**
@@ -522,7 +522,7 @@ describe("TaskCard while a review agent is reading the diff", () => {
     await user.click(screen.getByRole("button", { name: "Stop review" }));
 
     expect(cancelSession).toHaveBeenCalledWith({ sessionId: "42", executionMode: "acp" });
-    expect(endSelfReview).toHaveBeenCalledWith(7);
+    expect(endSelfReview).toHaveBeenCalledWith({ projectId: 1, taskId: 7 });
   });
 
   it("hands the review back once the reviewer has failed", () => {
@@ -552,7 +552,7 @@ describe("TaskCard empty-review confirmation", () => {
     await openAbandonDialog();
     await user.click(screen.getByRole("button", { name: SEND_ON }));
 
-    expect(sendToReview.mutate).toHaveBeenCalledWith({ taskId: 7 });
+    expect(sendToReview.mutate).toHaveBeenCalledWith({ projectId: 1, taskId: 7 });
     expect(await screen.findByText("Nothing to review")).toBeInTheDocument();
   });
 
@@ -564,7 +564,7 @@ describe("TaskCard empty-review confirmation", () => {
     await user.click(screen.getByRole("button", { name: SEND_ON }));
     await user.click(await screen.findByText("Review anyway"));
 
-    expect(sendToReview.mutate).toHaveBeenLastCalledWith({ taskId: 7, force: true });
+    expect(sendToReview.mutate).toHaveBeenLastCalledWith({ projectId: 1, taskId: 7, force: true });
   });
 
   it("does not ask when the task actually moved", async () => {
@@ -884,7 +884,7 @@ describe("TaskCard archiving unmerged work", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /archive/i }));
 
-    expect(archive).toHaveBeenCalledWith(7);
+    expect(archive).toHaveBeenCalledWith({ projectId: 1, taskId: 7 });
   });
 
   it("warns before archiving unmerged changes", async () => {
@@ -916,7 +916,7 @@ describe("TaskCard archiving unmerged work", () => {
     await userEvent.click(screen.getByRole("button", { name: /archive/i }));
     await userEvent.click(screen.getByRole("button", { name: /keep everything/i }));
 
-    expect(archive).toHaveBeenCalledWith(7);
+    expect(archive).toHaveBeenCalledWith({ projectId: 1, taskId: 7 });
     expect(deleteWorktree).not.toHaveBeenCalled();
   });
 
@@ -1072,11 +1072,17 @@ describe("TaskCard refinement", () => {
     await userEvent.click(screen.getByRole("button", { name: /read proposal/i }));
 
     await userEvent.click(screen.getByRole("button", { name: /use this description/i }));
-    expect(closeRefinement).toHaveBeenCalledWith({ taskId: 7, accept: true }, expect.anything());
+    expect(closeRefinement).toHaveBeenCalledWith(
+      { projectId: 1, taskId: 7, accept: true },
+      expect.anything(),
+    );
 
     closeRefinement.mockClear();
     await userEvent.click(screen.getByRole("button", { name: /discard/i }));
-    expect(closeRefinement).toHaveBeenCalledWith({ taskId: 7, accept: false }, expect.anything());
+    expect(closeRefinement).toHaveBeenCalledWith(
+      { projectId: 1, taskId: 7, accept: false },
+      expect.anything(),
+    );
   });
 
   /**
@@ -1405,6 +1411,64 @@ describe("TaskCard after a pull request is closed", () => {
     renderCard(closed);
 
     expect(screen.getByRole("button", { name: /^review$/i })).toBeInTheDocument();
+  });
+});
+
+describe("TaskCard after a hand-off failed to start", () => {
+  // The daemon puts the task back in the phase it claimed it from with `claimed_from` equal to it,
+  // and nothing retries it on its own.
+  const failedStart = (phase: Task["phase"], status: Task["status"]): Partial<Task> => ({
+    status,
+    phase,
+    phase_status: "Failed",
+    ball: "User",
+    claimed_from: phase,
+  });
+
+  it.each([
+    ["Rework", "InProgress", "Coder"],
+    ["SelfReview", "Review", "Reviewer"],
+    ["AwaitingMerge", "Review", "Coder"],
+  ] as const)("offers a retry of the %s stage's agent", async (phase, status, role) => {
+    renderCard({
+      ...failedStart(phase, status),
+      pull_request_url: "https://github.com/acme/widgets/pull/42",
+      pull_request_number: 42,
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /^retry$/i }));
+
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 7 }),
+      expect.objectContaining({ role }),
+    );
+  });
+
+  it("names a CI fix that did not start rather than a closed pull request", () => {
+    renderCard({
+      ...failedStart("AwaitingMerge", "Review"),
+      pull_request_url: "https://github.com/acme/widgets/pull/42",
+      pull_request_number: 42,
+    });
+
+    expect(screen.getByText(/ci fix failed to start/i)).toBeInTheDocument();
+    expect(screen.queryByText(/pull request closed/i)).not.toBeInTheDocument();
+  });
+
+  it("offers no retry when the stage failed at its work", () => {
+    renderCard({ ...failedStart("Rework", "InProgress"), claimed_from: null });
+
+    expect(screen.queryByRole("button", { name: /^retry$/i })).not.toBeInTheDocument();
+  });
+
+  it("offers no retry on a closed pull request", () => {
+    renderCard({
+      ...failedStart("AwaitingMerge", "Review"),
+      claimed_from: null,
+      pull_request_url: "https://github.com/acme/widgets/pull/42",
+    });
+
+    expect(screen.queryByRole("button", { name: /^retry$/i })).not.toBeInTheDocument();
   });
 });
 

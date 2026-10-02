@@ -38,13 +38,16 @@ export function ProposalGate({
   // The proposal is the refiner's closing message, which lives in the outcome thread rather than
   // on the task. Only asked for while the dialog is open, so a board full of cards is not each
   // fetching a thread nobody is looking at.
-  const { data: comments } = useTaskCommentsQuery(open ? task.id : undefined);
+  const { data: comments } = useTaskCommentsQuery(task.project_id, open ? task.id : undefined);
 
   const proposal = [...(comments ?? [])].reverse().find((c) => c.kind === "proposal");
   const body = proposal?.body?.trim();
 
   const settle = (accept: boolean) => {
-    closeRefinement.mutate({ taskId: task.id, accept }, { onSuccess: () => onOpenChange(false) });
+    closeRefinement.mutate(
+      { projectId: task.project_id, taskId: task.id, accept },
+      { onSuccess: () => onOpenChange(false) },
+    );
   };
 
   return (

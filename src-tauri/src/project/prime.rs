@@ -1,4 +1,3 @@
-use super::session_state::{read_and_clear_restorable_sessions, spawn_session_restores};
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
 #[cfg(windows)]
@@ -182,6 +181,10 @@ pub async fn prime_project_server(
         }
     }
 
+    // Before the sessions are attached, so the dormant rows the import writes are loaded with the
+    // rest, and before the board is shown, which reads what the import writes.
+    super::import::import_once(&app_state, project_id, &project_path, connection_key).await?;
+
     // A config that cannot be read is a project with no default agent, not a failed prime: the
     // session restore below is the more valuable half and must still happen.
     let config = super::settings::load_project_config_for(&app_state, project_id)
@@ -197,15 +200,8 @@ pub async fn prime_project_server(
         .await?;
     }
 
-    // Before the snapshot restore below, not after: a session the server is still running is
-    // already in `acp.sessions` once this returns, and `restore_acp_session` hands that live one
-    // back rather than loading a second copy of the same conversation.
-    crate::acp::session_ops::adopt_live_sessions(connection_key, project_id, None, &app_state)
+    crate::acp::session_ops::attach_project_sessions(connection_key, project_id, None, &app_state)
         .await;
-
-    let snapshots =
-        read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;
-    spawn_session_restores(Arc::clone(&*app_state), project_id, snapshots);
 
     Ok(())
 }

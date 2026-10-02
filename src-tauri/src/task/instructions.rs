@@ -1,70 +1,57 @@
+use crate::acp::connection_server::{query_project_store, reply};
+use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 use crate::models::TaskInstruction;
-use chrono::Utc;
+use maestro_protocol::{AddTaskInstructionRequest, TaskRef};
 use std::sync::Arc;
 use tauri::State;
 
 /// Get instructions log for a task
 #[tauri::command]
 #[specta::specta]
-pub fn list_task_instructions(
-    app_state: State<Arc<AppState>>,
+pub async fn list_task_instructions(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
 ) -> Result<Vec<TaskInstruction>, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, task_id, content, source, created_at \
-             FROM task_instructions WHERE task_id = ? ORDER BY created_at ASC",
-        )
-        .map_err(|e| e.to_string())?;
-
-    let rows = stmt
-        .query_map([task_id], |row| {
-            Ok(TaskInstruction {
-                id: row.get(0)?,
-                task_id: row.get(1)?,
-                content: row.get(2)?,
-                source: row.get(3)?,
-                created_at: row.get(4)?,
+    let list = query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::ListTaskInstructions(TaskRef {
+                project_path,
+                task_id,
             })
-        })
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-
-    Ok(rows)
+        },
+        reply!(ServerResponse::ListTaskInstructionsOk(list) => list),
+    )
+    .await?;
+    Ok(list.instructions.into_iter().map(Into::into).collect())
 }
 
 /// Add an instruction entry to a task's log
 #[tauri::command]
 #[specta::specta]
-pub fn add_task_instruction(
-    app_state: State<Arc<AppState>>,
+pub async fn add_task_instruction(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
     content: String,
     source: String,
 ) -> Result<TaskInstruction, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    let now = Utc::now().to_rfc3339();
-    conn.execute(
-        "INSERT INTO task_instructions (task_id, content, source, created_at) VALUES (?, ?, ?, ?)",
-        rusqlite::params![task_id, &content, &source, &now],
+    let instruction = query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::AddTaskInstruction(AddTaskInstructionRequest {
+                project_path,
+                task_id,
+                content,
+                source,
+            })
+        },
+        reply!(ServerResponse::AddTaskInstructionOk(instruction) => instruction),
     )
-    .map_err(|e| e.to_string())?;
-
-    let id = conn.last_insert_rowid() as i32;
-    Ok(TaskInstruction {
-        id,
-        task_id,
-        content,
-        source,
-        created_at: now,
-    })
+    .await?;
+    Ok(instruction.into())
 }

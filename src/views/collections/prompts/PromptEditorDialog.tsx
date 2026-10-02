@@ -18,6 +18,7 @@ export function PromptEditorDialog({
   onOpenChange,
   projectId,
   editing,
+  newShared,
   knownTags,
 }: {
   open: boolean;
@@ -25,6 +26,8 @@ export function PromptEditorDialog({
   projectId: number;
   /** The prompt to edit, or `null` for a new one. */
   editing: Prompt | null;
+  /** The collection a new prompt goes to unless the user picks the other. */
+  newShared: boolean;
   knownTags: string[];
 }) {
   const save = useSavePromptMutation();
@@ -38,7 +41,7 @@ export function PromptEditorDialog({
   // Reset whenever the dialog opens, during render rather than from an effect, which would paint
   // one frame of whatever was there before.
   const [shownFor, setShownFor] = useState<string | null>(null);
-  const current = open ? `${editing?.id ?? "new"}` : null;
+  const current = open ? (editing ? `${editing.shared}-${editing.id}` : `new-${newShared}`) : null;
   if (shownFor !== current) {
     setShownFor(current);
     if (open) {
@@ -46,7 +49,7 @@ export function PromptEditorDialog({
       setBody(editing?.body ?? "");
       setTags(editing?.tags ?? []);
       setTagDraft("");
-      setShared(editing?.shared ?? false);
+      setShared(editing?.shared ?? newShared);
       setFavorite(editing?.favorite ?? false);
     }
   }
@@ -86,20 +89,23 @@ export function PromptEditorDialog({
               pressed={favorite}
               onPressedChange={setFavorite}
               label="Favorite"
-              hint="Starred in this project only"
+              hint="Listed first"
               icon={<Star className={cn("size-3.5", favorite && "fill-current text-amber-500")} />}
               className={
                 favorite ? "border-amber-500/60 bg-amber-500/15 text-foreground" : undefined
               }
             />
-            <Toggle
-              pressed={shared}
-              onPressedChange={setShared}
-              label="Shared"
-              hint="Shared with all projects"
-              icon={<Users className={cn("size-3.5", shared && "text-accent")} />}
-              className={shared ? "border-accent/60 bg-accent/15 text-foreground" : undefined}
-            />
+            {/* Which collection a new prompt goes to. Saving never moves one; copying does. */}
+            {!editing && (
+              <Toggle
+                pressed={shared}
+                onPressedChange={setShared}
+                label="Shared"
+                hint="Shared with all projects"
+                icon={<Users className={cn("size-3.5", shared && "text-accent")} />}
+                className={shared ? "border-accent/60 bg-accent/15 text-foreground" : undefined}
+              />
+            )}
             <Button
               variant="ghost"
               size="icon-sm"
@@ -182,8 +188,8 @@ export function PromptEditorDialog({
         <div className="flex items-center gap-2 border-t border-border bg-muted/30 px-5 py-3">
           <span className="min-w-0 truncate text-[11px] text-muted-foreground">
             {shared
-              ? "Shared with all projects. Favorite applies to this project only."
-              : "Only in this project."}
+              ? "Shared with all projects this app opens."
+              : "In this project, for everyone who opens it."}
           </span>
           <Button variant="ghost" className="ml-auto" onClick={() => onOpenChange(false)}>
             Cancel

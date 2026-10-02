@@ -126,10 +126,10 @@ and logic, so a feature touches one directory rather than three.
 
 - `core/` — cross-cutting foundations: `schema.rs` (SQLite schema + migration), `settings.rs`, `connection.rs` (incl. `get_project_with_git_conn()`), `project_storage.rs`, `AppState`
 - `project/` — project CRUD, handlers, models, `git_ops.rs`, `lock.rs` (asks the connection's daemon for the project lock, and for takeovers), `session_state.rs`, `prime.rs`
-- `task/` — task CRUD, handlers, models, `relationships.rs`, `instructions.rs`, `attachments.rs`, `ops.rs`
-- `git/` — worktree lifecycle/query/staging, `merge.rs`, `review.rs`, diff + review models and handlers, `remote.rs`
+- `task/` — task commands, each one round trip to the daemon that stores the task (see "Tasks live in the daemon" in `maestro-server/AGENTS.md`), the app's models converted from the protocol rows, `relationships.rs`, `instructions.rs`, `attachments.rs`, `ops.rs`
+- `git/` — worktree lifecycle/query/staging, `merge.rs`, `review.rs`, diff + review models and handlers, `remote.rs`. The git work runs here; the worktree and review rows are the daemon's
 - `acp/` — ACP session management: `manager.rs`, `registry.rs`, `transport*.rs`, `reader_task.rs`, `deploy.rs`, `replay.rs`, `host_tools.rs`, and session/prompt/discovery/file/meta/auth handlers
-- `execution/` — PTY/process spawning (local + remote), `queue.rs`, `streaming.rs`, handlers, models
+- `execution/` — PTY/process spawning (local + remote), `queue.rs` and `capacity.rs` (the app's view of the daemon's capacity), `streaming.rs`, handlers, models
 - `connectivity/` — SSH (`ssh/`), WSL, Docker, SFTP, filesystem handlers, connection models
 - `integration/` — issue-tracking providers (`providers/`), `lookup/`, `issue_sync.rs`, `keychain.rs`, `token_manager.rs`
 - `settings/` — app settings handlers and models
@@ -139,7 +139,7 @@ and logic, so a feature touches one directory rather than three.
 **maestro-server (`maestro-server/src/`):**
 
 Separate binary (must be on PATH). Acts as ACP intermediary between Tauri and AI agents. Communicates with Tauri via JSON-framed messages on stdin/stdout. Key files: `main.rs` (entry), `dispatch.rs` (message routing), `session/` (`handlers.rs` ACP session lifecycle, `connection.rs`, `command_loop.rs`), `sessions.rs` (session types), `agent/` (`spawn.rs` subprocess spawn, `detection.rs` agent discovery, `registry.rs` agent registry), `agent_restart.rs`, `terminal.rs` (terminal I/O), `file_ops.rs` (file operations), `mcp_gateway.rs` + `mcp_stdio.rs` (Maestro's own MCP server, see
-`maestro-server/AGENTS.md`), `tool_check.rs`.
+`maestro-server/AGENTS.md`), `tool_check.rs`, and the task pipeline: `scheduler.rs`, `task_runner.rs`, `task_turn.rs`, `session/task_gate.rs`, `task_restart.rs`, `pipeline_settings.rs` (see "The daemon drives the task pipeline" in `maestro-server/AGENTS.md`).
 
 **maestro-protocol (`maestro-protocol/src/`):**
 
@@ -154,12 +154,12 @@ Read the one for the area you are about to change. Do not add a `CLAUDE.md` anyw
 Claude Code (v2.1.277+) reads `AGENTS.md` itself, and only while no `CLAUDE.md` or
 `CLAUDE.local.md` sits on the path, so one stray file silently drops every note below.
 
-| File                       | Covers                                                                                                                                                                               |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/AGENTS.md`            | View rendering, stores, contexts, the base-ui pitfall, reading cron expressions, canvas surfaces                                                                                     |
-| `src-tauri/AGENTS.md`      | Database schema and migrations, `MAESTRO_DATA_DIR`, Rust logging, the `wdio` feature, `.maestro/` project storage                                                                    |
-| `maestro-server/AGENTS.md` | The resident daemon, project locks, automations and their worktrees, webhooks, the Maestro MCP server, Collections (skills and MCP servers), the bundled and custom agent registries |
-| `website/AGENTS.md`        | The home page video                                                                                                                                                                  |
+| File                       | Covers                                                                                                                                                                                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/AGENTS.md`            | View rendering, stores, contexts, the base-ui pitfall, reading cron expressions, canvas surfaces                                                                                                                  |
+| `src-tauri/AGENTS.md`      | Database schema and migrations, `MAESTRO_DATA_DIR`, Rust logging, the `wdio` feature, `.maestro/` project storage                                                                                                 |
+| `maestro-server/AGENTS.md` | The resident daemon, project locks, tasks and the task pipeline, automations and their worktrees, webhooks, the Maestro MCP server, Collections (skills and MCP servers), the bundled and custom agent registries |
+| `website/AGENTS.md`        | The home page video                                                                                                                                                                                               |
 
 Two rules from those files apply everywhere: log through the `log` crate (never `eprintln!`, and
 raw ACP frames only at `trace`), and never ship a binary built with `--features wdio`.
@@ -244,8 +244,8 @@ genuinely changed — a diff there means a model changed and should be committed
 ## Important Notes
 
 - SQLite DB location managed by Tauri app data directory, overridable with `MAESTRO_DATA_DIR` (see `src-tauri/AGENTS.md`)
-- Schema version: 30 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
-- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 7.
+- Schema version: 32 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
+- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 11.
   Bumping it redeploys `maestro-server` on every connection at first use, because `deploy.rs`
   compares `--app-version`, which embeds it
 - Two-phase startup: settings load → project selection → main UI

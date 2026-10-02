@@ -1,8 +1,8 @@
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
 
 use crate::models::{
-    ActivityVisibility, AgentStreamWidth, AppSettings, ConnectionCapacitySettings,
-    EnterKeyBehavior, NewProjectColor, TerminalColorMode,
+    ActivityVisibility, AgentStreamWidth, AppSettings, EnterKeyBehavior, NewProjectColor,
+    TerminalColorMode,
 };
 
 /// Load application settings from the database
@@ -12,7 +12,8 @@ use crate::models::{
 pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
     // Query all settings from the table
     let mut stmt = conn
-        .prepare("SELECT key, value FROM settings ORDER BY key")
+        // The install id is not a setting; read alone it must not stand in for saved ones.
+        .prepare("SELECT key, value FROM settings WHERE key != 'install_id' ORDER BY key")
         .map_err(|e| format!("Failed to prepare query: {}", e))?;
 
     let mut settings_map: std::collections::HashMap<String, String> =
@@ -268,60 +269,37 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
     Ok(())
 }
 
-/// The agent limit in force on one connection.
-///
-/// A connection with no row has never been configured and takes the defaults, which is also what a
-/// stored mode we cannot parse falls back to — the same shape as `new_project_color` above, and for
-/// the same reason: a limit that refuses to load would stop the queue entirely.
-pub fn load_connection_capacity(
-    conn: &Connection,
-    key: crate::acp::ConnectionKey,
-) -> Result<ConnectionCapacitySettings, String> {
-    let row = conn
-        .query_row(
-            "SELECT concurrency_mode, max_concurrent_agents FROM connection_settings WHERE connection_key = ?",
-            [key.storage_id()],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?)),
-        )
-        .optional()
-        .map_err(|e| format!("Failed to query connection settings: {}", e))?;
-
-    let Some((mode, max_concurrent_agents)) = row else {
-        return Ok(ConnectionCapacitySettings::default());
-    };
-
-    Ok(ConnectionCapacitySettings {
-        concurrency_mode: mode
-            .parse::<crate::execution::capacity::ConcurrencyMode>()
-            .unwrap_or_default(),
-        max_concurrent_agents,
-    })
-}
-
-pub fn save_connection_capacity(
-    conn: &Connection,
-    key: crate::acp::ConnectionKey,
-    settings: &ConnectionCapacitySettings,
-) -> Result<(), String> {
+/// This installation's id, minted the first time it is asked for and kept in `settings`. It tells
+/// a project's daemon which app a board import came from.
+pub fn install_id(conn: &Connection) -> Result<String, String> {
     conn.execute(
-        "INSERT OR REPLACE INTO connection_settings \
-         (connection_key, concurrency_mode, max_concurrent_agents, updated_at) \
-         VALUES (?1, ?2, ?3, ?4)",
+        "INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('install_id', ?1, ?2)",
         rusqlite::params![
-            key.storage_id(),
-            settings.concurrency_mode.as_str(),
-            settings.max_concurrent_agents,
-            chrono::Utc::now().to_rfc3339(),
+            uuid::Uuid::new_v4().to_string(),
+            chrono::Utc::now().to_rfc3339()
         ],
     )
-    .map_err(|e| format!("Failed to save connection settings: {}", e))?;
-
-    Ok(())
+    .map_err(|e| format!("Failed to store the install id: {e}"))?;
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = 'install_id'",
+        [],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Failed to read the install id: {e}"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_install_id_is_minted_once() {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::core::schema::initialize_schema(&conn).unwrap();
+        let id = install_id(&conn).unwrap();
+        assert!(!id.is_empty());
+        assert_eq!(install_id(&conn).unwrap(), id);
+    }
 
     #[test]
     fn test_load_settings_empty() {
@@ -489,85 +467,6 @@ mod tests {
             loaded.new_project_color,
             crate::models::NewProjectColor::Auto
         );
-    }
-
-    /// The whole point of the per-connection table: two hosts hold two different limits, and
-    /// neither is disturbed by the other being written.
-    #[test]
-    fn each_connection_holds_its_own_limit() {
-        use crate::acp::ConnectionKey;
-        use crate::execution::capacity::ConcurrencyMode;
-
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::core::initialize_schema(&conn).unwrap();
-
-        save_connection_capacity(
-            &conn,
-            ConnectionKey::Local,
-            &ConnectionCapacitySettings {
-                concurrency_mode: ConcurrencyMode::Hard,
-                max_concurrent_agents: 8,
-            },
-        )
-        .unwrap();
-        save_connection_capacity(
-            &conn,
-            ConnectionKey::Ssh { id: 3 },
-            &ConnectionCapacitySettings {
-                concurrency_mode: ConcurrencyMode::Auto,
-                max_concurrent_agents: 2,
-            },
-        )
-        .unwrap();
-
-        let local = load_connection_capacity(&conn, ConnectionKey::Local).unwrap();
-        assert_eq!(local.concurrency_mode, ConcurrencyMode::Hard);
-        assert_eq!(local.max_concurrent_agents, 8);
-
-        let remote = load_connection_capacity(&conn, ConnectionKey::Ssh { id: 3 }).unwrap();
-        assert_eq!(remote.concurrency_mode, ConcurrencyMode::Auto);
-        assert_eq!(remote.max_concurrent_agents, 2);
-    }
-
-    /// A connection nobody has configured estimates from memory rather than sitting at a fixed
-    /// number, which is the behaviour the setting exists to provide.
-    #[test]
-    fn an_unconfigured_connection_defaults_to_the_memory_estimate() {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::core::initialize_schema(&conn).unwrap();
-
-        let loaded =
-            load_connection_capacity(&conn, crate::acp::ConnectionKey::Wsl { id: 1 }).unwrap();
-
-        assert_eq!(
-            loaded.concurrency_mode,
-            crate::execution::capacity::ConcurrencyMode::Auto
-        );
-        assert_eq!(loaded.max_concurrent_agents, 3);
-    }
-
-    /// An unparseable stored mode must fall back rather than error: a limit that refuses to load
-    /// would stop the queue draining at all.
-    #[test]
-    fn unparseable_connection_mode_falls_back_to_the_default() {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::core::initialize_schema(&conn).unwrap();
-
-        conn.execute(
-            "INSERT INTO connection_settings (connection_key, concurrency_mode, max_concurrent_agents, updated_at) \
-             VALUES ('local', 'Elastic', 5, '2026-01-01')",
-            [],
-        )
-        .unwrap();
-
-        let loaded = load_connection_capacity(&conn, crate::acp::ConnectionKey::Local).unwrap();
-
-        assert_eq!(
-            loaded.concurrency_mode,
-            crate::execution::capacity::ConcurrencyMode::Auto
-        );
-        // The number is still the stored one — only the unreadable field falls back.
-        assert_eq!(loaded.max_concurrent_agents, 5);
     }
 
     /// An unset directory must come back as `None`, not `Some("")` — the empty string would be

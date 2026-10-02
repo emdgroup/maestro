@@ -267,17 +267,31 @@ async fn serve_attached(
     loop {
         // Converted before the match so nothing from the protocol's boxed error, which is not
         // `Send`, is alive across the send below — this whole loop runs in a spawned task.
-        let read = read_framed(&mut reader).await;
+        let read = maestro_protocol::read_message_with_id(&mut reader)
+            .await
+            .map_err(|e| e.to_string());
         match read {
-            Ok(msg) => {
+            Ok((request_id, msg)) => {
                 // Anything at all, `Pong` included, is proof of life for the project lock.
                 sink.lock().await.touch(id).await;
                 // Before it is handled, so the session's answer already knows where to go. This
                 // is also how a window takes over a session another one started, or adopts one.
-                if let Some(session_id) = msg.session_id() {
+                // Not an answer to a host tool: a shared prompt call is answered by whichever
+                // window it was sent to, held or not, and that must not move the session.
+                let answer = matches!(
+                    msg,
+                    maestro_protocol::MaestroRpcMessage::Request(
+                        maestro_protocol::ServerRequest::HostToolResult(_)
+                    )
+                );
+                if let Some(session_id) = msg.session_id().filter(|_| !answer) {
                     sink.lock().await.claim(id, session_id).await;
                 }
-                if msg_tx.send(Ok((msg, Some(route.clone())))).await.is_err() {
+                if msg_tx
+                    .send(Ok((msg, Some(route.clone()), request_id)))
+                    .await
+                    .is_err()
+                {
                     break;
                 }
             }

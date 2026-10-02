@@ -25,6 +25,9 @@ pub(crate) struct TurnEnd {
     pub session_id: String,
     pub stop_reason: String,
     pub final_message: Option<String>,
+    /// What the stream said about the turn, for resolving a task's turn. Taken here, at every turn
+    /// end, so the per-session state never outlives a turn.
+    pub facts: crate::turn::TurnFacts,
 }
 
 pub(crate) type TurnSender = tokio::sync::mpsc::UnboundedSender<TurnEnd>;
@@ -90,14 +93,22 @@ fn take_final_message(session_id: &str) -> Option<String> {
         .filter(|message| !message.trim().is_empty())
 }
 
+/// A session's command loop ended: drop what its turns left behind, which nothing will take now.
+pub(crate) fn forget_session(session_id: &str) {
+    let _ = take_final_message(session_id);
+    let _ = crate::turn::take_turn_facts(session_id);
+}
+
 /// Note that a turn has ended. No-op until the main loop is running.
 pub(crate) fn note_turn_ended(session_id: &str, stop_reason: &str) {
     let final_message = take_final_message(session_id);
+    let facts = crate::turn::take_turn_facts(session_id);
     if let Some(tx) = TURN_TX.get() {
         if let Err(e) = tx.send(TurnEnd {
             session_id: session_id.to_string(),
             stop_reason: stop_reason.to_string(),
             final_message,
+            facts,
         }) {
             send_diag("warn", format!("[prompt] turn end went unheard: {e}"));
         }
@@ -198,10 +209,23 @@ pub(crate) async fn send_response(
     stdout: &crate::ClientOut,
     msg: &MaestroRpcMessage,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut buf: Vec<u8> = Vec::new();
-    maestro_protocol::write_message(&mut buf, msg).await?;
-    stdout.lock().await.write(msg.session_id(), &buf).await?;
+    let mut sink = stdout.lock().await;
+    let buf =
+        maestro_protocol::encode_message(sink.reply_id_for(msg), msg).map_err(|e| e.to_string())?;
+    sink.write(msg.session_id(), &buf).await?;
     Ok(())
+}
+
+/// Push `response` to every attached client, the one `stdout` replies to included.
+pub(crate) async fn broadcast(stdout: &crate::ClientOut, response: ServerResponse) {
+    crate::scheduler::observe(&response);
+    let everyone = crate::client_sink::ClientSink::everyone(stdout).await;
+    if let Err(e) = send_response(&everyone, &MaestroRpcMessage::Response(response)).await {
+        send_diag(
+            "warn",
+            format!("[server] could not broadcast a change: {e}"),
+        );
+    }
 }
 
 /// Forward a command to an active session. Returns `Err` only if stdout write fails.

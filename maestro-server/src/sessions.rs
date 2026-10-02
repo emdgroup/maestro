@@ -71,6 +71,9 @@ pub type PendingElicitations =
 pub struct SharedSessionState {
     pub pending_permissions: PendingPermissions,
     pub pending_elicitations: PendingElicitations,
+    /// The task this session works, `(canonical project path, task id, role)`, when it is known
+    /// before the session's row is. See `session::task_gate`.
+    pub task: std::sync::OnceLock<(String, i32, maestro_protocol::AgentRole)>,
 }
 
 /// Routes ACP session IDs → maestro session IDs → per-session state.
@@ -196,6 +199,16 @@ pub struct SessionCleanup {
     pub router: Arc<SessionRouter>,
 }
 
+/// The project a session belongs to, and what the project knows it by.
+pub struct ProjectBinding {
+    pub project_path: String,
+    pub meta: maestro_protocol::SessionMeta,
+    /// Whether the agent answers `session/load`, as it said when this session was made.
+    pub can_reload: bool,
+    /// When the host asked for the session, so a close that raced the load is not undone by it.
+    pub requested_at: chrono::DateTime<chrono::Utc>,
+}
+
 pub struct ActiveSession {
     pub cmd_tx: mpsc::Sender<SessionCommand>,
     pub pending_permissions: PendingPermissions,
@@ -210,12 +223,12 @@ pub struct ActiveSession {
     pub cwd: String,
     /// Extra workspace roots this session was started with, replayed when the agent restarts.
     pub additional_directories: Vec<String>,
-    /// Opaque blob the host attached at spawn, handed back by `ListLiveSessions`.
-    /// Never read here. See `maestro_protocol::ListLiveSession::host_meta`.
-    pub host_meta: Option<serde_json::Value>,
+    /// What the project store records about this session. `None` for one started with no project,
+    /// which the store then never hears of.
+    pub project: Option<ProjectBinding>,
     /// Whether a `session/prompt` is outstanding right now. Shared with the command loop.
     ///
-    /// Reported by `ListLiveSessions` because it decides what an attaching client may do: a
+    /// Reported by `ListProjectSessions` because it decides what an attaching client may do: a
     /// session between turns can be closed and reloaded to recover its transcript, one mid-turn
     /// cannot without throwing the turn away.
     pub turn_active: Arc<AtomicBool>,

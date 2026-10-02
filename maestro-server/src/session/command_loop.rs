@@ -186,10 +186,7 @@ pub(crate) async fn run_command_loop(
                         .block_task(),
                 )
                 .await;
-                if let Some(ref router) = router {
-                    router.unregister(&session_id.to_string()).await;
-                }
-                return;
+                break;
             }
             SessionCommand::Prompt(content) => {
                 crate::send_diag(
@@ -198,6 +195,7 @@ pub(crate) async fn run_command_loop(
                 );
                 let so = Arc::clone(&so);
                 let so_err = Arc::clone(&so);
+                crate::turn::note_turn_started(&maestro_sid);
                 let sid = maestro_sid.clone();
                 turn_active.store(true, Ordering::SeqCst);
                 let turn_flag = Arc::clone(&turn_active);
@@ -213,6 +211,7 @@ pub(crate) async fn run_command_loop(
                     });
                 if result.is_err() {
                     turn_active.store(false, Ordering::SeqCst);
+                    crate::helpers::note_turn_ended(&maestro_sid, "error");
                     let _ = send_response(
                         &so_err,
                         &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
@@ -231,6 +230,7 @@ pub(crate) async fn run_command_loop(
                 );
                 let so = Arc::clone(&so);
                 let so_err = Arc::clone(&so);
+                crate::turn::note_turn_started(&maestro_sid);
                 let sid = maestro_sid.clone();
                 let content_blocks: Vec<acp::schema::v1::ContentBlock> = blocks
                     .into_iter()
@@ -250,6 +250,7 @@ pub(crate) async fn run_command_loop(
                     });
                 if result.is_err() {
                     turn_active.store(false, Ordering::SeqCst);
+                    crate::helpers::note_turn_ended(&maestro_sid, "error");
                     let _ = send_response(
                         &so_err,
                         &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
@@ -262,6 +263,8 @@ pub(crate) async fn run_command_loop(
                 }
             }
             SessionCommand::CancelTurn => {
+                // Only `InterruptTurn` sends this, and only a user stops a turn.
+                crate::turn::note_interrupted(&maestro_sid);
                 if turn_active.load(Ordering::SeqCst) {
                     let _ = cx.send_notification(CancelNotification::new(session_id.clone()));
                 } else {
@@ -389,8 +392,9 @@ pub(crate) async fn run_command_loop(
         }
     }
     // Idempotent cleanup: ensure router unregistered regardless of how loop exited
-    // (send error, cmd_tx dropped, or any other break path).
+    // (close, send error, cmd_tx dropped, or any other break path).
     if let Some(ref router) = router {
         router.unregister(&session_id.to_string()).await;
     }
+    crate::helpers::forget_session(&maestro_sid);
 }

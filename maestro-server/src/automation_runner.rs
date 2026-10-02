@@ -3,10 +3,9 @@
 //! This is the half of automations that needs no window. The store next door says what should run
 //! and when; this decides that the time has come, spawns the agent, and records what happened.
 //!
-//! A run is an ordinary session. It appears in `ListLiveSessions` like any other, its permission
+//! A run is an ordinary session. It has a row in the project store like any other, its permission
 //! prompts reach whoever is attached, and phase 2's sweep closes it once the agent is done and
-//! nobody is watching. What makes it an automation is the `runs` row pointing at it, which is also
-//! how a client that attaches later finds a session nothing of its own started.
+//! nobody is watching. What makes it an automation is the `runs` row pointing at it.
 
 use std::sync::Arc;
 
@@ -48,6 +47,7 @@ pub struct Spawner<'a> {
 /// for an isolated workspace must never end up editing the user's checkout unattended.
 async fn resolve_cwd(
     store: &Store,
+    stdout: &crate::ClientOut,
     automation: &maestro_protocol::Automation,
     run_id: &str,
     ordinal: u32,
@@ -73,6 +73,31 @@ async fn resolve_cwd(
                 i64::from(ordinal),
             )
             .await?;
+            // The project's own row, so the worktree is on the Workspaces screen like any other.
+            // Removal writes none: the app prunes a row whose directory is gone.
+            if let Some(projects) = crate::project_store::SHARED.get() {
+                let adopted = crate::task_store::worktrees::adopt(
+                    &*projects.lock().await,
+                    &automation.project_path,
+                    &provisioned.branch,
+                    Some(&provisioned.base),
+                    &crate::worktree::relative_path(&slug, i64::from(ordinal)),
+                );
+                match adopted {
+                    Ok(true) => {
+                        let project_path = automation.project_path.clone();
+                        crate::helpers::broadcast(
+                            stdout,
+                            ServerResponse::WorktreesChanged(maestro_protocol::ProjectRef {
+                                project_path,
+                            }),
+                        )
+                        .await;
+                    }
+                    Ok(false) => {}
+                    Err(e) => send_diag("warn", format!("[automation] {e}")),
+                }
+            }
             {
                 let conn = store.lock().await;
                 automations::attach_worktree(
@@ -159,6 +184,37 @@ async fn settle(store: &Store, stdout: &crate::ClientOut, run: &AutomationRun) {
             "warn",
             format!("[automation] could not settle a worktree: {e}"),
         ),
+    }
+}
+
+/// Close the project's row for the conversation a finished run happened in: every such row, or
+/// only the one named.
+///
+/// A finished run is read from its run card and reopened from there, since the run keeps what a
+/// reload needs. Left open, its row would be reloaded by every project open, one session per
+/// retained run, each in that run's worktree. A running run is not touched.
+pub async fn close_finished_run_rows(
+    store: &Store,
+    project_store: &crate::project_store::Store,
+    key: Option<(&str, &str)>,
+) {
+    let keys = {
+        let conn = store.lock().await;
+        automations::finished_run_sessions(&conn, key)
+    };
+    match keys {
+        Ok(keys) => {
+            let conn = project_store.lock().await;
+            for (agent_id, acp_session_id) in keys {
+                crate::project_store::report(crate::project_store::close_dormant(
+                    &conn,
+                    &agent_id,
+                    &acp_session_id,
+                    chrono::Utc::now(),
+                ));
+            }
+        }
+        Err(e) => send_diag("warn", format!("[automation] {e}")),
     }
 }
 
@@ -249,7 +305,7 @@ pub async fn apply_all_retention(store: &Store) {
     }
 }
 
-fn effort_option_id(config_options: Option<&Vec<serde_json::Value>>) -> Option<String> {
+pub(crate) fn effort_option_id(config_options: Option<&Vec<serde_json::Value>>) -> Option<String> {
     config_options?
         .iter()
         .find(|option| {
@@ -301,8 +357,9 @@ async fn fail(store: &Store, stdout: &crate::ClientOut, run_id: &str, error: Str
 
 /// Start one automation, whatever its schedule says.
 ///
-/// Returns the run it opened, which is already recorded by the time this returns: the spawn itself
-/// happens in the background, so a slow agent does not hold up the loop that asked.
+/// Returns the run it opened, which is already recorded by the time this returns: the workspace and
+/// the spawn happen in the background, so a slow checkout or agent does not hold up the loop that
+/// asked, and a failure there fails the run.
 pub async fn start(
     store: &Store,
     automation_id: &str,
@@ -322,14 +379,6 @@ pub async fn start(
         automations::start_run(&conn, &automation, trigger)?
     };
     announce(spawner.stdout, &run).await;
-
-    let cwd = match resolve_cwd(store, &automation, &run.id, run.ordinal.unwrap_or(1)).await {
-        Ok(cwd) => cwd,
-        Err(e) => {
-            fail(store, spawner.stdout, &run.id, e.clone()).await;
-            return Err(e);
-        }
-    };
 
     let Some((command, args, env)) = resolve_agent_spawn_params(
         &automation.agent_id,
@@ -356,6 +405,15 @@ pub async fn start(
     let opened = run.clone();
 
     tokio::spawn(async move {
+        // Off the loop: a new worktree is a checkout, and waits behind any other in the project.
+        let ordinal = opened.ordinal.unwrap_or(1);
+        let cwd = match resolve_cwd(&store, &stdout, &automation, &opened.id, ordinal).await {
+            Ok(cwd) => cwd,
+            Err(e) => {
+                fail(&store, &stdout, &opened.id, e).await;
+                return;
+            }
+        };
         let Some(connection) = ensure_and_get_connection(
             &opened.automation_id,
             &agent_connections,
@@ -463,8 +521,15 @@ pub async fn start(
 
         result.session.agent_id = automation.agent_id.clone();
         result.session.cwd = cwd;
-        // No `host_meta`: the host did not start this and has nothing to attach. The `runs` row is
-        // what a client uses to find the session, which is why it is written above.
+        result.session.project = Some(crate::sessions::ProjectBinding {
+            project_path: automation.project_path.clone(),
+            meta: maestro_protocol::SessionMeta {
+                session_name: Some(automation.name.clone()),
+                ..Default::default()
+            },
+            can_reload: result.supports_session_load,
+            requested_at: chrono::Utc::now(),
+        });
         if spawn_result_tx
             .send((session_id, result.session))
             .await
@@ -495,6 +560,7 @@ pub async fn finish_for_session(
         session_id,
         stop_reason,
         final_message,
+        ..
     } = ended;
     let run = {
         let conn = store.lock().await;
@@ -687,8 +753,10 @@ mod tests {
     #[tokio::test]
     async fn a_missing_workspace_stops_the_run_rather_than_moving_it() {
         let store = empty_store();
+        let stdout = crate::client_sink::ClientSink::detached();
         let error = resolve_cwd(
             &store,
+            &stdout,
             &automation(AutomationWorkspace::Path {
                 path: "/nowhere/at/all".to_string(),
             }),
@@ -702,6 +770,7 @@ mod tests {
         assert_eq!(
             resolve_cwd(
                 &store,
+                &stdout,
                 &automation(AutomationWorkspace::Repository),
                 "run-1",
                 1

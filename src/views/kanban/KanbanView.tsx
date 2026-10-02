@@ -21,10 +21,7 @@ import type { Task, TaskPriority } from "@/types/bindings";
 import { PRIORITIES } from "@/utils/constants/priority";
 import { CreateTaskModal } from "@/components/kanban/create-task-modal/CreateTaskModal";
 import { ArchiveModal } from "@/components/kanban/archive-modal/ArchiveModal";
-import { useKanban } from "@/contexts/KanbanContext";
-import { useQueueDrain } from "@/hooks/useQueueDrain";
 import { usePullRequestPoll } from "@/hooks/usePullRequestPoll";
-import { useAgentPipeline } from "@/hooks/useAgentPipeline";
 import { QueueCapacityBadge } from "@/components/kanban/QueueCapacityBadge";
 import { AutoModeToggle } from "@/components/kanban/AutoModeToggle";
 
@@ -40,14 +37,10 @@ export const KanbanView: React.FC = () => {
   const { data: worktrees } = useWorktreesQuery(projectId ?? undefined, projectPath);
   const reviewPanelTaskId = useReviewPanelTaskId();
   const { closeReview } = useBoardActions();
-  const { connection } = useKanban();
 
-  // Mounted here rather than in `BoardView` because this view stays mounted while the user is on
-  // another tab — auto-mode has to keep filling slots when nobody is watching the board, which is
-  // most of the time it matters.
-  useQueueDrain(projectId, projectPath, taskList, connection);
+  // The daemon drives the pipeline; the forge is the window's, so pull requests are polled here,
+  // where it keeps running while the user is on another tab.
   usePullRequestPoll(projectId, taskList);
-  useAgentPipeline(projectId, projectPath, taskList, connection);
 
   const [query, setQuery] = useState("");
   const [selectedPriorities, setSelectedPriorities] = useState<TaskPriority[]>([]);
@@ -228,7 +221,7 @@ export const KanbanView: React.FC = () => {
 
         <QueueCapacityBadge projectId={projectId} />
 
-        <AutoModeToggle />
+        <AutoModeToggle projectId={projectId} />
 
         <Tooltip>
           <TooltipTrigger

@@ -1,35 +1,12 @@
 import { useState, useCallback, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { api } from "@/lib/tauri-utils";
-import { taskBranchName } from "@/lib/generateSessionName";
-import { resolveAutomaticMode } from "@/lib/permission-modes";
-import { findEffortOption } from "@/lib/effort-option";
-import { parseProfileOverrides, profileIdFor, isRoleSkipped } from "@/lib/profile-overrides";
-import type { ConfigOption } from "@/components/execution/activity/types";
-import type {
-  Task,
-  JsonValue,
-  ConnectionKey,
-  AgentRole,
-  WorkspaceMode,
-  WorktreeWithStatus,
-} from "@/types/bindings";
-import { useResolveWorktree } from "@/hooks/useResolveWorktree";
-import { useClaimWorktreeForTaskMutation, worktreeQueryKeys } from "@/services/worktree.service";
-import {
-  useSpawnAcpSessionMutation,
-  useActiveSessionsQuery,
-  useAgentDiscoveryQuery,
-} from "@/services/execution.service";
-import {
-  useMarkTaskExecutionStartedMutation,
-  useMarkTaskSessionReadyMutation,
-  useReleaseTaskExecutionClaimMutation,
-  useDeleteTaskAttachmentMutation,
-} from "@/services/task.service";
-import { useProjectSettings } from "@/services/project.service";
+import { isRoleSkipped, parseProfileOverrides, profileIdFor } from "@/lib/profile-overrides";
+import type { Task, ConnectionKey, AgentRole, WorktreeWithStatus } from "@/types/bindings";
+import { worktreeQueryKeys } from "@/services/worktree.service";
+import { useActiveSessionsQuery, useAgentDiscoveryQuery } from "@/services/execution.service";
+import { startTask, useDeleteTaskAttachmentMutation } from "@/services/task.service";
 import { useNavigationActions } from "@/store/navigationStore";
 import { useBoardStore } from "@/store/boardStore";
 import type { DirtyChoice } from "@/components/execution/DirtyWorktreeDialog";
@@ -41,10 +18,10 @@ interface DirtyState {
   resolve: (choice: DirtyChoice | "cancel") => void;
 }
 
-/** The attachments whose files cannot be sent, and the promise the user's answer settles. */
+/** The attachments a start cannot send, and the promise the user's answer settles. */
 interface MissingAttachmentsState {
   files: UnusableAttachment[];
-  resolve: (choice: "continue" | "park") => void;
+  resolve: (proceed: boolean) => void;
 }
 
 /** The task waiting on an agent to be chosen for it, and the promise that choice settles. */
@@ -53,327 +30,182 @@ interface AgentPickerState {
   resolve: (agentId: string | null) => void;
 }
 
-/**
- * Tells the agent how to signal that the task is finished.
- *
- * Without it the board can only guess from whether the repository changed, which misreads an
- * agent that edits some files and then stops to ask a question. Kept to a single line at the end
- * of the prompt: it is short enough to read as an instruction rather than noise, and the agent's
- * own marker is stripped from its reply by `acp/completion.rs` so the transcript stays clean.
- */
-const COMPLETION_PROTOCOL =
-  "When the task is complete and needs no further work, end your final message with `<maestro-task-complete/>` — " +
-  "it moves the task to review, so omit it if you are asking a question or reporting a blocker.";
+/** The daemon's refusals for a stage with no agent it can spawn (`task_runner::begin`). */
+function isNoAgentError(message: string): boolean {
+  return message.startsWith("No agent to run") || message.includes("is unknown on this machine");
+}
 
 /**
- * What the refiner is for, in the absence of a profile that says it better.
- *
- * It is asked for a rewritten description and nothing else, because its final message *is* the
- * proposal: whatever it ends its turn with is what the gate offers to put in the task. A preamble
- * or a summary of what it changed would end up in the description verbatim.
- *
- * The instruction not to modify anything is a second line of defence, not the mechanism. The real
- * one is the read-only permission mode below — an instruction is advice, and the proposal gate is
- * only meaningful if accepting it is the first time anything changes.
+ * Starts a task's stage. The daemon does the work, from the claim to the prompt (`start_task`);
+ * what is left here is what only a person at the board can answer: the attachments it cannot send,
+ * the dirty-worktree question, the agent picker, and the sign-in prompt.
  */
-const REFINER_PROTOCOL =
-  "Read whatever you need from the repository, then reply with the improved task description and " +
-  "nothing else — no preamble, no summary of your changes, no code fences around the whole reply. " +
-  "Your reply is what will replace the description if the user accepts it. The task keeps its " +
-  "existing title, so do not restate it as a heading — start with the description itself. Do not " +
-  "modify any files.";
-
-/**
- * What the planner is for, in the absence of a profile that says it better.
- *
- * Like the refiner, its final message *is* the artifact: the plan is what the gate shows and what
- * the coder is given. It cannot write the plan to a file itself — it is held read-only, which is
- * the whole basis of the plan gate — so Maestro carries it.
- */
-const PLANNER_PROTOCOL =
-  "Investigate the repository and reply with an implementation plan in markdown: what to change, " +
-  "in what order, and anything you found that constrains the approach. Do not modify any files — " +
-  "your reply is the plan, and the user decides whether it is implemented.";
-
-/**
- * What the reviewer is for, in the absence of a profile that says it better.
- *
- * The verdict line is ordinary text rather than a hidden marker because it is the headline of
- * what goes into the outcome thread — the user reads it, and a stripped marker would leave the
- * thread saying nothing about the conclusion. `classify_verdict` reads only that first line, and
- * treats anything it cannot parse as approval, which sends the task to the human gate rather than
- * spending another coder round on a guess.
- */
-const REVIEWER_PROTOCOL =
-  "Review the changes on this branch against the task. Start your reply with a single line " +
-  "reading exactly `APPROVED` or `CHANGES REQUESTED`, then say why — for changes, be specific " +
-  "about what to fix and where, because your reply is what the coder is given. Do not modify any " +
-  "files.";
-
-/**
- * The stage a role runs, as the board names it. Roles are an internal noun; the user picked
- * "Refine" off a card and configured "Refinement" in Settings.
- */
-const ROLE_STAGE_LABELS: Record<AgentRole, string> = {
-  Refiner: "Refinement",
-  Planner: "Planning",
-  Coder: "Implementation",
-  Reviewer: "Review",
-};
-
 export function useExecuteTask(
   projectId: number | null,
   projectPath: string,
   connection: ConnectionKey,
 ) {
-  // Read from the project's own settings rather than from a store. A copy in `configStore` held
-  // this for a while and nothing ever wrote it, so the fallback below was `null` for the life of
-  // every session and a project with no agent profiles could not start a task at all.
-  const defaultAgent = useProjectSettings(projectId).data?.default_agent ?? null;
   const queryClient = useQueryClient();
-  const { resolveWorktree } = useResolveWorktree();
-  const claimWorktree = useClaimWorktreeForTaskMutation();
-  const spawnAcpSessionMutation = useSpawnAcpSessionMutation();
-  const markExecutionStarted = useMarkTaskExecutionStartedMutation();
-  const markSessionReady = useMarkTaskSessionReadyMutation();
-  const releaseClaim = useReleaseTaskExecutionClaimMutation();
-  const deleteAttachment = useDeleteTaskAttachmentMutation();
-  // Which task is mid-spawn, not merely that one is. The board shares a single instance of this
-  // hook across every card, so a bare boolean would disable Execute on all of them while any one
-  // task started.
+  // Which task is mid-start, not merely that one is: the board shares one instance across cards.
   const [executingTaskId, setExecutingTaskId] = useState<number | null>(null);
   const [dirtyState, setDirtyState] = useState<DirtyState | null>(null);
   const dirtyResolveRef = useRef<((choice: DirtyChoice | "cancel") => void) | null>(null);
   const [missingState, setMissingState] = useState<MissingAttachmentsState | null>(null);
-  const missingResolveRef = useRef<((choice: "continue" | "park") => void) | null>(null);
+  const missingResolveRef = useRef<((proceed: boolean) => void) | null>(null);
+  const deleteAttachment = useDeleteTaskAttachmentMutation();
   const [agentPickerState, setAgentPickerState] = useState<AgentPickerState | null>(null);
   const agentPickerResolveRef = useRef<((agentId: string | null) => void) | null>(null);
-  // Only to tell "nothing is installed" from "nothing resolved", which are different problems with
-  // different answers. Already cached for the session by Settings and the spawn dialog.
   const { data: discovery } = useAgentDiscoveryQuery(connection, projectId != null);
   const navigation = useNavigationActions();
+
+  /**
+   * The folder a coder would write in, when it already exists: the project itself, the pinned
+   * workspace, or the task's own worktree from an earlier round. A worktree not made yet is clean.
+   */
+  const existingWorkspace = async (task: Task, id: number): Promise<string | null> => {
+    if (task.workspace_mode === "RepositoryDirectory") return projectPath;
+    const worktrees = await queryClient
+      .fetchQuery({
+        queryKey: worktreeQueryKeys.list(id),
+        queryFn: () => api.listWorktreesWithStatus(id, projectPath),
+      })
+      .catch(() => [] as WorktreeWithStatus[]);
+    const found =
+      task.workspace_mode === "ReuseWorkspace"
+        ? worktrees.find((w) => w.id != null && w.id === task.workspace_worktree_id)
+        : worktrees.find((w) => w.task_id === task.id);
+    return found?.path ?? null;
+  };
+
+  /**
+   * Asks about uncommitted work before a coder builds on it. Only on a click: the daemon's
+   * unattended starts skip it, and the work a handoff finds is the task's own. False means the
+   * user cancelled.
+   */
+  const settleDirtyWorkspace = async (task: Task, id: number): Promise<boolean> => {
+    try {
+      const cwd = await existingWorkspace(task, id);
+      if (!cwd) return true;
+      const status = await api.checkWorktreeDirty(id, cwd);
+      if (status.modified_count === 0 && status.untracked_count === 0) return true;
+      const choice = await new Promise<DirtyChoice | "cancel">((resolve) => {
+        dirtyResolveRef.current = resolve;
+        setDirtyState({
+          modifiedCount: status.modified_count,
+          untrackedCount: status.untracked_count,
+          resolve,
+        });
+      });
+      setDirtyState(null);
+      dirtyResolveRef.current = null;
+      if (choice === "cancel") return false;
+      if (choice === "stash") await api.stashWorktree(id, cwd);
+      if (choice === "discard") await api.discardAllWorktreeChanges(id, cwd);
+    } catch (err) {
+      console.warn("Dirty worktree check failed, proceeding anyway:", err);
+    }
+    return true;
+  };
+
+  /**
+   * Offers the attachments the daemon would leave out of the prompt: a copy gone from the project,
+   * or one there but too big to send. Only on a click: the daemon's unattended starts skip them
+   * with a note in the thread. False means the user cancelled.
+   */
+  const settleAttachments = async (task: Task, id: number): Promise<boolean> => {
+    let unusable: UnusableAttachment[];
+    try {
+      const attachments = await api.listTaskAttachments(id, task.id);
+      if (attachments.length === 0) return true;
+      const prepared = await api.prepareTaskAttachments(id, attachments);
+      unusable = attachments.flatMap((attachment, i) => {
+        const entry = prepared[i];
+        if (!entry || entry.content_block !== null) return [];
+        return [
+          entry.rejection === null
+            ? { ...attachment, problem: "Not found in the project", missing: true }
+            : { ...attachment, problem: entry.rejection, missing: false },
+        ];
+      });
+    } catch (err) {
+      // Could not ask, which is not the same as missing: nothing is offered for removal.
+      console.warn("Attachment check failed, proceeding anyway:", err);
+      return true;
+    }
+    if (unusable.length === 0) return true;
+    const proceed = await new Promise<boolean>((resolve) => {
+      missingResolveRef.current = resolve;
+      setMissingState({ files: unusable, resolve });
+    });
+    setMissingState(null);
+    missingResolveRef.current = null;
+    if (!proceed) return false;
+    // Only the rows whose copy is gone, so the next start does not ask again. A file too big to
+    // send is still in the project and stays attached.
+    for (const attachment of unusable.filter((entry) => entry.missing)) {
+      await deleteAttachment
+        .mutateAsync({ projectId: id, attachmentId: attachment.id, taskId: task.id })
+        .catch((err) => console.warn("Failed to remove a missing attachment:", err));
+    }
+    return true;
+  };
+
+  /**
+   * Whether the daemon will run the planner before this coder, which writes nothing and so needs no
+   * dirty-worktree question. The same test as `task_runner::begin`.
+   */
+  const plannerFirst = async (task: Task, id: number): Promise<boolean> => {
+    const overrides = parseProfileOverrides(task.profile_overrides);
+    if (task.phase != null || isRoleSkipped(overrides, "Planner")) return false;
+    return api
+      .resolveAgentProfile(id, "Planner", profileIdFor(overrides, "Planner"), [], [], true)
+      .then((profile) => profile !== null)
+      .catch(() => false);
+  };
+
+  const openAgentSettings = {
+    label: "Open agent settings",
+    onClick: () => navigation.openSettings("agents"),
+  };
 
   const execute = async (
     task: Task,
     {
-      /**
-       * Ask the host whether it has room first. Belongs to the button: the scheduler's own picks
-       * already counted against the slots free when it ran, so re-checking would defer the rest of
-       * its own batch.
-       */
+      /** Defer to the queue when the host is full. The Execute button's, not a gate's. */
       respectCapacity = false,
-      /**
-       * Which stage this is. Decides the profile, whether the agent gets a worktree, whether it is
-       * held read-only, and — through `mark_task_session_ready` — where the task lands. Everything
-       * else about starting an agent is the same for all four.
-       */
-      role: requestedRole = "Coder" as AgentRole,
-      /**
-       * What the user wrote at a gate. Not persisted: it is only meaningful in the prompt it is
-       * about to become, and the plan it refers to is replaced by the one this run produces.
-       */
+      role = "Coder" as AgentRole,
+      /** What the user wrote at a gate, for the prompt this run is about to get. */
       feedback = "",
-      /**
-       * Nobody pressed anything and nobody is watching — the board handed one role's work to the
-       * next. Anything that would stop to ask has to be skipped rather than defaulted, because the
-       * caller renders none of the dialogs that would ask it.
-       */
+      /** Nobody is there to answer: the daemon notes refusals in the thread instead. */
       unattended = false,
-      /**
-       * The caller promising it renders `AgentPickerModal` from the state returned below. Opt-in
-       * rather than inferred from `unattended`: "a person pressed this" and "a component is
-       * rendering the dialog it needs" are different claims, and only the second is resolvable.
-       */
+      /** The caller renders `AgentPickerModal` from the state returned below. */
       canPickAgent = false,
     } = {},
   ) => {
     if (!projectId) return;
+    const id = projectId;
+    if (!unattended && !(await settleAttachments(task, id))) return;
+    if (
+      role === "Coder" &&
+      !unattended &&
+      !(await plannerFirst(task, id)) &&
+      !(await settleDirtyWorkspace(task, id))
+    )
+      return;
 
-    /** Which profile this task asked for, per role, and which stages it has turned off. */
-    const overrides = parseProfileOverrides(task.profile_overrides);
-    const profileFor = (role: AgentRole) => profileIdFor(overrides, role);
-
-    // Planning runs first when the project has a planner, which is what "optional plan agent"
-    // means in practice — Execute is one button whether or not a plan stage exists.
-    //
-    // Unless this task said not to: a project-wide planner is still opt-out one task at a time,
-    // and the check comes before `resolveAgentProfile` because a skipped stage has nothing to
-    // resolve — the project's planner is exactly what it is declining.
-    //
-    // Only from a standing start. At the plan gate the task is at `PlanReview` with a phase, and
-    // approving the plan calls this with the coder explicitly; without the guard that approval
-    // would start planning again, which is a loop with a gate in it.
-    const plannerFirst =
-      requestedRole === "Coder" &&
-      task.phase == null &&
-      !isRoleSkipped(overrides, "Planner") &&
-      (await api
-        .resolveAgentProfile(projectId, "Planner", profileFor("Planner"), [], [], true)
-        .then((profile) => profile !== null)
-        .catch(() => false));
-
-    const role: AgentRole = plannerFirst ? "Planner" : requestedRole;
-
-    // The refiner reads the repository to sharpen a ticket and writes nothing, so isolating it
-    // would cost a worktree per refinement for no benefit. The planner and the reviewer do need
-    // one: the planner has to read the branch the work will land on, and the diff being reviewed
-    // only exists there.
-    const workspaceMode: WorkspaceMode =
-      role === "Refiner" ? "RepositoryDirectory" : task.workspace_mode;
-    const readOnly = role !== "Coder";
-
-    // Resolved before the claim: a task pinned to a workspace that has since been deleted cannot
-    // run anywhere sensible, and failing here leaves the card where it was rather than parked at
-    // `Spawning` with a claim to hand back.
-    let pinnedWorkspace: WorktreeWithStatus | null = null;
-    if (workspaceMode === "ReuseWorkspace") {
-      const worktrees = await queryClient
-        .fetchQuery({
-          queryKey: worktreeQueryKeys.list(projectId),
-          queryFn: () => api.listWorktreesWithStatus(projectId, projectPath),
-        })
-        .catch(() => [] as WorktreeWithStatus[]);
-      pinnedWorkspace =
-        worktrees.find((w) => w.id != null && w.id === task.workspace_worktree_id) ?? null;
-      if (!pinnedWorkspace) {
-        toast.error(`The workspace "${task.title}" was pinned to no longer exists`, {
-          description: "Open the task and choose a workspace before running it again.",
-        });
-        return;
-      }
-    }
-
-    if (respectCapacity) {
-      // Advisory. The claim below is what actually decides whether the task starts; this only
-      // decides whether it should start *now*, which is the difference between a fixed limit the
-      // user set and a reading taken off free memory.
-      const decision = await api.requestTaskExecution(projectId, task.id).catch((err) => {
-        console.warn("Capacity check failed, starting anyway:", err);
-        return null;
-      });
-
-      if (decision?.verdict === "Deferred") {
-        toast.info(`"${task.title}" will start when an agent is free`, {
-          description: decision.reason,
-        });
-        return;
-      }
-
-      if (decision?.verdict === "Warn") {
-        toast.warning(`Starting "${task.title}" with the host already full`, {
-          description: decision.reason,
-        });
-      }
-    }
-
-    // An attachment whose file has since been deleted used to abort the whole start: the batch
-    // read in `prepare_external_attachments` fails on the first missing path, and the rejection
-    // unwound into tearing the spawned session down and leaving the card red. Nothing prunes
-    // `task_attachments`, so every retry failed the same way with no way past it.
-    //
-    // Checked here rather than at the point of use: metadata for a handful of files is cheap, and
-    // asking before the claim means parking is a plain return — no session to cancel and no claim
-    // to hand back, the same shape as the pinned-workspace check above.
-    const attachments = await api.listTaskAttachments(task.id).catch((err) => {
-      console.warn("Failed to list attachments, starting without them:", err);
-      toast.warning(`Starting "${task.title}" without its attachments`, {
-        description: "The attachment list could not be read.",
-      });
-      return [];
-    });
-
-    const skipPaths = new Set<string>();
-    if (attachments.length > 0) {
-      // `rejection` covers an image that exists but is over the size limit, which fails the send
-      // the same way a missing file does. Both are "cannot be attached", so both are offered here
-      // — but only the missing ones are dead rows, so `missing` keeps them apart for the delete
-      // below. A file that is merely too big is still on disk and still the user's to keep.
-      const unusable = (
-        await Promise.all(
-          attachments.map(async (attachment) =>
-            api
-              .validateAttachment(attachment.file_path, false)
-              .then((validation) =>
-                validation.rejection
-                  ? { ...attachment, problem: validation.rejection, missing: false }
-                  : null,
-              )
-              .catch((err: unknown) => ({
-                ...attachment,
-                problem: err instanceof Error ? err.message : String(err),
-                missing: true,
-              })),
-          ),
-        )
-      ).filter((entry) => entry !== null);
-
-      if (unusable.length > 0) {
-        for (const attachment of unusable) skipPaths.add(attachment.file_path);
-
-        if (unattended) {
-          // Nobody is there to answer, and awaiting a dialog no caller renders is the deadlock
-          // the dirty-worktree note below records. The rows are left alone: skipping them for one
-          // run is not the same consent as deleting them.
-          toast.warning(
-            `Starting "${task.title}" without ${unusable.length} attachment${
-              unusable.length === 1 ? "" : "s"
-            }`,
-            { description: unusable.map((a) => a.filename).join(", ") },
-          );
-        } else {
-          const choice = await new Promise<"continue" | "park">((resolve) => {
-            missingResolveRef.current = resolve;
-            setMissingState({ files: unusable, resolve });
-          });
-          setMissingState(null);
-          missingResolveRef.current = null;
-          if (choice === "park") return;
-
-          // Only the rows whose file is gone: those point at nothing, so removing them is what
-          // stops the next run asking the same question again. An oversized image is still on
-          // disk and stays attached — dropping it would destroy a reference the user can still use.
-          for (const attachment of unusable.filter((entry) => entry.missing)) {
-            await deleteAttachment
-              .mutateAsync({ attachmentId: attachment.id, taskId: task.id })
-              .catch((err) => console.warn("Failed to remove a dead attachment row:", err));
-          }
-        }
-      }
-    }
-
-    // Resolution order is profile → project override → task override, so the task wins where it
-    // says something. Asked for before the capabilities are known because the agent it names is
-    // what gets spawned; the model, mode and effort are applied afterwards, once the agent has
-    // reported what it supports.
-    //
-    // `true` for the effort here is the same claim `[]` makes for the two lists: not "supported",
-    // but "not yet asked". A `false` would be a verdict, and on a profile set to fail rather than
-    // degrade it would refuse the spawn over a capability nothing has looked at.
-    const roleProfile = await api
-      .resolveAgentProfile(projectId, role, profileFor(role), [], [], true)
-      .catch(() => null);
-
-    // The task's own agent is the coder's, so it must not be imposed on the other three: a task
-    // pinned to one agent would otherwise have its refiner and reviewer silently pinned too.
-    let agentId =
-      (role === "Coder" ? task.agent_id : null) ?? roleProfile?.agent_id ?? defaultAgent;
-
-    // Two different problems wear this shape, and they have opposite answers. Nothing installed is
-    // a machine to fix; something installed but nothing chosen — a profile naming an agent this
-    // machine lacks, a default left over from another one — is a question with four possible
-    // answers on screen. A toast reading "configure this in Settings" served neither: it named no
-    // cause, and left the user to find a page they had never seen.
-    //
-    // Resolved before the claim, so cancelling here leaves the card where it was rather than
-    // parked at `Spawning` with a claim to hand back.
-    if (!agentId) {
-      const installed = discovery?.agents ?? [];
-
-      // `canPickAgent` is opt-in rather than derived from `unattended`, because a caller that does
-      // not render the picker would await a promise nothing can resolve. `TaskReviewPanel` calls
-      // `execute` attended and renders no dialogs; the handoff path is the same story with the
-      // deadlock already paid for once — see the dirty-worktree note below.
-      if (installed.length > 0 && canPickAgent) {
+    setExecutingTaskId(task.id);
+    const start = (agentId: string | null = null) =>
+      startTask(id, task.id, role, feedback.trim() || null, unattended, respectCapacity, agentId);
+    try {
+      let started;
+      try {
+        started = await start();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const installed = discovery?.agents ?? [];
+        if (!isNoAgentError(message) || !canPickAgent || installed.length === 0) throw error;
+        // The picker writes the choice as the project default; it is passed here as well, so this
+        // start does not depend on that write.
         const picked = await new Promise<string | null>((resolve) => {
           agentPickerResolveRef.current = resolve;
           setAgentPickerState({ task, resolve });
@@ -381,461 +213,39 @@ export function useExecuteTask(
         setAgentPickerState(null);
         agentPickerResolveRef.current = null;
         if (!picked) return;
-        agentId = picked;
-      } else if (installed.length === 0) {
-        toast.error(`No coding agent is installed for "${task.title}"`, {
-          description:
-            "Maestro found no agent on this project's connection. Install one — Claude Code, " +
-            "Codex, Gemini — and it appears in the agent settings.",
-          action: {
-            label: "Open agent settings",
-            onClick: () => {
-              navigation.openSettings("agents");
-            },
-          },
-        });
-        return;
-      } else {
-        // Named by stage rather than by "default agent": a project that configures its pipeline
-        // through profiles has no default, and the missing thing is the profile for *this* stage.
-        toast.error(`No agent to run the ${ROLE_STAGE_LABELS[role]} stage of "${task.title}"`, {
-          description: "Give this role an agent profile, or set a default agent for the project.",
-          action: {
-            label: "Open agent settings",
-            onClick: () => {
-              navigation.openSettings("agents");
-            },
-          },
-        });
+        started = await start(picked);
+      }
+
+      if (started.session_id === null) {
+        toast.info(`"${task.title}" will start when an agent is free`);
         return;
       }
-    }
-
-    // Claim before anything is built. The claim marks the task `Spawning`, which is what stops a
-    // second click or the auto-mode drain from starting the same task twice, and what makes the
-    // in-flight state visible instead of leaving the card looking untouched for the whole spawn.
-    //
-    // Null means the task is not startable — already being spawned, or moved since the button was
-    // rendered. Nothing has been created yet, so there is nothing to tear down.
-    const claimed = await markExecutionStarted.mutateAsync(task.id);
-    if (!claimed) {
-      toast.info(`"${task.title}" is no longer waiting to start`);
-      return;
-    }
-
-    setExecutingTaskId(task.id);
-    let sessionId: string | null = null;
-    // Set once the task owns a live session; until then any exit has to hand the claim back.
-    let claimHandedOver = false;
-    let spawnFailed = false;
-
-    try {
-      // Resolve cwd and branch. A reused workspace is claimed rather than merely used: everything
-      // that later asks where this task worked — the review panel, approve, the archive prompt —
-      // finds it through `worktrees.task_id`.
-      const { cwd, branchName } =
-        workspaceMode === "RepositoryDirectory"
-          ? { cwd: projectPath, branchName: null }
-          : workspaceMode === "ReuseWorkspace"
-            ? await claimWorktree
-                .mutateAsync({ taskId: task.id, worktreeId: pinnedWorkspace!.id! })
-                .then(() => ({
-                  cwd: pinnedWorkspace!.path,
-                  branchName: pinnedWorkspace!.branch_name,
-                }))
-            : await resolveWorktree({
-                projectId,
-                repoPath: projectPath,
-                taskId: task.id,
-                baseBranch: task.base_branch,
-                // Null checks `base_branch` out where it is. Otherwise the name the user chose,
-                // falling back to one generated from the task — which is what every task that
-                // never touched the field carries.
-                newBranchName:
-                  task.workspace_branch_mode === "Checkout"
-                    ? null
-                    : (task.workspace_branch ?? taskBranchName(task.id, task.title)),
-              });
-
-      // Only for an agent that will write, and only when somebody is there to answer. The prompt
-      // exists to stop a coder building on top of someone else's uncommitted work; offering to
-      // stash or discard the user's changes before a read-only agent that cannot touch them would
-      // be destroying work for no reason at all.
-      //
-      // A handoff is skipped for two independent reasons, either of which would be enough. The
-      // uncommitted work in a handoff's worktree is *this task's own*, left by the round before —
-      // stashing or discarding it would destroy the very thing the agent is being asked to carry
-      // on from. And nothing renders this dialog on that path: `useAgentPipeline` takes `execute`
-      // and none of the dialog state beside it, so the promise below had nothing that could ever
-      // resolve it. A live CI fix round deadlocked here over a `.claude/settings.local.json` the
-      // agent had written itself, pinned at `Spawning` with the claim never released, because
-      // `finally` cannot run on a promise that never settles.
-      try {
-        const dirtyStatus =
-          readOnly || unattended
-            ? { modified_count: 0, untracked_count: 0 }
-            : await api.checkWorktreeDirty(projectId, cwd);
-        if (dirtyStatus.modified_count > 0 || dirtyStatus.untracked_count > 0) {
-          const choice = await new Promise<DirtyChoice | "cancel">((resolve) => {
-            dirtyResolveRef.current = resolve;
-            setDirtyState({
-              modifiedCount: dirtyStatus.modified_count,
-              untrackedCount: dirtyStatus.untracked_count,
-              resolve,
-            });
-          });
-          setDirtyState(null);
-          dirtyResolveRef.current = null;
-          if (choice === "cancel") return;
-          if (choice === "stash") await api.stashWorktree(projectId, cwd);
-          if (choice === "discard") await api.discardAllWorktreeChanges(projectId, cwd);
-        }
-      } catch (err) {
-        console.warn("Dirty worktree check failed, proceeding anyway:", err);
-      }
-
-      // `[]` means *unknown*, not *none* — the same rule the profile resolver uses.
-      //
-      // Always a fresh session. A previous role's session is never reused, not even when it runs
-      // the same agent in the same worktree: the planner's is closed the moment its plan is taken,
-      // because a plan and its implementation can be different agents on different models and a
-      // pipeline that only works when they happen to match is a pipeline with a hidden precondition.
-      let capturedModeIds: string[] = [];
-      // The id of the effort setting this agent exposes, or `""` for an agent that exposes none —
-      // a verdict rather than a gap, unlike the modes above: the config options arrive with the
-      // spawn response or not at all.
-      let capturedEffortId = "";
-
-      const spawnResult = await spawnAcpSessionMutation.mutateAsync({
-        agentId,
-        cwd,
-        sessionName: task.title,
-        projectId,
-        connection,
-        worktreeBranch: branchName ?? null,
-        taskId: task.id,
-        taskName: task.title,
-        // The profile resolved before the spawn, not the one re-resolved against the agent's
-        // capabilities below: they name the same profile, and this is the only one in hand yet.
-        role: { role, profile_id: roleProfile?.profile_id ?? null },
-      });
-      sessionId = spawnResult.session_id;
-
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          unlistenSpawnOk();
-          unlistenConfigOptions();
-          unlistenSessionError();
-          reject(new Error("Agent spawn timed out after 30s"));
-        }, 30_000);
-
-        let unlistenSpawnOk: () => void = () => {};
-        let unlistenModes: () => void = () => {};
-        let unlistenConfigOptions: () => void = () => {};
-        let unlistenSessionError: () => void = () => {};
-
-        listen<{ current_mode_id: string; available_modes: { mode_id: string }[] }>(
-          `acp://session-modes/${sessionId}`,
-          (e) => {
-            capturedModeIds = e.payload.available_modes.map((m) => m.mode_id);
-            unlistenModes();
-          },
-        ).then((fn) => {
-          unlistenModes = fn;
-        });
-
-        // Effort has no event of its own — it is one entry in the generic config-option list the
-        // reader emits from the same spawn response the modes come off.
-        listen<{ configOptions?: ConfigOption[] }>(
-          `acp://config-state-updated/${sessionId}`,
-          (e) => {
-            capturedEffortId = findEffortOption(e.payload.configOptions ?? [])?.id ?? "";
-            unlistenConfigOptions();
-          },
-        ).then((fn) => {
-          unlistenConfigOptions = fn;
-        });
-
-        listen<null>(`acp://spawn-ok/${sessionId}`, () => {
-          clearTimeout(timer);
-          unlistenSpawnOk();
-          unlistenModes();
-          unlistenConfigOptions();
-          unlistenSessionError();
-          resolve();
-        }).then((fn) => {
-          unlistenSpawnOk = fn;
-        });
-
-        listen<string>(`acp://session-error/${sessionId}`, (e) => {
-          clearTimeout(timer);
-          unlistenSpawnOk();
-          unlistenModes();
-          unlistenConfigOptions();
-          unlistenSessionError();
-          reject(new Error(e.payload));
-        }).then((fn) => {
-          unlistenSessionError = fn;
-        });
-      });
-
-      // Asked again now that the agent has said what it supports, so anything it cannot honour is
-      // dropped with a warning rather than being sent and silently failing.
-      const resolved = await api
-        .resolveAgentProfile(
-          projectId,
-          role,
-          profileFor(role),
-          [],
-          capturedModeIds,
-          capturedEffortId !== "",
-        )
-        .catch(() => null);
-
-      for (const warning of resolved?.warnings ?? []) {
-        toast.warning(warning);
-      }
-
-      // A model pinned on the task is pinned for its implementation, not for whichever agent is
-      // reading it at the time — same reasoning as the agent id above.
-      const model = (role === "Coder" ? task.model_override : null) ?? resolved?.model ?? null;
-      if (model) {
-        try {
-          await api.setAcpModel(sessionId, model);
-        } catch (err) {
-          console.warn("Failed to set model:", err);
-        }
-      }
-
-      // Addressed by the agent's own config id rather than a fixed name: "effort" and
-      // "thought_level" are categories, and the id under them differs per harness. There is no task
-      // override — effort is a property of how a role should work, which is what a profile is for.
-      if (resolved?.effort && capturedEffortId) {
-        try {
-          await api.setAcpConfigOption(sessionId, capturedEffortId, resolved.effort);
-        } catch (err) {
-          console.warn("Failed to set effort:", err);
-        }
-      }
-
-      // Set permission mode: task override, then the profile, then the modes received at spawn.
-      // The task override is the coder's, like the agent and the model — a task set to
-      // auto-approve edits must not hand write access to the three roles that exist because they
-      // have none.
-      const permissionMode =
-        (role === "Coder" ? task.permission_mode_override : null) ??
-        resolved?.permission_mode ??
-        null;
-      if (permissionMode) {
-        try {
-          await api.setAcpMode(sessionId, permissionMode);
-        } catch (err) {
-          console.warn("Failed to set permission mode:", err);
-        }
-      } else if (capturedModeIds.length > 0) {
-        try {
-          // Same helper the profile card labels its automatic option with, so what Settings
-          // promised is what runs here.
-          const resolvedMode = resolveAutomaticMode(capturedModeIds, readOnly);
-          if (resolvedMode) {
-            await api.setAcpMode(sessionId, resolvedMode);
-          } else if (readOnly) {
-            toast.warning(
-              `${agentId} offers no read-only mode, so it is asked not to write instead`,
-            );
-          }
-        } catch (err) {
-          console.warn("Failed to set permission mode:", err);
-        }
-      }
-
-      // Build initial prompt content blocks
-      const contentBlocks: JsonValue[] = [];
-
-      const promptText = task.description
-        ? `# ${task.title}\n\n${task.description}`
-        : `# ${task.title}`;
-      // Ahead of the task, because it says what this role means for this project — the standing
-      // instruction the task is an instance of, not a footnote to it.
-      const rolePrompt = resolved?.role_prompt ? `${resolved.role_prompt}\n\n---\n` : "";
-      // The refiner is not asked for the completion marker. Its turn ending *is* the proposal —
-      // there is nothing for it to declare — and a marker in the reply would end up in the
-      // description, since the reply is what the gate offers to put there.
-      const protocol =
-        role === "Refiner"
-          ? REFINER_PROTOCOL
-          : role === "Planner"
-            ? PLANNER_PROTOCOL
-            : role === "Reviewer"
-              ? REVIEWER_PROTOCOL
-              : COMPLETION_PROTOCOL;
-      contentBlocks.push({
-        type: "text",
-        text: `${rolePrompt}${promptText}\n\n---\n${protocol}`,
-      });
-
-      // A re-plan the user asked for rather than a fresh one: they read the plan, wrote down what
-      // was wrong with it, and pressed Refine. The planner that wrote it is gone — its session is
-      // closed when its plan is taken — so the plan has to be handed back the same way it is handed
-      // to a coder, as text.
-      //
-      // Only when there is feedback. "Plan again" with nothing written means start over, and
-      // showing the planner its last attempt is the surest way to get that attempt again.
-      if (role === "Planner" && feedback.trim()) {
-        const previous = await api
-          .listTaskComments(task.id)
-          .then((all) => [...all].reverse().find((c) => c.kind === "plan")?.body ?? null)
-          .catch(() => null);
-
-        if (previous?.trim()) {
-          contentBlocks.push({
-            type: "text",
-            text: `## Your previous plan\n\n${previous.trim()}`,
-          });
-        }
-        contentBlocks.push({
-          type: "text",
-          text: `## What the user wants changed about it\n\n${feedback.trim()}\n\nReply with the revised plan in full — it replaces the one above.`,
-        });
-      }
-
-      // The plan the user approved, carried into the implementation. The coder never inherits the
-      // planner's session, so this is the only way the plan reaches it.
-      if (role === "Coder") {
-        const entries = await api
-          .listTaskComments(task.id)
-          .then((all) => [...all].reverse())
-          .catch(() => []);
-
-        const plan = entries.find((c) => c.kind === "plan")?.body;
-        if (plan?.trim()) {
-          contentBlocks.push({
-            type: "text",
-            text: `## The approved plan\n\n${plan.trim()}`,
-          });
-        }
-
-        // Without this the rework round is a coder restarted on the same task with no idea why,
-        // which is the loop spending a round to rediscover what the reviewer already wrote down.
-        const verdict = entries.find((c) => c.kind === "verdict")?.body;
-        if (task.phase === "Rework" && verdict?.trim()) {
-          contentBlocks.push({
-            type: "text",
-            text: `## Review findings to address\n\n${verdict.trim()}`,
-          });
-        }
-
-        // A red build on an open pull request. The failing check names rather than their logs:
-        // an agent that runs the failing test itself gets a better answer than one reading a
-        // truncated CI transcript, and the names are enough to point it at the right one.
-        const ci = entries.find((c) => c.kind === "ci")?.body;
-        if (task.phase === "AwaitingMerge" && ci?.trim()) {
-          contentBlocks.push({
-            type: "text",
-            text: `## CI is failing on the open pull request\n\n${ci.trim()}\n\nReproduce the failure locally, fix it, and commit. Your commits are pushed to the existing pull request.`,
-          });
-        }
-      }
-
-      const files = attachments
-        .filter((a) => !skipPaths.has(a.file_path))
-        .map((a) => ({ path: a.file_path, is_image: false }));
-      if (files.length > 0) {
-        const prepared = await api.prepareExternalAttachments(sessionId, files, true);
-        for (const attachment of prepared) {
-          contentBlocks.push(attachment.content_block as JsonValue);
-        }
-      }
-
-      // Fetch review feedback for rework (if task was sent back with comments). Only the coder
-      // acts on it — handing a refiner the last review's per-file comments would have it rewrite
-      // the description around code it is not being asked about.
-      try {
-        const review = role === "Coder" ? await api.getTaskReview(task.id) : null;
-        if (review && review.decision === "RequestChanges") {
-          let feedbackText = "";
-
-          if (review.comments.length > 0) {
-            const grouped = new Map<string, string[]>();
-            for (const c of review.comments) {
-              const list = grouped.get(c.file_path) ?? [];
-              list.push(c.comment);
-              grouped.set(c.file_path, list);
-            }
-            for (const [filePath, comments] of grouped) {
-              feedbackText += `## \`${filePath}\`\n`;
-              comments.forEach((comment, i) => {
-                feedbackText += `### Feedback #${i + 1}\n${comment}\n\n`;
-              });
-            }
-          }
-
-          if (review.general_feedback) {
-            feedbackText += `## General feedback\n${review.general_feedback}\n`;
-          }
-
-          if (feedbackText) {
-            contentBlocks.push({ type: "text", text: feedbackText });
-          }
-        }
-      } catch {
-        // Non-critical — proceed without review feedback
-      }
-
-      await api.sendAcpPromptStructured(sessionId, contentBlocks);
-
-      // Clear review from DB after successful injection to prevent re-injection on next cold start
-      if (role === "Coder") api.clearTaskReview(task.id).catch(() => {});
-
-      // The session is up and prompted, so the task moves to wherever this role works. Null means
-      // it stopped being the task we claimed — the user dragged or stopped it while the spawn was
-      // in flight. Their action wins, so the session we just built gets torn down instead.
-      const started = await markSessionReady.mutateAsync({ taskId: task.id, role });
-      if (!started) {
-        api.cancelAcpSession(sessionId).catch((err) => {
-          console.error("Failed to cancel the session of a task that moved mid-spawn:", err);
-        });
-        toast.info(`"${task.title}" was moved while starting`);
-        return;
-      }
-
-      claimHandedOver = true;
       toast.success(`Session started for "${task.title}"`);
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-
-      if (errorMsg === "auth_required") {
-        // Remove zombie session but keep the connection server alive for authentication.
-        api.discardFailedSpawn(sessionId!).catch(() => {});
-        useBoardStore.getState().setAuthRequired(String(task.id), agentId!, connection, null);
+      const message = error instanceof Error ? error.message : String(error);
+      // `auth_required:<agent_id>`, from `maestro_protocol::auth_required_for`.
+      const authAgent = message.startsWith("auth_required:")
+        ? message.slice("auth_required:".length)
+        : "";
+      if (authAgent) {
+        useBoardStore.getState().setAuthRequired(String(task.id), authAgent, connection, null);
         return;
       }
-
-      spawnFailed = true;
-
-      if (sessionId !== null) {
-        try {
-          await api.cancelAcpSession(sessionId);
-        } catch {
-          // best-effort
+      if (isNoAgentError(message)) {
+        if ((discovery?.agents ?? []).length === 0) {
+          toast.error(`No coding agent is installed for "${task.title}"`, {
+            description:
+              "Maestro found no agent on this project's connection. Install one, such as Claude " +
+              "Code, Codex or Gemini, and it appears in the agent settings.",
+            action: openAgentSettings,
+          });
+        } else {
+          toast.error(message, { action: openAgentSettings });
         }
+        return;
       }
-      toast.error(`Execution failed: ${errorMsg}`);
+      toast.error(`Execution failed: ${message}`);
     } finally {
-      // Every exit that did not hand the task a live session gives the claim back — the dirty
-      // dialog being cancelled, an auth prompt, a spawn error, or the task having moved. Leaving
-      // it claimed would park the card at `Spawning` forever with nothing left to move it on, and
-      // the queue drain skips exactly that state.
-      //
-      // Only a failure leaves the card red: cancelling at a prompt is not something to report.
-      if (!claimHandedOver) {
-        releaseClaim
-          .mutateAsync({ taskId: task.id, failed: spawnFailed })
-          .catch((err) => console.error("Failed to release the execution claim:", err));
-      }
-      // Only if this task is still the one showing as starting. The queue drain runs `execute`
-      // for a batch, so a later spawn can already have claimed the flag by the time this one
-      // unwinds — clearing unconditionally would take the badge off the card that still has it.
       setExecutingTaskId((current) => (current === task.id ? null : current));
     }
   };
@@ -849,11 +259,11 @@ export function useExecuteTask(
   }, []);
 
   const onAttachmentsContinue = useCallback(() => {
-    missingResolveRef.current?.("continue");
+    missingResolveRef.current?.(true);
   }, []);
 
-  const onAttachmentsPark = useCallback(() => {
-    missingResolveRef.current?.("park");
+  const onAttachmentsCancel = useCallback(() => {
+    missingResolveRef.current?.(false);
   }, []);
 
   const onAgentPicked = useCallback((agentId: string) => {
@@ -866,7 +276,7 @@ export function useExecuteTask(
 
   return {
     execute,
-    /** The task mid-spawn, for a caller rendering more than one card off one instance of this hook. */
+    /** The task mid-start, for a caller rendering more than one card off one instance of this hook. */
     executingTaskId,
     /** The same fact for the callers that only ever drive one task. */
     isExecuting: executingTaskId !== null,
@@ -875,17 +285,11 @@ export function useExecuteTask(
     dirtyUntrackedCount: dirtyState?.untrackedCount ?? 0,
     onDirtyChoice,
     onDirtyCancel,
-    /**
-     * The attachments this task cannot send, or `null`. Never set on an `unattended` start, which
-     * skips them with a warning instead — nothing renders a dialog on that path.
-     */
+    /** The attachments this start cannot send, or `null`. Never set on an unattended start. */
     missingAttachments: missingState?.files ?? null,
     onAttachmentsContinue,
-    onAttachmentsPark,
-    /**
-     * Only ever set for a caller that passed `canPickAgent`; everyone else gets a toast instead
-     * and never renders the modal.
-     */
+    onAttachmentsCancel,
+    /** Only ever set for a caller that passed `canPickAgent`. */
     agentPickerTask: agentPickerState?.task ?? null,
     onAgentPicked,
     onAgentPickerCancel,

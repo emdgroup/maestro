@@ -52,6 +52,12 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 subtle = "2"
+# The Auto agent limit measures this machine's free memory, as the app does for a local project.
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+# A task's image attachments, scaled and encoded as the app does. Same versions as the app's, so
+# both are already in the lockfile.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+base64 = "0.23"
 
 [dev-dependencies]
 tempfile = "3"

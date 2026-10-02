@@ -34,7 +34,7 @@ described in `maestro-server/AGENTS.md`, beside the daemon half.
 
 ## Database Schema
 
-SQLite with foreign key constraints enabled. Schema V30. Configured with WAL mode and 5s `busy_timeout` for concurrent access.
+SQLite with foreign key constraints enabled. Schema V32. Configured with WAL mode and 5s `busy_timeout` for concurrent access.
 
 `SCHEMA_VERSION` lives in `src-tauri/src/core/schema.rs` — that constant is the source of truth; update this doc when you bump it.
 
@@ -42,7 +42,7 @@ SQLite with foreign key constraints enabled. Schema V30. Configured with WAL mod
 
 | Stored version      | Behaviour                                                                  |
 | ------------------- | -------------------------------------------------------------------------- |
-| `0` (fresh install) | create the full schema from `SCHEMA_V30_FULL`                              |
+| `0` (fresh install) | create the full schema from `SCHEMA_V32_FULL`                              |
 | `>= 22`             | apply incremental migrations in `run_migrations()` — **data is preserved** |
 | `1..=21` (legacy)   | drop every table and recreate — **data is lost**                           |
 
@@ -58,7 +58,17 @@ repository was ever in is three code paths maintained to serve nobody. This is o
 the versions in question are absent from `main` and from every tag; check both before doing it,
 and expect to delete `.maestro/dev-data/` on any machine that ran the intermediate builds.
 
-Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `task_comments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`, `connection_settings`, `templates`, `prompts`, `prompt_favorites`
+Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `task_comments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`, `connection_settings`, `templates`, `prompts`
+
+The app reads and writes `projects`, `settings`, `known_hosts`, the three connection tables,
+`templates` and the shared rows of `prompts`. It reads `connection_settings` only to carry a
+connection's agent limit into its daemon once (see "The daemon drives the task pipeline" in
+`maestro-server/AGENTS.md`). The rest are no longer read or written: tasks and everything hanging
+off them are the daemon's (see "Tasks live in the daemon" there), and a session's name is on the
+daemon's row for it (see "The resident maestro-server" there). Those tables stay where they are,
+holding what earlier builds wrote, until phase 4 of `docs/daemon-store-plan.md` imports their rows
+into the daemon and drops them. Outside `core/schema.rs` no app code touches them, and nothing new
+should.
 
 ## The dev data directory (`MAESTRO_DATA_DIR`)
 
@@ -162,8 +172,8 @@ to match upstream's example, which is a throwaway test app.
 Each project has a `.maestro/` folder in its root with:
 
 - `settings.json` — `ProjectConfig` (non-sensitive project settings)
-- `state.json` — `ProjectState` (runtime/cached state)
 - `bin/` — bundled `maestro-server` binary for that project
-- `attachments/` — agent file attachments
+- `attachments/` — agent file attachments, and under `attachments/tasks/<task_id>/` the copies of
+  a task's attachments
 
 Read/write via `project_storage.rs`. Follow this pattern when adding new project-scoped config (e.g., ticketing config goes in `.maestro/ticketing.json`).

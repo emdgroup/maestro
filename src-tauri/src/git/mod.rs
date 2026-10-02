@@ -16,8 +16,7 @@ pub use diff_models::{
     BinaryFileInfo, CommitInfo, DiffTarget, DirtyStatus, WorktreeDiffResult, WorktreeDiffStats,
 };
 pub use review_models::{
-    MergeResult, ReviewComment, ReviewCommentEntry, ReviewDecision, ReviewFeedback, ReviewResult,
-    SaveReviewRequest, TaskReviewWithComments,
+    MergeResult, ReviewComment, ReviewDecision, ReviewFeedback, ReviewResult, SaveReviewRequest,
 };
 
 pub use exec::{run_git_commands_lossy, run_git_in_dir, run_git_in_dir_lossy};

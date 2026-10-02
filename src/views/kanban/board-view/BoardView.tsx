@@ -117,7 +117,8 @@ export function BoardView({ tasks }: BoardViewProps) {
           }
 
           const taskId = event.operation.source?.id as number;
-          if (!taskId) return;
+          const task = tasks.find((t) => t.id === taskId);
+          if (!task) return;
 
           const final = liveDndRef.current;
           const prev = previousDndRef.current;
@@ -146,6 +147,7 @@ export function BoardView({ tasks }: BoardViewProps) {
           // failure with a message rather than a modal in the middle of a drag.
           updateTask.mutate(
             {
+              projectId: task.project_id,
               taskId,
               updates: { status: newStatus, ...(priority ? { priority } : {}) },
             },

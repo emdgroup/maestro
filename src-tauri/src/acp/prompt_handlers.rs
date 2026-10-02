@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
-use tauri::{Emitter, State};
+use tauri::State;
 
 use crate::acp::transport::{
     ElicitationResponse, MaestroRpcMessage, PermissionResponse, PromptRequest, ServerRequest,
@@ -22,23 +22,7 @@ async fn send_prompt_impl(
     session_id: &str,
     content: serde_json::Value,
 ) -> Result<(), String> {
-    // Any reply puts the agent back to work, including a plain message answering a question the
-    // agent asked by ending its turn. Without this only permission and elicitation responses
-    // would clear the block, and an ordinary reply would leave the card pulsing.
-    let task_id = {
-        let sessions = app_state.acp.sessions.lock().await;
-        let session = sessions.get(session_id);
-        if let Some(session) = session {
-            // A new turn starts clean. Without this, an interrupt whose turn ending arrived before
-            // the flag was set would leave it standing and swallow the *next* turn's completion.
-            session
-                .user_interrupted
-                .store(false, std::sync::atomic::Ordering::Release);
-        }
-        session.and_then(|s| s.task_id)
-    };
-    clear_task_blocked(app_state, task_id);
-
+    // The daemon clears a task's block on any prompt, an answer to a question included.
     let msg = MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
         session_id: session_id.to_string(),
         content,
@@ -74,7 +58,7 @@ pub async fn respond_acp_permission(
     request_id: String,
     option_id: Option<String>,
 ) -> Result<(), String> {
-    let task_id = {
+    let task = {
         let sessions = app_state.acp.sessions.lock().await;
         let session = sessions.get(session_id);
         if let Some(session) = session {
@@ -82,12 +66,12 @@ pub async fn respond_acp_permission(
                 .has_pending_permission
                 .store(false, std::sync::atomic::Ordering::Release);
         }
-        session.and_then(|s| s.task_id)
+        session.and_then(|s| s.task_key())
     };
-    clear_task_blocked(&app_state, task_id);
 
     // A question Maestro asked itself, such as `run_automation`'s, is answered here: the server
-    // never saw it and has nothing waiting on it.
+    // never saw it and has nothing waiting on it, so its block is this window's to clear. The
+    // daemon clears the block on an answer to its own.
     let host_question = app_state
         .acp
         .pending_host_tools
@@ -95,6 +79,7 @@ pub async fn respond_acp_permission(
         .await
         .remove(&(session_id.to_string(), request_id.clone()));
     if let Some(sender) = host_question {
+        clear_task_blocked(&app_state, task).await;
         let _ = sender.send(serde_json::json!(option_id));
         return Ok(());
     }
@@ -107,29 +92,24 @@ pub async fn respond_acp_permission(
     crate::acp::write_to_acp_session(&app_state, session_id, &msg).await
 }
 
-/// The user answered, so the agent is running again.
+/// The user answered a wait this window owns, so the agent is running again.
 ///
-/// Paired with `mark_task_blocked` in `reader_task`. Missing this leaves the card pulsing for an
-/// answer that has already been given — the cost of persisting the blocked state rather than
-/// deriving it from live session events, which used to self-heal on reload.
-pub(crate) fn clear_task_blocked(app_state: &Arc<AppState>, task_id: Option<i32>) {
-    let Some(task_id) = task_id else {
-        return;
-    };
-    let changed = {
-        let Ok(conn) = app_state.db.lock() else {
-            return;
-        };
-        match crate::task::transition::clear_blocked(&conn, task_id) {
-            Ok(result) => result.is_some(),
-            Err(e) => {
-                log::warn!("[acp] could not clear blocked state for task {task_id}: {e}");
-                false
-            }
-        }
-    };
-    if changed {
-        app_state.app_handle.emit("tasks-changed", ()).ok();
+/// Paired with `mark_task_blocked` in `reader_task`.
+///
+/// Awaited rather than spawned: every caller is a command or a host tool, off the shared reader,
+/// and a spawned clear could land before a mark still in flight.
+pub(crate) async fn clear_task_blocked(
+    app_state: &Arc<AppState>,
+    task: Option<crate::acp::TaskKey>,
+) {
+    if let Some(task) = task {
+        crate::acp::reader_task::transition_task(
+            app_state,
+            task,
+            maestro_protocol::TaskTransition::Unblocked,
+            maestro_protocol::TransitionGuard::Blocked,
+        )
+        .await;
     }
 }
 
@@ -141,12 +121,6 @@ pub async fn respond_acp_elicitation(
     request_id: String,
     response: serde_json::Value,
 ) -> Result<(), String> {
-    let task_id = {
-        let sessions = app_state.acp.sessions.lock().await;
-        sessions.get(session_id).and_then(|s| s.task_id)
-    };
-    clear_task_blocked(&app_state, task_id);
-
     let msg = MaestroRpcMessage::Request(ServerRequest::ElicitationResponse(ElicitationResponse {
         session_id: session_id.to_string(),
         request_id,
