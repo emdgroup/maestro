@@ -29,13 +29,6 @@ export const taskQueryKeys = {
   base: ["tasks"] as const,
   lists: () => [...taskQueryKeys.base, "list"] as const,
   list: (projectId: number) => [...taskQueryKeys.lists(), { projectId }] as const,
-  details: () => [...taskQueryKeys.base, "detail"] as const,
-  detail: (projectId: number, taskId: number) =>
-    [...taskQueryKeys.details(), projectId, taskId] as const,
-  logs: () => [...taskQueryKeys.base, "logs"] as const,
-  logsByTask: (taskId: number) => [...taskQueryKeys.logs(), { taskId }] as const,
-  settings: () => [...taskQueryKeys.base, "settings"] as const,
-  settingsByTask: (taskId: number) => [...taskQueryKeys.settings(), taskId] as const,
   // Task ids are per project, so every key naming a task names its project too.
   relationships: (projectId: number, taskId: number) =>
     [...taskQueryKeys.base, "relationships", projectId, taskId] as const,
@@ -131,10 +124,7 @@ export function useUpdateTask() {
       };
       return api.updateTask(projectId, taskId, request);
     },
-    onSuccess: (data) => {
-      void queryClient.invalidateQueries({
-        queryKey: taskQueryKeys.detail(data.project_id, data.id),
-      });
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: createErrorToastHandler("Failed to update task"),
@@ -184,10 +174,7 @@ export function useUpdateTaskSettingsMutation() {
       taskId: number;
       config: TaskConfigRequest;
     }) => api.updateTaskSettings(projectId, taskId, config),
-    onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({
-        queryKey: taskQueryKeys.settingsByTask(variables.taskId),
-      });
+    onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: taskQueryKeys.lists(),
       });

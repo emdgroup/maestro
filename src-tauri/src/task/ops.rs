@@ -201,10 +201,10 @@ pub async fn send_task_to_review(
     let task = crate::task::crud::get_task_on_server(&app_state, project_id, task_id)
         .await?
         .ok_or_else(|| format!("Task {task_id} not found"))?;
-    let is_git_repo = crate::acp::reader_task::is_project_git_repo(&app_state, project_id).await;
+    let is_git_repo = is_project_git_repo(&app_state, project_id).await;
 
     let has_changes = if is_git_repo {
-        crate::acp::reader_task::task_has_changes(&app_state, &task).await
+        task_has_changes(&app_state, &task).await
     } else {
         None
     };
@@ -222,7 +222,7 @@ pub async fn send_task_to_review(
     // Sending work to review by hand is still asking for it to be reviewed, so a project with a
     // review agent gets one here too. Doing otherwise would make the button a way of skipping the
     // reviewer, which nothing on it says it is.
-    let reviewer_pending = crate::acp::reader_task::reviewer_should_run(&app_state, &task).await;
+    let reviewer_pending = reviewer_should_run(&app_state, &task).await;
 
     apply_transition_on_server(
         &app_state,
@@ -402,4 +402,159 @@ pub struct StartTaskResult {
     pub session_id: Option<String>,
     /// The attachments the prompt went without, each as `<file>: <why>`.
     pub skipped_attachments: Vec<String>,
+}
+
+/// Whether a review agent should look at this task before the user does.
+///
+/// Three conditions, all necessary. The project must define a `Reviewer` profile, which is how a
+/// team opts in — a project without one keeps the pipeline it had. The task must not have turned
+/// the stage off for itself, which is the same opt-out one task at a time. And the loop must have
+/// rounds left, or a reviewer would be started only to have its verdict escalated anyway.
+///
+/// So the work of the last rework round reaches the user unreviewed, deliberately: by then they
+/// are the reviewer, and the alternative is paying an agent for a verdict nobody may act on.
+async fn reviewer_should_run(
+    app_state: &crate::core::AppState,
+    task: &crate::models::Task,
+) -> bool {
+    use crate::acp::completion::review_rounds_remain;
+
+    if !review_rounds_remain(task.review_rounds) {
+        return false;
+    }
+
+    if crate::project::profiles::role_is_skipped(
+        task.profile_overrides.as_deref(),
+        crate::project::profiles::AgentRole::Reviewer,
+    ) {
+        log::debug!(
+            "[acp] task {} skips review, so it goes straight to the user",
+            task.id
+        );
+        return false;
+    }
+
+    crate::project::profiles::has_profile_for_role(
+        app_state,
+        task.project_id,
+        crate::project::profiles::AgentRole::Reviewer,
+    )
+    .await
+}
+
+/// Whether the agent has changed anything since it started, measured against
+/// `execution_start_sha` — the baseline captured at spawn and preserved across resumes, so this
+/// covers the whole task rather than the turn.
+///
+/// Returns `None` when the answer cannot be established, which `classify_turn` reads as "no
+/// evidence" and treats the same as a non-git project.
+async fn task_has_changes(
+    app_state: &Arc<crate::core::AppState>,
+    task: &crate::models::Task,
+) -> Option<bool> {
+    let (project_id, task_id) = (task.project_id, task.id);
+    let worktree_path = match crate::acp::connection_server::query_project_store(
+        app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::ListWorktrees(maestro_protocol::ListWorktreesRequest {
+                project_path,
+                task_id: Some(task_id),
+            })
+        },
+        reply!(ServerResponse::ListWorktreesOk(list) => list),
+    )
+    .await
+    {
+        Ok(list) => list
+            .worktrees
+            .into_iter()
+            .next()
+            .map(|worktree| worktree.path),
+        Err(e) => {
+            log::warn!("[acp] diff gate for task {task_id} could not read its worktree: {e}");
+            return None;
+        }
+    };
+
+    // Both worktree modes leave the row here: a reused workspace is claimed by the task when it
+    // starts, exactly so that lookups like this one keep working.
+    let isolated = task.workspace_mode != crate::models::WorkspaceMode::RepositoryDirectory;
+
+    // An isolated task whose worktree row has gone missing must report no evidence rather than
+    // fall through to the project root: the root is a different tree, and any unrelated dirt in
+    // it — an untracked `.maestro/`, a half-finished edit — reads as work this agent did and
+    // sends the task to review with a diff it had nothing to do with.
+    if isolated && worktree_path.is_none() {
+        log::warn!("[acp] task {task_id} is isolated but has no worktree row; skipping diff gate");
+        return None;
+    }
+
+    let start_sha = task
+        .execution_start_sha
+        .clone()
+        .filter(|sha| !sha.is_empty())?;
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(app_state, project_id)
+        .await
+        .ok()?;
+
+    // Worktree paths are stored relative to the repo; a task without one runs in the project root.
+    let cwd = match worktree_path {
+        Some(path) => format!("{}/{}", git_conn.path(), path),
+        None => git_conn.path().to_string(),
+    };
+
+    // `Commit` never consults the remote; passed for signature uniformity, and resolving it is a
+    // cached map lookup after the first call.
+    let remote = crate::git::remote::project_remote(app_state, project_id).await;
+    match crate::git::worktree_query::diff_stats_in(
+        &git_conn,
+        &cwd,
+        &crate::models::DiffTarget::Commit { sha: start_sha },
+        &remote,
+    )
+    .await
+    {
+        Ok(stats) => Some(stats.has_changes()),
+        // Most often the start commit no longer exists, because the agent rebased or amended over
+        // it. `None` sends this to `classify_turn` as "unknown", which completes the turn — the
+        // alternative is calling work the agent did invisible on the strength of a failed command.
+        Err(e) => {
+            log::warn!("[acp] diff gate for task {task_id} could not read the diff: {e}");
+            None
+        }
+    }
+}
+
+/// `(path, connection_id, wsl_connection_id, docker_connection_id)`
+type ProjectLocationRow = (String, Option<i32>, Option<i32>, Option<i32>);
+
+async fn is_project_git_repo(app_state: &crate::core::AppState, project_id: i32) -> bool {
+    let result: Option<ProjectLocationRow> = app_state.db.lock().ok().and_then(|conn| {
+        conn.query_row(
+            "SELECT path, connection_id, wsl_connection_id, docker_connection_id \
+             FROM projects WHERE id = ?",
+            [project_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .ok()
+    });
+
+    let Some((path, connection_id, wsl_connection_id, docker_connection_id)) = result else {
+        return true;
+    };
+
+    if connection_id.is_none() && wsl_connection_id.is_none() && docker_connection_id.is_none() {
+        return std::path::Path::new(&path).join(".git").exists();
+    }
+
+    match crate::core::get_project_with_git_conn(app_state, project_id).await {
+        Ok((_project, git_conn)) => {
+            crate::git::run_git_in_dir(&git_conn, &path, &["rev-parse", "--is-inside-work-tree"])
+                .await
+                .map(|output| output.trim() == "true")
+                .unwrap_or(false)
+        }
+        Err(_) => false,
+    }
 }

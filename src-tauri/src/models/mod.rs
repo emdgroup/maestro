@@ -12,8 +12,8 @@ pub use crate::git::diff_models as diff;
 pub use crate::git::review_models as review;
 pub use crate::git::{
     BinaryFileInfo, CommitInfo, DiffTarget, DirtyStatus, MergeResult, ReviewComment,
-    ReviewCommentEntry, ReviewDecision, ReviewFeedback, ReviewResult, SaveReviewRequest,
-    TaskReviewWithComments, WorktreeDiffResult, WorktreeDiffStats,
+    ReviewDecision, ReviewFeedback, ReviewResult, SaveReviewRequest, WorktreeDiffResult,
+    WorktreeDiffStats,
 };
 pub use crate::integration::integration_models as integration;
 pub use crate::integration::issue_tracking_models as issue_tracking;

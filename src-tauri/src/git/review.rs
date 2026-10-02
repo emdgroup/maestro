@@ -5,7 +5,7 @@ use crate::acp::connection_server::{query_project_store, reply};
 use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 use crate::git;
-use crate::models::{ReviewCommentEntry, ReviewResult, Task, TaskReviewWithComments};
+use crate::models::{ReviewResult, Task};
 use maestro_protocol::{
     ReviewCommentInput, SaveTaskReviewRequest, TaskRef, TaskTransition, TransitionGuard,
 };
@@ -117,42 +117,6 @@ pub async fn request_changes(
         review_id,
         task_status: Some("InProgress".to_string()),
     })
-}
-
-/// Get the current review (with comments) for a task
-#[tauri::command]
-#[specta::specta]
-pub async fn get_task_review(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    task_id: i32,
-) -> Result<Option<TaskReviewWithComments>, String> {
-    let found = query_project_store(
-        &app_state,
-        project_id,
-        |project_path| {
-            ServerRequest::GetTaskReview(TaskRef {
-                project_path,
-                task_id,
-            })
-        },
-        reply!(ServerResponse::GetTaskReviewOk(found) => found.review),
-    )
-    .await?;
-
-    Ok(found.map(|review| TaskReviewWithComments {
-        decision: review.decision,
-        general_feedback: review.general_feedback,
-        comments: review
-            .comments
-            .into_iter()
-            .map(|comment| ReviewCommentEntry {
-                file_path: comment.file_path,
-                comment: comment.comment,
-            })
-            .collect(),
-        created_at: review.created_at,
-    }))
 }
 
 /// Clear the review and its comments for a task after feedback has been injected into the agent.
