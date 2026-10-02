@@ -356,27 +356,36 @@ fn check_not_live(tx: &Transaction, project: &str, live: &Live) -> Result<(), St
 }
 
 /// Move a merged import's ids up by `offsets`, every reference along with them. An incoming
-/// worktree whose folder or branch the project already has is left out, the row there kept.
+/// worktree whose folder or branch the project already has is left out, the row there kept, and a
+/// task pinned to it is pinned to that row instead.
 fn renumber(
     tx: &Transaction,
     request: &mut ImportProjectRequest,
     offsets: Offsets,
 ) -> Result<(), String> {
-    let existing: Vec<(String, String)> = tx
-        .prepare("SELECT path, branch_name FROM worktrees WHERE project_path = ?1")
+    let existing: Vec<(i32, String, String)> = tx
+        .prepare("SELECT id, path, branch_name FROM worktrees WHERE project_path = ?1")
         .and_then(|mut statement| {
             statement
                 .query_map(params![request.project_path], |row| {
-                    Ok((row.get(0)?, row.get(1)?))
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
                 })?
                 .collect()
         })
         .map_err(|e| e.to_string())?;
-    let (paths, branches): (HashSet<String>, HashSet<String>) = existing.into_iter().unzip();
-    let mut dropped = HashSet::new();
+    // A dropped incoming id, and the row already there that it clashed with.
+    let mut dropped = HashMap::new();
     request.worktrees.retain(|worktree| {
-        let clash = paths.contains(&worktree.path) || branches.contains(&worktree.branch_name);
-        if clash {
+        let kept = existing
+            .iter()
+            .find(|(_, path, _)| *path == worktree.path)
+            .or_else(|| {
+                existing
+                    .iter()
+                    .find(|(_, _, branch)| *branch == worktree.branch_name)
+            });
+        let clash = kept.is_some();
+        if let Some((kept, _, _)) = kept {
             crate::send_diag(
                 "warn",
                 format!(
@@ -385,7 +394,7 @@ fn renumber(
                     worktree.id, worktree.path
                 ),
             );
-            dropped.insert(worktree.id);
+            dropped.insert(worktree.id, *kept);
         }
         !clash
     });
@@ -395,8 +404,7 @@ fn renumber(
         row.id = task(row.id);
         row.workspace_worktree_id = row
             .workspace_worktree_id
-            .filter(|id| !dropped.contains(id))
-            .map(|id| id + offsets.worktrees);
+            .map(|id| dropped.get(&id).copied().unwrap_or(id + offsets.worktrees));
     }
     for row in &mut request.relationships {
         row.from_task_id = task(row.from_task_id);
@@ -1445,8 +1453,8 @@ mod tests {
         assert_eq!(task(10).workspace_worktree_id, Some(20), "moved by 10");
         assert_eq!(
             task(14).workspace_worktree_id,
-            None,
-            "pinned to A's, left out"
+            Some(9),
+            "its row left out, pinned to A's in the same folder"
         );
 
         let worktree = |id| super::super::worktrees::get(&conn, PROJECT, id).expect("worktree");
