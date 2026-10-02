@@ -77,10 +77,16 @@ static TX: OnceLock<mpsc::UnboundedSender<Msg>> = OnceLock::new();
 static RESERVE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 /// Tasks refused for want of an agent (none, or one unknown here), as they stood when refused, so
 /// the tick does not file the same note every minute. One is tried again once it is written or
-/// leaves the queue, or a user releases a hold on it. Execute still starts it directly.
-static REFUSED: LazyLock<Mutex<HashMap<(String, i32), Task>>> = LazyLock::new(Default::default);
+/// leaves the queue, or a user releases a hold on it. Execute still starts it directly. Kept with
+/// when it was refused, so another project's entry lapses after [`REFUSAL_TTL`].
+static REFUSED: LazyLock<Mutex<HashMap<(String, i32), Refusal>>> = LazyLock::new(Default::default);
 
-fn refused() -> std::sync::MutexGuard<'static, HashMap<(String, i32), Task>> {
+type Refusal = (Task, std::time::Instant);
+
+/// How long a refusal is kept for a project no drain compares it against.
+const REFUSAL_TTL: Duration = Duration::from_secs(60 * 60);
+
+fn refused() -> std::sync::MutexGuard<'static, HashMap<(String, i32), Refusal>> {
     REFUSED.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -292,9 +298,14 @@ fn candidates(conn: &Connection, project_path: &str) -> Result<Vec<i32>, String>
     };
     let queued = crate::task_store::queue_candidates(conn, &request)?;
     let mut refused = refused();
-    // Any write changes the row, leaving the queue or a hand-off included. Every project's, so a
-    // project never drained again does not keep its entries, nor a deleted task its own.
-    refused.retain(|(path, id), seen| {
+    // Any write changes the row, leaving the queue or a hand-off included, and a deleted task
+    // drops its own. Only this project's are compared, since `conn` may not be the store another
+    // project's entry came from; those lapse with age, so a project never drained again does not
+    // keep its entries.
+    refused.retain(|(path, id), (seen, at)| {
+        if path != project_path {
+            return at.elapsed() < REFUSAL_TTL;
+        }
         crate::task_store::get(conn, path, *id)
             .ok()
             .flatten()
@@ -335,7 +346,7 @@ fn handoffs(
 fn refuse(conn: &Connection, path: &str, task_id: i32, e: &crate::task_runner::NotBegun) {
     if let crate::task_runner::NotBegun::NoAgent(_) = e {
         if let Ok(Some(task)) = crate::task_store::get(conn, path, task_id) {
-            refused().insert((path.to_string(), task_id), task);
+            refused().insert((path.to_string(), task_id), (task, std::time::Instant::now()));
         }
     }
 }
@@ -531,7 +542,7 @@ mod tests {
         let seen = crate::task_store::get(&conn, &project, deferred)
             .unwrap()
             .unwrap();
-        refused().insert((project.clone(), deferred), seen);
+        refused().insert((project.clone(), deferred), (seen, std::time::Instant::now()));
         assert_eq!(candidates(&conn, &project).unwrap(), vec![plain]);
         // A write to the task tries it again.
         conn.execute(
@@ -574,7 +585,7 @@ mod tests {
         let seen = crate::task_store::get(&conn, &project, id)
             .unwrap()
             .unwrap();
-        refused().insert((project.clone(), id), seen);
+        refused().insert((project.clone(), id), (seen, std::time::Instant::now()));
         assert!(handoffs(&conn, &project, &none).unwrap().is_empty());
         // A write tries it again: the queue's read drops the stale refusal.
         conn.execute(
