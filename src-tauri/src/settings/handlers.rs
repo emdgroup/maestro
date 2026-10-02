@@ -142,6 +142,62 @@ pub async fn save_connection_capacity(
     .await
 }
 
+/// Carry this connection's limit from the app's `connection_settings` row, where builds before the
+/// daemon kept it, into a daemon never told one. Once: after it the daemon has a stored setting.
+pub(crate) async fn seed_connection_capacity(
+    app_state: &Arc<AppState>,
+    connection: crate::acp::ConnectionKey,
+) -> Result<(), String> {
+    use rusqlite::OptionalExtension;
+    let row = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {e}"))?
+        .query_row(
+            "SELECT concurrency_mode, max_concurrent_agents FROM connection_settings
+             WHERE connection_key = ?1",
+            [connection.storage_id()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?)),
+        )
+        .optional()
+        .map_err(|e| format!("Failed to read the old agent limit: {e}"))?;
+    let Some((mode, max_concurrent_agents)) = row else {
+        return Ok(());
+    };
+    let status = query_via_server(
+        connection,
+        app_state,
+        &format!("No connection server for connection {connection:?}"),
+        MaestroRpcMessage::Request(ServerRequest::GetCapacity),
+        reply!(ServerResponse::GetCapacityOk(status) => status),
+        15,
+        "The connection's server did not answer within 15s",
+    )
+    .await?;
+    if status.stored {
+        return Ok(());
+    }
+    query_via_server(
+        connection,
+        app_state,
+        &format!("No connection server for connection {connection:?}"),
+        MaestroRpcMessage::Request(ServerRequest::SetCapacity(
+            maestro_protocol::CapacitySettings {
+                concurrency_mode: if mode == "Hard" {
+                    maestro_protocol::ConcurrencyMode::Hard
+                } else {
+                    maestro_protocol::ConcurrencyMode::Auto
+                },
+                max_concurrent_agents,
+            },
+        )),
+        reply!(ServerResponse::SetCapacityOk => ()),
+        15,
+        "The connection's server did not answer within 15s",
+    )
+    .await
+}
+
 /// Whether the project's queued tasks start on their own. The project's, kept by its daemon.
 #[tauri::command]
 #[specta::specta]

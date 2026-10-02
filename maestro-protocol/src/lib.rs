@@ -1753,6 +1753,9 @@ pub struct CapacityStatus {
     pub slots: i32,
     /// Why `slots` is what it is, for the board to show when the queue is not moving.
     pub reason: String,
+    /// Whether the machine has a stored setting, false while it runs on the default.
+    #[serde(default)]
+    pub stored: bool,
 }
 
 /// Whether a project's queued tasks start on their own.
@@ -3483,6 +3486,7 @@ mod tests {
                 },
                 slots: 4,
                 reason: "4 slots, 2.6 GB free".to_string(),
+                stored: true,
             })),
             MaestroRpcMessage::Request(ServerRequest::SetAutoMode(AutoModeSetting {
                 project_path: "/srv/shop".to_string(),

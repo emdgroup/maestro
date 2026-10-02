@@ -46,7 +46,7 @@ const DEFAULT_CAPACITY: CapacitySettings = CapacitySettings {
     max_concurrent_agents: 3,
 };
 
-pub fn capacity(conn: &Connection) -> Result<CapacitySettings, String> {
+fn stored_capacity(conn: &Connection) -> Result<Option<CapacitySettings>, String> {
     let row = conn
         .query_row(
             "SELECT concurrency_mode, max_concurrent_agents FROM machine_settings WHERE id = 1",
@@ -55,17 +55,14 @@ pub fn capacity(conn: &Connection) -> Result<CapacitySettings, String> {
         )
         .optional()
         .map_err(|e| format!("Failed to read the agent limit: {e}"))?;
-    Ok(match row {
-        Some((mode, max_concurrent_agents)) => CapacitySettings {
-            concurrency_mode: if mode == "Hard" {
-                ConcurrencyMode::Hard
-            } else {
-                ConcurrencyMode::Auto
-            },
-            max_concurrent_agents,
+    Ok(row.map(|(mode, max_concurrent_agents)| CapacitySettings {
+        concurrency_mode: if mode == "Hard" {
+            ConcurrencyMode::Hard
+        } else {
+            ConcurrencyMode::Auto
         },
-        None => DEFAULT_CAPACITY,
-    })
+        max_concurrent_agents,
+    }))
 }
 
 fn set_capacity(conn: &Connection, settings: &CapacitySettings) -> Result<(), String> {
@@ -140,6 +137,7 @@ fn resolve(settings: CapacitySettings, available_mb: Option<u64>) -> CapacitySta
         settings,
         slots,
         reason,
+        stored: false,
     }
 }
 
@@ -155,12 +153,16 @@ fn available_memory_mb() -> Option<u64> {
 
 /// The machine's limit right now. Measures memory only in `Auto`, where the answer uses it.
 pub fn capacity_status(conn: &Connection) -> Result<CapacityStatus, String> {
-    let settings = capacity(conn)?;
+    let stored = stored_capacity(conn)?;
+    let settings = stored.unwrap_or(DEFAULT_CAPACITY);
     let available_mb = match settings.concurrency_mode {
         ConcurrencyMode::Hard => None,
         ConcurrencyMode::Auto => available_memory_mb(),
     };
-    Ok(resolve(settings, available_mb))
+    Ok(CapacityStatus {
+        stored: stored.is_some(),
+        ..resolve(settings, available_mb)
+    })
 }
 
 /// Slots taken: live sessions bound to a task. A task at a human gate whose session has gone
@@ -263,7 +265,9 @@ mod tests {
     #[test]
     fn an_unset_machine_measures_memory_with_three_as_the_fallback() {
         let conn = crate::project_store::open_in_memory();
-        assert_eq!(capacity(&conn).unwrap(), DEFAULT_CAPACITY);
+        let status = capacity_status(&conn).unwrap();
+        assert_eq!(status.settings, DEFAULT_CAPACITY);
+        assert!(!status.stored);
     }
 
     #[test]
@@ -287,6 +291,7 @@ mod tests {
         assert_eq!(status.settings, hard);
         assert_eq!(status.slots, 5);
         assert_eq!(status.reason, "Fixed limit of 5");
+        assert!(status.stored);
     }
 
     #[test]
