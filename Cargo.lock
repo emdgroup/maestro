@@ -3730,7 +3730,7 @@ dependencies = [
  "fs2",
  "futures",
  "hex",
- "hmac 0.12.1",
+ "hmac 0.13.0",
  "http-body-util",
  "hyper",
  "hyper-util",
