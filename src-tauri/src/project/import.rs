@@ -315,9 +315,33 @@ fn task_from_row(row: &Row, project_path: &str) -> rusqlite::Result<Task> {
     })
 }
 
+/// A text cell longer than this is cut, so no row outgrows a frame and keeps the project closed.
+const MAX_CELL_BYTES: usize = 1024 * 1024;
+const TRUNCATED: &str = "
+
+[truncated by Maestro during import]";
+
+/// `text` cut to `MAX_CELL_BYTES` at a character boundary, with a line saying so.
+fn truncate(text: &str) -> String {
+    let mut cut = MAX_CELL_BYTES.min(text.len());
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    format!("{}{TRUNCATED}", &text[..cut])
+}
+
 /// A cell read as `T`, or, when it holds another storage class, converted to the nearest one `T`
-/// reads: SQLite's affinity lets an old build leave text in an integer column and the like.
+/// reads: SQLite's affinity lets an old build leave text in an integer column and the like. Text
+/// over `MAX_CELL_BYTES` is cut.
 fn get<T: FromSql, I: RowIndex + Copy>(row: &Row, index: I) -> rusqlite::Result<T> {
+    if let ValueRef::Text(bytes) = row.get_ref(index)? {
+        if bytes.len() > MAX_CELL_BYTES {
+            let cut = truncate(&String::from_utf8_lossy(bytes));
+            if let Ok(value) = T::column_result(ValueRef::Text(cut.as_bytes())) {
+                return Ok(value);
+            }
+        }
+    }
     let error = match row.get::<_, T>(index) {
         Err(error @ rusqlite::Error::InvalidColumnType(..)) => error,
         other => return other,
@@ -355,12 +379,14 @@ fn get<T: FromSql, I: RowIndex + Copy>(row: &Row, index: I) -> rusqlite::Result<
 /// cell does not fail every open; any other error still fails the read.
 fn select<T>(
     conn: &Connection,
+    table: &str,
     sql: &str,
     project_id: i32,
     map: impl FnMut(&Row) -> rusqlite::Result<T>,
 ) -> rusqlite::Result<Vec<T>> {
     let mut statement = conn.prepare(sql)?;
     let mut kept = Vec::new();
+    let mut dropped = 0;
     for row in statement.query_map([project_id], map)? {
         match row {
             Ok(value) => kept.push(value),
@@ -368,9 +394,15 @@ fn select<T>(
                 error @ (rusqlite::Error::InvalidColumnType(..)
                 | rusqlite::Error::FromSqlConversionFailure(..)
                 | rusqlite::Error::IntegralValueOutOfRange(..)),
-            ) => log::warn!("[import] a row was left out, a cell could not be read: {error}"),
+            ) => {
+                dropped += 1;
+                log::warn!("[import] a row was left out, a cell could not be read: {error}");
+            }
             Err(error) => return Err(error),
         }
+    }
+    if dropped > 0 {
+        log::warn!("[import] {dropped} {table} row(s) were left out for an unreadable cell");
     }
     Ok(kept)
 }
@@ -387,6 +419,7 @@ fn gather(
 
     let mut tasks = select(
         conn,
+        "tasks",
         "SELECT * FROM tasks WHERE project_id = ?1 ORDER BY id",
         project_id,
         |row| task_from_row(row, project_path),
@@ -395,6 +428,7 @@ fn gather(
 
     let relationships = select(
         conn,
+        "task_relationships",
         "SELECT id, from_task_id, to_task_id, relationship_type, created_at FROM task_relationships
          WHERE from_task_id IN (SELECT id FROM tasks WHERE project_id = ?1) ORDER BY id",
         project_id,
@@ -414,6 +448,7 @@ fn gather(
 
     let mut instructions: Vec<TaskInstruction> = select(
         conn,
+        "task_instructions",
         &format!(
             "SELECT id, task_id, content, source, created_at FROM task_instructions
              WHERE {OF_PROJECT} ORDER BY id"
@@ -434,6 +469,7 @@ fn gather(
     // Oldest first, since the daemon numbers them in the order sent.
     let mut comments: Vec<TaskComment> = select(
         conn,
+        "task_comments",
         &format!(
             "SELECT id, task_id, kind, author, body, external_ref, phase, created_at
              FROM task_comments WHERE {OF_PROJECT} ORDER BY id"
@@ -456,6 +492,7 @@ fn gather(
 
     let mut attachments: Vec<TaskAttachment> = select(
         conn,
+        "task_attachments",
         &format!(
             "SELECT id, task_id, filename, file_path, file_size, created_at FROM task_attachments
              WHERE {OF_PROJECT} ORDER BY id"
@@ -476,6 +513,7 @@ fn gather(
 
     let mut worktrees = select(
         conn,
+        "worktrees",
         "SELECT id, task_id, branch_name, base_branch, path, git_status, created_at
          FROM worktrees WHERE project_id = ?1 ORDER BY id",
         project_id,
@@ -505,6 +543,7 @@ fn gather(
     let mut review_comments: HashMap<i32, Vec<ReviewComment>> = HashMap::new();
     for comment in select(
         conn,
+        "review_comments",
         &format!(
             "SELECT id, review_id, file_path, comment, created_at FROM review_comments
              WHERE review_id IN (SELECT id FROM task_reviews WHERE {OF_PROJECT}) ORDER BY id"
@@ -527,6 +566,7 @@ fn gather(
     }
     let mut reviews: Vec<TaskReview> = select(
         conn,
+        "task_reviews",
         &format!(
             "SELECT id, task_id, decision, general_feedback, reviewed_at, created_at
              FROM task_reviews WHERE {OF_PROJECT} ORDER BY id"
@@ -551,6 +591,7 @@ fn gather(
 
     let prompts = select(
         conn,
+        "prompts",
         "SELECT id, title, body, tags, favorite, created_at, updated_at FROM prompts
          WHERE project_id = ?1 ORDER BY id",
         project_id,
@@ -1105,6 +1146,22 @@ mod tests {
         assert_eq!(request.tasks[0].title, "Sevn");
         assert!(request.comments.iter().all(|comment| comment.task_id == 7));
         assert!(request.prompts[0].favorite);
+    }
+
+    /// A cell that would push its row past a frame is cut rather than keeping the project closed.
+    #[test]
+    fn a_text_cell_over_a_megabyte_is_cut_with_a_marker() {
+        let conn = app_db();
+        let long = "é".repeat(MAX_CELL_BYTES);
+        conn.execute("UPDATE tasks SET description = ?1 WHERE id = 7", [&long])
+            .unwrap();
+
+        let request = gather(&conn, 1, PROJECT).unwrap();
+        let description = request.tasks[0].description.as_deref().unwrap();
+        assert!(description.ends_with(TRUNCATED));
+        assert_eq!(description.len(), MAX_CELL_BYTES + TRUNCATED.len());
+        assert!(description.starts_with("éé"));
+        assert_eq!(request.tasks[1].title, "Nine", "short cells are untouched");
     }
 
     fn attachment(id: i32, task_id: i32, file_path: &str) -> TaskAttachment {
