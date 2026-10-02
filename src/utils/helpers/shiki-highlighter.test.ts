@@ -13,14 +13,15 @@ function build() {
  * `@git-diff-view/core` imports its default highlighter from `@git-diff-view/lowlight` at module
  * scope, so lowlight is always what a `DiffView` falls back to. Ours only wins because
  * `DiffViewer` passes `registerHighlighter` on every render and refuses to render without it —
- * drop either and highlighting silently regresses to lowlight rather than breaking.
+ * drop either and highlighting silently disappears rather than breaking.
  */
 describe("which highlighter the diff view actually uses", () => {
-  it("falls back to the bundled lowlight when nothing is registered", () => {
+  it("highlights nothing through the bundled lowlight, which is stubbed out", () => {
     expect(bundledDefault.name).toBe("lowlight");
     const file = build();
     file.init();
-    expect(file._getHighlighterName()).toBe("lowlight");
+    // `lowlight-stub.ts` returns no tree, so the fallback never claims the file.
+    expect(file._getHighlighterName()).toBe("");
   });
 
   it("uses shiki once registerHighlighter is passed", async () => {
