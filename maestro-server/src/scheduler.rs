@@ -346,7 +346,10 @@ fn handoffs(
 fn refuse(conn: &Connection, path: &str, task_id: i32, e: &crate::task_runner::NotBegun) {
     if let crate::task_runner::NotBegun::NoAgent(_) = e {
         if let Ok(Some(task)) = crate::task_store::get(conn, path, task_id) {
-            refused().insert((path.to_string(), task_id), (task, std::time::Instant::now()));
+            refused().insert(
+                (path.to_string(), task_id),
+                (task, std::time::Instant::now()),
+            );
         }
     }
 }
@@ -542,7 +545,10 @@ mod tests {
         let seen = crate::task_store::get(&conn, &project, deferred)
             .unwrap()
             .unwrap();
-        refused().insert((project.clone(), deferred), (seen, std::time::Instant::now()));
+        refused().insert(
+            (project.clone(), deferred),
+            (seen, std::time::Instant::now()),
+        );
         assert_eq!(candidates(&conn, &project).unwrap(), vec![plain]);
         // A write to the task tries it again.
         conn.execute(
