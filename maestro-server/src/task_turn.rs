@@ -245,7 +245,8 @@ pub(crate) async fn resolve(
                     project_path,
                     task_id,
                     TaskTransition::CiFixPushed,
-                    TransitionGuard::Always,
+                    // Merged or stopped while the push ran: left where the user put it.
+                    TransitionGuard::Phase(TaskPhase::AwaitingMerge),
                     Some(TaskUpdate {
                         pull_request_ci: Some(None),
                         ..Default::default()
@@ -256,7 +257,7 @@ pub(crate) async fn resolve(
                     project_path,
                     task_id,
                     TaskTransition::PhaseFailed,
-                    TransitionGuard::Active,
+                    TransitionGuard::Phase(TaskPhase::AwaitingMerge),
                     None,
                     Some(NewTaskComment {
                         kind: "note".to_string(),
