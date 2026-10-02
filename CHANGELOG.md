@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.34.0](https://github.com/emdgroup/maestro/compare/v0.33.0...v0.34.0) (2026-10-02)
+
+
+### Features
+
+* **server:** hold project locks in the daemon and allow takeovers ([#462](https://github.com/emdgroup/maestro/issues/462)) ([be4ecf2](https://github.com/emdgroup/maestro/commit/be4ecf2420347b57d6a3b07efda9a2f4ad778699))
+
+
+### Bug Fixes
+
+* **automations:** make the whole row open an automation's run history ([#466](https://github.com/emdgroup/maestro/issues/466)) ([88835cc](https://github.com/emdgroup/maestro/commit/88835cc71853420c0521e290d2e4ab2f87159809))
+
 ## [0.33.0](https://github.com/emdgroup/maestro/compare/v0.32.0...v0.33.0) (2026-09-28)
 
 
