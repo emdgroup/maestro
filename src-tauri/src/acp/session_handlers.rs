@@ -421,8 +421,9 @@ fn superseded_session_ids(
 /// A task runs one role at a time but got a new session for each: `resolve_turn_end` moves the task
 /// and never touches `acp.sessions`, so a coder's session was still open while its reviewer ran, and
 /// the reviewer's while the next coder ran. One live task was observed holding five. That is not
-/// only untidy — `occupied_slots` counts every session carrying a task id, so those five were five
-/// slots and ~2 GB against the host's agent limit for work one of them was doing.
+/// only untidy: the daemon's slot count (`pipeline_settings::used_slots`) counts every live session
+/// carrying a task id, so those five were five slots and ~2 GB against the machine's agent limit
+/// for work one of them was doing.
 ///
 /// Nothing the pipeline needs is lost. The reviewer reads the diff, not the coder's transcript, and
 /// the plan interception already establishes that a role's session has no part in the next role's
@@ -781,8 +782,8 @@ mod tests {
 
     /// The review loop is what made this necessary: coder → reviewer → coder leaves a session
     /// behind at every handoff, and one live task was observed holding five. Each of them counts
-    /// against the host's agent limit in `occupied_slots`, which filters on `task_id.is_some()`
-    /// with no notion of a session having been superseded.
+    /// against the machine's agent limit in the daemon's slot count (`pipeline_settings::used_slots`),
+    /// which counts every session with a task id and has no notion of one having been superseded.
     #[test]
     fn a_new_session_supersedes_the_task_s_older_ones() {
         let live = [s(10, Some(7)), s(11, Some(7)), s(12, Some(7))];
