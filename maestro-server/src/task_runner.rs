@@ -17,9 +17,8 @@ use std::sync::{Arc, LazyLock, Mutex};
 use maestro_protocol::{
     AddTaskCommentRequest, AgentRole, ApplyTaskTransitionRequest, ConcurrencyMode, ErrorResponse,
     MaestroRpcMessage, NewTaskComment, PhaseStatus, RequestTaskExecutionRequest, ServerRequest,
-    ServerResponse,
-    StartTaskRequest, StartTaskResponse, Task, TaskPhase, TaskSessionStarted, TaskStatus,
-    TaskTransition, TransitionGuard, AUTH_REQUIRED_ERROR,
+    ServerResponse, StartTaskRequest, StartTaskResponse, Task, TaskPhase, TaskSessionStarted,
+    TaskStatus, TaskTransition, TransitionGuard, AUTH_REQUIRED_ERROR,
 };
 use rusqlite::Connection;
 

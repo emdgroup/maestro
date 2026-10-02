@@ -218,7 +218,9 @@ pub(crate) async fn resolve(
         if session != stage {
             send_diag(
                 "debug",
-                format!("[task] ignoring a {session:?} turn end on task {task_id}, now {stage:?}'s"),
+                format!(
+                    "[task] ignoring a {session:?} turn end on task {task_id}, now {stage:?}'s"
+                ),
             );
             return (None, pushes);
         }
@@ -651,7 +653,8 @@ mod tests {
     #[tokio::test]
     async fn a_coder_done_with_a_reviewer_profile_hands_to_the_reviewer() {
         let (_dir, project, store, id) = setup(true);
-        let (next, pushes) = resolve(&store, &project, id, None, "end_turn", facts(true, "done")).await;
+        let (next, pushes) =
+            resolve(&store, &project, id, None, "end_turn", facts(true, "done")).await;
         assert_eq!(next, Some(AgentRole::Reviewer));
         assert!(!pushes.is_empty());
     }

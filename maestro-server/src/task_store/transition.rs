@@ -73,12 +73,9 @@ impl TaskState {
     /// user's: a retry claims it again. With no such phase there is nothing to go back to.
     fn unclaimed(self, otherwise: TaskState) -> TaskState {
         match self.claimed_from {
-            Some(phase) if self.phase == Some(TaskPhase::Spawning) => TaskState::active(
-                self.status,
-                phase,
-                PhaseStatus::Failed,
-                TaskBall::User,
-            ),
+            Some(phase) if self.phase == Some(TaskPhase::Spawning) => {
+                TaskState::active(self.status, phase, PhaseStatus::Failed, TaskBall::User)
+            }
             _ => otherwise,
         }
     }
@@ -1182,7 +1179,10 @@ mod tests {
                 },
             );
             claim(&conn, task_id, &USER_COLUMNS).expect("the hand-off is claimed");
-            assert_eq!(state(&conn, task_id).claimed_from, Some(TaskPhase::SelfReview));
+            assert_eq!(
+                state(&conn, task_id).claimed_from,
+                Some(TaskPhase::SelfReview)
+            );
             when_spawning(&conn, task_id, TaskTransition::PhaseFailed).expect("fail");
             let failed = state(&conn, task_id);
             assert_eq!(

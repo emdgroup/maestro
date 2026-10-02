@@ -62,7 +62,9 @@ pub(crate) async fn git_remote(
     let mut command = git_command(dir, args);
     let user_chose = std::env::var_os("GIT_SSH_COMMAND").is_some()
         || std::env::var_os("GIT_SSH").is_some()
-        || git(dir, &["config", "--get", "core.sshCommand"]).await.is_ok();
+        || git(dir, &["config", "--get", "core.sshCommand"])
+            .await
+            .is_ok();
     if !user_chose {
         command.env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes");
     }
