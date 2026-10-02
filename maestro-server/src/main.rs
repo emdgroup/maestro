@@ -4,7 +4,7 @@
 )]
 //! Maestro Remote Server
 //!
-//! Headless binary that runs on remote SSH hosts. Receives MaestroRpcMessage
+//! Headless binary that runs on remote SSH hosts. Receives ServerRequest
 //! commands from the local Maestro desktop app over stdin/stdout (piped through
 //! SSH exec channel), spawns ACP agents as local subprocesses, and forwards
 //! structured session updates back.
@@ -57,8 +57,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use maestro_protocol::{
-    AcpRegistry, DiagnosticPayload, ErrorResponse, HandshakeResponse, MaestroRpcMessage,
-    ServerRequest, ServerResponse, PROTOCOL_VERSION,
+    AcpRegistry, DiagnosticPayload, ErrorResponse, HandshakeResponse, ServerRequest,
+    ServerResponse, PROTOCOL_VERSION,
 };
 
 use agent_restart::handle_agent_restart;
@@ -137,7 +137,7 @@ type MsgRx = tokio::sync::mpsc::Receiver<Inbound>;
 /// and the id it came with, which its reply echoes.
 pub(crate) type Inbound = Result<
     (
-        MaestroRpcMessage,
+        ServerRequest,
         Option<ClientOut>,
         Option<maestro_protocol::RequestId>,
     ),
@@ -192,36 +192,36 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         _ => return Ok(()),
     };
     match first_msg {
-        MaestroRpcMessage::Request(ServerRequest::Handshake(req)) => {
+        ServerRequest::Handshake(req) => {
             if req.protocol_version != PROTOCOL_VERSION {
                 let _ = send_response(
                     &stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                    &ServerResponse::Error(ErrorResponse {
                         message: format!(
                             "protocol version mismatch: server={}, client={}",
                             PROTOCOL_VERSION, req.protocol_version
                         ),
                         session_id: None,
-                    })),
+                    }),
                 )
                 .await;
                 return Ok(());
             }
             let _ = send_response(
                 &stdout,
-                &MaestroRpcMessage::Response(ServerResponse::HandshakeOk(HandshakeResponse {
+                &ServerResponse::HandshakeOk(HandshakeResponse {
                     protocol_version: PROTOCOL_VERSION,
-                })),
+                }),
             )
             .await;
         }
         _ => {
             let _ = send_response(
                 &stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                &ServerResponse::Error(ErrorResponse {
                     message: "expected Handshake as first message".to_string(),
                     session_id: None,
-                })),
+                }),
             )
             .await;
             return Ok(());
@@ -575,12 +575,9 @@ async fn run_server(
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                 seq = seq.wrapping_add(1);
-                if send_response(
-                    &stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::Ping { seq }),
-                )
-                .await
-                .is_err()
+                if send_response(&stdout, &ServerResponse::Ping { seq })
+                    .await
+                    .is_err()
                 {
                     break;
                 }
@@ -601,12 +598,9 @@ async fn run_server(
         async move {
             let mut diag_rx = diag_rx;
             while let Some(payload) = diag_rx.recv().await {
-                if send_response(
-                    &stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::Diagnostic(payload)),
-                )
-                .await
-                .is_err()
+                if send_response(&stdout, &ServerResponse::Diagnostic(payload))
+                    .await
+                    .is_err()
                 {
                     break;
                 }
@@ -651,10 +645,10 @@ async fn run_server(
                         send_diag("error", format!("stdin framing error: {e}"));
                         if send_response(
                             &stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                            &ServerResponse::Error(ErrorResponse {
                                 message: format!("read error: {}", e),
                                 session_id: None,
-                            })),
+                            }),
                         )
                         .await
                         .is_err()

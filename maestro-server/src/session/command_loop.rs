@@ -8,7 +8,7 @@ use acp::schema::v1::{
 };
 use agent_client_protocol as acp;
 use maestro_protocol::{
-    ConfigOptionUpdatedResponse, ErrorResponse, MaestroRpcMessage, ModeInfo as ProtocolModeInfo,
+    ConfigOptionUpdatedResponse, ErrorResponse, ModeInfo as ProtocolModeInfo,
     ModelInfo as ProtocolModelInfo, PromptCapabilitiesInfo, ServerResponse,
     SessionModeState as ProtocolSessionModeState, SessionModelState as ProtocolSessionModelState,
     SetModeOkResponse, TurnEnded,
@@ -47,10 +47,10 @@ pub(crate) async fn handle_prompt_result(
         }
     };
     crate::helpers::note_turn_ended(&session_id, &stop_reason);
-    let msg = MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
+    let msg = ServerResponse::TurnEnded(TurnEnded {
         session_id,
         stop_reason,
-    }));
+    });
     let _ = send_response(stdout, &msg).await;
 }
 
@@ -214,10 +214,10 @@ pub(crate) async fn run_command_loop(
                     crate::helpers::note_turn_ended(&maestro_sid, "error");
                     let _ = send_response(
                         &so_err,
-                        &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
+                        &ServerResponse::TurnEnded(TurnEnded {
                             session_id: maestro_sid.clone(),
                             stop_reason: "error".to_string(),
-                        })),
+                        }),
                     )
                     .await;
                     break;
@@ -253,10 +253,10 @@ pub(crate) async fn run_command_loop(
                     crate::helpers::note_turn_ended(&maestro_sid, "error");
                     let _ = send_response(
                         &so_err,
-                        &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
+                        &ServerResponse::TurnEnded(TurnEnded {
                             session_id: maestro_sid.clone(),
                             stop_reason: "error".to_string(),
-                        })),
+                        }),
                     )
                     .await;
                     break;
@@ -277,10 +277,10 @@ pub(crate) async fn run_command_loop(
                     );
                     if let Err(e) = send_response(
                         &so,
-                        &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
+                        &ServerResponse::TurnEnded(TurnEnded {
                             session_id: maestro_sid.clone(),
                             stop_reason: "cancelled".to_string(),
-                        })),
+                        }),
                     )
                     .await
                     {
@@ -301,18 +301,18 @@ pub(crate) async fn run_command_loop(
                     .block_task()
                     .await;
                 let msg = match result {
-                    Ok(response) => MaestroRpcMessage::Response(
+                    Ok(response) => {
                         ServerResponse::ConfigOptionUpdated(ConfigOptionUpdatedResponse {
                             session_id: maestro_sid.clone(),
                             config_id: "model".to_string(),
                             value: model_id,
                             config_options: serialize_config_options(&response.config_options),
-                        }),
-                    ),
-                    Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                        })
+                    }
+                    Err(e) => ServerResponse::Error(ErrorResponse {
                         message: format!("SetModel failed: {}", e),
                         session_id: None,
-                    })),
+                    }),
                 };
                 let _ = send_response(&so, &msg).await;
             }
@@ -326,14 +326,14 @@ pub(crate) async fn run_command_loop(
                     .block_task()
                     .await;
                 let msg = match result {
-                    Ok(response) => MaestroRpcMessage::Response(
+                    Ok(response) => {
                         ServerResponse::ConfigOptionUpdated(ConfigOptionUpdatedResponse {
                             session_id: maestro_sid.clone(),
                             config_id: "mode".to_string(),
                             value: mode_id,
                             config_options: serialize_config_options(&response.config_options),
-                        }),
-                    ),
+                        })
+                    }
                     Err(e) if e.code == acp::ErrorCode::MethodNotFound => {
                         let fallback = cx
                             .send_request(SetSessionModeRequest::new(
@@ -343,24 +343,20 @@ pub(crate) async fn run_command_loop(
                             .block_task()
                             .await;
                         match fallback {
-                            Ok(_) => MaestroRpcMessage::Response(ServerResponse::SetModeOk(
-                                SetModeOkResponse {
-                                    session_id: maestro_sid.clone(),
-                                    mode_id,
-                                },
-                            )),
-                            Err(e) => {
-                                MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                                    message: format!("SetMode failed: {}", e),
-                                    session_id: None,
-                                }))
-                            }
+                            Ok(_) => ServerResponse::SetModeOk(SetModeOkResponse {
+                                session_id: maestro_sid.clone(),
+                                mode_id,
+                            }),
+                            Err(e) => ServerResponse::Error(ErrorResponse {
+                                message: format!("SetMode failed: {}", e),
+                                session_id: None,
+                            }),
                         }
                     }
-                    Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                    Err(e) => ServerResponse::Error(ErrorResponse {
                         message: format!("SetMode failed: {}", e),
                         session_id: None,
-                    })),
+                    }),
                 };
                 let _ = send_response(&so, &msg).await;
             }
@@ -374,18 +370,18 @@ pub(crate) async fn run_command_loop(
                     .block_task()
                     .await;
                 let msg = match result {
-                    Ok(response) => MaestroRpcMessage::Response(
+                    Ok(response) => {
                         ServerResponse::ConfigOptionUpdated(ConfigOptionUpdatedResponse {
                             session_id: maestro_sid.clone(),
                             config_id,
                             value,
                             config_options: serialize_config_options(&response.config_options),
-                        }),
-                    ),
-                    Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                        })
+                    }
+                    Err(e) => ServerResponse::Error(ErrorResponse {
                         message: format!("SetConfigOption failed: {}", e),
                         session_id: None,
-                    })),
+                    }),
                 };
                 let _ = send_response(&so, &msg).await;
             }

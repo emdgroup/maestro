@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use maestro_protocol::{
     CheckToolsResponse, DiscoveredAgent, ErrorResponse, FileReadResponse, FileSearchResponse,
-    InstallSkillsResponse, ListAgentsResponse, MaestroRpcMessage, PreInitializeResponse,
-    ServerRequest, ServerResponse, SessionUpdate, SpawnResponse, AUTH_REQUIRED_ERROR,
+    InstallSkillsResponse, ListAgentsResponse, PreInitializeResponse, ServerRequest,
+    ServerResponse, SessionUpdate, SpawnResponse, AUTH_REQUIRED_ERROR,
 };
 
 use crate::agent;
@@ -344,10 +344,7 @@ pub(crate) async fn settle(
                     }
                 }
             }
-            (
-                stdout,
-                MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(response)),
-            )
+            (stdout, ServerResponse::DetectInstalledAgentsOk(response))
         }
         Settle::Ended {
             kind,
@@ -375,7 +372,7 @@ pub(crate) async fn settle(
 /// owns: a process to spawn or probe, a filesystem to walk, an agent to wait on.
 fn answer_off_loop(
     stdout: &crate::ClientOut,
-    response: impl std::future::Future<Output = MaestroRpcMessage> + Send + 'static,
+    response: impl std::future::Future<Output = ServerResponse> + Send + 'static,
 ) {
     let stdout = Arc::clone(stdout);
     tokio::spawn(async move {
@@ -394,7 +391,7 @@ fn answer_off_loop(
 // because the loop's other arms hold some of them at the same time.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn dispatch_message(
-    msg: MaestroRpcMessage,
+    msg: ServerRequest,
     sessions: &mut SessionMap,
     agent_connections: &SharedAgentConnections,
     agents_with_spawn: &mut Vec<agent::registry::DiscoveredAgentWithSpawn>,
@@ -416,7 +413,7 @@ pub(crate) async fn dispatch_message(
     }
 
     match msg {
-        MaestroRpcMessage::Request(ServerRequest::ListAgents(_req)) => {
+        ServerRequest::ListAgents(_req) => {
             agent::registry::apply_custom_agents(agents_with_spawn);
             let agents: Vec<DiscoveredAgent> = agents_with_spawn
                 .iter()
@@ -430,15 +427,13 @@ pub(crate) async fn dispatch_message(
             send_or_return!(
                 send_response(
                     stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(
-                        ListAgentsResponse { agents },
-                    )),
+                    &ServerResponse::ListAgentsOk(ListAgentsResponse { agents },),
                 )
                 .await
             );
         }
 
-        MaestroRpcMessage::Request(ServerRequest::ListProjectSessions(req)) => {
+        ServerRequest::ListProjectSessions(req) => {
             let project_path = crate::automations::canonical_project_path(&req.project_path);
             let listed = match project_store {
                 Some(store) => {
@@ -474,15 +469,15 @@ pub(crate) async fn dispatch_message(
             send_or_return!(
                 send_response(
                     stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::ListProjectSessionsOk(
+                    &ServerResponse::ListProjectSessionsOk(
                         maestro_protocol::ListProjectSessionsResponse { sessions: listed },
-                    )),
+                    ),
                 )
                 .await
             );
         }
 
-        MaestroRpcMessage::Request(ServerRequest::RenameSession(req)) => {
+        ServerRequest::RenameSession(req) => {
             let Some(store) = project_store else {
                 send_or_return!(
                     send_response(
@@ -499,18 +494,14 @@ pub(crate) async fn dispatch_message(
                 crate::project_store::rename(&conn, &req, &project_path, chrono::Utc::now())
             };
             match renamed {
-                Ok(()) => send_or_return!(
-                    send_response(
-                        stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::RenameSessionOk),
-                    )
-                    .await
-                ),
+                Ok(()) => {
+                    send_or_return!(send_response(stdout, &ServerResponse::RenameSessionOk,).await)
+                }
                 Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
             }
         }
 
-        MaestroRpcMessage::Request(ServerRequest::CloseProjectSession(req)) => {
+        ServerRequest::CloseProjectSession(req) => {
             let Some(store) = project_store else {
                 send_or_return!(
                     send_response(
@@ -536,22 +527,18 @@ pub(crate) async fn dispatch_message(
             };
             match closed {
                 Ok(()) => send_or_return!(
-                    send_response(
-                        stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::CloseProjectSessionOk),
-                    )
-                    .await
+                    send_response(stdout, &ServerResponse::CloseProjectSessionOk,).await
                 ),
                 Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
             }
         }
 
-        MaestroRpcMessage::Request(ServerRequest::Shutdown) => {
+        ServerRequest::Shutdown => {
             send_diag("info", "[server] shutdown requested by the host");
             return false;
         }
 
-        MaestroRpcMessage::Request(ServerRequest::ListAutomations(req)) => {
+        ServerRequest::ListAutomations(req) => {
             let Some(store) = automation_store else {
                 send_or_return!(
                     send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
@@ -572,13 +559,13 @@ pub(crate) async fn dispatch_message(
                 Ok((automations, retention)) => send_or_return!(
                     send_response(
                         stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::ListAutomationsOk(
+                        &ServerResponse::ListAutomationsOk(
                             maestro_protocol::ListAutomationsResponse {
                                 automations,
                                 server_timezone: crate::automations::server_timezone(),
                                 retention,
                             },
-                        )),
+                        ),
                     )
                     .await
                 ),
@@ -586,7 +573,7 @@ pub(crate) async fn dispatch_message(
             }
         }
 
-        MaestroRpcMessage::Request(ServerRequest::SaveAutomation(req)) => {
+        ServerRequest::SaveAutomation(req) => {
             let Some(store) = automation_store else {
                 send_or_return!(
                     send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
@@ -604,17 +591,13 @@ pub(crate) async fn dispatch_message(
             };
             match saved {
                 Ok(saved) => send_or_return!(
-                    send_response(
-                        stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::SaveAutomationOk(saved)),
-                    )
-                    .await
+                    send_response(stdout, &ServerResponse::SaveAutomationOk(saved),).await
                 ),
                 Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
             }
         }
 
-        MaestroRpcMessage::Request(ServerRequest::DeleteAutomation(req)) => {
+        ServerRequest::DeleteAutomation(req) => {
             let Some(store) = automation_store else {
                 send_or_return!(
                     send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
@@ -627,17 +610,13 @@ pub(crate) async fn dispatch_message(
             };
             match deleted {
                 Ok(()) => send_or_return!(
-                    send_response(
-                        stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::DeleteAutomationOk),
-                    )
-                    .await
+                    send_response(stdout, &ServerResponse::DeleteAutomationOk,).await
                 ),
                 Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
             }
         }
 
-        MaestroRpcMessage::Request(ServerRequest::RunAutomation(req)) => {
+        ServerRequest::RunAutomation(req) => {
             let Some(store) = automation_store else {
                 send_or_return!(
                     send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
@@ -664,7 +643,7 @@ pub(crate) async fn dispatch_message(
             }
         }
 
-        MaestroRpcMessage::Request(ServerRequest::ListAutomationRuns(req)) => {
+        ServerRequest::ListAutomationRuns(req) => {
             let Some(store) = automation_store else {
                 send_or_return!(
                     send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
@@ -680,9 +659,9 @@ pub(crate) async fn dispatch_message(
                 Ok(runs) => send_or_return!(
                     send_response(
                         stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::ListAutomationRunsOk(
+                        &ServerResponse::ListAutomationRunsOk(
                             maestro_protocol::ListAutomationRunsResponse { runs },
-                        )),
+                        ),
                     )
                     .await
                 ),
@@ -690,7 +669,7 @@ pub(crate) async fn dispatch_message(
             }
         }
 
-        MaestroRpcMessage::Request(ServerRequest::DeleteAutomationRun(req)) => {
+        ServerRequest::DeleteAutomationRun(req) => {
             let Some(store) = automation_store else {
                 send_or_return!(
                     send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
@@ -729,9 +708,7 @@ pub(crate) async fn dispatch_message(
                     tokio::spawn(async move {
                         let response =
                             match crate::automation_runner::discard_run(&store, &run).await {
-                                Ok(()) => MaestroRpcMessage::Response(
-                                    ServerResponse::DeleteAutomationRunOk,
-                                ),
+                                Ok(()) => ServerResponse::DeleteAutomationRunOk,
                                 Err(e) => error_response(e),
                             };
                         if let Err(e) = send_response(&stdout, &response).await {
@@ -747,17 +724,13 @@ pub(crate) async fn dispatch_message(
             };
             match deleted {
                 Ok(()) => send_or_return!(
-                    send_response(
-                        stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::DeleteAutomationRunOk),
-                    )
-                    .await
+                    send_response(stdout, &ServerResponse::DeleteAutomationRunOk,).await
                 ),
                 Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
             }
         }
 
-        MaestroRpcMessage::Request(ServerRequest::SetRunRetention(req)) => {
+        ServerRequest::SetRunRetention(req) => {
             let Some(store) = automation_store else {
                 send_or_return!(
                     send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
@@ -777,8 +750,7 @@ pub(crate) async fn dispatch_message(
                     let stdout = Arc::clone(stdout);
                     tokio::spawn(async move {
                         crate::automation_runner::apply_retention(&store, &project_path).await;
-                        let response =
-                            MaestroRpcMessage::Response(ServerResponse::SetRunRetentionOk);
+                        let response = ServerResponse::SetRunRetentionOk;
                         if let Err(e) = send_response(&stdout, &response).await {
                             send_diag(
                                 "warn",
@@ -791,22 +763,16 @@ pub(crate) async fn dispatch_message(
             }
         }
 
-        MaestroRpcMessage::Request(ServerRequest::GetServerStatus) => {
+        ServerRequest::GetServerStatus => {
             let running_runs = match automation_store {
                 Some(store) => crate::automations::count_running(&*store.lock().await),
                 None => 0,
             };
             let status = server_status(sessions.len(), running_runs, crate::autostart::current());
-            send_or_return!(
-                send_response(
-                    stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::ServerStatusOk(status)),
-                )
-                .await
-            );
+            send_or_return!(send_response(stdout, &ServerResponse::ServerStatusOk(status),).await);
         }
 
-        MaestroRpcMessage::Request(ServerRequest::SetAutostart(req)) => {
+        ServerRequest::SetAutostart(req) => {
             let live_sessions = sessions.len();
             let running_runs = match automation_store {
                 Some(store) => crate::automations::count_running(&*store.lock().await),
@@ -820,8 +786,10 @@ pub(crate) async fn dispatch_message(
                     .await
                     .unwrap_or_else(|e| Err(format!("autostart task failed: {e}")));
                 let response = match set {
-                    Ok(method) => MaestroRpcMessage::Response(ServerResponse::ServerStatusOk(
-                        server_status(live_sessions, running_runs, method),
+                    Ok(method) => ServerResponse::ServerStatusOk(server_status(
+                        live_sessions,
+                        running_runs,
+                        method,
                     )),
                     Err(e) => error_response(e),
                 };
@@ -831,7 +799,7 @@ pub(crate) async fn dispatch_message(
             });
         }
 
-        MaestroRpcMessage::Request(ServerRequest::GetWebhookSettings) => {
+        ServerRequest::GetWebhookSettings => {
             let Some(store) = automation_store else {
                 send_or_return!(
                     send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
@@ -843,15 +811,11 @@ pub(crate) async fn dispatch_message(
                 crate::webhook::status(&conn)
             };
             send_or_return!(
-                send_response(
-                    stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::WebhookSettingsOk(status)),
-                )
-                .await
+                send_response(stdout, &ServerResponse::WebhookSettingsOk(status),).await
             );
         }
 
-        MaestroRpcMessage::Request(ServerRequest::SetWebhookSettings(settings)) => {
+        ServerRequest::SetWebhookSettings(settings) => {
             let Some(store) = automation_store else {
                 send_or_return!(
                     send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
@@ -873,15 +837,11 @@ pub(crate) async fn dispatch_message(
                 crate::webhook::status(&conn)
             };
             send_or_return!(
-                send_response(
-                    stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::WebhookSettingsOk(status)),
-                )
-                .await
+                send_response(stdout, &ServerResponse::WebhookSettingsOk(status),).await
             );
         }
 
-        MaestroRpcMessage::Request(ServerRequest::RollWebhookSecret(req)) => {
+        ServerRequest::RollWebhookSecret(req) => {
             let Some(store) = automation_store else {
                 send_or_return!(
                     send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
@@ -894,19 +854,13 @@ pub(crate) async fn dispatch_message(
             };
             match rolled {
                 Ok(automation) => send_or_return!(
-                    send_response(
-                        stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::RollWebhookSecretOk(
-                            automation
-                        )),
-                    )
-                    .await
+                    send_response(stdout, &ServerResponse::RollWebhookSecretOk(automation),).await
                 ),
                 Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
             }
         }
 
-        MaestroRpcMessage::Request(ServerRequest::ListWebhookDeliveries(req)) => {
+        ServerRequest::ListWebhookDeliveries(req) => {
             let Some(store) = automation_store else {
                 send_or_return!(
                     send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
@@ -921,9 +875,9 @@ pub(crate) async fn dispatch_message(
                 Ok(deliveries) => send_or_return!(
                     send_response(
                         stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::ListWebhookDeliveriesOk(
+                        &ServerResponse::ListWebhookDeliveriesOk(
                             maestro_protocol::ListWebhookDeliveriesResponse { deliveries },
-                        )),
+                        ),
                     )
                     .await
                 ),
@@ -934,7 +888,7 @@ pub(crate) async fn dispatch_message(
         // No store and no project: an expression being typed belongs to nothing yet. This is here
         // rather than in the editor because the daemon is the only thing that parses cron, and it
         // must stay that way while it is also the thing that decides when a run happens.
-        MaestroRpcMessage::Request(ServerRequest::PreviewSchedule(req)) => {
+        ServerRequest::PreviewSchedule(req) => {
             match crate::automations::validate_schedule(&req.cron, &req.timezone) {
                 Ok(()) => {
                     let next =
@@ -943,9 +897,9 @@ pub(crate) async fn dispatch_message(
                     send_or_return!(
                         send_response(
                             stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::PreviewScheduleOk(
+                            &ServerResponse::PreviewScheduleOk(
                                 maestro_protocol::PreviewScheduleResponse { next },
-                            )),
+                            ),
                         )
                         .await
                     );
@@ -954,7 +908,7 @@ pub(crate) async fn dispatch_message(
             }
         }
 
-        MaestroRpcMessage::Request(ServerRequest::Spawn(req)) => {
+        ServerRequest::Spawn(req) => {
             send_diag(
                 "info",
                 format!(
@@ -1038,19 +992,16 @@ pub(crate) async fn dispatch_message(
                             can_reload: result.supports_session_load,
                             requested_at,
                         });
-                if send_response(
-                    &stdout_task,
-                    &MaestroRpcMessage::Response(ServerResponse::SpawnOk(response)),
-                )
-                .await
-                .is_ok()
+                if send_response(&stdout_task, &ServerResponse::SpawnOk(response))
+                    .await
+                    .is_ok()
                 {
                     let _ = spawn_result_tx.send((req.session_id, result.session)).await;
                 }
             });
         }
 
-        MaestroRpcMessage::Request(ServerRequest::Prompt(req)) => {
+        ServerRequest::Prompt(req) => {
             if let Some(session) = sessions.get(&req.session_id) {
                 let sent_at = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -1059,16 +1010,14 @@ pub(crate) async fn dispatch_message(
                 send_or_return!(
                     send_response(
                         stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::SessionUpdate(
-                            SessionUpdate {
-                                session_id: req.session_id.clone(),
-                                payload: serde_json::json!({
-                                    "sessionUpdate": "user_message",
-                                    "content": req.content,
-                                    "sentAt": sent_at,
-                                }),
-                            }
-                        )),
+                        &ServerResponse::SessionUpdate(SessionUpdate {
+                            session_id: req.session_id.clone(),
+                            payload: serde_json::json!({
+                                "sessionUpdate": "user_message",
+                                "content": req.content,
+                                "sentAt": sent_at,
+                            }),
+                        }),
                     )
                     .await
                 );
@@ -1086,10 +1035,10 @@ pub(crate) async fn dispatch_message(
                     send_or_return!(
                         send_response(
                             stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                            &ServerResponse::Error(ErrorResponse {
                                 message: format!("session {} connection closed", req.session_id),
                                 session_id: None,
-                            })),
+                            }),
                         )
                         .await
                     );
@@ -1098,23 +1047,23 @@ pub(crate) async fn dispatch_message(
                 send_or_return!(
                     send_response(
                         stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                        &ServerResponse::Error(ErrorResponse {
                             message: format!("unknown session: {}", req.session_id),
                             session_id: None,
-                        })),
+                        }),
                     )
                     .await
                 );
             }
         }
 
-        MaestroRpcMessage::Request(ServerRequest::HostToolResult(result)) => {
+        ServerRequest::HostToolResult(result) => {
             if let Some((_, tx)) = pending_host_tools.remove(&result.request_id) {
                 let _ = tx.send(result);
             }
         }
 
-        MaestroRpcMessage::Request(ServerRequest::Cancel(req)) => {
+        ServerRequest::Cancel(req) => {
             // A window closing a task's session ends the stage it was running. Only here: a newer
             // session superseding it goes through `cancel_session` alone.
             if let (Some(store), Some(task)) = (
@@ -1137,13 +1086,13 @@ pub(crate) async fn dispatch_message(
             .await;
         }
 
-        MaestroRpcMessage::Request(ServerRequest::InterruptTurn(req)) => {
+        ServerRequest::InterruptTurn(req) => {
             if let Some(session) = sessions.get(&req.session_id) {
                 let _ = session.cmd_tx.send(SessionCommand::CancelTurn).await;
             }
         }
 
-        MaestroRpcMessage::Request(ServerRequest::PermitResponse(perm_resp)) => {
+        ServerRequest::PermitResponse(perm_resp) => {
             if let Some(session) = sessions.get(&perm_resp.session_id) {
                 if let Some((_request, tx)) = session
                     .pending_permissions
@@ -1156,7 +1105,7 @@ pub(crate) async fn dispatch_message(
             }
         }
 
-        MaestroRpcMessage::Request(ServerRequest::ElicitationResponse(elicit_resp)) => {
+        ServerRequest::ElicitationResponse(elicit_resp) => {
             if let Some(session) = sessions.get(&elicit_resp.session_id) {
                 if let Some((_request, tx)) = session
                     .pending_elicitations
@@ -1169,7 +1118,7 @@ pub(crate) async fn dispatch_message(
             }
         }
 
-        MaestroRpcMessage::Request(ServerRequest::SetModel(set_model_req)) => {
+        ServerRequest::SetModel(set_model_req) => {
             send_or_return!(
                 forward_to_session(
                     sessions,
@@ -1181,7 +1130,7 @@ pub(crate) async fn dispatch_message(
             );
         }
 
-        MaestroRpcMessage::Request(ServerRequest::SetMode(set_mode_req)) => {
+        ServerRequest::SetMode(set_mode_req) => {
             send_or_return!(
                 forward_to_session(
                     sessions,
@@ -1193,7 +1142,7 @@ pub(crate) async fn dispatch_message(
             );
         }
 
-        MaestroRpcMessage::Request(ServerRequest::SetConfigOption(req)) => {
+        ServerRequest::SetConfigOption(req) => {
             send_or_return!(
                 forward_to_session(
                     sessions,
@@ -1208,45 +1157,39 @@ pub(crate) async fn dispatch_message(
             );
         }
 
-        MaestroRpcMessage::Request(ServerRequest::FileSearch(req)) => {
+        ServerRequest::FileSearch(req) => {
             answer_off_loop(stdout, async move {
                 let result = tokio::task::spawn_blocking(move || handle_file_search(req))
                     .await
                     .unwrap_or_else(|e| Err(format!("spawn_blocking: {}", e)));
                 match result {
-                    Ok(files) => MaestroRpcMessage::Response(ServerResponse::FileSearchOk(
-                        FileSearchResponse { files },
-                    )),
-                    Err(msg) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                    Ok(files) => ServerResponse::FileSearchOk(FileSearchResponse { files }),
+                    Err(msg) => ServerResponse::Error(ErrorResponse {
                         message: msg,
                         session_id: None,
-                    })),
+                    }),
                 }
             });
         }
 
-        MaestroRpcMessage::Request(ServerRequest::FileRead(req)) => {
+        ServerRequest::FileRead(req) => {
             answer_off_loop(stdout, async move {
                 match handle_file_read(&req).await {
-                    Ok(content) => {
-                        MaestroRpcMessage::Response(ServerResponse::FileReadOk(FileReadResponse {
-                            content,
-                        }))
-                    }
-                    Err(msg) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                    Ok(content) => ServerResponse::FileReadOk(FileReadResponse { content }),
+                    Err(msg) => ServerResponse::Error(ErrorResponse {
                         message: msg,
                         session_id: None,
-                    })),
+                    }),
                 }
             });
         }
 
-        MaestroRpcMessage::Request(ServerRequest::SessionList(req)) => {
+        ServerRequest::SessionList(req) => {
             return session::requests::list(req, agent_connections, agents_with_spawn, stdout)
                 .await;
         }
 
-        MaestroRpcMessage::Request(ServerRequest::SessionLoad(req)) => {
+        ServerRequest::SessionLoad(req) => {
             // An unknown agent makes the load final, so a custom agent added or first read since
             // the last listing must be in the list before that is decided.
             if !agents_with_spawn
@@ -1265,7 +1208,7 @@ pub(crate) async fn dispatch_message(
             .await;
         }
 
-        MaestroRpcMessage::Request(ServerRequest::SessionClose(req)) => {
+        ServerRequest::SessionClose(req) => {
             return session::requests::end(
                 session::requests::EndKind::Close,
                 req.agent_id,
@@ -1277,7 +1220,7 @@ pub(crate) async fn dispatch_message(
             .await;
         }
 
-        MaestroRpcMessage::Request(ServerRequest::SessionDelete(req)) => {
+        ServerRequest::SessionDelete(req) => {
             return session::requests::end(
                 session::requests::EndKind::Delete,
                 req.agent_id,
@@ -1289,20 +1232,20 @@ pub(crate) async fn dispatch_message(
             .await;
         }
 
-        MaestroRpcMessage::Request(ServerRequest::Handshake(_)) => {
+        ServerRequest::Handshake(_) => {
             send_or_return!(
                 send_response(
                     stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                    &ServerResponse::Error(ErrorResponse {
                         message: "unexpected Handshake after initialization".to_string(),
                         session_id: None,
-                    })),
+                    }),
                 )
                 .await
             );
         }
 
-        MaestroRpcMessage::Request(ServerRequest::PreInitialize(req)) => {
+        ServerRequest::PreInitialize(req) => {
             let Some((spawn_cmd, spawn_args_owned, spawn_env)) =
                 resolve_agent_spawn_params(&req.agent_id, agents_with_spawn, stdout).await
             else {
@@ -1340,19 +1283,15 @@ pub(crate) async fn dispatch_message(
                     auth_methods: handle.capabilities.auth_methods.clone(),
                     supports_auth_logout: handle.capabilities.supports_auth_logout,
                 };
-                let _ = send_response(
-                    &stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(response)),
-                )
-                .await;
+                let _ = send_response(&stdout, &ServerResponse::PreInitializeOk(response)).await;
             });
         }
 
-        MaestroRpcMessage::Request(ServerRequest::Authenticate(req)) => {
+        ServerRequest::Authenticate(req) => {
             return auth::authenticate(req, agent_connections, agents_with_spawn, stdout).await;
         }
 
-        MaestroRpcMessage::Request(ServerRequest::SpawnAuthTerminal(req)) => {
+        ServerRequest::SpawnAuthTerminal(req) => {
             return auth::spawn_auth_terminal(
                 req,
                 agent_connections,
@@ -1363,83 +1302,71 @@ pub(crate) async fn dispatch_message(
             .await;
         }
 
-        MaestroRpcMessage::Request(ServerRequest::KillAuthTerminal(req)) => {
+        ServerRequest::KillAuthTerminal(req) => {
             auth::kill_auth_terminal(req, auth_terminals).await;
         }
 
-        MaestroRpcMessage::Request(ServerRequest::AuthTerminalInput(req)) => {
+        ServerRequest::AuthTerminalInput(req) => {
             auth::auth_terminal_input(req, auth_terminals).await;
         }
 
-        MaestroRpcMessage::Request(ServerRequest::Logout(req)) => {
+        ServerRequest::Logout(req) => {
             return auth::logout(req, agent_connections, stdout).await;
         }
 
         // Probing a tool runs it, and installing skills runs the skills CLI.
-        MaestroRpcMessage::Request(ServerRequest::CheckTools(req)) => {
+        ServerRequest::CheckTools(req) => {
             answer_off_loop(stdout, async move {
                 let results = check_tools(req.tools).await;
-                MaestroRpcMessage::Response(ServerResponse::CheckToolsOk(CheckToolsResponse {
-                    results,
-                }))
+                ServerResponse::CheckToolsOk(CheckToolsResponse { results })
             });
         }
 
-        MaestroRpcMessage::Request(ServerRequest::InstallSkills(req)) => {
+        ServerRequest::InstallSkills(req) => {
             answer_off_loop(stdout, async move {
                 match crate::skills::install(req.skills).await {
-                    Ok(installed) => MaestroRpcMessage::Response(ServerResponse::InstallSkillsOk(
-                        InstallSkillsResponse { installed },
-                    )),
-                    Err(message) => {
-                        MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                            message,
-                            session_id: None,
-                        }))
+                    Ok(installed) => {
+                        ServerResponse::InstallSkillsOk(InstallSkillsResponse { installed })
                     }
+                    Err(message) => ServerResponse::Error(ErrorResponse {
+                        message,
+                        session_id: None,
+                    }),
                 }
             });
         }
 
-        MaestroRpcMessage::Request(ServerRequest::ListMcpServers(req)) => {
+        ServerRequest::ListMcpServers(req) => {
             let response = match crate::mcp_store::list() {
-                Ok(servers) => MaestroRpcMessage::Response(ServerResponse::ListMcpServersOk(
-                    maestro_protocol::McpServerList {
-                        servers,
-                        project: req
-                            .project_path
-                            .as_deref()
-                            .map(crate::mcp_config::project_servers)
-                            .unwrap_or_default(),
-                    },
-                )),
+                Ok(servers) => ServerResponse::ListMcpServersOk(maestro_protocol::McpServerList {
+                    servers,
+                    project: req
+                        .project_path
+                        .as_deref()
+                        .map(crate::mcp_config::project_servers)
+                        .unwrap_or_default(),
+                }),
                 Err(e) => error_response(e),
             };
             send_or_return!(send_response(stdout, &response).await);
         }
 
-        MaestroRpcMessage::Request(ServerRequest::SaveMcpServers(req)) => {
+        ServerRequest::SaveMcpServers(req) => {
             let response = match crate::mcp_store::save(req.servers) {
-                Ok(()) => MaestroRpcMessage::Response(ServerResponse::SaveMcpServersOk),
+                Ok(()) => ServerResponse::SaveMcpServersOk,
                 Err(e) => error_response(e),
             };
             send_or_return!(send_response(stdout, &response).await);
         }
 
-        MaestroRpcMessage::Request(ServerRequest::SetMcpSecrets(req)) => {
+        ServerRequest::SetMcpSecrets(req) => {
             crate::mcp_store::set_secrets(req.secrets);
-            send_or_return!(
-                send_response(
-                    stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::SetMcpSecretsOk)
-                )
-                .await
-            );
+            send_or_return!(send_response(stdout, &ServerResponse::SetMcpSecretsOk).await);
         }
 
-        MaestroRpcMessage::Request(ServerRequest::ListSkills(req)) => {
+        ServerRequest::ListSkills(req) => {
             let response = match crate::skills::list(req.project_path.as_deref()) {
-                Ok(list) => MaestroRpcMessage::Response(ServerResponse::ListSkillsOk(list)),
+                Ok(list) => ServerResponse::ListSkillsOk(list),
                 Err(e) => error_response(e),
             };
             send_or_return!(send_response(stdout, &response).await);
@@ -1447,34 +1374,30 @@ pub(crate) async fn dispatch_message(
 
         // Offloaded, like a spawn: starting a server or running the skills CLI takes seconds, and
         // the loop has permission answers and heartbeats to keep serving meanwhile.
-        MaestroRpcMessage::Request(ServerRequest::TestMcpServer(req)) => {
+        ServerRequest::TestMcpServer(req) => {
             let stdout = Arc::clone(stdout);
             tokio::spawn(async move {
                 let result = crate::mcp_store::test(req.server).await;
-                let _ = send_response(
-                    &stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::TestMcpServerOk(result)),
-                )
-                .await;
+                let _ = send_response(&stdout, &ServerResponse::TestMcpServerOk(result)).await;
             });
         }
 
-        MaestroRpcMessage::Request(ServerRequest::ApplySkill(req)) => {
+        ServerRequest::ApplySkill(req) => {
             let stdout = Arc::clone(stdout);
             tokio::spawn(async move {
                 let response = match crate::skills::apply(req).await {
-                    Ok(()) => MaestroRpcMessage::Response(ServerResponse::ApplySkillOk),
+                    Ok(()) => ServerResponse::ApplySkillOk,
                     Err(e) => error_response(e),
                 };
                 let _ = send_response(&stdout, &response).await;
             });
         }
 
-        MaestroRpcMessage::Request(ServerRequest::DeleteSkill(req)) => {
+        ServerRequest::DeleteSkill(req) => {
             let stdout = Arc::clone(stdout);
             tokio::spawn(async move {
                 let response = match crate::skills::delete(&req.name).await {
-                    Ok(()) => MaestroRpcMessage::Response(ServerResponse::DeleteSkillOk),
+                    Ok(()) => ServerResponse::DeleteSkillOk,
                     Err(e) => error_response(e),
                 };
                 let _ = send_response(&stdout, &response).await;
@@ -1482,7 +1405,7 @@ pub(crate) async fn dispatch_message(
         }
 
         // `tools.json` is written under a file lock, so two of these at once cannot lose a write.
-        MaestroRpcMessage::Request(ServerRequest::SetToolPath(req)) => {
+        ServerRequest::SetToolPath(req) => {
             answer_off_loop(stdout, async move {
                 let result = if let Some(path) = req.path {
                     let tested =
@@ -1501,20 +1424,20 @@ pub(crate) async fn dispatch_message(
                         Err(error) => tool_config_error(req.tool, error),
                     }
                 };
-                MaestroRpcMessage::Response(ServerResponse::SetToolPathOk(result))
+                ServerResponse::SetToolPathOk(result)
             });
         }
 
-        MaestroRpcMessage::Request(ServerRequest::TestToolPath(req)) => {
+        ServerRequest::TestToolPath(req) => {
             answer_off_loop(stdout, async move {
                 let result = crate::tool_check::test_tool_path(req.tool, req.path).await;
-                MaestroRpcMessage::Response(ServerResponse::TestToolPathOk(result))
+                ServerResponse::TestToolPathOk(result)
             });
         }
 
         // The probe scans PATH for every bundled agent, which is slow on Windows. What it finds
         // is applied to the agent list back on the loop, which owns it.
-        MaestroRpcMessage::Request(ServerRequest::DetectInstalledAgents(_req)) => {
+        ServerRequest::DetectInstalledAgents(_req) => {
             let settle_tx = settle_tx.clone();
             let stdout = Arc::clone(stdout);
             tokio::spawn(async move {
@@ -1523,30 +1446,26 @@ pub(crate) async fn dispatch_message(
             });
         }
 
-        MaestroRpcMessage::Request(ServerRequest::DetectProjectAgents(req)) => {
+        ServerRequest::DetectProjectAgents(req) => {
             answer_off_loop(stdout, async move {
                 let response = agent::detection::detect_project_agents(&req.cwd).await;
-                MaestroRpcMessage::Response(ServerResponse::DetectProjectAgentsOk(response))
+                ServerResponse::DetectProjectAgentsOk(response)
             });
         }
 
-        MaestroRpcMessage::Request(ServerRequest::AcquireProjectLock(req)) => {
+        ServerRequest::AcquireProjectLock(req) => {
             let path = crate::automations::canonical_project_path(&req.project_path);
             let resp = stdout.lock().await.acquire_project(path, req.label).await;
             send_or_return!(
-                send_response(
-                    stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::AcquireProjectLockOk(resp)),
-                )
-                .await
+                send_response(stdout, &ServerResponse::AcquireProjectLockOk(resp),).await
             );
         }
 
-        MaestroRpcMessage::Request(ServerRequest::ReleaseProjectLock) => {
+        ServerRequest::ReleaseProjectLock => {
             stdout.lock().await.release_project().await;
         }
 
-        MaestroRpcMessage::Request(ServerRequest::ListProjectLocks(req)) => {
+        ServerRequest::ListProjectLocks(req) => {
             let paths = req
                 .project_paths
                 .into_iter()
@@ -1559,21 +1478,21 @@ pub(crate) async fn dispatch_message(
             send_or_return!(
                 send_response(
                     stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::ProjectLocksOk(
-                        maestro_protocol::ListProjectLocksResponse { locks },
-                    )),
+                    &ServerResponse::ProjectLocksOk(maestro_protocol::ListProjectLocksResponse {
+                        locks
+                    },),
                 )
                 .await
             );
         }
 
         // Answered through the sink, not here: the answer may be ten seconds away.
-        MaestroRpcMessage::Request(ServerRequest::RequestTakeover(req)) => {
+        ServerRequest::RequestTakeover(req) => {
             let path = crate::automations::canonical_project_path(&req.project_path);
             stdout.lock().await.start_takeover(path, req.label).await;
         }
 
-        MaestroRpcMessage::Request(ServerRequest::TakeoverAnswer(answer)) => {
+        ServerRequest::TakeoverAnswer(answer) => {
             stdout
                 .lock()
                 .await
@@ -1584,54 +1503,52 @@ pub(crate) async fn dispatch_message(
         // The host logs both sides of the heartbeat at trace; echoing it here would either be
         // discarded (this process is spawned with a null stderr on one path) or, if forwarded as
         // a diagnostic, put every ping on the IPC channel.
-        MaestroRpcMessage::Request(ServerRequest::Pong { seq: _ }) => {}
+        ServerRequest::Pong { seq: _ } => {}
 
         // Fast SQLite, so answered on the loop like the session rows. The reply goes first, then
         // the pushes to everybody, the requester included: its own refetch rides on them too.
-        MaestroRpcMessage::Request(
-            request @ (ServerRequest::ListTasks(_)
-            | ServerRequest::GetTask(_)
-            | ServerRequest::CreateTask(_)
-            | ServerRequest::UpdateTask(_)
-            | ServerRequest::ArchiveTask(_)
-            | ServerRequest::CancelTask(_)
-            | ServerRequest::DeleteTask(_)
-            | ServerRequest::ApplyTaskTransition(_)
-            | ServerRequest::EndTaskTurn(_)
-            | ServerRequest::CloseRefinement(_)
-            | ServerRequest::RequestTaskExecution(_)
-            | ServerRequest::ListQueueCandidates(_)
-            | ServerRequest::ListTasksAwaitingMerge(_)
-            | ServerRequest::ImportTasks(_)
-            | ServerRequest::ListTaskComments(_)
-            | ServerRequest::AddTaskComment(_)
-            | ServerRequest::ListTaskAttachments(_)
-            | ServerRequest::AddTaskAttachment(_)
-            | ServerRequest::DeleteTaskAttachment(_)
-            | ServerRequest::ListTaskRelationships(_)
-            | ServerRequest::AddTaskRelationship(_)
-            | ServerRequest::DeleteTaskRelationship(_)
-            | ServerRequest::ListTaskInstructions(_)
-            | ServerRequest::AddTaskInstruction(_)
-            | ServerRequest::ListWorktrees(_)
-            | ServerRequest::GetWorktree(_)
-            | ServerRequest::InsertWorktree(_)
-            | ServerRequest::UpdateWorktree(_)
-            | ServerRequest::DeleteWorktrees(_)
-            | ServerRequest::ClaimWorktreeForTask(_)
-            | ServerRequest::GetTaskReview(_)
-            | ServerRequest::SaveTaskReview(_)
-            | ServerRequest::ClearTaskReview(_)
-            | ServerRequest::ListPrompts(_)
-            | ServerRequest::GetPrompt(_)
-            | ServerRequest::CreatePrompt(_)
-            | ServerRequest::UpdatePrompt(_)
-            | ServerRequest::SetPromptFavorite(_)
-            | ServerRequest::DeletePrompt(_)
-            | ServerRequest::BeginImport(_)
-            | ServerRequest::ImportChunk(_)
-            | ServerRequest::CommitImport(_)),
-        ) => {
+        request @ (ServerRequest::ListTasks(_)
+        | ServerRequest::GetTask(_)
+        | ServerRequest::CreateTask(_)
+        | ServerRequest::UpdateTask(_)
+        | ServerRequest::ArchiveTask(_)
+        | ServerRequest::CancelTask(_)
+        | ServerRequest::DeleteTask(_)
+        | ServerRequest::ApplyTaskTransition(_)
+        | ServerRequest::EndTaskTurn(_)
+        | ServerRequest::CloseRefinement(_)
+        | ServerRequest::RequestTaskExecution(_)
+        | ServerRequest::ListQueueCandidates(_)
+        | ServerRequest::ListTasksAwaitingMerge(_)
+        | ServerRequest::ImportTasks(_)
+        | ServerRequest::ListTaskComments(_)
+        | ServerRequest::AddTaskComment(_)
+        | ServerRequest::ListTaskAttachments(_)
+        | ServerRequest::AddTaskAttachment(_)
+        | ServerRequest::DeleteTaskAttachment(_)
+        | ServerRequest::ListTaskRelationships(_)
+        | ServerRequest::AddTaskRelationship(_)
+        | ServerRequest::DeleteTaskRelationship(_)
+        | ServerRequest::ListTaskInstructions(_)
+        | ServerRequest::AddTaskInstruction(_)
+        | ServerRequest::ListWorktrees(_)
+        | ServerRequest::GetWorktree(_)
+        | ServerRequest::InsertWorktree(_)
+        | ServerRequest::UpdateWorktree(_)
+        | ServerRequest::DeleteWorktrees(_)
+        | ServerRequest::ClaimWorktreeForTask(_)
+        | ServerRequest::GetTaskReview(_)
+        | ServerRequest::SaveTaskReview(_)
+        | ServerRequest::ClearTaskReview(_)
+        | ServerRequest::ListPrompts(_)
+        | ServerRequest::GetPrompt(_)
+        | ServerRequest::CreatePrompt(_)
+        | ServerRequest::UpdatePrompt(_)
+        | ServerRequest::SetPromptFavorite(_)
+        | ServerRequest::DeletePrompt(_)
+        | ServerRequest::BeginImport(_)
+        | ServerRequest::ImportChunk(_)
+        | ServerRequest::CommitImport(_)) => {
             let Some(store) = project_store else {
                 send_or_return!(
                     send_response(
@@ -1686,9 +1603,7 @@ pub(crate) async fn dispatch_message(
             };
             match answered {
                 Ok((reply, pushes)) => {
-                    send_or_return!(
-                        send_response(stdout, &MaestroRpcMessage::Response(reply)).await
-                    );
+                    send_or_return!(send_response(stdout, &reply).await);
                     for push in pushes {
                         crate::helpers::broadcast(stdout, push).await;
                     }
@@ -1697,12 +1612,10 @@ pub(crate) async fn dispatch_message(
             }
         }
 
-        MaestroRpcMessage::Request(
-            request @ (ServerRequest::GetCapacity
-            | ServerRequest::SetCapacity(_)
-            | ServerRequest::GetAutoMode(_)
-            | ServerRequest::SetAutoMode(_)),
-        ) => {
+        request @ (ServerRequest::GetCapacity
+        | ServerRequest::SetCapacity(_)
+        | ServerRequest::GetAutoMode(_)
+        | ServerRequest::SetAutoMode(_)) => {
             let answered = match project_store {
                 Some(store) => crate::pipeline_settings::answer(&*store.lock().await, request),
                 None => Err(crate::project_store::UNAVAILABLE.to_string()),
@@ -1712,9 +1625,7 @@ pub(crate) async fn dispatch_message(
                     if let ServerResponse::GetCapacityOk(status) = &mut reply {
                         status.used = crate::pipeline_settings::taken_slots(sessions) as u32;
                     }
-                    send_or_return!(
-                        send_response(stdout, &MaestroRpcMessage::Response(reply)).await
-                    );
+                    send_or_return!(send_response(stdout, &reply).await);
                     for push in pushes {
                         crate::helpers::broadcast(stdout, push).await;
                     }
@@ -1723,18 +1634,16 @@ pub(crate) async fn dispatch_message(
             }
         }
 
-        MaestroRpcMessage::Request(
-            request @ (ServerRequest::HoldTask(_) | ServerRequest::ReleaseTaskHold(_)),
-        ) => {
+        request @ (ServerRequest::HoldTask(_) | ServerRequest::ReleaseTaskHold(_)) => {
             crate::scheduler::hold_changed(&request);
             let reply = match crate::pipeline_settings::answer_hold(request) {
-                Ok(reply) => MaestroRpcMessage::Response(reply),
+                Ok(reply) => reply,
                 Err(e) => error_response(e),
             };
             send_or_return!(send_response(stdout, &reply).await);
         }
 
-        MaestroRpcMessage::Request(ServerRequest::StartTask(req)) => {
+        ServerRequest::StartTask(req) => {
             let Some(store) = project_store else {
                 send_or_return!(
                     send_response(
@@ -1763,12 +1672,10 @@ pub(crate) async fn dispatch_message(
                 Ok(crate::task_runner::Begun::Deferred) => send_or_return!(
                     send_response(
                         stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::StartTaskOk(
-                            maestro_protocol::StartTaskResponse {
-                                session_id: None,
-                                skipped_attachments: vec![],
-                            },
-                        )),
+                        &ServerResponse::StartTaskOk(maestro_protocol::StartTaskResponse {
+                            session_id: None,
+                            skipped_attachments: vec![],
+                        },),
                     )
                     .await
                 ),
@@ -1789,8 +1696,6 @@ pub(crate) async fn dispatch_message(
                 }
             }
         }
-
-        MaestroRpcMessage::Response(_) => {}
     }
 
     true

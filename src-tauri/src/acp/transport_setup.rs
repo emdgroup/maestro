@@ -1,8 +1,6 @@
 //! Transport channel setup: open local, remote, and WSL connections to maestro-server.
 
-use crate::acp::transport::{
-    write_message, HandshakeRequest, MaestroRpcMessage, ServerRequest, PROTOCOL_VERSION,
-};
+use crate::acp::transport::{write_message, HandshakeRequest, ServerRequest, PROTOCOL_VERSION};
 use crate::acp::transport_types::{perform_handshake, write_to_acp_session_raw, AcpReadSource};
 use crate::command_ext::NoConsoleWindow;
 use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
@@ -24,9 +22,9 @@ pub(crate) async fn handshake_local_child(
         .ok_or_else(|| "child stdout was not piped".to_string())?;
     let mut stdin_writer = BufWriter::new(child_stdin);
 
-    let handshake = MaestroRpcMessage::Request(ServerRequest::Handshake(HandshakeRequest {
+    let handshake = ServerRequest::Handshake(HandshakeRequest {
         protocol_version: PROTOCOL_VERSION,
-    }));
+    });
     write_to_acp_session_raw(&mut stdin_writer, &handshake).await?;
 
     let mut source = AcpReadSource::Local {
@@ -106,9 +104,9 @@ pub(crate) async fn open_remote_transport(
     let (read_half, write_half) = channel.split();
 
     {
-        let handshake = MaestroRpcMessage::Request(ServerRequest::Handshake(HandshakeRequest {
+        let handshake = ServerRequest::Handshake(HandshakeRequest {
             protocol_version: PROTOCOL_VERSION,
-        }));
+        });
         let mut writer = write_half.make_writer();
         write_message(&mut writer, &handshake)
             .await

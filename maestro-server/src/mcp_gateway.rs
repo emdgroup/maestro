@@ -16,9 +16,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use maestro_protocol::{
-    CreateTaskRequest, GatewayRequest, HostToolCall, HostToolResult, MaestroRpcMessage,
-    NewTaskComment, ProjectRef, ServerRequest, ServerResponse, SessionUpdate, TaskPriority,
-    TaskRef, TaskStatus, TaskUpdate, UpdateTaskRequest, WorkspaceMode,
+    CreateTaskRequest, GatewayRequest, HostToolCall, HostToolResult, NewTaskComment, ProjectRef,
+    ServerRequest, ServerResponse, SessionUpdate, TaskPriority, TaskRef, TaskStatus, TaskUpdate,
+    UpdateTaskRequest, WorkspaceMode,
 };
 use rusqlite::Connection;
 use serde_json::{json, Value};
@@ -228,10 +228,10 @@ pub(crate) async fn handle_host_tool_call(
         let payload = crate::mcp_stdio::canvas_payload(&call.name, &call.arguments);
         if let Err(e) = send_response(
             stdout,
-            &MaestroRpcMessage::Response(ServerResponse::SessionUpdate(SessionUpdate {
+            &ServerResponse::SessionUpdate(SessionUpdate {
                 session_id: call.session_id.clone(),
                 payload,
-            })),
+            }),
         )
         .await
         {
@@ -255,12 +255,7 @@ async fn forward(
 ) {
     let forwarded = host_call(call, arguments);
     let request_id = forwarded.request_id.clone();
-    if let Err(e) = send_response(
-        stdout,
-        &MaestroRpcMessage::Response(ServerResponse::HostToolCall(forwarded)),
-    )
-    .await
-    {
+    if let Err(e) = send_response(stdout, &ServerResponse::HostToolCall(forwarded)).await {
         let _ = reply_tx.send(fail(call, &format!("cannot reach Maestro: {e}")));
         return;
     }
@@ -289,7 +284,7 @@ async fn forward_to_one(
 ) -> Option<oneshot::Receiver<HostToolResult>> {
     let forwarded = host_call(call, arguments);
     let request_id = forwarded.request_id.clone();
-    let message = MaestroRpcMessage::Response(ServerResponse::HostToolCall(forwarded));
+    let message = ServerResponse::HostToolCall(forwarded);
     let buf = match maestro_protocol::encode_message(None, &message) {
         Ok(buf) => buf,
         Err(e) => {
@@ -1529,7 +1524,7 @@ mod tests {
                 maestro_protocol::read_message(window),
             )
             .await;
-            if let Ok(Ok(MaestroRpcMessage::Response(ServerResponse::HostToolCall(_)))) = read {
+            if let Ok(Ok(ServerResponse::HostToolCall(_))) = read {
                 received += 1;
             }
         }
@@ -1564,16 +1559,11 @@ mod tests {
                 .await;
             reply_rx
         };
-        let next =
-            async |window: &mut tokio::io::DuplexStream| match maestro_protocol::read_message(
-                window,
-            )
-            .await
-            .expect("a message")
-            {
-                MaestroRpcMessage::Response(response) => response,
-                other => panic!("not a response: {other:?}"),
-            };
+        let next = async |window: &mut tokio::io::DuplexStream| -> ServerResponse {
+            maestro_protocol::read_message(window)
+                .await
+                .expect("a message")
+        };
 
         // A write to the project's collection is pushed to every window.
         let created = send("create_prompt", json!({ "title": "Mine", "body": "Do it" })).await;

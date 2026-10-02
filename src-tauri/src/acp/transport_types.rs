@@ -1,12 +1,12 @@
 //! Low-level ACP transport primitives: frame parsing, serialization, and read/write sources.
 
-use crate::acp::transport::{write_message, MaestroRpcMessage, ServerRequest, ServerResponse};
+use crate::acp::transport::{write_message, ServerRequest, ServerResponse};
 use maestro_protocol::{decode_message, encode_message, read_message_with_id, RequestId};
 use russh::ChannelMsg;
 use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::ChildStdin;
 
-pub(crate) fn serialize_message(msg: &MaestroRpcMessage) -> Result<Vec<u8>, String> {
+pub(crate) fn serialize_message(msg: &ServerRequest) -> Result<Vec<u8>, String> {
     serialize_message_with_id(None, msg)
 }
 
@@ -14,11 +14,11 @@ pub(crate) fn serialize_message(msg: &MaestroRpcMessage) -> Result<Vec<u8>, Stri
 /// every other reply of its type.
 pub(crate) fn serialize_message_with_id(
     id: Option<RequestId>,
-    msg: &MaestroRpcMessage,
+    msg: &ServerRequest,
 ) -> Result<Vec<u8>, String> {
     let frame =
         encode_message(id, msg).map_err(|e| format!("Failed to serialize ACP message: {}", e))?;
-    if !matches!(msg, MaestroRpcMessage::Request(ServerRequest::Pong { .. })) {
+    if !matches!(msg, ServerRequest::Pong { .. }) {
         if let Some(Ok(json)) = frame.get(4..).map(std::str::from_utf8) {
             log::trace!("[acp] >> {json}");
         }
@@ -40,7 +40,7 @@ pub(crate) enum AcpReadSource {
 }
 
 impl AcpReadSource {
-    pub(crate) async fn next_message(&mut self) -> Option<MaestroRpcMessage> {
+    pub(crate) async fn next_message(&mut self) -> Option<ServerResponse> {
         self.next_message_with_id()
             .await
             .map(|(_, message)| message)
@@ -49,7 +49,7 @@ impl AcpReadSource {
     /// The next message, with the request id its frame carried when it answers a request.
     pub(crate) async fn next_message_with_id(
         &mut self,
-    ) -> Option<(Option<RequestId>, MaestroRpcMessage)> {
+    ) -> Option<(Option<RequestId>, ServerResponse)> {
         match self {
             AcpReadSource::Local { reader } => loop {
                 match read_message_with_id(reader).await {
@@ -102,8 +102,8 @@ pub(crate) async fn perform_handshake(source: &mut AcpReadSource) -> Result<(), 
         .map_err(|_| "maestro-server handshake timed out".to_string())?;
 
     match hs_resp {
-        Some(MaestroRpcMessage::Response(ServerResponse::HandshakeOk(_))) => Ok(()),
-        Some(MaestroRpcMessage::Response(ServerResponse::Error(error))) => Err(format!(
+        Some(ServerResponse::HandshakeOk(_)) => Ok(()),
+        Some(ServerResponse::Error(error)) => Err(format!(
             "maestro-server handshake rejected: {}",
             error.message
         )),
@@ -121,7 +121,7 @@ pub(crate) fn try_parse_acp_frame<T: serde::de::DeserializeOwned>(buf: &mut Vec<
 }
 
 /// [`try_parse_acp_frame`] for the server's own messages, keeping the request id beside them.
-fn try_parse_message(buf: &mut Vec<u8>) -> Option<(Option<RequestId>, MaestroRpcMessage)> {
+fn try_parse_message(buf: &mut Vec<u8>) -> Option<(Option<RequestId>, ServerResponse)> {
     decode_message(&take_frame_body(buf)?).ok()
 }
 
@@ -142,7 +142,7 @@ fn take_frame_body(buf: &mut Vec<u8>) -> Option<Vec<u8>> {
 /// Low-level write + flush to a `BufWriter<ChildStdin>`.
 pub(crate) async fn write_to_acp_session_raw(
     stdin_writer: &mut BufWriter<ChildStdin>,
-    msg: &MaestroRpcMessage,
+    msg: &ServerRequest,
 ) -> Result<(), String> {
     write_message(stdin_writer, msg)
         .await

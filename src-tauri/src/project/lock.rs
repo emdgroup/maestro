@@ -15,7 +15,7 @@ use crate::acp::connection_server::{
     query_takeover_via_server, send_via_server,
 };
 use crate::acp::discovery_handlers::ensure_connection_server;
-use crate::acp::transport::{MaestroRpcMessage, ServerRequest};
+use crate::acp::transport::ServerRequest;
 use crate::acp::ConnectionKey;
 use crate::command_ext::NoConsoleWindow;
 use crate::core::AppState;
@@ -91,7 +91,7 @@ pub async fn acquire(app_state: &Arc<AppState>, project: &Project) -> Result<(),
         .map_err(|e| format!("Lock state error: {}", e))?
         .replace((project.id, key));
     if let Some((_, previous_key)) = previous.filter(|(_, k)| *k != key) {
-        let release = MaestroRpcMessage::Request(ServerRequest::ReleaseProjectLock);
+        let release = ServerRequest::ReleaseProjectLock;
         if let Err(e) = send_via_server(previous_key, app_state, release).await {
             log::warn!("could not release the project lock on {previous_key:?}: {e}");
         }
@@ -225,9 +225,7 @@ pub async fn answer_project_takeover(
     send_via_server(
         connection,
         &app_state,
-        MaestroRpcMessage::Request(ServerRequest::TakeoverAnswer(
-            maestro_protocol::TakeoverAnswer { request_id, accept },
-        )),
+        ServerRequest::TakeoverAnswer(maestro_protocol::TakeoverAnswer { request_id, accept }),
     )
     .await
 }

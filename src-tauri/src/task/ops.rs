@@ -374,17 +374,15 @@ pub async fn start_task(
         connection_key,
         &app_state,
         &format!("No connection server for connection {connection_key:?}"),
-        crate::acp::transport::MaestroRpcMessage::Request(ServerRequest::StartTask(
-            maestro_protocol::StartTaskRequest {
-                project_path,
-                task_id,
-                role: AgentRole::from(role),
-                feedback,
-                unattended,
-                respect_capacity,
-                agent_id,
-            },
-        )),
+        ServerRequest::StartTask(maestro_protocol::StartTaskRequest {
+            project_path,
+            task_id,
+            role: AgentRole::from(role),
+            feedback,
+            unattended,
+            respect_capacity,
+            agent_id,
+        }),
         reply!(ServerResponse::StartTaskOk(response) => StartTaskResult {
             session_id: response.session_id,
             skipped_attachments: response.skipped_attachments,

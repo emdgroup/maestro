@@ -15,10 +15,9 @@ use agent_client_protocol_schema::v1::{
     AuthCapabilities, AuthMethod, ElicitationCapabilities, ElicitationFormCapabilities,
 };
 use maestro_protocol::{
-    AuthMethodInfo, ErrorResponse, MaestroRpcMessage, PromptCapabilitiesInfo, ServerResponse,
-    SessionListEntry, SessionModeState as ProtocolSessionModeState,
-    SessionModelState as ProtocolSessionModelState, AUTH_REQUIRED_ERROR, SESSION_GONE_ERROR,
-    SESSION_LOAD_FAILED_ERROR,
+    AuthMethodInfo, ErrorResponse, PromptCapabilitiesInfo, ServerResponse, SessionListEntry,
+    SessionModeState as ProtocolSessionModeState, SessionModelState as ProtocolSessionModelState,
+    AUTH_REQUIRED_ERROR, SESSION_GONE_ERROR, SESSION_LOAD_FAILED_ERROR,
 };
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
@@ -325,10 +324,10 @@ pub(crate) async fn create_session_on_connection(
             };
             let _ = send_response(
                 &stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                &ServerResponse::Error(ErrorResponse {
                     message: message.clone(),
                     session_id: None,
-                })),
+                }),
             )
             .await;
             return Err(message);
@@ -498,7 +497,7 @@ pub(crate) async fn load_session_on_connection(
             conn.router.unregister(&resume_session_id).await;
             let _ = send_response(
                 &stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                &ServerResponse::Error(ErrorResponse {
                     // Only the agent saying it has no such conversation is final. Every other
                     // failure, a crash or a lapsed sign-in among them, may succeed next time.
                     message: format!(
@@ -511,7 +510,7 @@ pub(crate) async fn load_session_on_connection(
                         e
                     ),
                     session_id: Some(maestro_session_id.clone()),
-                })),
+                }),
             )
             .await;
             // Named ACP error codes mean the agent responded — connection is still alive.
@@ -614,10 +613,10 @@ pub(crate) async fn pre_initialize_agent(
         Err(e) => {
             let _ = send_response(
                 &stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                &ServerResponse::Error(ErrorResponse {
                     message: e,
                     session_id: None,
-                })),
+                }),
             )
             .await;
             return None;
@@ -782,10 +781,10 @@ pub(crate) async fn pre_initialize_agent(
         Ok(Err(e)) => {
             let _ = send_response(
                 &stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                &ServerResponse::Error(ErrorResponse {
                     message: e,
                     session_id: None,
-                })),
+                }),
             )
             .await;
             None
@@ -793,10 +792,10 @@ pub(crate) async fn pre_initialize_agent(
         Err(_) => {
             let _ = send_response(
                 &stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                &ServerResponse::Error(ErrorResponse {
                     message: "ACP pre-initialize connection task exited unexpectedly".to_string(),
                     session_id: None,
-                })),
+                }),
             )
             .await;
             None

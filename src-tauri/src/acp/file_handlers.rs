@@ -4,9 +4,7 @@ use tauri::State;
 use tokio::sync::oneshot;
 
 use crate::acp::connection_server::{reply, request_via_server, UNEXPECTED_REPLY};
-use crate::acp::transport::{
-    FileReadRequest, FileSearchRequest, MaestroRpcMessage, ServerRequest, ServerResponse,
-};
+use crate::acp::transport::{FileReadRequest, FileSearchRequest, ServerRequest, ServerResponse};
 use crate::acp::ConnectionKey;
 use crate::connectivity::files::BINARY_LIMIT;
 use crate::core::AppState;
@@ -18,7 +16,7 @@ async fn session_file_rpc<T>(
     pending_field: impl Fn(
         &crate::acp::AcpProcess,
     ) -> &Arc<std::sync::Mutex<Option<oneshot::Sender<Result<T, String>>>>>,
-    build_request: impl FnOnce(&str) -> MaestroRpcMessage,
+    build_request: impl FnOnce(&str) -> ServerRequest,
     extract: impl FnOnce(ServerResponse) -> Option<T>,
 ) -> Result<T, String> {
     let (cwd, pending, shared_connection) = {
@@ -74,11 +72,11 @@ pub async fn search_session_files(
         session_id,
         |s| &s.pending_file_search,
         |cwd| {
-            MaestroRpcMessage::Request(ServerRequest::FileSearch(FileSearchRequest {
+            ServerRequest::FileSearch(FileSearchRequest {
                 cwd: cwd.to_string(),
                 query,
                 limit,
-            }))
+            })
         },
         reply!(ServerResponse::FileSearchOk(response) => response.files),
     )
@@ -97,10 +95,10 @@ pub async fn read_session_file(
         session_id,
         |s| &s.pending_file_read,
         |cwd| {
-            MaestroRpcMessage::Request(ServerRequest::FileRead(FileReadRequest {
+            ServerRequest::FileRead(FileReadRequest {
                 cwd: cwd.to_string(),
                 relative_path,
-            }))
+            })
         },
         reply!(ServerResponse::FileReadOk(response) => response.content),
     )

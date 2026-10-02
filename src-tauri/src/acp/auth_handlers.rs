@@ -4,7 +4,7 @@ use crate::acp::transport_types::serialize_message;
 use crate::core::AppState;
 use maestro_protocol::{
     AuthTerminalInputRequest, AuthenticateRequest, KillAuthTerminalRequest, LogoutRequest,
-    MaestroRpcMessage, ServerRequest, ServerResponse, SpawnAuthTerminalRequest,
+    ServerRequest, ServerResponse, SpawnAuthTerminalRequest,
 };
 use std::sync::Arc;
 use tauri::{Emitter, State};
@@ -63,11 +63,11 @@ pub async fn acp_authenticate(
         connection,
         &app_state,
         &format!("No connection server for connection {:?}", connection),
-        MaestroRpcMessage::Request(ServerRequest::Authenticate(AuthenticateRequest {
+        ServerRequest::Authenticate(AuthenticateRequest {
             agent_id: agent_id.clone(),
             method_id,
             force_no_browser,
-        })),
+        }),
         reply!(ServerResponse::AuthenticateOk => ()),
         // 5-minute timeout — OAuth flows may require browser interaction.
         300,
@@ -92,9 +92,9 @@ pub async fn acp_logout(
         connection,
         &app_state,
         &format!("No connection server for connection {:?}", connection),
-        MaestroRpcMessage::Request(ServerRequest::Logout(LogoutRequest {
+        ServerRequest::Logout(LogoutRequest {
             agent_id: agent_id.clone(),
-        })),
+        }),
         reply!(ServerResponse::LogoutOk => ()),
         30,
         "Logout timed out",
@@ -126,13 +126,12 @@ pub async fn acp_start_auth_terminal(
 
     let terminal_id = format!("auth-terminal-{}", connection_key_id(&connection));
 
-    let req =
-        MaestroRpcMessage::Request(ServerRequest::SpawnAuthTerminal(SpawnAuthTerminalRequest {
-            agent_id,
-            method_id,
-            terminal_id: terminal_id.clone(),
-            session_id: session_id.clone(),
-        }));
+    let req = ServerRequest::SpawnAuthTerminal(SpawnAuthTerminalRequest {
+        agent_id,
+        method_id,
+        terminal_id: terminal_id.clone(),
+        session_id: session_id.clone(),
+    });
     let bytes = serialize_message(&req)?;
     writer_tx
         .send(bytes)
@@ -167,11 +166,7 @@ pub async fn acp_send_auth_pty_input(
             .clone()
     };
     let terminal_id = format!("auth-terminal-{}", connection_key_id(&connection));
-    let req =
-        MaestroRpcMessage::Request(ServerRequest::AuthTerminalInput(AuthTerminalInputRequest {
-            terminal_id,
-            data,
-        }));
+    let req = ServerRequest::AuthTerminalInput(AuthTerminalInputRequest { terminal_id, data });
     let bytes = serialize_message(&req)?;
     writer_tx
         .send(bytes)
@@ -194,10 +189,7 @@ pub async fn acp_abort_auth_terminal(
             .clone()
     };
     let terminal_id = format!("auth-terminal-{}", connection_key_id(&connection));
-    let req =
-        MaestroRpcMessage::Request(ServerRequest::KillAuthTerminal(KillAuthTerminalRequest {
-            terminal_id,
-        }));
+    let req = ServerRequest::KillAuthTerminal(KillAuthTerminalRequest { terminal_id });
     let bytes = serialize_message(&req)?;
     writer_tx
         .send(bytes)

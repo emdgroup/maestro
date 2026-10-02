@@ -4,8 +4,8 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::acp::transport::{
-    ElicitationResponse, MaestroRpcMessage, PermissionResponse, PromptRequest, ServerRequest,
-    SetConfigOptionRequest, SetModeRequest, SetModelRequest,
+    ElicitationResponse, PermissionResponse, PromptRequest, ServerRequest, SetConfigOptionRequest,
+    SetModeRequest, SetModelRequest,
 };
 use crate::core::AppState;
 
@@ -23,10 +23,10 @@ async fn send_prompt_impl(
     content: serde_json::Value,
 ) -> Result<(), String> {
     // The daemon clears a task's block on any prompt, an answer to a question included.
-    let msg = MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
+    let msg = ServerRequest::Prompt(PromptRequest {
         session_id: session_id.to_string(),
         content,
-    }));
+    });
     crate::acp::write_to_acp_session(app_state, session_id, &msg).await
 }
 
@@ -84,11 +84,11 @@ pub async fn respond_acp_permission(
         return Ok(());
     }
 
-    let msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
+    let msg = ServerRequest::PermitResponse(PermissionResponse {
         session_id: session_id.to_string(),
         request_id,
         option_id,
-    }));
+    });
     crate::acp::write_to_acp_session(&app_state, session_id, &msg).await
 }
 
@@ -121,11 +121,11 @@ pub async fn respond_acp_elicitation(
     request_id: String,
     response: serde_json::Value,
 ) -> Result<(), String> {
-    let msg = MaestroRpcMessage::Request(ServerRequest::ElicitationResponse(ElicitationResponse {
+    let msg = ServerRequest::ElicitationResponse(ElicitationResponse {
         session_id: session_id.to_string(),
         request_id,
         response,
-    }));
+    });
     crate::acp::write_to_acp_session(&app_state, session_id, &msg).await
 }
 
@@ -160,10 +160,10 @@ pub async fn set_acp_model(
     session_id: &str,
     model_id: String,
 ) -> Result<(), String> {
-    let msg = MaestroRpcMessage::Request(ServerRequest::SetModel(SetModelRequest {
+    let msg = ServerRequest::SetModel(SetModelRequest {
         session_id: session_id.to_string(),
         model_id,
-    }));
+    });
     crate::acp::write_to_acp_session(&app_state, session_id, &msg).await
 }
 
@@ -180,10 +180,10 @@ pub async fn set_acp_mode(
     // correct — during the live pass this was the reason a blocked reviewer could not be explained.
     log::info!("[acp] session-{session_id} permission mode set to {mode_id}");
 
-    let msg = MaestroRpcMessage::Request(ServerRequest::SetMode(SetModeRequest {
+    let msg = ServerRequest::SetMode(SetModeRequest {
         session_id: session_id.to_string(),
         mode_id,
-    }));
+    });
     crate::acp::write_to_acp_session(&app_state, session_id, &msg).await
 }
 
@@ -196,44 +196,40 @@ pub async fn set_acp_config_option(
     value: String,
 ) -> Result<(), String> {
     let msg = match option_id.as_str() {
-        "model" => MaestroRpcMessage::Request(ServerRequest::SetModel(SetModelRequest {
+        "model" => ServerRequest::SetModel(SetModelRequest {
             session_id: session_id.to_string(),
             model_id: value,
-        })),
-        "mode" => MaestroRpcMessage::Request(ServerRequest::SetMode(SetModeRequest {
+        }),
+        "mode" => ServerRequest::SetMode(SetModeRequest {
             session_id: session_id.to_string(),
             mode_id: value,
-        })),
-        other => {
-            MaestroRpcMessage::Request(ServerRequest::SetConfigOption(SetConfigOptionRequest {
-                session_id: session_id.to_string(),
-                config_id: other.to_string(),
-                value,
-            }))
-        }
+        }),
+        other => ServerRequest::SetConfigOption(SetConfigOptionRequest {
+            session_id: session_id.to_string(),
+            config_id: other.to_string(),
+            value,
+        }),
     };
     crate::acp::write_to_acp_session(&app_state, session_id, &msg).await
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::acp::transport::{
-        MaestroRpcMessage, PermissionResponse, PromptRequest, ServerRequest,
-    };
+    use crate::acp::transport::{PermissionResponse, PromptRequest, ServerRequest};
 
     #[test]
     fn test_send_acp_prompt_message_structure() {
         let session_id = "b5c1f0e2-4a7d-4c2b-9c3e-0f1a2b3c4d5e";
         let content = "fix the auth bug";
 
-        let msg = MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
+        let msg = ServerRequest::Prompt(PromptRequest {
             session_id: session_id.to_string(),
             content: serde_json::Value::String(content.to_string()),
-        }));
+        });
 
         let json = serde_json::to_string(&msg).unwrap();
         assert!(
-            json.starts_with("{\"request\":{\"prompt\":"),
+            json.starts_with("{\"prompt\":"),
             "must be a prompt request"
         );
         assert!(
@@ -245,7 +241,7 @@ mod tests {
             "content must be preserved verbatim"
         );
 
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: ServerRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back, "PromptRequest must roundtrip through JSON");
     }
 
@@ -254,15 +250,14 @@ mod tests {
         let session_id = "9d2e7c41-8b6a-4f3d-a1c5-6e7f8a9b0c1d";
         let request_id = "perm-001";
 
-        let allow_msg =
-            MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
-                session_id: session_id.to_string(),
-                request_id: request_id.to_string(),
-                option_id: Some("allow_once".into()),
-            }));
+        let allow_msg = ServerRequest::PermitResponse(PermissionResponse {
+            session_id: session_id.to_string(),
+            request_id: request_id.to_string(),
+            option_id: Some("allow_once".into()),
+        });
         let allow_json = serde_json::to_string(&allow_msg).unwrap();
         assert!(
-            allow_json.starts_with("{\"request\":{\"permit_response\":"),
+            allow_json.starts_with("{\"permit_response\":"),
             "must be a permit_response request"
         );
         assert!(
@@ -271,19 +266,18 @@ mod tests {
         );
         assert!(allow_json.contains(&format!("\"request_id\":\"{}\"", request_id)));
 
-        let cancel_msg =
-            MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
-                session_id: session_id.to_string(),
-                request_id: request_id.to_string(),
-                option_id: None,
-            }));
+        let cancel_msg = ServerRequest::PermitResponse(PermissionResponse {
+            session_id: session_id.to_string(),
+            request_id: request_id.to_string(),
+            option_id: None,
+        });
         let cancel_json = serde_json::to_string(&cancel_msg).unwrap();
         assert_ne!(
             allow_json, cancel_json,
             "allow and cancel must produce different JSON"
         );
 
-        let back: MaestroRpcMessage = serde_json::from_str(&allow_json).unwrap();
+        let back: ServerRequest = serde_json::from_str(&allow_json).unwrap();
         assert_eq!(allow_msg, back);
     }
 }

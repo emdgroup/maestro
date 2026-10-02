@@ -6,9 +6,7 @@
 
 use std::sync::Arc;
 
-use maestro_protocol::{
-    MaestroRpcMessage, ServerResponse, SessionListOkResponse, SessionLoadOkResponse,
-};
+use maestro_protocol::{ServerResponse, SessionListOkResponse, SessionLoadOkResponse};
 
 use crate::agent;
 use crate::helpers::{
@@ -67,13 +65,11 @@ pub(crate) async fn list(
 
         let supports_session_delete = conn_handle.capabilities.supports_session_delete;
         let response = match session_list_on_connection(&conn_handle, &req.cwd, req.cursor).await {
-            Ok((sessions, next_cursor)) => {
-                MaestroRpcMessage::Response(ServerResponse::SessionListOk(SessionListOkResponse {
-                    sessions,
-                    next_cursor,
-                    supports_session_delete,
-                }))
-            }
+            Ok((sessions, next_cursor)) => ServerResponse::SessionListOk(SessionListOkResponse {
+                sessions,
+                next_cursor,
+                supports_session_delete,
+            }),
             Err(e) => {
                 evict_if_same_connection(
                     &agent_connections_task,
@@ -126,10 +122,10 @@ pub(crate) async fn load(
     if let Err(message) = checked {
         return send_response(
             stdout,
-            &MaestroRpcMessage::Response(ServerResponse::Error(maestro_protocol::ErrorResponse {
+            &ServerResponse::Error(maestro_protocol::ErrorResponse {
                 message,
                 session_id: Some(req.session_id),
-            })),
+            }),
         )
         .await
         .is_ok();
@@ -197,15 +193,13 @@ pub(crate) async fn load(
                 // exists, so a registered session is always one the host knows about.
                 if send_response(
                     &stdout_task,
-                    &MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(
-                        SessionLoadOkResponse {
-                            session_id: req.session_id,
-                            models,
-                            modes,
-                            prompt_capabilities: Some(prompt_caps),
-                            config_options,
-                        },
-                    )),
+                    &ServerResponse::SessionLoadOk(SessionLoadOkResponse {
+                        session_id: req.session_id,
+                        models,
+                        modes,
+                        prompt_capabilities: Some(prompt_caps),
+                        config_options,
+                    }),
                 )
                 .await
                 .is_ok()
@@ -323,7 +317,7 @@ pub(crate) async fn forget_ended(
     session_id: &str,
     sessions: &mut SessionMap,
     project_store: Option<&crate::project_store::Store>,
-) -> MaestroRpcMessage {
+) -> ServerResponse {
     // `session_id` here is the agent's own id, and the session the agent just closed may
     // also be one this server is running. Left in the map it would be a routing key whose
     // command loop talks to a session that no longer exists on the other end — and since
@@ -355,10 +349,10 @@ pub(crate) async fn forget_ended(
             EndKind::Delete => crate::project_store::delete(&conn, agent_id, session_id),
         });
     }
-    MaestroRpcMessage::Response(match kind {
+    match kind {
         EndKind::Close => ServerResponse::SessionCloseOk,
         EndKind::Delete => ServerResponse::SessionDeleteOk,
-    })
+    }
 }
 
 #[cfg(test)]

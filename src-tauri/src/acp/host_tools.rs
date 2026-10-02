@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tauri::Emitter;
 
 use crate::acp::automation_tools;
-use crate::acp::transport::{HostToolCall, HostToolResult, MaestroRpcMessage, ServerRequest};
+use crate::acp::transport::{HostToolCall, HostToolResult, ServerRequest};
 use crate::core::AppState;
 use serde_json::{json, Value};
 
@@ -63,12 +63,12 @@ pub(crate) async fn handle(app_state: Arc<AppState>, session_id: &str, call: Hos
         Ok(result) => (result, None),
         Err(message) => (Value::Null, Some(message)),
     };
-    let reply = MaestroRpcMessage::Request(ServerRequest::HostToolResult(HostToolResult {
+    let reply = ServerRequest::HostToolResult(HostToolResult {
         session_id: call.session_id,
         request_id: call.request_id,
         result,
         error,
-    }));
+    });
     if let Err(e) = crate::acp::write_to_acp_session(&app_state, session_id, &reply).await {
         log::warn!(
             "[acp] could not answer {} for session-{session_id}: {e}",
@@ -108,12 +108,12 @@ pub(crate) async fn answer_prompt_tool(
         Ok(result) => (result, None),
         Err(message) => (Value::Null, Some(message)),
     };
-    let reply = MaestroRpcMessage::Request(ServerRequest::HostToolResult(HostToolResult {
+    let reply = ServerRequest::HostToolResult(HostToolResult {
         session_id: call.session_id,
         request_id: call.request_id,
         result,
         error,
-    }));
+    });
     if let Err(e) =
         crate::acp::connection_server::send_via_server(connection_key, app_state, reply).await
     {

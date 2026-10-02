@@ -137,7 +137,7 @@ pub struct AcpState {
     /// server starts on its own, such as an automation's, talks before this window has adopted it,
     /// and what it said first is often the thing the user has to answer. Adoption replays these.
     pub unclaimed_messages:
-        tokio::sync::Mutex<HashMap<String, Vec<crate::acp::transport::MaestroRpcMessage>>>,
+        tokio::sync::Mutex<HashMap<String, Vec<crate::acp::transport::ServerResponse>>>,
 }
 
 pub struct PtyState {

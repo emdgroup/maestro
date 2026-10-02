@@ -27,8 +27,7 @@ use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::sync::Mutex;
 
 use maestro_protocol::{
-    AcquireProjectLockResponse, MaestroRpcMessage, ProjectLockInfo, RequestId, ServerResponse,
-    TakeoverResult,
+    AcquireProjectLockResponse, ProjectLockInfo, RequestId, ServerResponse, TakeoverResult,
 };
 
 use crate::project_locks::{Effect, ProjectLocks, TAKEOVER_TIMEOUT};
@@ -105,7 +104,7 @@ impl Clients {
 
 async fn encode(msg: ServerResponse) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let mut buf = Vec::new();
-    maestro_protocol::write_message(&mut buf, &MaestroRpcMessage::Response(msg)).await?;
+    maestro_protocol::write_message(&mut buf, &msg).await?;
     Ok(buf)
 }
 
@@ -188,14 +187,11 @@ impl ClientSink {
     /// The id `msg` goes out with. Only a reply that names no session answers the request this
     /// sink was made for: a session's command loop keeps the sink of the request that spawned it
     /// for the rest of its life, and what it says later answers some other request or none.
-    pub fn reply_id_for(&self, msg: &MaestroRpcMessage) -> Option<RequestId> {
-        match msg {
-            MaestroRpcMessage::Response(response)
-                if response.is_reply() && msg.session_id().is_none() =>
-            {
-                self.reply_id
-            }
-            _ => None,
+    pub fn reply_id_for(&self, msg: &ServerResponse) -> Option<RequestId> {
+        if msg.is_reply() && msg.session_id().is_none() {
+            self.reply_id
+        } else {
+            None
         }
     }
 
@@ -554,17 +550,17 @@ mod tests {
     }
 
     async fn reply_id_of(stream: &mut tokio::io::DuplexStream) -> Option<RequestId> {
-        maestro_protocol::read_message_with_id(stream)
+        maestro_protocol::read_message_with_id::<ServerResponse, _>(stream)
             .await
             .unwrap()
             .0
     }
 
-    fn error(session_id: Option<&str>) -> MaestroRpcMessage {
-        MaestroRpcMessage::Response(ServerResponse::Error(maestro_protocol::ErrorResponse {
+    fn error(session_id: Option<&str>) -> ServerResponse {
+        ServerResponse::Error(maestro_protocol::ErrorResponse {
             message: String::new(),
             session_id: session_id.map(str::to_string),
-        }))
+        })
     }
 
     /// Both modes: a daemon's per-client route, and the stdio sink with a pipe for its stdout.
@@ -604,7 +600,7 @@ mod tests {
             // A session's reply and an unprompted event do not answer this request.
             send_response(&first, &error(Some("s"))).await.unwrap();
             assert_eq!(reply_id_of(&mut rx).await, None);
-            let unprompted = MaestroRpcMessage::Response(ServerResponse::ProjectLocksChanged);
+            let unprompted = ServerResponse::ProjectLocksChanged;
             send_response(&first, &unprompted).await.unwrap();
             assert_eq!(reply_id_of(&mut rx).await, None);
 

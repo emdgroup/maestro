@@ -349,11 +349,11 @@ pub(crate) async fn tear_down_session(
     app_state: &Arc<AppState>,
     session_id: &str,
 ) -> Option<TaskKey> {
-    use crate::acp::transport::{CancelRequest, MaestroRpcMessage, ServerRequest};
+    use crate::acp::transport::{CancelRequest, ServerRequest};
 
-    let cancel_msg = MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest {
+    let cancel_msg = ServerRequest::Cancel(CancelRequest {
         session_id: session_id.to_string(),
-    }));
+    });
     if let Err(e) = crate::acp::write_to_acp_session(app_state, session_id, &cancel_msg).await {
         // Best-effort: the transport may already be gone, which is one of the reasons to cancel.
         // The teardown below is what actually ends the session, so it proceeds regardless.
@@ -476,11 +476,11 @@ pub async fn interrupt_acp_turn(
     app_state: State<'_, Arc<AppState>>,
     session_id: &str,
 ) -> Result<(), String> {
-    use crate::acp::transport::{InterruptTurnRequest, MaestroRpcMessage, ServerRequest};
+    use crate::acp::transport::{InterruptTurnRequest, ServerRequest};
 
-    let msg = MaestroRpcMessage::Request(ServerRequest::InterruptTurn(InterruptTurnRequest {
+    let msg = ServerRequest::InterruptTurn(InterruptTurnRequest {
         session_id: session_id.to_string(),
-    }));
+    });
     crate::acp::write_to_acp_session(&app_state, session_id, &msg).await
 }
 

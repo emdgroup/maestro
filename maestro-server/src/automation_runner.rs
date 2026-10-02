@@ -11,8 +11,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use maestro_protocol::{
-    AutomationRun, AutomationRunStatus, AutomationWorkspace, MaestroRpcMessage, RunTrigger,
-    ServerResponse,
+    AutomationRun, AutomationRunStatus, AutomationWorkspace, RunTrigger, ServerResponse,
 };
 use rusqlite::Connection;
 
@@ -320,11 +319,7 @@ pub(crate) fn effort_option_id(config_options: Option<&Vec<serde_json::Value>>) 
 }
 
 async fn announce(stdout: &crate::ClientOut, run: &AutomationRun) {
-    if let Err(e) = send_response(
-        stdout,
-        &MaestroRpcMessage::Response(ServerResponse::AutomationRunChanged(run.clone())),
-    )
-    .await
+    if let Err(e) = send_response(stdout, &ServerResponse::AutomationRunChanged(run.clone())).await
     {
         send_diag(
             "warn",

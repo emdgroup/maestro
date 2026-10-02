@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use maestro_protocol::{MaestroRpcMessage, ServerResponse, SessionLoadOkResponse, TurnEnded};
+use maestro_protocol::{ServerResponse, SessionLoadOkResponse, TurnEnded};
 
 use crate::agent;
 use crate::helpers::{resolve_agent_spawn_params, send_diag, send_response};
@@ -60,10 +60,10 @@ pub(crate) async fn handle_agent_restart(
             }
             let _ = send_response(
                 stdout,
-                &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
+                &ServerResponse::TurnEnded(TurnEnded {
                     session_id: maestro_sid.clone(),
                     stop_reason: "error".to_string(),
-                })),
+                }),
             )
             .await;
         }
@@ -81,10 +81,10 @@ pub(crate) async fn handle_agent_restart(
             fail_task(project_store, stdout, session.project.as_ref());
             let _ = send_response(
                 stdout,
-                &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
+                &ServerResponse::TurnEnded(TurnEnded {
                     session_id: maestro_sid.clone(),
                     stop_reason: "error".to_string(),
-                })),
+                }),
             )
             .await;
         }
@@ -136,15 +136,13 @@ pub(crate) async fn handle_agent_restart(
                 sessions.insert(maestro_sid.clone(), session);
                 let _ = send_response(
                     stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(
-                        SessionLoadOkResponse {
-                            session_id: maestro_sid.clone(),
-                            models,
-                            modes,
-                            prompt_capabilities: Some(prompt_caps),
-                            config_options,
-                        },
-                    )),
+                    &ServerResponse::SessionLoadOk(SessionLoadOkResponse {
+                        session_id: maestro_sid.clone(),
+                        models,
+                        modes,
+                        prompt_capabilities: Some(prompt_caps),
+                        config_options,
+                    }),
                 )
                 .await;
             }

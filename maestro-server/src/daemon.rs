@@ -224,9 +224,7 @@ async fn serve_attached(
         Err(_) => return,
     };
     let client_version = match first {
-        maestro_protocol::MaestroRpcMessage::Request(
-            maestro_protocol::ServerRequest::Handshake(req),
-        ) => req.protocol_version,
+        maestro_protocol::ServerRequest::Handshake(req) => req.protocol_version,
         _ => {
             reject(
                 &mut write_half,
@@ -248,11 +246,9 @@ async fn serve_attached(
     }
     if write_framed(
         &mut write_half,
-        &maestro_protocol::MaestroRpcMessage::Response(
-            maestro_protocol::ServerResponse::HandshakeOk(maestro_protocol::HandshakeResponse {
-                protocol_version: PROTOCOL_VERSION,
-            }),
-        ),
+        &maestro_protocol::ServerResponse::HandshakeOk(maestro_protocol::HandshakeResponse {
+            protocol_version: PROTOCOL_VERSION,
+        }),
     )
     .await
     .is_err()
@@ -278,12 +274,7 @@ async fn serve_attached(
                 // is also how a window takes over a session another one started, or adopts one.
                 // Not an answer to a host tool: a shared prompt call is answered by whichever
                 // window it was sent to, held or not, and that must not move the session.
-                let answer = matches!(
-                    msg,
-                    maestro_protocol::MaestroRpcMessage::Request(
-                        maestro_protocol::ServerRequest::HostToolResult(_)
-                    )
-                );
+                let answer = matches!(msg, maestro_protocol::ServerRequest::HostToolResult(_));
                 if let Some(session_id) = msg.session_id().filter(|_| !answer) {
                     sink.lock().await.claim(id, session_id).await;
                 }
@@ -322,17 +313,17 @@ async fn reject<W: tokio::io::AsyncWrite + Unpin>(writer: &mut W, message: Strin
 ///
 /// The protocol's error type is not `Send`, and every caller here runs inside a spawned task, so
 /// it must not survive the call.
-async fn read_framed<R: tokio::io::AsyncRead + Unpin>(
+async fn read_framed<M: maestro_protocol::Message, R: tokio::io::AsyncRead + Unpin>(
     reader: &mut R,
-) -> Result<maestro_protocol::MaestroRpcMessage, String> {
+) -> Result<M, String> {
     maestro_protocol::read_message(reader)
         .await
         .map_err(|e| e.to_string())
 }
 
-async fn write_framed<W: tokio::io::AsyncWrite + Unpin>(
+async fn write_framed<M: maestro_protocol::Message, W: tokio::io::AsyncWrite + Unpin>(
     writer: &mut W,
-    msg: &maestro_protocol::MaestroRpcMessage,
+    msg: &M,
 ) -> Result<(), String> {
     let mut buf: Vec<u8> = Vec::new();
     maestro_protocol::write_message(&mut buf, msg)
@@ -721,15 +712,15 @@ mod tests {
             .unwrap();
         write_framed(
             &mut window,
-            &maestro_protocol::MaestroRpcMessage::Request(
-                maestro_protocol::ServerRequest::Handshake(maestro_protocol::HandshakeRequest {
-                    protocol_version: PROTOCOL_VERSION,
-                }),
-            ),
+            &maestro_protocol::ServerRequest::Handshake(maestro_protocol::HandshakeRequest {
+                protocol_version: PROTOCOL_VERSION,
+            }),
         )
         .await
         .unwrap();
-        read_framed(&mut window).await.unwrap();
+        read_framed::<maestro_protocol::ServerResponse, _>(&mut window)
+            .await
+            .unwrap();
         assert_eq!(
             busy_reason(&runtime).await,
             Some("another Maestro window is connected to it")

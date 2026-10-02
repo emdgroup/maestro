@@ -16,9 +16,9 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 use maestro_protocol::{
     AddTaskCommentRequest, AgentRole, ApplyTaskTransitionRequest, ConcurrencyMode, ErrorResponse,
-    MaestroRpcMessage, NewTaskComment, PhaseStatus, RequestTaskExecutionRequest, ServerRequest,
-    ServerResponse, StartTaskRequest, StartTaskResponse, Task, TaskPhase, TaskSessionStarted,
-    TaskStatus, TaskTransition, TransitionGuard, AUTH_REQUIRED_ERROR,
+    NewTaskComment, PhaseStatus, RequestTaskExecutionRequest, ServerRequest, ServerResponse,
+    StartTaskRequest, StartTaskResponse, Task, TaskPhase, TaskSessionStarted, TaskStatus,
+    TaskTransition, TransitionGuard, AUTH_REQUIRED_ERROR,
 };
 use rusqlite::Connection;
 
@@ -471,10 +471,10 @@ pub(crate) async fn launch(launcher: Launcher, mut claimed: Box<Claimed>) {
 }
 
 async fn reply_error(reply: &crate::ClientOut, message: String) {
-    let response = MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+    let response = ServerResponse::Error(ErrorResponse {
         message,
         session_id: None,
-    }));
+    });
     if let Err(e) = send_response(reply, &response).await {
         send_diag("warn", format!("[task] could not answer a start: {e}"));
     }
@@ -863,10 +863,10 @@ pub(crate) async fn adopt(
     }
 
     broadcast(&everyone, ServerResponse::TaskSessionStarted(push)).await;
-    let ok = MaestroRpcMessage::Response(ServerResponse::StartTaskOk(StartTaskResponse {
+    let ok = ServerResponse::StartTaskOk(StartTaskResponse {
         session_id: Some(session_id),
         skipped_attachments,
-    }));
+    });
     if let Err(e) = send_response(&reply, &ok).await {
         send_diag("warn", format!("[task] could not answer a start: {e}"));
     }
