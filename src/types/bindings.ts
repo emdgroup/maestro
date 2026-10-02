@@ -716,17 +716,6 @@ async requestChanges(projectId: number, taskId: number, generalFeedback: string 
 }
 },
 /**
- * Get the current review (with comments) for a task
- */
-async getTaskReview(projectId: number, taskId: number) : Promise<Result<TaskReviewWithComments | null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_task_review", { projectId, taskId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Clear the review and its comments for a task after feedback has been injected into the agent.
  * Prevents stale comments from appearing in subsequent review cycles or being re-injected on cold starts.
  */
@@ -4005,7 +3994,6 @@ export type ResolvedProfile = { profile_id: string; agent_id: string; model?: st
  * Human-readable notes about what was dropped, for the UI to show. Empty is the happy path.
  */
 warnings: string[] }
-export type ReviewCommentEntry = { file_path: string; comment: string }
 /**
  * Typed response for save_task_review and request_changes IPC commands
  */
@@ -4229,10 +4217,6 @@ export type TaskInstruction = { id: number; task_id: number; content: string; so
 export type TaskPhase = "Spawning" | "Refining" | "Drafting" | "PlanReview" | "Implementing" | "Rework" | "SelfReview" | "Approval" | "AwaitingMerge"
 export type TaskPriority = "Urgent" | "High" | "Medium" | "Low" | "None"
 export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
-/**
- * Response for get_task_review: review with all comments
- */
-export type TaskReviewWithComments = { decision: string; general_feedback: string | null; comments: ReviewCommentEntry[]; created_at: string }
 export type TaskStatus = "Planning" | "Queue" | "InProgress" | "Review" | "Done" | "Cancelled"
 export type Template = { id: number; name: string; 
 /**
