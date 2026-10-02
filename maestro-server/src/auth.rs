@@ -11,9 +11,7 @@
 
 use std::sync::Arc;
 
-use maestro_protocol::{
-    AuthTerminalExitResponse, ErrorResponse, MaestroRpcMessage, ServerResponse,
-};
+use maestro_protocol::{AuthTerminalExitResponse, ErrorResponse, ServerResponse};
 
 use crate::agent;
 use crate::command_ext::NoConsoleWindow;
@@ -34,11 +32,11 @@ pub(crate) type AuthTerminals =
 
 use crate::ClientOut as Stdout;
 
-fn error_response(message: String) -> MaestroRpcMessage {
-    MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+fn error_response(message: String) -> ServerResponse {
+    ServerResponse::Error(ErrorResponse {
         message,
         session_id: None,
-    }))
+    })
 }
 
 /// Run an agent's authentication method, either as a subprocess or over the ACP connection.
@@ -132,9 +130,7 @@ pub(crate) async fn authenticate(
                 });
             }
             let response = match tokio::time::timeout(AUTH_TIMEOUT, child.wait()).await {
-                Ok(Ok(status)) if status.success() => {
-                    MaestroRpcMessage::Response(ServerResponse::AuthenticateOk)
-                }
+                Ok(Ok(status)) if status.success() => ServerResponse::AuthenticateOk,
                 Ok(Ok(status)) => {
                     error_response(format!("auth command exited with {:?}", status.code()))
                 }
@@ -159,7 +155,7 @@ pub(crate) async fn authenticate(
             )
             .await;
             let response = match result {
-                Ok(Ok(_)) => MaestroRpcMessage::Response(ServerResponse::AuthenticateOk),
+                Ok(Ok(_)) => ServerResponse::AuthenticateOk,
                 Ok(Err(e)) => error_response(format!("authenticate failed: {}", e)),
                 Err(_) => error_response("authentication timed out".to_string()),
             };
@@ -287,13 +283,11 @@ pub(crate) async fn spawn_auth_terminal(
         }
         send_response(
             &stdout_task,
-            &MaestroRpcMessage::Response(ServerResponse::AuthTerminalExit(
-                AuthTerminalExitResponse {
-                    terminal_id,
-                    agent_id,
-                    exit_code,
-                },
-            )),
+            &ServerResponse::AuthTerminalExit(AuthTerminalExitResponse {
+                terminal_id,
+                agent_id,
+                exit_code,
+            }),
         )
         .await
         .ok();
@@ -323,13 +317,11 @@ fn forward_pipe_as_terminal_output<R>(
                 Ok(n) => {
                     send_response(
                         &stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::TerminalOutput(
-                            maestro_protocol::TerminalOutput {
-                                session_id: session_id.clone(),
-                                terminal_id: terminal_id.clone(),
-                                bytes: buf[..n].to_vec(),
-                            },
-                        )),
+                        &ServerResponse::TerminalOutput(maestro_protocol::TerminalOutput {
+                            session_id: session_id.clone(),
+                            terminal_id: terminal_id.clone(),
+                            bytes: buf[..n].to_vec(),
+                        }),
                     )
                     .await
                     .ok();
@@ -386,7 +378,7 @@ pub(crate) async fn logout(
     let stdout_task = Arc::clone(stdout);
     tokio::spawn(async move {
         let response = match conn.send_request(LogoutRequest::new()).block_task().await {
-            Ok(_) => MaestroRpcMessage::Response(ServerResponse::LogoutOk),
+            Ok(_) => ServerResponse::LogoutOk,
             Err(e) => error_response(format!("logout failed: {}", e)),
         };
         send_response(&stdout_task, &response).await.ok();

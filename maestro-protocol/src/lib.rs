@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 11;
+pub const PROTOCOL_VERSION: u32 = 12;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 ///
@@ -47,54 +47,51 @@ pub const SERVER_BUSY_ERROR: &str = "server_busy";
 
 // --- Top-level envelope ---
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "direction", rename_all = "snake_case")]
-pub enum MaestroRpcMessage {
-    Request(ServerRequest),
-    Response(ServerResponse),
+impl ServerRequest {
+    /// The host-side session a request is about, if it is about one.
+    ///
+    /// A daemon serving several windows routes by this and by [`ServerResponse::session_id`]: a
+    /// request naming a session makes its sender that session's owner, and a response naming one
+    /// goes to the owner.
+    pub fn session_id(&self) -> Option<&str> {
+        Some(match self {
+            Self::Spawn(r) => &r.session_id,
+            Self::Prompt(r) => &r.session_id,
+            Self::Cancel(r) => &r.session_id,
+            Self::InterruptTurn(r) => &r.session_id,
+            Self::PermitResponse(r) => &r.session_id,
+            Self::ElicitationResponse(r) => &r.session_id,
+            Self::SetModel(r) => &r.session_id,
+            Self::SetMode(r) => &r.session_id,
+            Self::SetConfigOption(r) => &r.session_id,
+            Self::SessionLoad(r) => &r.session_id,
+            Self::HostToolResult(r) => &r.session_id,
+            _ => return None,
+        })
+    }
 }
 
-impl MaestroRpcMessage {
-    /// The host-side session a message is about, if it is about one.
-    ///
-    /// A daemon serving several windows routes by this: a request naming a session makes its
-    /// sender that session's owner, and a response naming one goes to the owner. The host routes
-    /// what it receives by the same answer, so the two sides cannot disagree on which messages
-    /// belong to a session.
+impl ServerResponse {
+    /// The host-side session a response is about, if it is about one. The host routes what it
+    /// receives by this, and the daemon by the same answer, so the two sides cannot disagree on
+    /// which messages belong to a session.
     pub fn session_id(&self) -> Option<&str> {
-        let id = match self {
-            Self::Request(req) => match req {
-                ServerRequest::Spawn(r) => &r.session_id,
-                ServerRequest::Prompt(r) => &r.session_id,
-                ServerRequest::Cancel(r) => &r.session_id,
-                ServerRequest::InterruptTurn(r) => &r.session_id,
-                ServerRequest::PermitResponse(r) => &r.session_id,
-                ServerRequest::ElicitationResponse(r) => &r.session_id,
-                ServerRequest::SetModel(r) => &r.session_id,
-                ServerRequest::SetMode(r) => &r.session_id,
-                ServerRequest::SetConfigOption(r) => &r.session_id,
-                ServerRequest::SessionLoad(r) => &r.session_id,
-                ServerRequest::HostToolResult(r) => &r.session_id,
-                _ => return None,
-            },
-            Self::Response(resp) => match resp {
-                ServerResponse::SpawnOk(r) => &r.session_id,
-                ServerResponse::SessionUpdate(r) => &r.session_id,
-                ServerResponse::PermissionRequest(r) => &r.session_id,
-                ServerResponse::ElicitationRequest(r) => &r.session_id,
-                ServerResponse::TerminalOutput(r) => &r.session_id,
-                ServerResponse::TurnEnded(r) => &r.session_id,
-                ServerResponse::HostToolCall(r) => &r.session_id,
-                ServerResponse::SetModelOk(r) => &r.session_id,
-                ServerResponse::SetModeOk(r) => &r.session_id,
-                ServerResponse::SetConfigOptionOk(r) => &r.session_id,
-                ServerResponse::ConfigOptionUpdated(r) => &r.session_id,
-                ServerResponse::SessionLoadOk(r) => &r.session_id,
-                ServerResponse::Error(err) => return err.session_id.as_deref(),
-                _ => return None,
-            },
-        };
-        Some(id)
+        Some(match self {
+            Self::SpawnOk(r) => &r.session_id,
+            Self::SessionUpdate(r) => &r.session_id,
+            Self::PermissionRequest(r) => &r.session_id,
+            Self::ElicitationRequest(r) => &r.session_id,
+            Self::TerminalOutput(r) => &r.session_id,
+            Self::TurnEnded(r) => &r.session_id,
+            Self::HostToolCall(r) => &r.session_id,
+            Self::SetModelOk(r) => &r.session_id,
+            Self::SetModeOk(r) => &r.session_id,
+            Self::SetConfigOptionOk(r) => &r.session_id,
+            Self::ConfigOptionUpdated(r) => &r.session_id,
+            Self::SessionLoadOk(r) => &r.session_id,
+            Self::Error(err) => return err.session_id.as_deref(),
+            _ => return None,
+        })
     }
 }
 
@@ -124,7 +121,7 @@ pub struct AuthMethodInfo {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum ServerRequest {
     Handshake(HandshakeRequest),
     Spawn(SpawnRequest),
@@ -2269,7 +2266,7 @@ pub struct ImportProjectResponse {
 // --- Server -> Client ---
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum ServerResponse {
     HandshakeOk(HandshakeResponse),
     SpawnOk(SpawnResponse),
@@ -2863,6 +2860,15 @@ pub async fn write_frame<W: AsyncWrite + Unpin, T: Serialize>(
 pub async fn read_frame<R: AsyncRead + Unpin, T: serde::de::DeserializeOwned>(
     stream: &mut R,
 ) -> Result<T, Box<dyn std::error::Error>> {
+    Ok(serde_json::from_slice(&read_body(stream).await?)?)
+}
+
+/// One frame's body, the length prefix consumed and checked. Bytes only, so the generic readers
+/// leave decoding to [`decode_message`]: a decode inside them would be compiled again in every
+/// crate that calls them, and the message enum's decode tree is the largest code in the protocol.
+async fn read_body<R: AsyncRead + Unpin>(
+    stream: &mut R,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let mut len_buf = [0u8; MSG_LEN_SIZE];
     stream.read_exact(&mut len_buf).await?;
     let len = u32::from_le_bytes(len_buf) as usize;
@@ -2875,39 +2881,13 @@ pub async fn read_frame<R: AsyncRead + Unpin, T: serde::de::DeserializeOwned>(
     }
     let mut body = vec![0u8; len];
     stream.read_exact(&mut body).await?;
-    Ok(serde_json::from_slice(&body)?)
+    Ok(body)
 }
 
-pub async fn write_message<W: AsyncWrite + Unpin>(
-    stream: &mut W,
-    msg: &MaestroRpcMessage,
-) -> Result<(), Box<dyn std::error::Error>> {
-    write_frame(stream, msg).await
-}
-
-pub async fn read_message<R: AsyncRead + Unpin>(
+/// Synchronous [`read_body`].
+fn read_body_sync<R: std::io::Read>(
     stream: &mut R,
-) -> Result<MaestroRpcMessage, Box<dyn std::error::Error>> {
-    read_frame(stream).await
-}
-
-/// Synchronous version of [`read_message`] for use in `spawn_blocking` reader threads.
-///
-/// On Windows, anonymous pipes don't support overlapped I/O (IOCP), so the async
-/// version uses `spawn_blocking` internally. If the future is dropped while a read
-/// is in flight (e.g. when a `tokio::select!` picks another arm), the blocking thread
-/// continues and the 4-byte length prefix gets silently discarded — causing framing
-/// desync. This function is meant to run in a dedicated blocking thread that is never
-/// dropped, writing results to an mpsc channel instead.
-pub fn read_message_sync<R: std::io::Read>(
-    stream: &mut R,
-) -> Result<MaestroRpcMessage, Box<dyn std::error::Error + Send + Sync>> {
-    read_message_sync_as(stream)
-}
-
-fn read_message_sync_as<R: std::io::Read, T: serde::de::DeserializeOwned>(
-    stream: &mut R,
-) -> Result<T, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     let mut len_buf = [0u8; MSG_LEN_SIZE];
     stream.read_exact(&mut len_buf)?;
     let len = u32::from_le_bytes(len_buf) as usize;
@@ -2920,41 +2900,110 @@ fn read_message_sync_as<R: std::io::Read, T: serde::de::DeserializeOwned>(
     }
     let mut body = vec![0u8; len];
     stream.read_exact(&mut body)?;
-    Ok(serde_json::from_slice(&body)?)
+    Ok(body)
 }
 
-/// Pairs a reply with the request it answers. Rides as a top-level `rpc_id` key beside
-/// `direction` and `type`, and is absent on anything unprompted.
+pub async fn write_message<M: Message, W: AsyncWrite + Unpin>(
+    stream: &mut W,
+    msg: &M,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let frame = msg
+        .encode(None)
+        .map_err(|e| e as Box<dyn std::error::Error>)?;
+    stream.write_all(&frame).await?;
+    Ok(())
+}
+
+pub async fn read_message<M: Message, R: AsyncRead + Unpin>(
+    stream: &mut R,
+) -> Result<M, Box<dyn std::error::Error>> {
+    Ok(read_message_with_id(stream).await?.1)
+}
+
+/// Synchronous version of [`read_message`] for use in `spawn_blocking` reader threads.
 ///
-/// Not `id` and not `request_id`: the message is flattened into the same object, and payloads
-/// already own both (`Automation.id`, `PermissionRequest.request_id`). A shared key fails to decode.
+/// On Windows, anonymous pipes don't support overlapped I/O (IOCP), so the async
+/// version uses `spawn_blocking` internally. If the future is dropped while a read
+/// is in flight (e.g. when a `tokio::select!` picks another arm), the blocking thread
+/// continues and the 4-byte length prefix gets silently discarded — causing framing
+/// desync. This function is meant to run in a dedicated blocking thread that is never
+/// dropped, writing results to an mpsc channel instead.
+pub fn read_message_sync<M: Message, R: std::io::Read>(
+    stream: &mut R,
+) -> Result<M, Box<dyn std::error::Error + Send + Sync>> {
+    Ok(read_message_with_id_sync(stream)?.1)
+}
+
+/// Pairs a reply with the request it answers. Rides as the frame's `rpc_id` key beside its
+/// `request` or `response`, and is absent on anything unprompted.
 pub type RequestId = u64;
 
-#[derive(Serialize)]
-struct OutgoingFrame<'a> {
-    #[serde(rename = "rpc_id", skip_serializing_if = "Option::is_none")]
-    id: Option<RequestId>,
-    #[serde(flatten)]
-    message: &'a MaestroRpcMessage,
-}
-
-#[derive(Deserialize)]
-struct IncomingFrame {
-    #[serde(rename = "rpc_id", default)]
-    id: Option<RequestId>,
-    #[serde(flatten)]
-    message: MaestroRpcMessage,
-}
-
-/// A whole frame, length prefix included, ready to be written as it stands.
+/// What one side writes and the other reads: the host writes [`ServerRequest`]s and the server
+/// [`ServerResponse`]s, each in a frame of its own shape, `{"rpc_id":7,"request":{...}}` or
+/// `{"rpc_id":7,"response":{...}}`.
 ///
-/// Synchronous and `Send` in its error so both the host's `serialize_message` and the server's
-/// spawned tasks can call it directly.
-pub fn encode_message(
+/// The methods are not generic, so each direction's encode and decode is compiled once, here,
+/// and only into the binary that calls it. A decode inside a generic reader would be compiled
+/// again in every crate calling it, and the message enums' decode trees are the largest code in
+/// the protocol.
+pub trait Message: Sized {
+    /// A whole frame, length prefix included, ready to be written as it stands.
+    ///
+    /// Synchronous and `Send` in its error so both the host's `serialize_message` and the
+    /// server's spawned tasks can call it directly.
+    fn encode(
+        &self,
+        id: Option<RequestId>,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>>;
+
+    /// The inverse of [`Message::encode`] for a frame's body, the length prefix already stripped.
+    fn decode(body: &[u8]) -> Result<(Option<RequestId>, Self), serde_json::Error>;
+}
+
+#[derive(Serialize, Deserialize)]
+struct RequestFrame<M> {
+    #[serde(rename = "rpc_id", default, skip_serializing_if = "Option::is_none")]
     id: Option<RequestId>,
-    message: &MaestroRpcMessage,
-) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    let body = serde_json::to_vec(&OutgoingFrame { id, message })?;
+    request: M,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ResponseFrame<M> {
+    #[serde(rename = "rpc_id", default, skip_serializing_if = "Option::is_none")]
+    id: Option<RequestId>,
+    response: M,
+}
+
+impl Message for ServerRequest {
+    fn encode(
+        &self,
+        id: Option<RequestId>,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+        frame(serde_json::to_vec(&RequestFrame { id, request: self })?)
+    }
+
+    fn decode(body: &[u8]) -> Result<(Option<RequestId>, Self), serde_json::Error> {
+        let frame: RequestFrame<Self> = serde_json::from_slice(body)?;
+        Ok((frame.id, frame.request))
+    }
+}
+
+impl Message for ServerResponse {
+    fn encode(
+        &self,
+        id: Option<RequestId>,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+        frame(serde_json::to_vec(&ResponseFrame { id, response: self })?)
+    }
+
+    fn decode(body: &[u8]) -> Result<(Option<RequestId>, Self), serde_json::Error> {
+        let frame: ResponseFrame<Self> = serde_json::from_slice(body)?;
+        Ok((frame.id, frame.response))
+    }
+}
+
+/// `body` behind its length prefix.
+fn frame(body: Vec<u8>) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     if body.len() > MAX_MESSAGE_SIZE {
         return Err(format!(
             "Message too large to send: {} bytes (max {})",
@@ -2969,28 +3018,33 @@ pub fn encode_message(
     Ok(frame)
 }
 
-/// The inverse of [`encode_message`] for a frame's body, the length prefix already stripped.
-pub fn decode_message(
+/// [`Message::encode`], as a function.
+pub fn encode_message<M: Message>(
+    id: Option<RequestId>,
+    message: &M,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    message.encode(id)
+}
+
+/// [`Message::decode`], as a function.
+pub fn decode_message<M: Message>(
     body: &[u8],
-) -> Result<(Option<RequestId>, MaestroRpcMessage), serde_json::Error> {
-    let frame: IncomingFrame = serde_json::from_slice(body)?;
-    Ok((frame.id, frame.message))
+) -> Result<(Option<RequestId>, M), serde_json::Error> {
+    M::decode(body)
 }
 
 /// [`read_message`], keeping the request id the frame carried.
-pub async fn read_message_with_id<R: AsyncRead + Unpin>(
+pub async fn read_message_with_id<M: Message, R: AsyncRead + Unpin>(
     stream: &mut R,
-) -> Result<(Option<RequestId>, MaestroRpcMessage), Box<dyn std::error::Error>> {
-    let frame: IncomingFrame = read_frame(stream).await?;
-    Ok((frame.id, frame.message))
+) -> Result<(Option<RequestId>, M), Box<dyn std::error::Error>> {
+    Ok(M::decode(&read_body(stream).await?)?)
 }
 
 /// [`read_message_sync`], keeping the request id the frame carried.
-pub fn read_message_with_id_sync<R: std::io::Read>(
+pub fn read_message_with_id_sync<M: Message, R: std::io::Read>(
     stream: &mut R,
-) -> Result<(Option<RequestId>, MaestroRpcMessage), Box<dyn std::error::Error + Send + Sync>> {
-    let frame: IncomingFrame = read_message_sync_as(stream)?;
-    Ok((frame.id, frame.message))
+) -> Result<(Option<RequestId>, M), Box<dyn std::error::Error + Send + Sync>> {
+    Ok(M::decode(&read_body_sync(stream)?)?)
 }
 
 // --- CDN registry types — used by maestro-server for agent discovery ---
@@ -3064,21 +3118,39 @@ pub struct UvxDistribution {
 mod tests {
     use super::*;
 
-    fn id_samples() -> Vec<MaestroRpcMessage> {
+    /// Either direction, so one sample list can hold both. Nothing outside the tests needs it:
+    /// each side only reads one direction and writes the other.
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    enum AnyMessage {
+        Request(ServerRequest),
+        Response(ServerResponse),
+    }
+
+    impl AnyMessage {
+        fn session_id(&self) -> Option<&str> {
+            match self {
+                Self::Request(request) => request.session_id(),
+                Self::Response(response) => response.session_id(),
+            }
+        }
+    }
+
+    fn id_samples() -> Vec<AnyMessage> {
         let mut samples = vec![
-            MaestroRpcMessage::Response(ServerResponse::TerminalOutput(TerminalOutput {
+            AnyMessage::Response(ServerResponse::TerminalOutput(TerminalOutput {
                 session_id: "session".to_string(),
                 terminal_id: "terminal".to_string(),
                 bytes: vec![0, 27, 91, 255],
             })),
-            MaestroRpcMessage::Request(ServerRequest::Shutdown),
-            MaestroRpcMessage::Response(ServerResponse::SessionCloseOk),
-            MaestroRpcMessage::Response(ServerResponse::Ping { seq: u64::MAX }),
-            MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+            AnyMessage::Request(ServerRequest::Shutdown),
+            AnyMessage::Response(ServerResponse::SessionCloseOk),
+            AnyMessage::Response(ServerResponse::Ping { seq: u64::MAX }),
+            AnyMessage::Response(ServerResponse::Error(ErrorResponse {
                 message: "no".to_string(),
                 session_id: None,
             })),
-            MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+            AnyMessage::Request(ServerRequest::Spawn(SpawnRequest {
                 agent_id: "claude-acp".to_string(),
                 session_id: "session".to_string(),
                 cwd: "/tmp".to_string(),
@@ -3086,7 +3158,7 @@ mod tests {
                 project_path: None,
                 meta: SessionMeta::default(),
             })),
-            MaestroRpcMessage::Response(ServerResponse::SessionUpdate(SessionUpdate {
+            AnyMessage::Response(ServerResponse::SessionUpdate(SessionUpdate {
                 session_id: "session".to_string(),
                 payload: serde_json::json!({
                     "project": 3,
@@ -3095,7 +3167,7 @@ mod tests {
             })),
             // Payloads with a top-level `id` and `request_id` of their own, which the frame's key
             // must not collide with.
-            MaestroRpcMessage::Response(ServerResponse::SaveAutomationOk(Automation {
+            AnyMessage::Response(ServerResponse::SaveAutomationOk(Automation {
                 id: "automation-1".to_string(),
                 project_path: "/srv/shop".to_string(),
                 name: "Nightly".to_string(),
@@ -3115,7 +3187,7 @@ mod tests {
                 webhook_secret: None,
                 next_due_at: None,
             })),
-            MaestroRpcMessage::Response(ServerResponse::TakeoverRequested(TakeoverRequested {
+            AnyMessage::Response(ServerResponse::TakeoverRequested(TakeoverRequested {
                 request_id: "takeover-1".to_string(),
                 project_path: "/srv/shop".to_string(),
                 requester_label: "laptop".to_string(),
@@ -3128,9 +3200,9 @@ mod tests {
         samples
     }
 
-    fn import_messages() -> Vec<MaestroRpcMessage> {
+    fn import_messages() -> Vec<AnyMessage> {
         vec![
-            MaestroRpcMessage::Request(ServerRequest::BeginImport(BeginImportRequest {
+            AnyMessage::Request(ServerRequest::BeginImport(BeginImportRequest {
                 project_path: "/srv/shop".to_string(),
                 floors: ImportFloors {
                     tasks: Some(12),
@@ -3138,21 +3210,21 @@ mod tests {
                 },
                 source_id: Some("install-1".to_string()),
             })),
-            MaestroRpcMessage::Response(ServerResponse::BeginImportOk(BeginImportResponse {
+            AnyMessage::Response(ServerResponse::BeginImportOk(BeginImportResponse {
                 import_id: "import-1".to_string(),
                 imported_before: false,
                 merge: true,
                 task_offset: 40,
             })),
-            MaestroRpcMessage::Response(ServerResponse::ImportChunkOk),
-            MaestroRpcMessage::Request(ServerRequest::CommitImport(ImportRef {
+            AnyMessage::Response(ServerResponse::ImportChunkOk),
+            AnyMessage::Request(ServerRequest::CommitImport(ImportRef {
                 import_id: "import-1".to_string(),
             })),
-            MaestroRpcMessage::Request(ServerRequest::ImportChunk(ImportChunkRequest {
+            AnyMessage::Request(ServerRequest::ImportChunk(ImportChunkRequest {
                 import_id: "import-1".to_string(),
                 chunk: sample_import(),
             })),
-            MaestroRpcMessage::Response(ServerResponse::ImportProjectOk(ImportProjectResponse {
+            AnyMessage::Response(ServerResponse::ImportProjectOk(ImportProjectResponse {
                 imported: false,
             })),
         ]
@@ -3239,18 +3311,13 @@ mod tests {
             ..ImportProjectRequest::default()
         };
         for chunk in chunks {
-            let message =
-                MaestroRpcMessage::Request(ServerRequest::ImportChunk(ImportChunkRequest {
-                    import_id: "00000000-0000-4000-8000-000000000000".to_string(),
-                    chunk,
-                }));
+            let message = ServerRequest::ImportChunk(ImportChunkRequest {
+                import_id: "00000000-0000-4000-8000-000000000000".to_string(),
+                chunk,
+            });
             let frame = encode_message(Some(u64::MAX), &message).unwrap();
             assert!(frame.len() < budget, "{}", frame.len());
-            let MaestroRpcMessage::Request(ServerRequest::ImportChunk(ImportChunkRequest {
-                chunk,
-                ..
-            })) = message
-            else {
+            let ServerRequest::ImportChunk(ImportChunkRequest { chunk, .. }) = message else {
                 unreachable!()
             };
             assert_eq!(chunk.project_path, request.project_path);
@@ -3280,46 +3347,42 @@ mod tests {
         }
     }
 
-    fn prompt_messages() -> Vec<MaestroRpcMessage> {
+    fn prompt_messages() -> Vec<AnyMessage> {
         let prompt = PromptRef {
             project_path: "/srv/shop".to_string(),
             prompt_id: 3,
         };
         vec![
-            MaestroRpcMessage::Request(ServerRequest::ListPrompts(ProjectRef {
+            AnyMessage::Request(ServerRequest::ListPrompts(ProjectRef {
                 project_path: "/srv/shop".to_string(),
             })),
-            MaestroRpcMessage::Request(ServerRequest::CreatePrompt(CreatePromptRequest {
+            AnyMessage::Request(ServerRequest::CreatePrompt(CreatePromptRequest {
                 project_path: "/srv/shop".to_string(),
                 title: "Review".to_string(),
                 body: "Review the diff".to_string(),
                 tags: vec!["review".to_string()],
                 favorite: true,
             })),
-            MaestroRpcMessage::Request(ServerRequest::UpdatePrompt(UpdatePromptRequest {
+            AnyMessage::Request(ServerRequest::UpdatePrompt(UpdatePromptRequest {
                 project_path: "/srv/shop".to_string(),
                 prompt_id: 3,
                 title: "Review".to_string(),
                 body: "Review the diff".to_string(),
                 tags: vec![],
             })),
-            MaestroRpcMessage::Request(ServerRequest::SetPromptFavorite(
-                SetPromptFavoriteRequest {
-                    project_path: "/srv/shop".to_string(),
-                    prompt_id: 3,
-                    favorite: false,
-                },
-            )),
-            MaestroRpcMessage::Request(ServerRequest::DeletePrompt(prompt)),
-            MaestroRpcMessage::Response(ServerResponse::ListPromptsOk(PromptList {
+            AnyMessage::Request(ServerRequest::SetPromptFavorite(SetPromptFavoriteRequest {
+                project_path: "/srv/shop".to_string(),
+                prompt_id: 3,
+                favorite: false,
+            })),
+            AnyMessage::Request(ServerRequest::DeletePrompt(prompt)),
+            AnyMessage::Response(ServerResponse::ListPromptsOk(PromptList {
                 prompts: vec![sample_prompt()],
             })),
-            MaestroRpcMessage::Response(ServerResponse::GetPromptOk(OptionalPrompt {
-                prompt: None,
-            })),
-            MaestroRpcMessage::Response(ServerResponse::CreatePromptOk(sample_prompt())),
-            MaestroRpcMessage::Response(ServerResponse::DeletePromptOk),
-            MaestroRpcMessage::Response(ServerResponse::PromptsChanged(ProjectRef {
+            AnyMessage::Response(ServerResponse::GetPromptOk(OptionalPrompt { prompt: None })),
+            AnyMessage::Response(ServerResponse::CreatePromptOk(sample_prompt())),
+            AnyMessage::Response(ServerResponse::DeletePromptOk),
+            AnyMessage::Response(ServerResponse::PromptsChanged(ProjectRef {
                 project_path: "/srv/shop".to_string(),
             })),
         ]
@@ -3382,11 +3445,11 @@ mod tests {
 
     /// Payloads carrying an `id` of their own, a transition with a guard, a composite step and a
     /// push, which is what the `rpc_id` round trip and `is_reply` have to hold for.
-    fn task_messages() -> Vec<MaestroRpcMessage> {
+    fn task_messages() -> Vec<AnyMessage> {
         vec![
-            MaestroRpcMessage::Response(ServerResponse::CreateTaskOk(sample_task())),
-            MaestroRpcMessage::Response(ServerResponse::GetTaskOk(OptionalTask { task: None })),
-            MaestroRpcMessage::Request(ServerRequest::UpdateTask(UpdateTaskRequest {
+            AnyMessage::Response(ServerResponse::CreateTaskOk(sample_task())),
+            AnyMessage::Response(ServerResponse::GetTaskOk(OptionalTask { task: None })),
+            AnyMessage::Request(ServerRequest::UpdateTask(UpdateTaskRequest {
                 project_path: "/srv/shop".to_string(),
                 task_id: 3,
                 update: TaskUpdate {
@@ -3399,7 +3462,7 @@ mod tests {
                     ..TaskUpdate::default()
                 },
             })),
-            MaestroRpcMessage::Request(ServerRequest::ApplyTaskTransition(
+            AnyMessage::Request(ServerRequest::ApplyTaskTransition(
                 ApplyTaskTransitionRequest {
                     project_path: "/srv/shop".to_string(),
                     task_id: 3,
@@ -3413,7 +3476,7 @@ mod tests {
                     comment: None,
                 },
             )),
-            MaestroRpcMessage::Request(ServerRequest::ApplyTaskTransition(
+            AnyMessage::Request(ServerRequest::ApplyTaskTransition(
                 ApplyTaskTransitionRequest {
                     project_path: "/srv/shop".to_string(),
                     task_id: 3,
@@ -3423,7 +3486,7 @@ mod tests {
                     comment: None,
                 },
             )),
-            MaestroRpcMessage::Request(ServerRequest::ApplyTaskTransition(
+            AnyMessage::Request(ServerRequest::ApplyTaskTransition(
                 ApplyTaskTransitionRequest {
                     project_path: "/srv/shop".to_string(),
                     task_id: 3,
@@ -3443,7 +3506,7 @@ mod tests {
                     }),
                 },
             )),
-            MaestroRpcMessage::Request(ServerRequest::AddTaskComment(AddTaskCommentRequest {
+            AnyMessage::Request(ServerRequest::AddTaskComment(AddTaskCommentRequest {
                 project_path: "/srv/shop".to_string(),
                 task_id: 3,
                 comment: NewTaskComment {
@@ -3454,7 +3517,7 @@ mod tests {
                     phase: None,
                 },
             })),
-            MaestroRpcMessage::Request(ServerRequest::ApplyTaskTransition(
+            AnyMessage::Request(ServerRequest::ApplyTaskTransition(
                 ApplyTaskTransitionRequest {
                     project_path: "/srv/shop".to_string(),
                     task_id: 3,
@@ -3464,7 +3527,7 @@ mod tests {
                     comment: None,
                 },
             )),
-            MaestroRpcMessage::Request(ServerRequest::EndTaskTurn(EndTaskTurnRequest {
+            AnyMessage::Request(ServerRequest::EndTaskTurn(EndTaskTurnRequest {
                 project_path: "/srv/shop".to_string(),
                 task_id: 3,
                 ending: TurnEnding::Completed {
@@ -3475,7 +3538,7 @@ mod tests {
                 review_approved: false,
                 closing_message: "Done.".to_string(),
             })),
-            MaestroRpcMessage::Response(ServerResponse::InsertWorktreeOk(Worktree {
+            AnyMessage::Response(ServerResponse::InsertWorktreeOk(Worktree {
                 id: 4,
                 project_path: "/srv/shop".to_string(),
                 task_id: None,
@@ -3485,10 +3548,10 @@ mod tests {
                 git_status: None,
                 created_at: "2026-01-01T00:00:00Z".to_string(),
             })),
-            MaestroRpcMessage::Response(ServerResponse::TasksChanged(ProjectRef {
+            AnyMessage::Response(ServerResponse::TasksChanged(ProjectRef {
                 project_path: "/srv/shop".to_string(),
             })),
-            MaestroRpcMessage::Response(ServerResponse::TaskCommentsChanged(TaskRef {
+            AnyMessage::Response(ServerResponse::TaskCommentsChanged(TaskRef {
                 project_path: "/srv/shop".to_string(),
                 task_id: 3,
             })),
@@ -3499,20 +3562,20 @@ mod tests {
     fn roundtrip_task_messages() {
         for message in task_messages() {
             let json = serde_json::to_string(&message).unwrap();
-            let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+            let back: AnyMessage = serde_json::from_str(&json).unwrap();
             assert_eq!(message, back);
             assert_eq!(message.session_id(), None);
         }
     }
 
-    fn pipeline_messages() -> Vec<MaestroRpcMessage> {
+    fn pipeline_messages() -> Vec<AnyMessage> {
         vec![
-            MaestroRpcMessage::Request(ServerRequest::GetCapacity),
-            MaestroRpcMessage::Request(ServerRequest::SetCapacity(CapacitySettings {
+            AnyMessage::Request(ServerRequest::GetCapacity),
+            AnyMessage::Request(ServerRequest::SetCapacity(CapacitySettings {
                 concurrency_mode: ConcurrencyMode::Hard,
                 max_concurrent_agents: 2,
             })),
-            MaestroRpcMessage::Response(ServerResponse::GetCapacityOk(CapacityStatus {
+            AnyMessage::Response(ServerResponse::GetCapacityOk(CapacityStatus {
                 settings: CapacitySettings {
                     concurrency_mode: ConcurrencyMode::Auto,
                     max_concurrent_agents: 3,
@@ -3522,20 +3585,20 @@ mod tests {
                 stored: true,
                 used: 1,
             })),
-            MaestroRpcMessage::Request(ServerRequest::SetAutoMode(AutoModeSetting {
+            AnyMessage::Request(ServerRequest::SetAutoMode(AutoModeSetting {
                 project_path: "/srv/shop".to_string(),
                 enabled: true,
             })),
-            MaestroRpcMessage::Request(ServerRequest::HoldTask(HoldTaskRequest {
+            AnyMessage::Request(ServerRequest::HoldTask(HoldTaskRequest {
                 project_path: "/srv/shop".to_string(),
                 task_id: 3,
                 ttl_ms: None,
             })),
-            MaestroRpcMessage::Request(ServerRequest::ReleaseTaskHold(TaskRef {
+            AnyMessage::Request(ServerRequest::ReleaseTaskHold(TaskRef {
                 project_path: "/srv/shop".to_string(),
                 task_id: 3,
             })),
-            MaestroRpcMessage::Request(ServerRequest::StartTask(StartTaskRequest {
+            AnyMessage::Request(ServerRequest::StartTask(StartTaskRequest {
                 project_path: "/srv/shop".to_string(),
                 task_id: 3,
                 role: AgentRole::Planner,
@@ -3544,14 +3607,14 @@ mod tests {
                 respect_capacity: true,
                 agent_id: Some("codex-acp".to_string()),
             })),
-            MaestroRpcMessage::Response(ServerResponse::StartTaskOk(StartTaskResponse {
+            AnyMessage::Response(ServerResponse::StartTaskOk(StartTaskResponse {
                 session_id: Some("session-9".to_string()),
                 skipped_attachments: vec!["spec.pdf: not found".to_string()],
             })),
-            MaestroRpcMessage::Response(ServerResponse::PipelineSettingsChanged(
+            AnyMessage::Response(ServerResponse::PipelineSettingsChanged(
                 PipelineSettingsChanged { project_path: None },
             )),
-            MaestroRpcMessage::Response(ServerResponse::TaskSessionStarted(TaskSessionStarted {
+            AnyMessage::Response(ServerResponse::TaskSessionStarted(TaskSessionStarted {
                 project_path: "/srv/shop".to_string(),
                 task_id: 3,
                 session_id: "session-9".to_string(),
@@ -3566,7 +3629,7 @@ mod tests {
     fn roundtrip_pipeline_messages() {
         for message in pipeline_messages() {
             let json = serde_json::to_string(&message).unwrap();
-            let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+            let back: AnyMessage = serde_json::from_str(&json).unwrap();
             assert_eq!(message, back);
             // A started session is broadcast: nobody owns it until a window adopts it.
             assert_eq!(message.session_id(), None);
@@ -3585,8 +3648,9 @@ mod tests {
 
     #[test]
     fn start_task_defaults_what_the_button_leaves_out() {
-        let json = r#"{"direction":"request","type":"start_task","project_path":"/srv/shop","task_id":3,"role":"Coder"}"#;
-        let MaestroRpcMessage::Request(ServerRequest::StartTask(request)) =
+        let json =
+            r#"{"request":{"start_task":{"project_path":"/srv/shop","task_id":3,"role":"Coder"}}}"#;
+        let AnyMessage::Request(ServerRequest::StartTask(request)) =
             serde_json::from_str(json).unwrap()
         else {
             panic!("not a start_task");
@@ -3639,8 +3703,8 @@ mod tests {
     /// cannot tell apart on the way in.
     #[test]
     fn task_update_tells_a_cleared_column_from_an_untouched_one() {
-        let json = r#"{"direction":"request","type":"update_task","project_path":"/srv/shop","task_id":3,"update":{"pull_request_ci":null,"description":"New"}}"#;
-        let MaestroRpcMessage::Request(ServerRequest::UpdateTask(request)) =
+        let json = r#"{"request":{"update_task":{"project_path":"/srv/shop","task_id":3,"update":{"pull_request_ci":null,"description":"New"}}}}"#;
+        let AnyMessage::Request(ServerRequest::UpdateTask(request)) =
             serde_json::from_str(json).unwrap()
         else {
             panic!("expected an update_task request");
@@ -3653,8 +3717,8 @@ mod tests {
 
     #[test]
     fn a_transition_without_a_guard_is_unguarded() {
-        let json = r#"{"direction":"request","type":"apply_task_transition","project_path":"/srv/shop","task_id":3,"event":{"ManualMove":"Queue"}}"#;
-        let MaestroRpcMessage::Request(ServerRequest::ApplyTaskTransition(request)) =
+        let json = r#"{"request":{"apply_task_transition":{"project_path":"/srv/shop","task_id":3,"event":{"ManualMove":"Queue"}}}}"#;
+        let AnyMessage::Request(ServerRequest::ApplyTaskTransition(request)) =
             serde_json::from_str(json).unwrap()
         else {
             panic!("expected an apply_task_transition request");
@@ -3663,44 +3727,80 @@ mod tests {
         assert_eq!(request.guard, TransitionGuard::Always);
     }
 
+    async fn round_trips_with_id<M: Message + PartialEq + std::fmt::Debug>(
+        id: Option<RequestId>,
+        message: M,
+    ) {
+        let frame = encode_message(id, &message).unwrap();
+        let body = &frame[MSG_LEN_SIZE..];
+        assert_eq!(
+            body.len(),
+            u32::from_le_bytes(frame[..4].try_into().unwrap()) as usize
+        );
+        let json: serde_json::Value = serde_json::from_slice(body).unwrap();
+        assert_eq!(json.get("rpc_id").and_then(|value| value.as_u64()), id);
+
+        let (read_id, read) = read_message_with_id::<M, _>(&mut frame.as_slice())
+            .await
+            .unwrap();
+        let (sync_id, sync) = read_message_with_id_sync::<M, _>(&mut frame.as_slice()).unwrap();
+        assert_eq!((read_id, sync_id), (id, id));
+        assert_eq!(read, sync);
+
+        // The id-unaware readers must keep working against a peer that sends ids.
+        let plain: M = read_message(&mut frame.as_slice()).await.unwrap();
+        assert_eq!(plain, read);
+        assert_eq!(
+            read_message_sync::<M, _>(&mut frame.as_slice()).unwrap(),
+            read
+        );
+        assert_eq!(decode_message(body).unwrap(), (id, message));
+    }
+
     #[tokio::test]
     async fn request_id_round_trips_with_and_without_id() {
         for id in [None, Some(0), Some(u64::MAX)] {
             for message in id_samples() {
-                let frame = encode_message(id, &message).unwrap();
-                let body = &frame[MSG_LEN_SIZE..];
-                assert_eq!(
-                    body.len(),
-                    u32::from_le_bytes(frame[..4].try_into().unwrap()) as usize
-                );
-                let json: serde_json::Value = serde_json::from_slice(body).unwrap();
-                assert_eq!(json.get("rpc_id").and_then(|value| value.as_u64()), id);
-
-                assert_eq!(decode_message(body).unwrap(), (id, message));
-                let (read_id, read) = read_message_with_id(&mut frame.as_slice()).await.unwrap();
-                let (sync_id, sync) = read_message_with_id_sync(&mut frame.as_slice()).unwrap();
-                assert_eq!((read_id, sync_id), (id, id));
-                assert_eq!(read, sync);
-
-                // The id-unaware readers must keep working against a peer that sends ids.
-                let plain = read_message(&mut frame.as_slice()).await.unwrap();
-                assert_eq!(plain, read);
-                assert_eq!(read_message_sync(&mut frame.as_slice()).unwrap(), read);
+                match message {
+                    AnyMessage::Request(request) => round_trips_with_id(id, request).await,
+                    AnyMessage::Response(response) => round_trips_with_id(id, response).await,
+                }
             }
         }
     }
 
+    async fn writes_what_it_encodes<M: Message + PartialEq + std::fmt::Debug>(message: M) {
+        let mut written = Vec::new();
+        write_message(&mut written, &message).await.unwrap();
+        assert_eq!(written, encode_message(None, &message).unwrap());
+        assert_eq!(
+            read_message_with_id(&mut written.as_slice()).await.unwrap(),
+            (None, message)
+        );
+    }
+
     #[tokio::test]
-    async fn frame_without_id_key_decodes_to_none_and_matches_the_old_encoding() {
+    async fn write_message_writes_an_id_less_frame() {
         for message in id_samples() {
-            let mut old = Vec::new();
-            write_message(&mut old, &message).await.unwrap();
-            assert_eq!(old, encode_message(None, &message).unwrap());
-            assert_eq!(
-                read_message_with_id(&mut old.as_slice()).await.unwrap(),
-                (None, message)
-            );
+            match message {
+                AnyMessage::Request(request) => writes_what_it_encodes(request).await,
+                AnyMessage::Response(response) => writes_what_it_encodes(response).await,
+            }
         }
+    }
+
+    /// A frame says which way it goes, so one read by the wrong side fails instead of decoding
+    /// as some variant of the other enum.
+    #[test]
+    fn a_frame_only_decodes_as_its_own_direction() {
+        let request = encode_message(Some(1), &ServerRequest::Shutdown).unwrap();
+        let response = encode_message(Some(1), &ServerResponse::SessionCloseOk).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&request[MSG_LEN_SIZE..]).unwrap(),
+            serde_json::json!({"rpc_id": 1, "request": "shutdown"})
+        );
+        assert!(decode_message::<ServerResponse>(&request[MSG_LEN_SIZE..]).is_err());
+        assert!(decode_message::<ServerRequest>(&response[MSG_LEN_SIZE..]).is_err());
     }
 
     #[test]
@@ -3736,7 +3836,7 @@ mod tests {
         }
     }
 
-    fn project_session_messages() -> Vec<MaestroRpcMessage> {
+    fn project_session_messages() -> Vec<AnyMessage> {
         let live = ProjectSession {
             agent_id: "claude-acp".to_string(),
             acp_session_id: "conversation-1".to_string(),
@@ -3757,7 +3857,7 @@ mod tests {
             ..live.clone()
         };
         vec![
-            MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+            AnyMessage::Request(ServerRequest::Spawn(SpawnRequest {
                 agent_id: "claude-acp".to_string(),
                 session_id: "routing-1".to_string(),
                 cwd: "/srv/shop".to_string(),
@@ -3765,7 +3865,7 @@ mod tests {
                 project_path: Some("/srv/shop".to_string()),
                 meta: sample_meta(),
             })),
-            MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
+            AnyMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
                 agent_id: "claude-acp".to_string(),
                 session_id: "routing-1".to_string(),
                 resume_session_id: "conversation-1".to_string(),
@@ -3774,32 +3874,32 @@ mod tests {
                 project_path: Some("/srv/shop".to_string()),
                 meta: sample_meta(),
             })),
-            MaestroRpcMessage::Request(ServerRequest::ListProjectSessions(
+            AnyMessage::Request(ServerRequest::ListProjectSessions(
                 ListProjectSessionsRequest {
                     project_path: "/srv/shop".to_string(),
                     include_closed: true,
                 },
             )),
-            MaestroRpcMessage::Request(ServerRequest::RenameSession(RenameSessionRequest {
+            AnyMessage::Request(ServerRequest::RenameSession(RenameSessionRequest {
                 project_path: "/srv/shop".to_string(),
                 agent_id: "claude-acp".to_string(),
                 acp_session_id: "conversation-1".to_string(),
                 cwd: "/srv/shop".to_string(),
                 name: "Fix login".to_string(),
             })),
-            MaestroRpcMessage::Response(ServerResponse::ListProjectSessionsOk(
+            AnyMessage::Response(ServerResponse::ListProjectSessionsOk(
                 ListProjectSessionsResponse {
                     sessions: vec![live, dormant],
                 },
             )),
-            MaestroRpcMessage::Response(ServerResponse::RenameSessionOk),
-            MaestroRpcMessage::Request(ServerRequest::CloseProjectSession(
+            AnyMessage::Response(ServerResponse::RenameSessionOk),
+            AnyMessage::Request(ServerRequest::CloseProjectSession(
                 CloseProjectSessionRequest {
                     agent_id: "claude-acp".to_string(),
                     acp_session_id: "conversation-1".to_string(),
                 },
             )),
-            MaestroRpcMessage::Response(ServerResponse::CloseProjectSessionOk),
+            AnyMessage::Response(ServerResponse::CloseProjectSessionOk),
         ]
     }
 
@@ -3807,15 +3907,16 @@ mod tests {
     fn roundtrip_project_session_messages() {
         for message in project_session_messages() {
             let json = serde_json::to_string(&message).unwrap();
-            let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+            let back: AnyMessage = serde_json::from_str(&json).unwrap();
             assert_eq!(message, back);
         }
     }
 
     #[test]
     fn spawn_request_without_project_keys_still_deserializes() {
-        let json = r#"{"direction":"request","type":"spawn","agent_id":"claude-acp","session_id":"sess-1","cwd":"/tmp"}"#;
-        let MaestroRpcMessage::Request(ServerRequest::Spawn(request)) =
+        let json =
+            r#"{"request":{"spawn":{"agent_id":"claude-acp","session_id":"sess-1","cwd":"/tmp"}}}"#;
+        let AnyMessage::Request(ServerRequest::Spawn(request)) =
             serde_json::from_str(json).unwrap()
         else {
             panic!("expected a spawn request");
@@ -3828,40 +3929,40 @@ mod tests {
     fn project_session_requests_are_not_session_routed_and_responses_are_replies() {
         for message in project_session_messages() {
             match &message {
-                MaestroRpcMessage::Request(
+                AnyMessage::Request(
                     ServerRequest::ListProjectSessions(_)
                     | ServerRequest::RenameSession(_)
                     | ServerRequest::CloseProjectSession(_),
                 ) => assert_eq!(message.session_id(), None),
-                MaestroRpcMessage::Response(response) => {
+                AnyMessage::Response(response) => {
                     assert!(response.is_reply());
                     assert_eq!(message.session_id(), None);
                 }
-                MaestroRpcMessage::Request(_) => {}
+                AnyMessage::Request(_) => {}
             }
         }
     }
 
     #[test]
     fn roundtrip_handshake() {
-        let req = MaestroRpcMessage::Request(ServerRequest::Handshake(HandshakeRequest {
+        let req = AnyMessage::Request(ServerRequest::Handshake(HandshakeRequest {
             protocol_version: PROTOCOL_VERSION,
         }));
         let json = serde_json::to_string(&req).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(req, back);
 
-        let resp = MaestroRpcMessage::Response(ServerResponse::HandshakeOk(HandshakeResponse {
+        let resp = AnyMessage::Response(ServerResponse::HandshakeOk(HandshakeResponse {
             protocol_version: PROTOCOL_VERSION,
         }));
         let json = serde_json::to_string(&resp).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(resp, back);
     }
 
     #[test]
     fn roundtrip_spawn_request() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+        let msg = AnyMessage::Request(ServerRequest::Spawn(SpawnRequest {
             agent_id: "claude-acp".to_string(),
             session_id: "sess-1".to_string(),
             cwd: "/home/user/project".to_string(),
@@ -3870,44 +3971,44 @@ mod tests {
             meta: SessionMeta::default(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_prompt_request() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
+        let msg = AnyMessage::Request(ServerRequest::Prompt(PromptRequest {
             session_id: "sess-1".to_string(),
             content: serde_json::Value::String("fix the bug in auth.rs".to_string()),
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_cancel_request() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest {
+        let msg = AnyMessage::Request(ServerRequest::Cancel(CancelRequest {
             session_id: "sess-1".to_string(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_interrupt_turn_request() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::InterruptTurn(InterruptTurnRequest {
+        let msg = AnyMessage::Request(ServerRequest::InterruptTurn(InterruptTurnRequest {
             session_id: "sess-1".to_string(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_spawn_ok_response() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
+        let msg = AnyMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "sess-1".to_string(),
             acp_session_id: None,
             models: None,
@@ -3920,13 +4021,13 @@ mod tests {
             config_options: None,
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_spawn_ok_with_models() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
+        let msg = AnyMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "sess-1".to_string(),
             acp_session_id: Some("native-uuid-123".to_string()),
             prompt_capabilities: Some(PromptCapabilitiesInfo {
@@ -3957,76 +4058,75 @@ mod tests {
             config_options: None,
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_set_model_request() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::SetModel(SetModelRequest {
+        let msg = AnyMessage::Request(ServerRequest::SetModel(SetModelRequest {
             session_id: "sess-1".to_string(),
             model_id: "claude-opus-4-7".to_string(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_set_model_ok_response() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::SetModelOk(SetModelOkResponse {
+        let msg = AnyMessage::Response(ServerResponse::SetModelOk(SetModelOkResponse {
             session_id: "sess-1".to_string(),
             model_id: "claude-opus-4-7".to_string(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_error_response() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+        let msg = AnyMessage::Response(ServerResponse::Error(ErrorResponse {
             message: "agent not found".to_string(),
             session_id: None,
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_session_update() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::SessionUpdate(SessionUpdate {
+        let msg = AnyMessage::Response(ServerResponse::SessionUpdate(SessionUpdate {
             session_id: "sess-1".to_string(),
             payload: serde_json::json!({"type": "agent_message_chunk", "text": "hello"}),
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_permission_request() {
-        let msg =
-            MaestroRpcMessage::Response(ServerResponse::PermissionRequest(PermissionRequest {
-                session_id: "sess-1".to_string(),
-                request_id: "perm-42".to_string(),
-                payload: serde_json::json!({"tool": "write_file", "path": "/tmp/foo.txt"}),
-            }));
+        let msg = AnyMessage::Response(ServerResponse::PermissionRequest(PermissionRequest {
+            session_id: "sess-1".to_string(),
+            request_id: "perm-42".to_string(),
+            payload: serde_json::json!({"tool": "write_file", "path": "/tmp/foo.txt"}),
+        }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_terminal_output() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::TerminalOutput(TerminalOutput {
+        let msg = AnyMessage::Response(ServerResponse::TerminalOutput(TerminalOutput {
             session_id: "sess-1".to_string(),
             terminal_id: "term-1".to_string(),
             bytes: vec![0x1b, 0x5b, 0x32, 0x4a], // ESC[2J
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
@@ -4044,20 +4144,20 @@ mod tests {
 
     #[tokio::test]
     async fn framing_write_then_read_roundtrip() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+        let msg = ServerRequest::Spawn(SpawnRequest {
             agent_id: "gemini".to_string(),
             session_id: "sess-99".to_string(),
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
             project_path: None,
             meta: SessionMeta::default(),
-        }));
+        });
 
         let mut buf: Vec<u8> = Vec::new();
         write_message(&mut buf, &msg).await.unwrap();
 
         let mut cursor = std::io::Cursor::new(buf);
-        let back = read_message(&mut cursor).await.unwrap();
+        let back: ServerRequest = read_message(&mut cursor).await.unwrap();
         assert_eq!(msg, back);
     }
 
@@ -4070,7 +4170,7 @@ mod tests {
         buf.extend_from_slice(&[0u8; 64]); // some body bytes (doesn't matter)
 
         let mut cursor = std::io::Cursor::new(buf);
-        let result = read_message(&mut cursor).await;
+        let result = read_message::<ServerResponse, _>(&mut cursor).await;
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -4080,109 +4180,109 @@ mod tests {
 
     #[test]
     fn roundtrip_permit_response_request() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
+        let msg = AnyMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
             session_id: "sess-1".to_string(),
             request_id: "perm-42".to_string(),
             option_id: Some("default".into()),
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[tokio::test]
     async fn framing_permit_response_roundtrip() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
+        let msg = ServerRequest::PermitResponse(PermissionResponse {
             session_id: "sess-1".to_string(),
             request_id: "perm-42".to_string(),
             option_id: None,
-        }));
+        });
         let mut buf: Vec<u8> = Vec::new();
         write_message(&mut buf, &msg).await.unwrap();
         let mut cursor = std::io::Cursor::new(buf);
-        let back = read_message(&mut cursor).await.unwrap();
+        let back: ServerRequest = read_message(&mut cursor).await.unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_file_search_request() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::FileSearch(FileSearchRequest {
+        let msg = AnyMessage::Request(ServerRequest::FileSearch(FileSearchRequest {
             cwd: "/home/user/project".to_string(),
             query: "main".to_string(),
             limit: Some(20),
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_file_search_ok() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::FileSearchOk(FileSearchResponse {
+        let msg = AnyMessage::Response(ServerResponse::FileSearchOk(FileSearchResponse {
             files: vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_file_read_request() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::FileRead(FileReadRequest {
+        let msg = AnyMessage::Request(ServerRequest::FileRead(FileReadRequest {
             cwd: "/home/user/project".to_string(),
             relative_path: "src/main.rs".to_string(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_file_read_ok() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::FileReadOk(FileReadResponse {
+        let msg = AnyMessage::Response(ServerResponse::FileReadOk(FileReadResponse {
             content: "fn main() {}".to_string(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_turn_ended() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
+        let msg = AnyMessage::Response(ServerResponse::TurnEnded(TurnEnded {
             session_id: "sess-1".to_string(),
             stop_reason: "end_turn".to_string(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_set_mode_request() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::SetMode(SetModeRequest {
+        let msg = AnyMessage::Request(ServerRequest::SetMode(SetModeRequest {
             session_id: "sess-1".to_string(),
             mode_id: "plan".to_string(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_set_mode_ok_response() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::SetModeOk(SetModeOkResponse {
+        let msg = AnyMessage::Response(ServerResponse::SetModeOk(SetModeOkResponse {
             session_id: "sess-1".to_string(),
             mode_id: "plan".to_string(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_spawn_ok_with_modes() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
+        let msg = AnyMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "sess-1".to_string(),
             acp_session_id: None,
             models: None,
@@ -4209,15 +4309,15 @@ mod tests {
             config_options: None,
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn request_and_response_are_distinguishable() {
         // Verify that a Spawn request and a SpawnOk response both containing session_id
-        // are correctly distinguished by the "direction" tag
-        let req = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+        // are correctly distinguished by the outer `request`/`response` key
+        let req = AnyMessage::Request(ServerRequest::Spawn(SpawnRequest {
             agent_id: "test".to_string(),
             session_id: "sess-1".to_string(),
             cwd: "/tmp".to_string(),
@@ -4225,7 +4325,7 @@ mod tests {
             project_path: None,
             meta: SessionMeta::default(),
         }));
-        let resp = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
+        let resp = AnyMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "sess-1".to_string(),
             acp_session_id: None,
             models: None,
@@ -4242,71 +4342,69 @@ mod tests {
         // Verify they produce different JSON
         assert_ne!(req_json, resp_json);
         // Verify each round-trips to the correct variant
-        let req_back: MaestroRpcMessage = serde_json::from_str(&req_json).unwrap();
-        let resp_back: MaestroRpcMessage = serde_json::from_str(&resp_json).unwrap();
-        assert!(matches!(req_back, MaestroRpcMessage::Request(_)));
-        assert!(matches!(resp_back, MaestroRpcMessage::Response(_)));
+        let req_back: AnyMessage = serde_json::from_str(&req_json).unwrap();
+        let resp_back: AnyMessage = serde_json::from_str(&resp_json).unwrap();
+        assert!(matches!(req_back, AnyMessage::Request(_)));
+        assert!(matches!(resp_back, AnyMessage::Response(_)));
     }
 
     #[test]
     fn roundtrip_pre_initialize_request() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::PreInitialize(PreInitializeRequest {
+        let msg = AnyMessage::Request(ServerRequest::PreInitialize(PreInitializeRequest {
             agent_id: "claude-acp".to_string(),
             cwd: "/home/user/project".to_string(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_pre_initialize_ok() {
-        let msg =
-            MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(PreInitializeResponse {
-                agent_id: "claude-acp".to_string(),
-                prompt_capabilities: Some(PromptCapabilitiesInfo {
-                    embedded_context: true,
-                    image: false,
-                    audio: false,
-                }),
-                supports_session_list: true,
-                supports_session_load: true,
-                supports_session_close: false,
-                supports_session_delete: false,
-                auth_methods: vec![],
-                supports_auth_logout: false,
-            }));
+        let msg = AnyMessage::Response(ServerResponse::PreInitializeOk(PreInitializeResponse {
+            agent_id: "claude-acp".to_string(),
+            prompt_capabilities: Some(PromptCapabilitiesInfo {
+                embedded_context: true,
+                image: false,
+                audio: false,
+            }),
+            supports_session_list: true,
+            supports_session_load: true,
+            supports_session_close: false,
+            supports_session_delete: false,
+            auth_methods: vec![],
+            supports_auth_logout: false,
+        }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_agent_connection_lost() {
-        let msg =
-            MaestroRpcMessage::Response(ServerResponse::AgentConnectionLost(AgentConnectionLost {
-                agent_id: "claude-acp".to_string(),
-                reason: "agent process exited unexpectedly".to_string(),
-                affected_session_ids: vec!["session-1".to_string(), "session-2".to_string()],
-            }));
+        let msg = AnyMessage::Response(ServerResponse::AgentConnectionLost(AgentConnectionLost {
+            agent_id: "claude-acp".to_string(),
+            reason: "agent process exited unexpectedly".to_string(),
+            affected_session_ids: vec!["session-1".to_string(), "session-2".to_string()],
+        }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_detect_installed_agents_request() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::DetectInstalledAgents(
+        let msg = AnyMessage::Request(ServerRequest::DetectInstalledAgents(
             DetectInstalledAgentsRequest {},
         ));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_detect_installed_agents_ok() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(
+        let msg = AnyMessage::Response(ServerResponse::DetectInstalledAgentsOk(
             DetectInstalledAgentsResponse {
                 agents: vec![
                     DetectedAgentInfo {
@@ -4332,71 +4430,71 @@ mod tests {
             },
         ));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_detect_project_agents_request() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::DetectProjectAgents(
+        let msg = AnyMessage::Request(ServerRequest::DetectProjectAgents(
             DetectProjectAgentsRequest {
                 cwd: "/home/user/project".to_string(),
             },
         ));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_ping_response() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::Ping { seq: 42 });
+        let msg = AnyMessage::Response(ServerResponse::Ping { seq: 42 });
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_pong_request() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::Pong { seq: 42 });
+        let msg = AnyMessage::Request(ServerRequest::Pong { seq: 42 });
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_host_tool_call() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::HostToolCall(HostToolCall {
+        let msg = AnyMessage::Response(ServerResponse::HostToolCall(HostToolCall {
             session_id: "session-7".to_string(),
             request_id: "host-1".to_string(),
             name: "create_task".to_string(),
             arguments: serde_json::json!({"title": "Add retries to SFTP reads"}),
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_host_tool_result() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::HostToolResult(HostToolResult {
+        let msg = AnyMessage::Request(ServerRequest::HostToolResult(HostToolResult {
             session_id: "session-7".to_string(),
             request_id: "host-1".to_string(),
             result: serde_json::json!({"id": 12, "status": "Planning"}),
             error: None,
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
 
-        let failed = MaestroRpcMessage::Request(ServerRequest::HostToolResult(HostToolResult {
+        let failed = AnyMessage::Request(ServerRequest::HostToolResult(HostToolResult {
             session_id: "session-7".to_string(),
             request_id: "host-2".to_string(),
             result: serde_json::Value::Null,
             error: Some("unknown tool".to_string()),
         }));
         let json = serde_json::to_string(&failed).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(failed, back);
     }
 
@@ -4420,18 +4518,18 @@ mod tests {
 
     #[test]
     fn roundtrip_diagnostic() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::Diagnostic(DiagnosticPayload {
+        let msg = AnyMessage::Response(ServerResponse::Diagnostic(DiagnosticPayload {
             level: "error".to_string(),
             message: "[spawn] FAILED cmd=\"claude\": No such file".to_string(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 
     #[test]
     fn roundtrip_detect_project_agents_ok() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::DetectProjectAgentsOk(
+        let msg = AnyMessage::Response(ServerResponse::DetectProjectAgentsOk(
             DetectProjectAgentsResponse {
                 agents: vec![ProjectAgentMarker {
                     agent_id: "claude-acp".to_string(),
@@ -4440,7 +4538,7 @@ mod tests {
             },
         ));
         let json = serde_json::to_string(&msg).unwrap();
-        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
 }

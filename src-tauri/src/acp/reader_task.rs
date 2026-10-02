@@ -7,8 +7,8 @@ use crate::acp::session_types::{
     PendingReply, PendingRequests, ReaderTaskContext, RestorableSession,
 };
 use crate::acp::transport::{
-    FileReadResponse, FileSearchResponse, MaestroRpcMessage, PromptCapabilitiesInfo, ServerRequest,
-    ServerResponse, SessionModeState, SessionModelState,
+    FileReadResponse, FileSearchResponse, PromptCapabilitiesInfo, ServerRequest, ServerResponse,
+    SessionModeState, SessionModelState,
 };
 use crate::acp::transport_types::{serialize_message, AcpReadSource};
 use crate::acp::TaskKey;
@@ -69,17 +69,16 @@ pub(crate) fn spawn_reader_task(
                 },
             };
             match &msg {
-                MaestroRpcMessage::Response(ServerResponse::Ping { .. })
-                | MaestroRpcMessage::Response(ServerResponse::TerminalOutput(_)) => {}
+                ServerResponse::Ping { .. } | ServerResponse::TerminalOutput(_) => {}
                 _ => {
                     if let Ok(json) = serde_json::to_string(&msg) {
                         log::trace!("[acp] << session_id={session_id} {json}");
                     }
                 }
             }
-            if let MaestroRpcMessage::Response(ServerResponse::Ping { seq }) = &msg {
+            if let ServerResponse::Ping { seq } = &msg {
                 log::trace!("[acp] ping seq={seq} on direct session session_id={session_id}");
-                let pong = MaestroRpcMessage::Request(ServerRequest::Pong { seq: *seq });
+                let pong = ServerRequest::Pong { seq: *seq };
                 if let Err(e) =
                     crate::acp::write_to_acp_session(&app_state, &session_id, &pong).await
                 {
@@ -95,7 +94,7 @@ pub(crate) fn spawn_reader_task(
 
             // Off the reader loop: a `canvas_await` blocks until the user acts, and nothing else
             // on this session could arrive meanwhile, including the answer itself.
-            if let MaestroRpcMessage::Response(ServerResponse::HostToolCall(call)) = msg {
+            if let ServerResponse::HostToolCall(call) = msg {
                 let state = Arc::clone(&app_state);
                 let owned_session_id = session_id.clone();
                 tokio::spawn(async move {
@@ -227,7 +226,7 @@ fn emit_session_init_events(
 // fields separately; passing ReaderTaskContext here would force them to reassemble it.
 #[allow(clippy::too_many_arguments)]
 fn handle_server_message(
-    msg: MaestroRpcMessage,
+    msg: ServerResponse,
     session_id: &str,
     app_handle: &tauri::AppHandle,
     current_model_id: &Arc<std::sync::Mutex<Option<String>>>,
@@ -240,7 +239,7 @@ fn handle_server_message(
     completion_filter: &Arc<std::sync::Mutex<crate::acp::completion::CompletionMarkerFilter>>,
 ) -> Option<String> {
     match msg {
-        MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd)) => {
+        ServerResponse::SessionUpdate(upd) => {
             // Detect CurrentModeUpdate to keep the per-session current_mode_id current.
             if upd.payload.get("sessionUpdate").and_then(|v| v.as_str())
                 == Some("current_mode_update")
@@ -266,7 +265,7 @@ fn handle_server_message(
                 emit_or_buffer_payload(payload, replay_buffer, app_handle, session_id);
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::TerminalOutput(out)) => {
+        ServerResponse::TerminalOutput(out) => {
             #[derive(serde::Serialize)]
             struct Payload<'a> {
                 terminal_id: &'a str,
@@ -282,21 +281,21 @@ fn handle_server_message(
                 log::warn!("[acp] emit terminal-output/{session_id} failed: {e}");
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::PermissionRequest(req)) => {
+        ServerResponse::PermissionRequest(req) => {
             if let Err(e) =
                 app_handle.emit(&format!("acp://permission-request/{}", session_id), &req)
             {
                 log::warn!("[acp] emit permission-request/{session_id} failed: {e}");
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(req)) => {
+        ServerResponse::ElicitationRequest(req) => {
             if let Err(e) =
                 app_handle.emit(&format!("acp://elicitation-request/{}", session_id), &req)
             {
                 log::warn!("[acp] emit elicitation-request/{session_id} failed: {e}");
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::SpawnOk(spawn_ok)) => {
+        ServerResponse::SpawnOk(spawn_ok) => {
             log::debug!(
                 "[acp] spawn-ok session_id={session_id} session={} acp_session={:?} model={:?} session_list={} session_load={} session_close={} session_delete={}",
                 spawn_ok.session_id,
@@ -343,7 +342,7 @@ fn handle_server_message(
             }
             return new_native_id;
         }
-        MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(load_ok)) => {
+        ServerResponse::SessionLoadOk(load_ok) => {
             log::debug!(
                 "[acp] session-load-ok session_id={session_id} session={}",
                 load_ok.session_id
@@ -377,7 +376,7 @@ fn handle_server_message(
                 log::warn!("[acp] emit spawn-ok/{session_id} failed: {e}");
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::SetModelOk(ok)) => {
+        ServerResponse::SetModelOk(ok) => {
             log::debug!(
                 "[acp] set-model-ok session_id={session_id} model={}",
                 ok.model_id
@@ -391,7 +390,7 @@ fn handle_server_message(
                 log::warn!("[acp] emit model-changed/{session_id} failed: {e}");
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::SetModeOk(ok)) => {
+        ServerResponse::SetModeOk(ok) => {
             log::debug!(
                 "[acp] set-mode-ok session_id={session_id} mode={}",
                 ok.mode_id
@@ -405,7 +404,7 @@ fn handle_server_message(
                 log::warn!("[acp] emit mode-changed/{session_id} failed: {e}");
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::SetConfigOptionOk(ok)) => {
+        ServerResponse::SetConfigOptionOk(ok) => {
             log::debug!(
                 "[acp] set-config-ok session_id={session_id} config={} value={}",
                 ok.config_id,
@@ -418,7 +417,7 @@ fn handle_server_message(
                 log::warn!("[acp] emit config-changed/{session_id} failed: {e}");
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::ConfigOptionUpdated(ok)) => {
+        ServerResponse::ConfigOptionUpdated(ok) => {
             log::debug!(
                 "[acp] config-updated session_id={session_id} config={} value={}",
                 ok.config_id,
@@ -444,21 +443,21 @@ fn handle_server_message(
                 log::warn!("[acp] emit config-state-updated/{session_id} failed: {e}");
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::FileSearchOk(FileSearchResponse { files })) => {
+        ServerResponse::FileSearchOk(FileSearchResponse { files }) => {
             if let Ok(mut guard) = pending_file_search.lock() {
                 if let Some(tx) = guard.take() {
                     let _ = tx.send(Ok(files));
                 }
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::FileReadOk(FileReadResponse { content })) => {
+        ServerResponse::FileReadOk(FileReadResponse { content }) => {
             if let Ok(mut guard) = pending_file_read.lock() {
                 if let Some(tx) = guard.take() {
                     let _ = tx.send(Ok(content));
                 }
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::Error(err)) => {
+        ServerResponse::Error(err) => {
             log::error!(
                 "[acp] session-error session_id={session_id}: {}",
                 err.message
@@ -480,7 +479,7 @@ fn handle_server_message(
                 log::error!("[acp] emit session-error/{session_id} failed: {e}");
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::TurnEnded(turn_ended)) => {
+        ServerResponse::TurnEnded(turn_ended) => {
             log::debug!(
                 "[acp] turn-ended session_id={session_id} stop={}",
                 turn_ended.stop_reason
@@ -492,7 +491,7 @@ fn handle_server_message(
                 log::warn!("[acp] emit turn-ended/{session_id} failed: {e}");
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::Diagnostic(diag)) => {
+        ServerResponse::Diagnostic(diag) => {
             log_server_diagnostic(&diag.level, &diag.message);
             if let Err(e) = app_handle.emit(&format!("acp://diagnostic/{}", session_id), &diag) {
                 log::warn!("[acp] emit diagnostic/{session_id} failed: {e}");
@@ -507,11 +506,11 @@ fn handle_server_message(
 
 pub(crate) async fn update_session_from_response(
     session_id: &str,
-    msg: &MaestroRpcMessage,
+    msg: &ServerResponse,
     app_state: &Arc<crate::core::AppState>,
 ) {
     match msg {
-        MaestroRpcMessage::Response(ServerResponse::SpawnOk(r)) => {
+        ServerResponse::SpawnOk(r) => {
             let mut sessions = app_state.acp.sessions.lock().await;
             if let Some(session) = sessions.get_mut(session_id) {
                 session.session_capabilities = crate::acp::session_types::SessionCapabilitiesInfo {
@@ -524,20 +523,20 @@ pub(crate) async fn update_session_from_response(
                 session.prompt_capabilities = r.prompt_capabilities.clone();
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(r)) => {
+        ServerResponse::SessionLoadOk(r) => {
             let mut sessions = app_state.acp.sessions.lock().await;
             if let Some(session) = sessions.get_mut(session_id) {
                 session.config_options = r.config_options.clone().unwrap_or_default();
                 session.prompt_capabilities = r.prompt_capabilities.clone();
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::ConfigOptionUpdated(r)) => {
+        ServerResponse::ConfigOptionUpdated(r) => {
             let mut sessions = app_state.acp.sessions.lock().await;
             if let Some(session) = sessions.get_mut(session_id) {
                 session.config_options = r.config_options.clone();
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd))
+        ServerResponse::SessionUpdate(upd)
             if upd.payload.get("sessionUpdate").and_then(|v| v.as_str())
                 == Some("config_option_update") =>
         {
@@ -556,11 +555,8 @@ pub(crate) async fn update_session_from_response(
     }
 }
 
-fn extract_session_id(msg: &MaestroRpcMessage) -> Option<String> {
-    match msg {
-        MaestroRpcMessage::Response(_) => msg.session_id().map(str::to_owned),
-        MaestroRpcMessage::Request(_) => None,
-    }
+fn extract_session_id(msg: &ServerResponse) -> Option<String> {
+    msg.session_id().map(str::to_owned)
 }
 
 /// How much is kept for one session nobody here holds yet, and for how many such sessions.
@@ -575,7 +571,7 @@ const UNCLAIMED_SESSIONS: usize = 16;
 async fn park_unclaimed(
     app_state: &Arc<crate::core::AppState>,
     session_id: String,
-    msg: MaestroRpcMessage,
+    msg: ServerResponse,
 ) {
     let mut unclaimed = app_state.acp.unclaimed_messages.lock().await;
     // ponytail: dropping every parked session when a new one would exceed the cap loses a
@@ -593,7 +589,7 @@ async fn park_unclaimed(
 pub(crate) async fn take_unclaimed(
     app_state: &crate::core::AppState,
     session_id: &str,
-) -> Vec<MaestroRpcMessage> {
+) -> Vec<ServerResponse> {
     app_state
         .acp
         .unclaimed_messages
@@ -667,7 +663,7 @@ fn match_project_path(
 /// names one, and otherwise as the unprompted event it is. Replies that do carry an id never
 /// reach here, see `deliver_reply`.
 pub(crate) async fn handle_shared_server_message(
-    msg: MaestroRpcMessage,
+    msg: ServerResponse,
     connection_key: crate::acp::ConnectionKey,
     app_handle: &tauri::AppHandle,
     app_state: &Arc<crate::core::AppState>,
@@ -678,16 +674,16 @@ pub(crate) async fn handle_shared_server_message(
     if let Some(session_id) = extract_session_id(&msg) {
         // A request made for this session whose reply names none, a file search or read, cannot
         // be answered once the session has failed.
-        if let MaestroRpcMessage::Response(ServerResponse::Error(error)) = &msg {
+        if let ServerResponse::Error(error) = &msg {
             pending.fail_session(&session_id, &error.message);
         }
         update_session_from_response(&session_id, &msg, app_state).await;
 
         // The shared prompt tools need no session, and the daemon sends each one to a single
         // window (`ClientSink::write_to_one`), so whichever window gets it answers, held or not.
-        if let MaestroRpcMessage::Response(ServerResponse::HostToolCall(call)) = &msg {
+        if let ServerResponse::HostToolCall(call) = &msg {
             if crate::acp::host_tools::is_prompt_tool(&call.name) {
-                if let MaestroRpcMessage::Response(ServerResponse::HostToolCall(call)) = msg {
+                if let ServerResponse::HostToolCall(call) = msg {
                     let state = Arc::clone(app_state);
                     tokio::spawn(async move {
                         crate::acp::host_tools::answer_prompt_tool(&state, connection_key, call)
@@ -705,17 +701,15 @@ pub(crate) async fn handle_shared_server_message(
         // Only for a session this window holds: a daemon serving several windows sends a session
         // with no owner to all of them, and two answers to one call would race. The window that
         // does not hold it parks the call below, to answer it if it adopts the session.
-        let held = matches!(
-            msg,
-            MaestroRpcMessage::Response(ServerResponse::HostToolCall(_))
-        ) && app_state
-            .acp
-            .sessions
-            .lock()
-            .await
-            .contains_key(&session_id);
+        let held = matches!(msg, ServerResponse::HostToolCall(_))
+            && app_state
+                .acp
+                .sessions
+                .lock()
+                .await
+                .contains_key(&session_id);
         if held {
-            if let MaestroRpcMessage::Response(ServerResponse::HostToolCall(call)) = msg {
+            if let ServerResponse::HostToolCall(call) = msg {
                 let state = Arc::clone(app_state);
                 tokio::spawn(async move {
                     crate::acp::host_tools::handle(state, &session_id, call).await;
@@ -765,7 +759,7 @@ pub(crate) async fn handle_shared_server_message(
         {
             // If the agent completed a turn without needing auth, it has valid credentials.
             // This covers token-configured agents that never go through the explicit auth flow.
-            if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
+            if let ServerResponse::TurnEnded(ref turn_ended) = msg {
                 if turn_ended.stop_reason != "auth_required" {
                     let needs_auth_event = {
                         let mut auth_map = app_state.acp.agent_auth_info.lock().await;
@@ -797,10 +791,7 @@ pub(crate) async fn handle_shared_server_message(
                 }
             }
 
-            let is_permission_request = matches!(
-                msg,
-                MaestroRpcMessage::Response(ServerResponse::PermissionRequest(_))
-            );
+            let is_permission_request = matches!(msg, ServerResponse::PermissionRequest(_));
             let is_session_load_error = is_fatal_session_error(&msg);
             let is_gone = is_gone_session_error(&msg);
             handle_server_message(
@@ -863,7 +854,7 @@ pub(crate) async fn handle_shared_server_message(
             log::warn!(
                 "[acp] no session entry for session_id={session_id} while handling agent reply"
             );
-            if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
+            if let ServerResponse::TurnEnded(ref turn_ended) = msg {
                 if let Err(e) = app_handle.emit(
                     &format!("acp://turn-ended/{}", session_id),
                     &turn_ended.stop_reason,
@@ -880,13 +871,13 @@ pub(crate) async fn handle_shared_server_message(
     match msg {
         // Unsolicited: the clock started this, not the window. Named by project rather than sent
         // to a particular view, because the run belongs to a project whether or not it is open.
-        MaestroRpcMessage::Response(ServerResponse::AutomationRunChanged(run)) => {
+        ServerResponse::AutomationRunChanged(run) => {
             crate::core::emit_or_log(app_handle, "automation-run-changed", &run);
         }
         // Pushed to every window on the daemon after any write, this one's included, for every
         // project there: `project_id` is which of this app's projects it is, `null` for one it
         // does not have.
-        MaestroRpcMessage::Response(ServerResponse::TasksChanged(project)) => {
+        ServerResponse::TasksChanged(project) => {
             let project_id = project_id_for_path(app_state, connection_key, &project.project_path);
             crate::core::emit_or_log(
                 app_handle,
@@ -894,7 +885,7 @@ pub(crate) async fn handle_shared_server_message(
                 &serde_json::json!({ "project_id": project_id }),
             );
         }
-        MaestroRpcMessage::Response(ServerResponse::WorktreesChanged(project)) => {
+        ServerResponse::WorktreesChanged(project) => {
             let project_id = project_id_for_path(app_state, connection_key, &project.project_path);
             crate::core::emit_or_log(
                 app_handle,
@@ -902,7 +893,7 @@ pub(crate) async fn handle_shared_server_message(
                 &serde_json::json!({ "project_id": project_id }),
             );
         }
-        MaestroRpcMessage::Response(ServerResponse::PromptsChanged(project)) => {
+        ServerResponse::PromptsChanged(project) => {
             let project_id = project_id_for_path(app_state, connection_key, &project.project_path);
             // `project_id` is null when the path matches no project this app knows of.
             crate::core::emit_or_log(
@@ -913,7 +904,7 @@ pub(crate) async fn handle_shared_server_message(
         }
         // Only the window holding the project takes the session over. Adopting asks the daemon
         // for its row, and a reply comes back through this reader, so it runs on a task of its own.
-        MaestroRpcMessage::Response(ServerResponse::TaskSessionStarted(started)) => {
+        ServerResponse::TaskSessionStarted(started) => {
             let held = app_state
                 .active_project_lock
                 .lock()
@@ -933,11 +924,11 @@ pub(crate) async fn handle_shared_server_message(
             }
         }
         // The machine's capacity or a project's auto mode: either can let the queue move.
-        MaestroRpcMessage::Response(ServerResponse::PipelineSettingsChanged(_)) => {
+        ServerResponse::PipelineSettingsChanged(_) => {
             crate::core::emit_or_log(app_handle, "settings-changed", &());
         }
         // Named by project as well, since task ids are per project.
-        MaestroRpcMessage::Response(ServerResponse::TaskCommentsChanged(task)) => {
+        ServerResponse::TaskCommentsChanged(task) => {
             let project_id = project_id_for_path(app_state, connection_key, &task.project_path);
             crate::core::emit_or_log(
                 app_handle,
@@ -945,14 +936,14 @@ pub(crate) async fn handle_shared_server_message(
                 &serde_json::json!({ "project_id": project_id, "task_id": task.task_id }),
             );
         }
-        MaestroRpcMessage::Response(response @ ServerResponse::TakeoverResultOk(_)) => {
+        response @ ServerResponse::TakeoverResultOk(_) => {
             pending.deliver_takeover(response);
         }
         // Unsolicited, like a run changing: some window somewhere opened or left a project.
-        MaestroRpcMessage::Response(ServerResponse::ProjectLocksChanged) => {
+        ServerResponse::ProjectLocksChanged => {
             crate::core::emit_or_log(app_handle, "project-locks-changed", &connection_key);
         }
-        MaestroRpcMessage::Response(ServerResponse::TakeoverRequested(req)) => {
+        ServerResponse::TakeoverRequested(req) => {
             crate::core::emit_or_log(
                 app_handle,
                 "project-takeover-requested",
@@ -964,7 +955,7 @@ pub(crate) async fn handle_shared_server_message(
                 }),
             );
         }
-        MaestroRpcMessage::Response(ServerResponse::ProjectKicked(kicked)) => {
+        ServerResponse::ProjectKicked(kicked) => {
             let released = match app_state.active_project_lock.lock() {
                 Ok(mut held) => match *held {
                     Some((project_id, key)) if key == connection_key => {
@@ -1002,7 +993,7 @@ pub(crate) async fn handle_shared_server_message(
                 }),
             );
         }
-        MaestroRpcMessage::Response(ServerResponse::AuthTerminalExit(exit)) => {
+        ServerResponse::AuthTerminalExit(exit) => {
             let conn_key_id = match connection_key {
                 crate::acp::ConnectionKey::Local => "local".to_string(),
                 crate::acp::ConnectionKey::Ssh { id } => format!("ssh-{id}"),
@@ -1030,7 +1021,7 @@ pub(crate) async fn handle_shared_server_message(
                     .ok();
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::AgentConnectionLost(lost)) => {
+        ServerResponse::AgentConnectionLost(lost) => {
             for session_id_str in &lost.affected_session_ids {
                 {
                     let session_id = session_id_str.clone();
@@ -1050,7 +1041,7 @@ pub(crate) async fn handle_shared_server_message(
             );
             app_state.app_handle.emit("sessions-changed", ()).ok();
         }
-        MaestroRpcMessage::Response(ServerResponse::Diagnostic(diag)) => {
+        ServerResponse::Diagnostic(diag) => {
             log_server_diagnostic(&diag.level, &diag.message);
             // Best-effort: emit to any session on this connection for frontend visibility.
             let session_ids: Vec<String> = {
@@ -1073,7 +1064,7 @@ pub(crate) async fn handle_shared_server_message(
                 )
                 .ok();
         }
-        MaestroRpcMessage::Response(ServerResponse::Error(err)) => {
+        ServerResponse::Error(err) => {
             // No id and no session: nothing says which request this answers, so every session
             // on the connection is told.
             let session_ids: Vec<String> = {
@@ -1213,22 +1204,21 @@ pub(crate) fn spawn_shared_reader_task(
 
         while let Some((id, msg)) = source.next_message_with_id().await {
             match &msg {
-                MaestroRpcMessage::Response(ServerResponse::Ping { .. })
-                | MaestroRpcMessage::Response(ServerResponse::TerminalOutput(_)) => {}
+                ServerResponse::Ping { .. } | ServerResponse::TerminalOutput(_) => {}
                 _ => {
                     if let Ok(json) = serde_json::to_string(&msg) {
                         log::trace!("[acp] << {connection_key:?} id={id:?} {json}");
                     }
                 }
             }
-            if let MaestroRpcMessage::Response(ServerResponse::Ping { seq }) = &msg {
+            if let ServerResponse::Ping { seq } = &msg {
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs();
                 last_ping_at.store(now, Ordering::Relaxed);
                 log::trace!("[acp] ping seq={seq} from {connection_key:?}");
-                let pong = MaestroRpcMessage::Request(ServerRequest::Pong { seq: *seq });
+                let pong = ServerRequest::Pong { seq: *seq };
                 match serialize_message(&pong) {
                     Ok(bytes) => {
                         if let Err(e) = writer_tx.send(bytes).await {
@@ -1245,9 +1235,7 @@ pub(crate) fn spawn_shared_reader_task(
             // A reply to a session-scoped request never carries an id, so one that names a
             // session is left to the routing every session message takes.
             if let (Some(id), None) = (id, extract_session_id(&msg)) {
-                if let MaestroRpcMessage::Response(response) = msg {
-                    deliver_reply(id, response, connection_key, &app_state, &pending).await;
-                }
+                deliver_reply(id, msg, connection_key, &app_state, &pending).await;
                 continue;
             }
             handle_shared_server_message(msg, connection_key, &app_handle, &app_state, &pending)
@@ -1378,10 +1366,10 @@ fn connection_key_id(key: &crate::acp::ConnectionKey) -> String {
 ///
 /// Matched by prefix rather than equality: the message carries the agent's own reason after it,
 /// and servers deployed into `.maestro/bin/` predate the constant while spelling it identically.
-fn is_fatal_session_error(msg: &MaestroRpcMessage) -> bool {
+fn is_fatal_session_error(msg: &ServerResponse) -> bool {
     matches!(
         msg,
-        MaestroRpcMessage::Response(ServerResponse::Error(e))
+        ServerResponse::Error(e)
             if e.session_id.is_some()
                 && e.message.starts_with(maestro_protocol::SESSION_LOAD_FAILED_ERROR)
     )
@@ -1395,20 +1383,20 @@ fn is_fatal_session_error(msg: &MaestroRpcMessage) -> bool {
 /// daemon tells the two apart, because it holds the agent's error code and this side is sent only
 /// the agent's wording. A load that could not be sent at all, a connection that is down, never
 /// produces this message, so an unreachable host keeps its sessions.
-fn is_gone_session_error(msg: &MaestroRpcMessage) -> bool {
+fn is_gone_session_error(msg: &ServerResponse) -> bool {
     matches!(
         msg,
-        MaestroRpcMessage::Response(ServerResponse::Error(e))
+        ServerResponse::Error(e)
             if e.session_id.is_some()
                 && e.message.starts_with(maestro_protocol::SESSION_GONE_ERROR)
     )
 }
 
 /// Whether a load was refused because the daemon is reloading that session itself.
-fn is_reloading_session_error(msg: &MaestroRpcMessage) -> bool {
+fn is_reloading_session_error(msg: &ServerResponse) -> bool {
     matches!(
         msg,
-        MaestroRpcMessage::Response(ServerResponse::Error(e))
+        ServerResponse::Error(e)
             if e.session_id.is_some()
                 && e.message.starts_with(maestro_protocol::SESSION_RELOADING_ERROR)
     )
@@ -1468,11 +1456,11 @@ mod tests {
         use super::*;
         use crate::acp::transport::ErrorResponse;
 
-        fn error(message: &str, session_id: Option<&str>) -> MaestroRpcMessage {
-            MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+        fn error(message: &str, session_id: Option<&str>) -> ServerResponse {
+            ServerResponse::Error(ErrorResponse {
                 message: message.to_string(),
                 session_id: session_id.map(str::to_string),
-            }))
+            })
         }
 
         /// Every gone session is a failed load, so the entry is torn down either way. Only the one

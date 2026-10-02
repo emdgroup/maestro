@@ -1,7 +1,7 @@
 //! Messages for the exec channel — a second, dedicated connection to `maestro-server` used only
 //! to run commands.
 //!
-//! Deliberately not part of [`crate::MaestroRpcMessage`]. That protocol is served by a loop which
+//! Deliberately not part of [`crate::ServerRequest`]. That protocol is served by a loop which
 //! handles one message at a time, on a pipe that also carries live agent output, so a slow command
 //! would stall agent streaming and a large one would sit in front of it. The exec channel is a
 //! separate process with its own loop, so neither can happen.

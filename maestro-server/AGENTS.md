@@ -56,12 +56,11 @@ window. A window receiving a session it does not hold parks it, and answers a `H
 for a session it holds, so two windows never both answer one call.
 
 **A reply is matched by id, a session message by its session.** A frame may carry an `rpc_id`
-beside `direction` and `type`. The host stamps one on every sessionless request and keeps a map
+beside its `request` or `response`. The host stamps one on every sessionless request and keeps a map
 from id to waiter per connection (`PendingRequests`); the server echoes it on a reply that is
 sessionless and answers a request (`ServerResponse::is_reply`), and on nothing else. So an
 `Error` fails exactly the request it answers, and two requests of one type can be outstanding at
-once. The key is `rpc_id` because the message is flattened into the same object and payloads
-already own `id` and `request_id`. `TakeoverResultOk` is the one reply still matched by type: a
+once. `TakeoverResultOk` is the one reply still matched by type: a
 timer or another window's answer writes it, and neither knows the id that asked.
 
 **A project's sessions are rows in the daemon.** `maestro-server/src/project_store.rs` keeps a

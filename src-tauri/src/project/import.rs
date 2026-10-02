@@ -5,7 +5,7 @@
 //! the old `restorable_sessions` and `session_folders` of `.maestro/state.json`.
 
 use crate::acp::connection_server::{query_via_server, reply};
-use crate::acp::transport::{MaestroRpcMessage, ServerRequest, ServerResponse};
+use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
 use crate::models::GitConnection;
@@ -121,11 +121,11 @@ async fn import(
             connection_key,
             app_state,
             &not_found,
-            MaestroRpcMessage::Request(ServerRequest::BeginImport(BeginImportRequest {
+            ServerRequest::BeginImport(BeginImportRequest {
                 project_path: request.project_path.clone(),
                 floors: std::mem::take(&mut request.floors),
                 source_id: Some(source_id),
-            })),
+            }),
             reply!(ServerResponse::BeginImportOk(response) => response),
             IMPORT_TIMEOUT_SECS,
             timed_out,
@@ -158,10 +158,10 @@ async fn import(
                     connection_key,
                     app_state,
                     &not_found,
-                    MaestroRpcMessage::Request(ServerRequest::ImportChunk(ImportChunkRequest {
+                    ServerRequest::ImportChunk(ImportChunkRequest {
                         import_id: import_id.clone(),
                         chunk,
-                    })),
+                    }),
                     reply!(ServerResponse::ImportChunkOk => ()),
                     IMPORT_TIMEOUT_SECS,
                     timed_out,
@@ -172,7 +172,7 @@ async fn import(
                 connection_key,
                 app_state,
                 &not_found,
-                MaestroRpcMessage::Request(ServerRequest::CommitImport(ImportRef { import_id })),
+                ServerRequest::CommitImport(ImportRef { import_id }),
                 reply!(ServerResponse::ImportProjectOk(response) => response),
                 IMPORT_TIMEOUT_SECS,
                 timed_out,
@@ -204,12 +204,10 @@ async fn import(
             connection_key,
             app_state,
             &format!("No connection server for connection {connection_key:?}"),
-            MaestroRpcMessage::Request(ServerRequest::SetAutoMode(
-                maestro_protocol::AutoModeSetting {
-                    project_path: project_path.to_string(),
-                    enabled: true,
-                },
-            )),
+            ServerRequest::SetAutoMode(maestro_protocol::AutoModeSetting {
+                project_path: project_path.to_string(),
+                enabled: true,
+            }),
             reply!(ServerResponse::SetAutoModeOk => ()),
             IMPORT_TIMEOUT_SECS,
             "The project's server did not set auto mode in time",

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::acp::connection_server::{query_project_store, query_via_server, reply};
-use crate::acp::transport::{MaestroRpcMessage, ServerRequest, ServerResponse};
+use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::{logging, AppState};
 use crate::models::{AppSettings, ConnectionCapacitySettings};
 use crate::settings::models::LogLocation;
@@ -104,7 +104,7 @@ pub async fn get_connection_capacity(
         connection,
         &app_state,
         &format!("No connection server for connection {connection:?}"),
-        MaestroRpcMessage::Request(ServerRequest::GetCapacity),
+        ServerRequest::GetCapacity,
         reply!(ServerResponse::GetCapacityOk(status) => status),
         15,
         "The connection's server did not answer within 15s",
@@ -129,12 +129,10 @@ pub async fn save_connection_capacity(
         connection,
         &app_state,
         &format!("No connection server for connection {connection:?}"),
-        MaestroRpcMessage::Request(ServerRequest::SetCapacity(
-            maestro_protocol::CapacitySettings {
-                concurrency_mode: settings.concurrency_mode.into(),
-                max_concurrent_agents: settings.max_concurrent_agents,
-            },
-        )),
+        ServerRequest::SetCapacity(maestro_protocol::CapacitySettings {
+            concurrency_mode: settings.concurrency_mode.into(),
+            max_concurrent_agents: settings.max_concurrent_agents,
+        }),
         reply!(ServerResponse::SetCapacityOk => ()),
         15,
         "The connection's server did not answer within 15s",
@@ -168,7 +166,7 @@ pub(crate) async fn seed_connection_capacity(
         connection,
         app_state,
         &format!("No connection server for connection {connection:?}"),
-        MaestroRpcMessage::Request(ServerRequest::GetCapacity),
+        ServerRequest::GetCapacity,
         reply!(ServerResponse::GetCapacityOk(status) => status),
         15,
         "The connection's server did not answer within 15s",
@@ -181,16 +179,14 @@ pub(crate) async fn seed_connection_capacity(
         connection,
         app_state,
         &format!("No connection server for connection {connection:?}"),
-        MaestroRpcMessage::Request(ServerRequest::SetCapacity(
-            maestro_protocol::CapacitySettings {
-                concurrency_mode: if mode == "Hard" {
-                    maestro_protocol::ConcurrencyMode::Hard
-                } else {
-                    maestro_protocol::ConcurrencyMode::Auto
-                },
-                max_concurrent_agents,
+        ServerRequest::SetCapacity(maestro_protocol::CapacitySettings {
+            concurrency_mode: if mode == "Hard" {
+                maestro_protocol::ConcurrencyMode::Hard
+            } else {
+                maestro_protocol::ConcurrencyMode::Auto
             },
-        )),
+            max_concurrent_agents,
+        }),
         reply!(ServerResponse::SetCapacityOk => ()),
         15,
         "The connection's server did not answer within 15s",

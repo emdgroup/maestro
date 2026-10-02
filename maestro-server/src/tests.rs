@@ -5,7 +5,7 @@
 //! manual verification documented in VALIDATION.md.
 
 use maestro_protocol::{
-    read_message, write_message, MaestroRpcMessage, PermissionRequest as ProtocolPermissionRequest,
+    read_message, write_message, PermissionRequest as ProtocolPermissionRequest,
     PermissionResponse, ServerRequest, ServerResponse, SessionUpdate, TerminalOutput,
 };
 use std::cell::RefCell;
@@ -19,11 +19,11 @@ use tokio::sync::oneshot;
 /// deserializes to the correct variant with all fields intact.
 #[tokio::test]
 async fn test_permit_response_roundtrip() {
-    let msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
+    let msg = ServerRequest::PermitResponse(PermissionResponse {
         session_id: "sess-1".to_string(),
         request_id: "perm-42".to_string(),
         option_id: Some("default".into()),
-    }));
+    });
 
     // JSON serde roundtrip
     let json = serde_json::to_string(&msg).unwrap();
@@ -31,7 +31,7 @@ async fn test_permit_response_roundtrip() {
         json.contains("permit_response"),
         "JSON must contain 'permit_response' type tag"
     );
-    let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+    let back: ServerRequest = serde_json::from_str(&json).unwrap();
     assert_eq!(msg, back);
 
     // Wire framing roundtrip (length-prefixed)
@@ -42,14 +42,13 @@ async fn test_permit_response_roundtrip() {
     assert_eq!(msg, framed_back);
 
     // Also test option_id=None (cancelled)
-    let msg_cancel =
-        MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
-            session_id: "sess-2".to_string(),
-            request_id: "perm-99".to_string(),
-            option_id: None,
-        }));
+    let msg_cancel = ServerRequest::PermitResponse(PermissionResponse {
+        session_id: "sess-2".to_string(),
+        request_id: "perm-99".to_string(),
+        option_id: None,
+    });
     let json_cancel = serde_json::to_string(&msg_cancel).unwrap();
-    let back_cancel: MaestroRpcMessage = serde_json::from_str(&json_cancel).unwrap();
+    let back_cancel: ServerRequest = serde_json::from_str(&json_cancel).unwrap();
     assert_eq!(msg_cancel, back_cancel);
 }
 
@@ -68,10 +67,10 @@ async fn test_session_notification_writes_stdout() {
         }
     });
 
-    let msg = MaestroRpcMessage::Response(ServerResponse::SessionUpdate(SessionUpdate {
+    let msg = ServerResponse::SessionUpdate(SessionUpdate {
         session_id: "maestro-sess-1".to_string(),
         payload: payload.clone(),
-    }));
+    });
 
     // Write to buffer (simulating stdout write)
     let mut buf: Vec<u8> = Vec::new();
@@ -84,7 +83,7 @@ async fn test_session_notification_writes_stdout() {
     assert_eq!(msg, back);
 
     // Verify the payload is preserved exactly
-    if let MaestroRpcMessage::Response(ServerResponse::SessionUpdate(update)) = back {
+    if let ServerResponse::SessionUpdate(update) = back {
         assert_eq!(update.session_id, "maestro-sess-1");
         assert_eq!(update.payload, payload);
     } else {
@@ -99,11 +98,11 @@ async fn test_session_notification_writes_stdout() {
 async fn test_terminal_output_frame() {
     let terminal_bytes = b"$ cargo build\nCompiling maestro v0.1.0\n".to_vec();
 
-    let msg = MaestroRpcMessage::Response(ServerResponse::TerminalOutput(TerminalOutput {
+    let msg = ServerResponse::TerminalOutput(TerminalOutput {
         session_id: "maestro-sess-1".to_string(),
         terminal_id: "term-1".to_string(),
         bytes: terminal_bytes.clone(),
-    }));
+    });
 
     // Wire framing roundtrip
     let mut buf: Vec<u8> = Vec::new();
@@ -113,7 +112,7 @@ async fn test_terminal_output_frame() {
     assert_eq!(msg, back);
 
     // Verify bytes preserved
-    if let MaestroRpcMessage::Response(ServerResponse::TerminalOutput(output)) = back {
+    if let ServerResponse::TerminalOutput(output) = back {
         assert_eq!(output.bytes, terminal_bytes);
         assert_eq!(output.terminal_id, "term-1");
         assert_eq!(output.session_id, "maestro-sess-1");
@@ -125,11 +124,11 @@ async fn test_terminal_output_frame() {
     let ansi_bytes = vec![
         0x1b, 0x5b, 0x33, 0x32, 0x6d, b'O', b'K', 0x1b, 0x5b, 0x30, 0x6d,
     ];
-    let msg_ansi = MaestroRpcMessage::Response(ServerResponse::TerminalOutput(TerminalOutput {
+    let msg_ansi = ServerResponse::TerminalOutput(TerminalOutput {
         session_id: "sess-2".to_string(),
         terminal_id: "term-2".to_string(),
         bytes: ansi_bytes.clone(),
-    }));
+    });
     let mut buf2: Vec<u8> = Vec::new();
     write_message(&mut buf2, &msg_ansi).await.unwrap();
     let mut cursor2 = std::io::Cursor::new(buf2);
@@ -167,13 +166,11 @@ async fn test_permission_pause_creates_pending_entry() {
     assert!(result, "expected allowed=true");
 
     // Also test the PermissionRequest ServerResponse wire format (what request_permission writes)
-    let perm_req_msg = MaestroRpcMessage::Response(ServerResponse::PermissionRequest(
-        ProtocolPermissionRequest {
-            session_id: "sess-1".to_string(),
-            request_id: "perm-42".to_string(),
-            payload: serde_json::json!({"tool": "write_file", "path": "/tmp/test.rs"}),
-        },
-    ));
+    let perm_req_msg = ServerResponse::PermissionRequest(ProtocolPermissionRequest {
+        session_id: "sess-1".to_string(),
+        request_id: "perm-42".to_string(),
+        payload: serde_json::json!({"tool": "write_file", "path": "/tmp/test.rs"}),
+    });
     let mut buf: Vec<u8> = Vec::new();
     write_message(&mut buf, &perm_req_msg).await.unwrap();
     let mut cursor = std::io::Cursor::new(buf);

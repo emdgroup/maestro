@@ -10,8 +10,8 @@ use acp::schema::v1::{
 use agent_client_protocol as acp;
 use agent_client_protocol_schema::v1::{CreateElicitationRequest, CreateElicitationResponse};
 use maestro_protocol::{
-    ElicitationRequest as MaestroElicitationRequest, MaestroRpcMessage,
-    PermissionRequest as MaestroPermissionRequest, ServerResponse, SessionUpdate,
+    ElicitationRequest as MaestroElicitationRequest, PermissionRequest as MaestroPermissionRequest,
+    ServerResponse, SessionUpdate,
 };
 use tokio::sync::{oneshot, Mutex};
 
@@ -281,8 +281,7 @@ impl ConnectionHandlers {
             request_id: request_id.clone(),
             payload,
         };
-        let msg =
-            MaestroRpcMessage::Response(ServerResponse::PermissionRequest(request_out.clone()));
+        let msg = ServerResponse::PermissionRequest(request_out.clone());
         // Insert tx after send_response: single-threaded runtime guarantees no PermitResponse
         // can arrive between these two awaits, so there is no race.
         send_response(&self.stdout, &msg)
@@ -321,10 +320,10 @@ impl ConnectionHandlers {
             .map_err(|e| acp::Error::new(-32603, e.to_string()))?;
         crate::helpers::note_session_update(&maestro_sid, &payload);
         crate::turn::note_update(&maestro_sid, &payload);
-        let msg = MaestroRpcMessage::Response(ServerResponse::SessionUpdate(SessionUpdate {
+        let msg = ServerResponse::SessionUpdate(SessionUpdate {
             session_id: maestro_sid,
             payload,
-        }));
+        });
         send_response(&self.stdout, &msg)
             .await
             .map_err(|e| acp::Error::new(-32603, e.to_string()))?;
@@ -413,8 +412,7 @@ impl ConnectionHandlers {
             message: elicitation.message,
             payload,
         };
-        let msg =
-            MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(request_out.clone()));
+        let msg = ServerResponse::ElicitationRequest(request_out.clone());
         // Insert tx after send_response: single-threaded runtime guarantees no ElicitationResponse
         // can arrive between these two awaits, so there is no race.
         send_response(&self.stdout, &msg)

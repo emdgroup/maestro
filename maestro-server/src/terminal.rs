@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use acp::schema::v1::{CreateTerminalRequest, CreateTerminalResponse, TerminalId};
 use agent_client_protocol as acp;
-use maestro_protocol::{MaestroRpcMessage, ServerResponse, TerminalOutput};
+use maestro_protocol::{ServerResponse, TerminalOutput};
 use tokio::sync::{mpsc, Mutex, Notify};
 
 use crate::file_ops::OutputBuffer;
@@ -138,13 +138,12 @@ pub(crate) async fn handle_create_terminal(
                                     truncated_bg.store(true, Ordering::Relaxed);
                                 }
                             }
-                            let msg = MaestroRpcMessage::Response(
+                            let msg =
                                 ServerResponse::TerminalOutput(TerminalOutput {
                                     session_id: maestro_session_id.clone(),
                                     terminal_id: terminal_id_bg.clone(),
                                     bytes,
-                                }),
-                            );
+                                });
                             if let Err(e) = send_response(&stdout_bg, &msg).await {
                                 crate::helpers::send_diag(
                                     "warn",

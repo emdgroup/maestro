@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use maestro_protocol::{DiagnosticPayload, ErrorResponse, MaestroRpcMessage, ServerResponse};
+use maestro_protocol::{DiagnosticPayload, ErrorResponse, ServerResponse};
 
 use crate::session::pre_initialize_agent;
 use crate::sessions::{AgentConnectionHandle, SessionCommand, SessionMap, SharedAgentConnections};
@@ -116,11 +116,11 @@ pub(crate) fn note_turn_ended(session_id: &str, stop_reason: &str) {
 }
 
 /// An error to send back to the host, with no session to attribute it to.
-pub(crate) fn error_response(message: String) -> MaestroRpcMessage {
-    MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+pub(crate) fn error_response(message: String) -> ServerResponse {
+    ServerResponse::Error(ErrorResponse {
         message,
         session_id: None,
-    }))
+    })
 }
 
 /// Drop a failed agent connection, unless it has already been replaced.
@@ -169,10 +169,10 @@ pub(crate) async fn resolve_agent_spawn_params(
             send_diag("error", format!("[spawn] agent not found: {agent_id:?}"));
             let _ = send_response(
                 stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                &ServerResponse::Error(ErrorResponse {
                     message: format!("Unknown agent: {}", agent_id),
                     session_id: None,
-                })),
+                }),
             )
             .await;
             None
@@ -204,10 +204,10 @@ pub(crate) async fn ensure_and_get_connection(
     Some(handle)
 }
 
-/// Send a MaestroRpcMessage to the client, flushing after every write.
+/// Send a ServerResponse to the client, flushing after every write.
 pub(crate) async fn send_response(
     stdout: &crate::ClientOut,
-    msg: &MaestroRpcMessage,
+    msg: &ServerResponse,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut sink = stdout.lock().await;
     let buf =
@@ -220,7 +220,7 @@ pub(crate) async fn send_response(
 pub(crate) async fn broadcast(stdout: &crate::ClientOut, response: ServerResponse) {
     crate::scheduler::observe(&response);
     let everyone = crate::client_sink::ClientSink::everyone(stdout).await;
-    if let Err(e) = send_response(&everyone, &MaestroRpcMessage::Response(response)).await {
+    if let Err(e) = send_response(&everyone, &response).await {
         send_diag(
             "warn",
             format!("[server] could not broadcast a change: {e}"),
@@ -240,20 +240,20 @@ pub(crate) async fn forward_to_session(
         if session.cmd_tx.send(cmd).await.is_err() {
             send_response(
                 stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                &ServerResponse::Error(ErrorResponse {
                     message: format!("session {} connection closed", session_id),
                     session_id: None,
-                })),
+                }),
             )
             .await?;
         }
     } else {
         send_response(
             stdout,
-            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+            &ServerResponse::Error(ErrorResponse {
                 message: format!("unknown session: {}", session_id),
                 session_id: None,
-            })),
+            }),
         )
         .await?;
     }

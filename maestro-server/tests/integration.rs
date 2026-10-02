@@ -22,8 +22,8 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use maestro_protocol::{
-    CancelRequest, HandshakeRequest, ListAgentsRequest, MaestroRpcMessage, PermissionResponse,
-    PromptRequest, ServerRequest, ServerResponse, SpawnRequest, PROTOCOL_VERSION,
+    CancelRequest, HandshakeRequest, ListAgentsRequest, PermissionResponse, PromptRequest,
+    ServerRequest, ServerResponse, SpawnRequest, PROTOCOL_VERSION,
 };
 
 fn server_binary() -> PathBuf {
@@ -36,31 +36,23 @@ fn server_binary() -> PathBuf {
         ))
 }
 
-fn write_msg(writer: &mut impl Write, msg: &MaestroRpcMessage) {
-    let body = serde_json::to_vec(msg).expect("serialize");
-    let len = body.len() as u32;
-    writer.write_all(&len.to_le_bytes()).expect("write len");
-    writer.write_all(&body).expect("write body");
+fn write_msg(writer: &mut impl Write, msg: &ServerRequest) {
+    let frame = maestro_protocol::encode_message(None, msg).expect("encode");
+    writer.write_all(&frame).expect("write frame");
     writer.flush().expect("flush");
 }
 
-fn read_frame(reader: &mut impl Read) -> MaestroRpcMessage {
-    let mut len_buf = [0u8; 4];
-    reader.read_exact(&mut len_buf).expect("read len prefix");
-    let len = u32::from_le_bytes(len_buf) as usize;
-    assert!(len < 16 * 1024 * 1024, "response too large: {} bytes", len);
-    let mut body = vec![0u8; len];
-    reader.read_exact(&mut body).expect("read body");
-    serde_json::from_slice(&body).expect("deserialize response")
+fn read_frame(reader: &mut impl Read) -> ServerResponse {
+    maestro_protocol::read_message_sync(reader).expect("read frame")
 }
 
 // Skip Diagnostic and Ping frames — both arrive asynchronously and are not
 // relevant to the error-path assertions these tests make.
-fn read_msg(reader: &mut impl Read) -> MaestroRpcMessage {
+fn read_msg(reader: &mut impl Read) -> ServerResponse {
     loop {
         match read_frame(reader) {
-            MaestroRpcMessage::Response(ServerResponse::Diagnostic(_)) => continue,
-            MaestroRpcMessage::Response(ServerResponse::Ping { .. }) => continue,
+            ServerResponse::Diagnostic(_) => continue,
+            ServerResponse::Ping { .. } => continue,
             other => return other,
         }
     }
@@ -95,16 +87,13 @@ fn spawn_server_with_home(home: Option<&std::path::Path>) -> std::process::Child
 fn do_handshake(stdin: &mut impl Write, stdout: &mut impl Read) {
     write_msg(
         stdin,
-        &MaestroRpcMessage::Request(ServerRequest::Handshake(HandshakeRequest {
+        &ServerRequest::Handshake(HandshakeRequest {
             protocol_version: PROTOCOL_VERSION,
-        })),
+        }),
     );
     let resp = read_msg(stdout);
     assert!(
-        matches!(
-            resp,
-            MaestroRpcMessage::Response(ServerResponse::HandshakeOk(_))
-        ),
+        matches!(resp, ServerResponse::HandshakeOk(_)),
         "expected HandshakeOk, got: {}",
         serde_json::to_string(&resp).unwrap()
     );
@@ -121,19 +110,19 @@ fn test_spawn_unknown_agent_returns_error() {
 
     write_msg(
         stdin,
-        &MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+        &ServerRequest::Spawn(SpawnRequest {
             agent_id: "nonexistent-acp-agent-xyz-12345".to_string(),
             session_id: "session-1".to_string(),
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
             project_path: None,
             meta: Default::default(),
-        })),
+        }),
     );
 
     let resp = read_msg(stdout);
     match resp {
-        MaestroRpcMessage::Response(ServerResponse::Error(e)) => {
+        ServerResponse::Error(e) => {
             // Error must mention the agent name or the spawn failure
             assert!(
                 e.message.contains("nonexistent-acp-agent-xyz-12345")
@@ -168,21 +157,18 @@ fn test_prompt_after_failed_spawn_returns_unknown_session_error() {
     // Step 1: failed spawn — consume Error
     write_msg(
         stdin,
-        &MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+        &ServerRequest::Spawn(SpawnRequest {
             agent_id: "no-such-agent".to_string(),
             session_id: "session-99".to_string(),
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
             project_path: None,
             meta: Default::default(),
-        })),
+        }),
     );
     let spawn_resp = read_msg(stdout);
     assert!(
-        matches!(
-            spawn_resp,
-            MaestroRpcMessage::Response(ServerResponse::Error(_))
-        ),
+        matches!(spawn_resp, ServerResponse::Error(_)),
         "expected Error from failed spawn, got: {}",
         serde_json::to_string(&spawn_resp).unwrap()
     );
@@ -190,14 +176,14 @@ fn test_prompt_after_failed_spawn_returns_unknown_session_error() {
     // Step 2: prompt on the never-registered session
     write_msg(
         stdin,
-        &MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
+        &ServerRequest::Prompt(PromptRequest {
             session_id: "session-99".to_string(),
             content: serde_json::Value::String("hello world".to_string()),
-        })),
+        }),
     );
     let prompt_resp = read_msg(stdout);
     match prompt_resp {
-        MaestroRpcMessage::Response(ServerResponse::Error(e)) => {
+        ServerResponse::Error(e) => {
             assert!(
                 e.message.contains("unknown session") || e.message.contains("session-99"),
                 "error must mention unknown session, got: {}",
@@ -226,11 +212,11 @@ fn test_permit_response_unknown_session_produces_no_output() {
         do_handshake(stdin, stdout);
         write_msg(
             stdin,
-            &MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
+            &ServerRequest::PermitResponse(PermissionResponse {
                 session_id: "session-never".to_string(),
                 request_id: "perm-001".to_string(),
                 option_id: Some("default".into()),
-            })),
+            }),
         );
         // Drop stdin here (end of scope) — causes server to receive EOF and exit
     }
@@ -252,8 +238,8 @@ fn test_permit_response_unknown_session_produces_no_output() {
     let mut unexpected = Vec::new();
     while (remaining.position() as usize) < output.len() {
         match read_frame(&mut remaining) {
-            MaestroRpcMessage::Response(ServerResponse::Diagnostic(_)) => continue,
-            MaestroRpcMessage::Response(ServerResponse::Ping { .. }) => continue,
+            ServerResponse::Diagnostic(_) => continue,
+            ServerResponse::Ping { .. } => continue,
             other => unexpected.push(other),
         }
     }
@@ -275,9 +261,9 @@ fn test_cancel_unknown_session_produces_no_output() {
         do_handshake(stdin, stdout);
         write_msg(
             stdin,
-            &MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest {
+            &ServerRequest::Cancel(CancelRequest {
                 session_id: "session-ghost".to_string(),
-            })),
+            }),
         );
     }
     drop(child.stdin.take());
@@ -298,8 +284,8 @@ fn test_cancel_unknown_session_produces_no_output() {
     let mut unexpected = Vec::new();
     while (remaining.position() as usize) < output.len() {
         match read_frame(&mut remaining) {
-            MaestroRpcMessage::Response(ServerResponse::Diagnostic(_)) => continue,
-            MaestroRpcMessage::Response(ServerResponse::Ping { .. }) => continue,
+            ServerResponse::Diagnostic(_) => continue,
+            ServerResponse::Ping { .. } => continue,
             other => unexpected.push(other),
         }
     }
@@ -323,14 +309,14 @@ fn test_protocol_framing_large_prompt_payload() {
     // Consume spawn error first
     write_msg(
         stdin,
-        &MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+        &ServerRequest::Spawn(SpawnRequest {
             agent_id: "no-agent".to_string(),
             session_id: "session-large".to_string(),
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
             project_path: None,
             meta: Default::default(),
-        })),
+        }),
     );
     let _ = read_msg(stdout);
 
@@ -338,15 +324,15 @@ fn test_protocol_framing_large_prompt_payload() {
     let large_content = serde_json::Value::String("x".repeat(64 * 1024));
     write_msg(
         stdin,
-        &MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
+        &ServerRequest::Prompt(PromptRequest {
             session_id: "session-large".to_string(),
             content: large_content,
-        })),
+        }),
     );
 
     let resp = read_msg(stdout);
     assert!(
-        matches!(resp, MaestroRpcMessage::Response(ServerResponse::Error(_))),
+        matches!(resp, ServerResponse::Error(_)),
         "large payload must still produce a parseable Error response"
     );
 
@@ -376,15 +362,12 @@ fn test_list_agents_returns_ok_response() {
     let stdout = child.stdout.as_mut().unwrap();
     do_handshake(stdin, stdout);
 
-    write_msg(
-        stdin,
-        &MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {})),
-    );
+    write_msg(stdin, &ServerRequest::ListAgents(ListAgentsRequest {}));
 
     let resp = read_msg(stdout);
     println!("response: {}", serde_json::to_string_pretty(&resp).unwrap());
     match resp {
-        MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(list)) => {
+        ServerResponse::ListAgentsOk(list) => {
             println!("agents ({}):", list.agents.len());
             for agent in &list.agents {
                 println!("  {} — {} (icon: {})", agent.id, agent.name, agent.icon);
@@ -434,14 +417,11 @@ fn test_list_agents_includes_user_defined_custom_agents() {
     let stdout = child.stdout.as_mut().unwrap();
     do_handshake(stdin, stdout);
 
-    write_msg(
-        stdin,
-        &MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {})),
-    );
+    write_msg(stdin, &ServerRequest::ListAgents(ListAgentsRequest {}));
 
     let resp = read_msg(stdout);
     match resp {
-        MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(list)) => {
+        ServerResponse::ListAgentsOk(list) => {
             let custom = list
                 .agents
                 .iter()
@@ -470,8 +450,7 @@ fn test_list_agents_includes_user_defined_custom_agents() {
 }
 
 fn write_msg_with_id(writer: &mut impl Write, id: Option<u64>, request: ServerRequest) {
-    let frame =
-        maestro_protocol::encode_message(id, &MaestroRpcMessage::Request(request)).expect("encode");
+    let frame = maestro_protocol::encode_message(id, &request).expect("encode");
     writer.write_all(&frame).expect("write frame");
     writer.flush().expect("flush");
 }
@@ -480,10 +459,9 @@ fn write_msg_with_id(writer: &mut impl Write, id: Option<u64>, request: ServerRe
 fn read_msg_with_id(reader: &mut impl Read) -> (Option<u64>, ServerResponse) {
     loop {
         match maestro_protocol::read_message_with_id_sync(reader).expect("read frame") {
-            (_, MaestroRpcMessage::Response(ServerResponse::Diagnostic(_))) => continue,
-            (_, MaestroRpcMessage::Response(ServerResponse::Ping { .. })) => continue,
-            (id, MaestroRpcMessage::Response(response)) => return (id, response),
-            (_, other) => panic!("expected a response, got: {other:?}"),
+            (_, ServerResponse::Diagnostic(_)) => continue,
+            (_, ServerResponse::Ping { .. }) => continue,
+            (id, response) => return (id, response),
         }
     }
 }

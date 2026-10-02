@@ -5,7 +5,7 @@ use crate::acp::reader_task::spawn_reader_task;
 use crate::acp::session_types::{
     AcpProcess, AcpProcessParams, AcpTransportWriter, SessionRequest, TaskMetadata, TransportTarget,
 };
-use crate::acp::transport::{MaestroRpcMessage, ServerRequest, SessionLoadRequest, SpawnRequest};
+use crate::acp::transport::{ServerRequest, SessionLoadRequest, SpawnRequest};
 #[cfg(windows)]
 use crate::acp::transport_setup::open_wsl_transport;
 use crate::acp::transport_setup::{open_local_transport, open_remote_transport};
@@ -64,7 +64,7 @@ pub async fn try_spawn_via_connection_server(
             None => return Ok(false),
         }
     };
-    let spawn_req = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+    let spawn_req = ServerRequest::Spawn(SpawnRequest {
         agent_id: req.agent_id.clone(),
         session_id: session_id.to_string(),
         cwd: req.cwd.clone(),
@@ -73,7 +73,7 @@ pub async fn try_spawn_via_connection_server(
             .project_id
             .and_then(|project_id| project_path(&req.app_state, project_id)),
         meta: task.to_session_meta(req.session_name.clone()),
-    }));
+    });
     let bytes = serialize_message(&spawn_req)?;
     let (acp_process, _ctx) = AcpProcess::create(
         AcpProcessParams {
@@ -438,14 +438,11 @@ pub async fn attach_project_sessions(
         let mut replayed: std::collections::HashSet<String> = std::collections::HashSet::new();
         for msg in unclaimed {
             match &msg {
-                MaestroRpcMessage::Response(
-                    crate::acp::transport::ServerResponse::PermissionRequest(request),
-                ) => {
+                crate::acp::transport::ServerResponse::PermissionRequest(request) => {
                     replayed.insert(request.request_id.clone());
                 }
-                MaestroRpcMessage::Response(
-                    crate::acp::transport::ServerResponse::ElicitationRequest(request),
-                ) => {
+
+                crate::acp::transport::ServerResponse::ElicitationRequest(request) => {
                     replayed.insert(request.request_id.clone());
                 }
                 _ => {}
@@ -471,14 +468,10 @@ pub async fn attach_project_sessions(
             }
             let msg = match request {
                 maestro_protocol::PendingSessionRequest::Permission(request) => {
-                    MaestroRpcMessage::Response(
-                        crate::acp::transport::ServerResponse::PermissionRequest(request),
-                    )
+                    crate::acp::transport::ServerResponse::PermissionRequest(request)
                 }
                 maestro_protocol::PendingSessionRequest::Elicitation(request) => {
-                    MaestroRpcMessage::Response(
-                        crate::acp::transport::ServerResponse::ElicitationRequest(request),
-                    )
+                    crate::acp::transport::ServerResponse::ElicitationRequest(request)
                 }
             };
             crate::acp::reader_task::handle_shared_server_message(
@@ -506,7 +499,7 @@ pub async fn attach_project_sessions(
 /// spawn the reader task. Shared by `spawn_acp_session_cold` and `load_acp_session_cold`.
 async fn launch_cold_session(
     target: TransportTarget<'_>,
-    initial_msg: &MaestroRpcMessage,
+    initial_msg: &ServerRequest,
     remote_error_label: &str,
     task: TaskMetadata,
     initial_acp_session_id: Option<String>,
@@ -607,7 +600,7 @@ pub async fn spawn_acp_session_cold(
     task: TaskMetadata,
     req: &SessionRequest,
 ) -> Result<(), String> {
-    let initial_msg = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+    let initial_msg = ServerRequest::Spawn(SpawnRequest {
         agent_id: req.agent_id.clone(),
         session_id: session_id.to_string(),
         cwd: req.cwd.clone(),
@@ -616,7 +609,7 @@ pub async fn spawn_acp_session_cold(
             .project_id
             .and_then(|project_id| project_path(&req.app_state, project_id)),
         meta: task.to_session_meta(req.session_name.clone()),
-    }));
+    });
     launch_cold_session(target, &initial_msg, "SpawnRequest", task, None, false, req).await
 }
 
@@ -628,7 +621,7 @@ pub async fn load_acp_session_cold(
     task: TaskMetadata,
     req: &SessionRequest,
 ) -> Result<(), String> {
-    let initial_msg = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
+    let initial_msg = ServerRequest::SessionLoad(SessionLoadRequest {
         agent_id: req.agent_id.clone(),
         session_id: req.session_id.clone(),
         resume_session_id: acp_session_id.to_string(),
@@ -638,7 +631,7 @@ pub async fn load_acp_session_cold(
             .project_id
             .and_then(|project_id| project_path(&req.app_state, project_id)),
         meta: task.to_session_meta(req.session_name.clone()),
-    }));
+    });
     launch_cold_session(
         target,
         &initial_msg,
@@ -659,7 +652,7 @@ pub async fn load_acp_session_cold(
 pub async fn write_to_acp_session(
     app_state: &crate::core::AppState,
     session_id: &str,
-    msg: &MaestroRpcMessage,
+    msg: &ServerRequest,
 ) -> Result<(), String> {
     enum WriterHandle {
         Local(Arc<tokio::sync::Mutex<BufWriter<ChildStdin>>>),
@@ -735,7 +728,7 @@ pub async fn try_session_load_via_connection_server(
             None => return Ok(false),
         }
     };
-    let load_msg = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
+    let load_msg = ServerRequest::SessionLoad(SessionLoadRequest {
         agent_id: req.agent_id.clone(),
         session_id: req.session_id.clone(),
         resume_session_id: acp_session_id.to_string(),
@@ -745,7 +738,7 @@ pub async fn try_session_load_via_connection_server(
             .project_id
             .and_then(|project_id| project_path(&req.app_state, project_id)),
         meta: task.to_session_meta(req.session_name.clone()),
-    }));
+    });
     let bytes = serialize_message(&load_msg)?;
 
     // Register session BEFORE sending so the shared reader can route SessionUpdate messages
