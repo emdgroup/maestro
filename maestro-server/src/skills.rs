@@ -21,8 +21,8 @@ use serde::{Deserialize, Serialize};
 use crate::command_ext::NoConsoleWindow;
 
 /// Pinned deliberately. `@latest` would fetch and execute whatever npm serves at that moment on
-/// every machine Maestro touches, which is the supply-chain exposure `AGENTS.md` rejects for the
-/// bundled agent registry.
+/// every machine Maestro touches, which is the supply-chain exposure `maestro-server/AGENTS.md`
+/// rejects for the bundled agent registry.
 const SKILLS_CLI: &str = "skills@1.5.21";
 
 const INSTALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);

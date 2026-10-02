@@ -129,9 +129,25 @@ function AutomationRow({
   // From the server, which is where the clock is. Nothing here works out when it is next due.
   const next = automation.next_due_at ? new Date(automation.next_due_at) : null;
 
+  // The whole row is the disclosure, since runs are what a user comes to it for. Clicks on its own
+  // controls are theirs, and so are clicks in its menus and tooltips, which bubble here through
+  // their portals without being inside the row.
+  const onRowClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (!event.currentTarget.contains(target)) return;
+    if (target.closest("button, a, input, [role=switch]")) return;
+    onToggleExpanded();
+  };
+
   return (
-    <div className="px-4 py-3">
-      <div className="flex items-center gap-3">
+    <div>
+      <div
+        onClick={history.length > 0 ? onRowClick : undefined}
+        className={cn(
+          "flex items-center gap-3 px-4 py-3",
+          history.length > 0 && "cursor-pointer transition-colors hover:bg-muted/40",
+        )}
+      >
         <Tooltip>
           <TooltipTrigger
             render={
@@ -156,35 +172,14 @@ function AutomationRow({
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            {/* The whole name is the disclosure: runs are what a user comes to this row to see, and
-              a chevron beside it would be a second, smaller target for the same thing. */}
-            <button
-              type="button"
-              onClick={onToggleExpanded}
-              disabled={history.length === 0}
-              aria-expanded={expanded}
+            <span
               className={cn(
-                "flex min-w-0 items-center gap-1 text-left",
-                history.length > 0 && "cursor-pointer",
+                "truncate text-sm font-medium",
+                !automation.enabled && automation.cron && "text-muted-foreground",
               )}
             >
-              {history.length > 0 && (
-                <ChevronDown
-                  className={cn(
-                    "size-3 shrink-0 text-muted-foreground transition-transform",
-                    !expanded && "-rotate-90",
-                  )}
-                />
-              )}
-              <span
-                className={cn(
-                  "truncate text-sm font-medium",
-                  !automation.enabled && automation.cron && "text-muted-foreground",
-                )}
-              >
-                {automation.name}
-              </span>
-            </button>
+              {automation.name}
+            </span>
             {/* Status only: getting into the session is the button beside Stop. */}
             {running &&
               (waiting ? (
@@ -309,10 +304,29 @@ function AutomationRow({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {/* A fixed gutter, kept on rows with nothing to open so every chevron lines up, holding the
+            run count beside the chevron so the two read as one "this row opens". The row's click is
+            mouse-only; this is the same toggle for the keyboard. */}
+        <span className="flex w-12 shrink-0 justify-end">
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={onToggleExpanded}
+              aria-expanded={expanded}
+              aria-label={`${expanded ? "Hide" : "Show"} ${runs.length} run${runs.length === 1 ? "" : "s"} of ${automation.name}`}
+              className="flex h-6 cursor-pointer items-center gap-0.5 rounded text-[11px] tabular-nums text-muted-foreground hover:text-foreground"
+            >
+              {runs.length > 0 && runs.length}
+              <ChevronDown
+                className={cn("size-4 transition-transform", !expanded && "-rotate-90")}
+              />
+            </button>
+          )}
+        </span>
       </div>
 
       {expanded && history.length > 0 && (
-        <div className="ml-6 mt-2">
+        <div className="-mt-1 pb-3 pl-10 pr-4">
           <div className="divide-y divide-border/60 overflow-hidden rounded-md border border-border bg-background">
             {shown.map((item) =>
               item.kind === "run" ? (

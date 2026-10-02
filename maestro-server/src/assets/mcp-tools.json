@@ -23,8 +23,7 @@
           "theme": {
             "type": "string",
             "enum": ["maestro", "tailwind", "none"],
-            "default": "maestro",
-            "description": "`maestro` for anything that should look like the app. `none` for a mockup of someone else's product."
+            "default": "maestro"
           },
           "sources": {
             "type": "array",
@@ -79,7 +78,7 @@
     },
     {
       "name": "canvas_await",
-      "description": "Wait for the user to act on a surface's controls, and return what they did. This is what makes the controls answer — render the form with canvas_create or canvas_update first, then call this. Returns `{event:{surfaceId,componentId,kind,value,values}}`, where `componentId` is the element's `id` and `values` holds every field on that surface, so one form is one round trip. A `button[id]` click, a `form[id]` submit, and any `maestro.emit` call all answer it; inputs with an `id` or `name` fill `values` without answering. Omit `surfaceId` to take whichever canvas the user acts on: they can page between every surface you have drawn, and the event names the one they used. Pass `surfaceId` only to insist on a particular canvas — one that does not match a canvas you created waits for nothing. Returns `{timeout:true}` if nothing happened in the window; call again to keep waiting. Keep an open wait for as long as the surface is worth interacting with, re-arming after every event and every timeout: while one is open the user's actions reach you directly, and while none is open each one costs a whole turn. Nothing is lost either way — an action with no wait open is held and delivered to the next wait you arm, or as a prompt once you go idle — but a held action is one the user is waiting on, so arm the next wait before doing anything else. A surface only the user's own script reacts to — a filter that redraws a chart in the frame — never answers a wait and does not need one. Stop re-arming when the exchange is finished; the user can always type, which ends the wait.",
+      "description": "Wait for the user to act on a surface's controls, and return what they did. Render the controls with canvas_create or canvas_update first. Returns `{event:{surfaceId,componentId,kind,value,values}}`: `componentId` is the element's `id` and `values` holds every field on that surface, so one form is one round trip. A `button[id]` click, a `form[id]` submit and any `maestro.emit` call answer it; inputs with an `id` or `name` fill `values` without answering. Omit `surfaceId` to take whichever canvas the user acts on, since they can page between every surface you have drawn; a `surfaceId` you did not create waits for nothing. Returns `{timeout:true}` if nothing happened; call again to keep waiting. Keep a wait open for as long as the surface is worth interacting with, and re-arm after every event and every timeout before doing anything else: an action with no wait open is held for the next wait, or delivered as a prompt once you go idle, which costs the user a whole turn. A control only your own script reacts to never answers a wait and does not need one. Stop re-arming when the exchange is finished; the user can always type, which ends the wait.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -305,7 +304,7 @@
     },
     {
       "name": "update_automation",
-      "description": "Change an automation of the current project. Only the fields you pass are touched; pass null to clear `cron`. Set `enabled` to turn its schedule or webhook on or off.",
+      "description": "Change an automation of the current project. Only the fields you pass are touched; pass null to clear `cron`. Set `enabled` to turn its schedule or webhook on or off. Every field means what it does in create_automation.",
       "inputSchema": {
         "type": "object",
         "required": ["id"],
@@ -314,44 +313,34 @@
             "type": "string"
           },
           "name": {
-            "type": "string",
-            "description": "Shown on the Automations page and on every run."
+            "type": "string"
           },
           "prompt": {
-            "type": "string",
-            "description": "What the agent is asked to do on every run. The whole contract of the run: say what to leave behind (a commit, a report, a task) and when to stop, since nobody is there to ask."
+            "type": "string"
           },
           "agent_id": {
-            "type": "string",
-            "description": "Which agent runs it. Defaults to the project's default agent, else the one running this session."
+            "type": "string"
           },
           "model": {
-            "type": ["string", "null"],
-            "description": "The agent's model id. Null leaves it to the agent."
+            "type": ["string", "null"]
           },
           "permission_mode": {
-            "type": ["string", "null"],
-            "description": "The agent's session mode id. Null leaves it to the agent."
+            "type": ["string", "null"]
           },
           "effort": {
-            "type": ["string", "null"],
-            "description": "The agent's effort level. Null leaves it to the agent."
+            "type": ["string", "null"]
           },
           "cron": {
-            "type": ["string", "null"],
-            "description": "Five-field cron (minute hour day-of-month month day-of-week, Sunday is 0), read in `timezone`. Null for no schedule. Cannot be set together with `webhook_enabled`."
+            "type": ["string", "null"]
           },
           "timezone": {
-            "type": "string",
-            "description": "IANA zone the schedule is read in. Defaults to the zone of the machine the automation runs on (`server_timezone` in list_automations)."
+            "type": "string"
           },
           "enabled": {
-            "type": "boolean",
-            "description": "Whether the schedule or webhook is live. False pauses it; the automation can still be run by hand."
+            "type": "boolean"
           },
           "workspace": {
             "type": "object",
-            "description": "Where the agent works. `{\"mode\":\"new_worktree\",\"base_branch\":\"main\"}` makes a fresh worktree per run, `{\"mode\":\"repository\"}` uses the project directory, `{\"mode\":\"path\",\"path\":\"...\"}` an existing directory. Defaults to the project's default workspace.",
             "required": ["mode"],
             "properties": {
               "mode": {
@@ -367,13 +356,11 @@
             }
           },
           "webhook_enabled": {
-            "type": "boolean",
-            "description": "Whether POST /hooks/<id> on the machine's webhook listener starts a run. The request body is attached to the prompt. Cannot be set together with `cron`."
+            "type": "boolean"
           },
           "webhook_overlap": {
             "type": "string",
-            "enum": ["refuse", "queue", "parallel"],
-            "description": "What a webhook delivery does while a run of this automation is already going."
+            "enum": ["refuse", "queue", "parallel"]
           }
         }
       }
@@ -458,7 +445,7 @@
     },
     {
       "name": "update_template",
-      "description": "Change one of the user's own templates. Only the fields you pass are touched. Built-in templates cannot be changed. Automations already made from a template are copies and do not change with it.",
+      "description": "Change one of the user's own templates. Only the fields you pass are touched. Built-in templates cannot be changed. Automations already made from a template are copies and do not change with it. `prompt`, `cron`, `timezone` and the webhook fields mean what they do in create_automation.",
       "inputSchema": {
         "type": "object",
         "required": ["id"],
@@ -474,25 +461,20 @@
             "description": "A topic the template is filed under. Null clears it."
           },
           "prompt": {
-            "type": "string",
-            "description": "What the agent is asked to do on every run. The whole contract of the run: say what to leave behind (a commit, a report, a task) and when to stop, since nobody is there to ask."
+            "type": "string"
           },
           "cron": {
-            "type": ["string", "null"],
-            "description": "Five-field cron (minute hour day-of-month month day-of-week, Sunday is 0), read in `timezone`. Null for no schedule. Cannot be set together with `webhook_enabled`."
+            "type": ["string", "null"]
           },
           "timezone": {
-            "type": "string",
-            "description": "IANA zone the schedule is read in. Defaults to the zone of the machine the automation runs on (`server_timezone` in list_automations)."
+            "type": "string"
           },
           "webhook_enabled": {
-            "type": "boolean",
-            "description": "Whether POST /hooks/<id> on the machine's webhook listener starts a run. The request body is attached to the prompt. Cannot be set together with `cron`."
+            "type": "boolean"
           },
           "webhook_overlap": {
             "type": "string",
-            "enum": ["refuse", "queue", "parallel"],
-            "description": "What a webhook delivery does while a run of this automation is already going."
+            "enum": ["refuse", "queue", "parallel"]
           }
         }
       }
