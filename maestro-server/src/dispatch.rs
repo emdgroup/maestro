@@ -1733,7 +1733,7 @@ pub(crate) async fn dispatch_message(
             let begun = crate::task_runner::begin(
                 &mut *store.lock().await,
                 &req,
-                crate::pipeline_settings::used_slots(sessions),
+                crate::pipeline_settings::taken_slots(sessions),
                 agents_with_spawn,
                 &mut pushes,
             );

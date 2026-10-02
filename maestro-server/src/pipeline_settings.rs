@@ -171,6 +171,11 @@ pub fn used_slots(sessions: &SessionMap) -> usize {
     count_task_sessions(sessions.values().map(|s| s.project.as_ref()))
 }
 
+/// Slots taken, as the limit is checked: live task sessions and starts still coming up.
+pub fn taken_slots(sessions: &SessionMap) -> usize {
+    used_slots(sessions) + crate::task_runner::in_flight()
+}
+
 fn count_task_sessions<'a>(bindings: impl Iterator<Item = Option<&'a ProjectBinding>>) -> usize {
     bindings
         .filter(|binding| binding.is_some_and(|b| b.meta.task_id.is_some()))

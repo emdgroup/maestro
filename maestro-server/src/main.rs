@@ -704,6 +704,8 @@ async fn run_server(
                 if let Some(reply) = asked {
                     let _ = reply.send(scheduler::Snapshot {
                         used: pipeline_settings::used_slots(&sessions),
+                        // Read here, with `used`: a start leaves it only once its session is in.
+                        in_flight: task_runner::in_flight(),
                         busy: scheduler::busy_tasks(&sessions),
                         agents: agents_with_spawn.clone(),
                     });

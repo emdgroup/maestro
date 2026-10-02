@@ -11,6 +11,7 @@
 //! sessions it supersedes and answers.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use maestro_protocol::{
@@ -67,7 +68,33 @@ pub(crate) enum Begun {
     Claimed(Box<Claimed>),
 }
 
+/// Starts claimed whose session is not in the map yet, wherever they were claimed: each takes a
+/// slot until its session does, or until it fails.
+static IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+
+pub(crate) fn in_flight() -> usize {
+    IN_FLIGHT.load(Ordering::SeqCst)
+}
+
+/// One start counted in [`IN_FLIGHT`] for as long as it lives.
+pub(crate) struct InFlight(());
+
+impl InFlight {
+    fn new() -> Self {
+        IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
+        InFlight(())
+    }
+}
+
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 pub(crate) struct Claimed {
+    /// Taken by `launch`, which holds it until the session is handed to the loop.
+    pub in_flight: Option<InFlight>,
     pub project_path: String,
     /// As the claim left it.
     pub task: Task,
@@ -291,6 +318,7 @@ pub(crate) fn begin(
     };
 
     Ok(Begun::Claimed(Box::new(Claimed {
+        in_flight: Some(InFlight::new()),
         project_path,
         task,
         prior_phase,
@@ -349,7 +377,9 @@ pub(crate) struct Launcher {
 
 /// Steps five onwards, off the loop. Hands a started session to the loop, or releases the claim
 /// and answers with why.
-pub(crate) async fn launch(launcher: Launcher, claimed: Box<Claimed>) {
+pub(crate) async fn launch(launcher: Launcher, mut claimed: Box<Claimed>) {
+    // Dropped as this returns: after the session is handed to the loop, which counts it from then.
+    let _in_flight = claimed.in_flight.take();
     let everyone = crate::client_sink::ClientSink::everyone(&launcher.reply).await;
     let (project_path, task_id, role, unattended, title, agent_id) = (
         claimed.project_path.clone(),
@@ -458,6 +488,7 @@ async fn run(
         spawn: (command, args, env),
         feedback,
         unattended: _,
+        in_flight: _,
     } = claimed;
 
     let workspace = crate::worktree::prepare_task_workspace(&launcher.store, &task, role).await?;

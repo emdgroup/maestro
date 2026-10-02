@@ -266,8 +266,8 @@ and a retry's prompt still knows it is reworking or fixing CI.
 
 **Capacity is the machine's, and a slot is a live task session.** The limit is per daemon, shared by
 every app attached to it, and in Auto it is measured on the daemon's own machine. Only task sessions
-in the session map count, plus the starts the scheduler launched that are not in the map yet
-(`IN_FLIGHT`), so a task waiting at a human gate frees its slot once its session goes. A hand-off is
+in the session map count, plus the starts claimed anywhere, a drain's, a hand-off's or a window's,
+whose session is not in the map yet (`task_runner::in_flight`, read by the loop with the map), so a task waiting at a human gate frees its slot once its session goes. A hand-off is
 not held back by the limit, since the session it follows usually still holds the slot it takes. Auto
 mode is per project, and holds are an in-memory map whose entries lapse unless renewed (ten seconds unless the window names
 a TTL) and which dies with the daemon,

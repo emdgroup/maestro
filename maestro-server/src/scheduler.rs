@@ -13,11 +13,12 @@
 //! limit: the session it follows usually still holds the slot it takes over.
 //!
 //! A slot is a live task session in the map, which only the main loop holds, so a drain asks the
-//! loop for it (`Snapshot`). Starts this scheduler launched that are not in the map yet are counted
-//! in `IN_FLIGHT`, so a drain cannot overshoot while its own spawns are still coming up.
+//! loop for it (`Snapshot`). Starts claimed anywhere whose session is not in the map yet are counted
+//! in `task_runner::in_flight`, read by the loop with the map, so a drain cannot overshoot while
+//! spawns are still coming up.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -39,6 +40,8 @@ const TICK: Duration = Duration::from_secs(60);
 /// What only the main loop knows, asked for once per drain.
 pub(crate) struct Snapshot {
     pub used: usize,
+    /// Starts claimed whose session is not in the map yet.
+    pub in_flight: usize,
     pub agents: Vec<DiscoveredAgentWithSpawn>,
     /// Tasks with a session mid-turn, as `(canonical project path, task id)`.
     pub busy: HashSet<(String, i32)>,
@@ -70,8 +73,6 @@ enum Msg {
 }
 
 static TX: OnceLock<mpsc::UnboundedSender<Msg>> = OnceLock::new();
-/// Starts claimed by a drain whose session is not in the map yet.
-static IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
 /// Taken while a drain counts and claims slots.
 static RESERVE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 /// Tasks refused for want of an agent (none, or one unknown here), as they stood when refused, so
@@ -371,6 +372,7 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
     }
     let Ok(Snapshot {
         used,
+        in_flight,
         mut agents,
         busy,
     }) = reply_rx.await
@@ -395,10 +397,7 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
                 agent_id: None,
             };
             match crate::task_runner::begin(&mut conn, &request, used, &agents, &mut pushes) {
-                Ok(crate::task_runner::Begun::Claimed(task)) => {
-                    IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
-                    claimed.push(task);
-                }
+                Ok(crate::task_runner::Begun::Claimed(task)) => claimed.push(task),
                 Ok(crate::task_runner::Begun::Deferred) => {}
                 Err(e) => {
                     refuse(&conn, path, task_id, &e);
@@ -406,17 +405,24 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
                 }
             }
         }
-        let capacity = match crate::pipeline_settings::capacity_status(&conn) {
-            Ok(status) => status,
+        // A limit that cannot be read starts nothing more, but the hand-offs claimed above still
+        // launch: returning here would strand them `Spawning`.
+        let mut free = match crate::pipeline_settings::capacity_status(&conn) {
+            Ok(capacity) => free_slots(capacity.slots, used, in_flight + claimed.len()),
             Err(e) => {
                 send_diag("warn", format!("[queue] cannot read the agent limit: {e}"));
-                return;
+                0
             }
         };
-        let mut free = free_slots(capacity.slots, used, IN_FLIGHT.load(Ordering::SeqCst));
         for task_id in candidates {
             if free == 0 {
                 break;
+            }
+            // Read before the snapshot was taken: a hold or a refusal since then wins.
+            if crate::pipeline_settings::is_held(path, task_id)
+                || refused().contains_key(&(path.to_string(), task_id))
+            {
+                continue;
             }
             let request = StartTaskRequest {
                 project_path: path.to_string(),
@@ -431,7 +437,6 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
             match crate::task_runner::begin(&mut conn, &request, used, &agents, &mut pushes) {
                 Ok(crate::task_runner::Begun::Claimed(task)) => {
                     free -= 1;
-                    IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
                     claimed.push(task);
                 }
                 Ok(crate::task_runner::Begun::Deferred) => {}
@@ -453,12 +458,7 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
             settle_tx: deps.settle_tx.clone(),
             reply,
         };
-        tokio::spawn(async move {
-            Box::pin(crate::task_runner::launch(launcher, task)).await;
-            // The session is handed to the loop before `launch` returns, and the loop takes it
-            // before it answers the next snapshot.
-            IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
-        });
+        tokio::spawn(Box::pin(crate::task_runner::launch(launcher, task)));
     }
 }
 
