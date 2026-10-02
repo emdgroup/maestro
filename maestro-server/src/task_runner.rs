@@ -283,9 +283,11 @@ pub(crate) fn begin(
         }
         phase => phase,
     };
-    // A failed stage is retried by the role it hands to, and by no other.
+    // A failed stage is retried by the role it hands to, and by no other. The plan gate hands to
+    // the coder on approval and back to the planner on Replan.
     if task.phase_status == Some(PhaseStatus::Failed) {
         let retries = match task.phase {
+            Some(TaskPhase::PlanReview) if role == AgentRole::Planner => Some(AgentRole::Planner),
             Some(TaskPhase::PlanReview) => Some(AgentRole::Coder),
             phase => crate::task_restart::role(phase),
         };
@@ -994,6 +996,37 @@ mod tests {
             .unwrap()
             .to_string()
             .contains("no longer waiting to start"));
+    }
+
+    /// A failed plan gate is retried by approving (the coder) or by Replan (the planner).
+    #[test]
+    fn a_failed_plan_gate_takes_the_coder_or_the_planner() {
+        let agents = [agent("fake")];
+        for (role, claims) in [
+            (AgentRole::Planner, true),
+            (AgentRole::Coder, true),
+            (AgentRole::Reviewer, false),
+        ] {
+            let (_dir, project, mut conn, task) = setup(Some("fake"));
+            conn.execute(
+                "UPDATE tasks SET status = 'InProgress', phase = 'PlanReview',
+                     phase_status = 'Failed', ball = 'User' WHERE id = ?1",
+                [task.id],
+            )
+            .unwrap();
+            let start = StartTaskRequest {
+                role,
+                ..request(&project, &task)
+            };
+            let begun = begin(&mut conn, &start, 0, &agents, &mut Vec::new());
+            match begun {
+                Ok(Begun::Claimed(claimed)) => {
+                    assert!(claims, "{role:?}");
+                    assert_eq!(claimed.role, role);
+                }
+                other => assert!(!claims, "{role:?}: {:?}", other.err()),
+            }
+        }
     }
 
     /// The window's pick runs this stage, whatever the profile says, and is not kept.
