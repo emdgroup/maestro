@@ -9,12 +9,31 @@
 //! repository is on. That is the whole reason the app needs to tunnel git over SSH, WSL and Docker
 //! and this does not.
 
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use crate::command_ext::NoConsoleWindow;
 
 /// Where an automation's worktrees live, under the same root the app uses for its own.
 const WORKTREE_DIR: &str = ".maestro/worktrees";
+
+/// One lock per project, taken around `git worktree add`: two adds at once in one repository race
+/// on its `.git/worktrees` and config locks, and one of them fails.
+// ponytail: an entry per project ever seen, never pruned; projects on one machine are few.
+static ADDING: LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
+    LazyLock::new(Default::default);
+
+async fn adding(project_path: &str) -> tokio::sync::OwnedMutexGuard<()> {
+    let lock = Arc::clone(
+        ADDING
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entry(project_path.to_string())
+            .or_default(),
+    );
+    lock.lock_owned().await
+}
 
 /// Run one git command in `dir`, returning its stdout.
 pub(crate) async fn git(dir: &str, args: &[&str]) -> Result<String, String> {
@@ -150,6 +169,7 @@ pub async fn create(
         base_branch.trim().to_string()
     };
 
+    let _adding = adding(project_path).await;
     git(
         project_path,
         &["worktree", "add", &relative, "-b", &branch, &base],
@@ -401,6 +421,8 @@ pub async fn prepare_task_workspace(
                     Some(existing.id),
                 )
             } else {
+                // Held through the row, so the next add in this repository sees it.
+                let _adding = adding(project_path).await;
                 if !is_repository(project_path).await {
                     return Err(
                         "This project is not a git repository, so worktrees are unavailable."
