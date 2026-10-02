@@ -965,8 +965,8 @@ fn test_prompt_changes_reach_every_window() {
 #[test]
 fn test_import_project_over_the_wire() {
     use maestro_protocol::{
-        BeginImportRequest, BeginImportResponse, ImportChunkRequest, ImportProjectRequest,
-        ImportProjectResponse, ImportRef, ProjectRef,
+        BeginImportRequest, ImportChunkRequest, ImportProjectRequest, ImportProjectResponse,
+        ImportRef, ProjectRef,
     };
 
     let daemon = Daemon::new();
@@ -1000,13 +1000,16 @@ fn test_import_project_over_the_wire() {
                 ServerRequest::BeginImport(BeginImportRequest {
                     project_path: project_path.clone(),
                     floors: Default::default(),
+                    source_id: Some("install-a".to_string()),
                 }),
             );
             let import_id = match read_msg_with_id(a_out) {
-                (Some(got), ServerResponse::BeginImportOk(BeginImportResponse { import_id }))
-                    if got == id =>
-                {
-                    import_id
+                (Some(got), ServerResponse::BeginImportOk(begun)) if got == id => {
+                    if begun.imported_before {
+                        let refused = ImportProjectResponse { imported: false };
+                        return (Some(id), ServerResponse::ImportProjectOk(refused));
+                    }
+                    begun.import_id
                 }
                 other => panic!("expected BeginImportOk, got: {other:?}"),
             };

@@ -80,6 +80,7 @@ const MIGRATIONS: &[&str] = &[
     crate::pipeline_settings::V6_PIPELINE_SETTINGS,
     V7_SESSION_TURNS,
     crate::task_store::transition::V8_TASK_CLAIMED_FROM,
+    crate::task_store::project_import::V9_IMPORT_SOURCES,
 ];
 
 /// Open, or create, the daemon's project database.
@@ -913,5 +914,34 @@ mod tests {
         assert!(inserted.closed);
         assert_eq!(inserted.cwd, "/p/old");
         assert_eq!(inserted.meta.session_name.as_deref(), Some("Renamed"));
+    }
+
+    /// Version 9 keys import markers by source; one written before keeps a NULL source.
+    #[test]
+    fn a_version_eight_import_marker_keeps_a_null_source() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        {
+            let conn = Connection::open(directory.path().join("projects.db")).expect("open");
+            conn.execute_batch(&MIGRATIONS[..8].concat())
+                .expect("version 8 schema");
+            conn.pragma_update(None, "user_version", 8)
+                .expect("version");
+            conn.execute(
+                "INSERT INTO project_imports (project_path, imported_at, source)
+                 VALUES ('/p', 'then', 'rows')",
+                [],
+            )
+            .expect("a marker");
+        }
+
+        let conn = open(directory.path()).expect("migrate");
+        let marker: (String, Option<String>, String) = conn
+            .query_row(
+                "SELECT project_path, source_id, source FROM project_imports",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("the marker survived");
+        assert_eq!(marker, ("/p".to_string(), None, "rows".to_string()));
     }
 }

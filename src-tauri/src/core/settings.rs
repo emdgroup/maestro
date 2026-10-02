@@ -12,7 +12,8 @@ use crate::models::{
 pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
     // Query all settings from the table
     let mut stmt = conn
-        .prepare("SELECT key, value FROM settings ORDER BY key")
+        // The install id is not a setting; read alone it must not stand in for saved ones.
+        .prepare("SELECT key, value FROM settings WHERE key != 'install_id' ORDER BY key")
         .map_err(|e| format!("Failed to prepare query: {}", e))?;
 
     let mut settings_map: std::collections::HashMap<String, String> =
@@ -268,9 +269,37 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
     Ok(())
 }
 
+/// This installation's id, minted the first time it is asked for and kept in `settings`. It tells
+/// a project's daemon which app a board import came from.
+pub fn install_id(conn: &Connection) -> Result<String, String> {
+    conn.execute(
+        "INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('install_id', ?1, ?2)",
+        rusqlite::params![
+            uuid::Uuid::new_v4().to_string(),
+            chrono::Utc::now().to_rfc3339()
+        ],
+    )
+    .map_err(|e| format!("Failed to store the install id: {e}"))?;
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = 'install_id'",
+        [],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Failed to read the install id: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_install_id_is_minted_once() {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::core::schema::initialize_schema(&conn).unwrap();
+        let id = install_id(&conn).unwrap();
+        assert!(!id.is_empty());
+        assert_eq!(install_id(&conn).unwrap(), id);
+    }
 
     #[test]
     fn test_load_settings_empty() {

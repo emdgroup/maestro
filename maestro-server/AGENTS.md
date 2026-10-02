@@ -226,12 +226,20 @@ the canonical path from the app's `project_id`.
 With no window attached the daemon still answers the MCP task tools, so an agent can read and write
 its board. The pipeline that moves a task from stage to stage runs there too; see the next section.
 
-A board from before this move reaches the daemon once, from `project/import.rs`, while the project
-opens and before its sessions are attached. The rows go in chunks of about 4 MB that the daemon
-commits in one transaction, with counters kept above the app's ids and its `sqlite_sequence`. The
-daemon keeps a per-project import marker and refuses a second import only when it is set; rows it
-wrote itself before the import are merged above the imported ids. A failed import keeps the project
-closed and the picker offers Retry, since a board shown without its rows would look empty.
+A board from before this move reaches the daemon once per app, from `project/import.rs`, while
+the project opens and before its sessions are attached. The rows go in chunks of about 4 MB that
+the daemon commits in one transaction, with counters kept above the app's ids and its
+`sqlite_sequence`. Every import carries the app's install id (`install_id` in its `settings`), and
+the daemon keeps one marker per project and source. The same source is refused, and the app then
+stamps its project. The first source keeps its ids, and rows the daemon wrote itself before it are
+moved above them, which waits (a retryable failure) while a session, hold or start names one of
+those tasks. A later source is merged: `BeginImport` reserves id ranges above the counters and
+answers the task offset, the app copies attachments into each task's final folder before it
+commits, and the incoming rows move up with every reference. An incoming worktree whose folder or
+branch is already there is left out. A marker from before sources were recorded has a NULL source
+and refuses every source, so a store imported by an older build is never imported twice. A failed
+import keeps the project closed and the picker offers Retry, since a board shown without its rows
+would look empty.
 
 ## The daemon drives the task pipeline
 

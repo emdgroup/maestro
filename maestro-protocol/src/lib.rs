@@ -2169,13 +2169,30 @@ pub struct ImportedSession {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct BeginImportRequest {
     pub project_path: String,
+    /// Each at least the highest id of its kind the import carries.
     #[serde(default)]
     pub floors: ImportFloors,
+    /// The sending app installation's stable id. The daemon keeps one import marker per source:
+    /// the same source is refused, another one is merged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct BeginImportResponse {
+    /// Empty when `imported_before`, in which case nothing is staged.
     pub import_id: String,
+    /// This source, or one from before sources were recorded, imported the project already.
+    #[serde(default)]
+    pub imported_before: bool,
+    /// Another source imported the project first, so this one's rows are merged: each task, worktree
+    /// and prompt id moves up by an offset the daemon reserved now, and every reference moves along.
+    #[serde(default)]
+    pub merge: bool,
+    /// What every imported task id becomes `id + task_offset`, zero unless `merge`. Attachment rows
+    /// are sent with their final project-relative path, so the app copies files to the final id.
+    #[serde(default)]
+    pub task_offset: i32,
 }
 
 /// Rows appended to a staged import. The chunk's `project_path` and `floors` are ignored for the
@@ -3112,9 +3129,13 @@ mod tests {
                     tasks: Some(12),
                     ..ImportFloors::default()
                 },
+                source_id: Some("install-1".to_string()),
             })),
             MaestroRpcMessage::Response(ServerResponse::BeginImportOk(BeginImportResponse {
                 import_id: "import-1".to_string(),
+                imported_before: false,
+                merge: true,
+                task_offset: 40,
             })),
             MaestroRpcMessage::Response(ServerResponse::ImportChunkOk),
             MaestroRpcMessage::Request(ServerRequest::CommitImport(ImportRef {

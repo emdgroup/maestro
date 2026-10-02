@@ -1652,17 +1652,25 @@ pub(crate) async fn dispatch_message(
                     crate::prompt_store::answer(&*store.lock().await, request)
                 }
                 ServerRequest::BeginImport(request) => {
-                    crate::task_store::project_import::begin(request).map(|r| (r, Vec::new()))
+                    crate::task_store::project_import::begin(&mut *store.lock().await, request)
+                        .map(|r| (r, Vec::new()))
                 }
                 ServerRequest::ImportChunk(request) => {
                     crate::task_store::project_import::chunk(request).map(|r| (r, Vec::new()))
                 }
                 ServerRequest::CommitImport(request) => {
                     match crate::task_store::project_import::take_staged(&request.import_id) {
-                        Ok(staged) => crate::task_store::project_import::answer(
-                            &mut *store.lock().await,
-                            staged,
-                        ),
+                        Ok(staged) => {
+                            let live = crate::task_store::project_import::live(
+                                staged.project_path(),
+                                sessions,
+                            );
+                            crate::task_store::project_import::answer(
+                                &mut *store.lock().await,
+                                staged,
+                                &live,
+                            )
+                        }
                         Err(e) => Err(e),
                     }
                 }

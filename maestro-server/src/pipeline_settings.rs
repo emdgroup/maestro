@@ -220,6 +220,15 @@ pub fn is_held(project_path: &str, task_id: i32) -> bool {
     holds().contains_key(&(project_path.to_string(), task_id))
 }
 
+/// The project's held tasks. `project_path` is canonical.
+pub fn held_tasks(project_path: &str) -> Vec<i32> {
+    holds()
+        .keys()
+        .filter(|(path, _)| path == project_path)
+        .map(|(_, task_id)| *task_id)
+        .collect()
+}
+
 /// Answer a hold request, which needs no store.
 pub fn answer_hold(request: ServerRequest) -> Result<ServerResponse, String> {
     match request {

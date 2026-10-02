@@ -102,64 +102,85 @@ async fn import(
 
     // Auto mode was this app's global switch before it became the project's, kept by its daemon.
     // Not carried over by an app whose board the daemon refused, since another app's went in.
+    // Nor by one merged into another's, whose switch it already is.
     let mut first_in = true;
     if !is_empty(&request) {
         if let Err(e) = app_state.app_handle.emit("project-importing", project_id) {
             log::warn!("[import] emitting project-importing failed: {e}");
         }
-        let copies = plan_attachments(&git_conn, project_path, &mut request.attachments).await?;
+        let source_id = {
+            let conn = app_state
+                .db
+                .lock()
+                .map_err(|e| format!("Lock failed: {e}"))?;
+            crate::core::settings::install_id(&conn)?
+        };
         let not_found = format!("No connection server for connection {connection_key:?}");
         let timed_out = "The project's server did not finish the import in time";
-        let import_id = query_via_server(
+        let begun = query_via_server(
             connection_key,
             app_state,
             &not_found,
             MaestroRpcMessage::Request(ServerRequest::BeginImport(BeginImportRequest {
                 project_path: request.project_path.clone(),
                 floors: std::mem::take(&mut request.floors),
+                source_id: Some(source_id),
             })),
-            reply!(ServerResponse::BeginImportOk(response) => response.import_id),
+            reply!(ServerResponse::BeginImportOk(response) => response),
             IMPORT_TIMEOUT_SECS,
             timed_out,
         )
         .await?;
-        for chunk in split_import(request, IMPORT_CHUNK_BYTES) {
-            query_via_server(
+        if begun.imported_before {
+            log::info!("[import] project {project_id}: this app's rows reached its server before");
+            first_in = false;
+        } else {
+            let copies = plan_attachments(
+                &git_conn,
+                project_path,
+                &mut request.attachments,
+                begun.task_offset,
+            )
+            .await?;
+            let import_id = begun.import_id;
+            for chunk in split_import(request, IMPORT_CHUNK_BYTES) {
+                query_via_server(
+                    connection_key,
+                    app_state,
+                    &not_found,
+                    MaestroRpcMessage::Request(ServerRequest::ImportChunk(ImportChunkRequest {
+                        import_id: import_id.clone(),
+                        chunk,
+                    })),
+                    reply!(ServerResponse::ImportChunkOk => ()),
+                    IMPORT_TIMEOUT_SECS,
+                    timed_out,
+                )
+                .await?;
+            }
+            let response = query_via_server(
                 connection_key,
                 app_state,
                 &not_found,
-                MaestroRpcMessage::Request(ServerRequest::ImportChunk(ImportChunkRequest {
-                    import_id: import_id.clone(),
-                    chunk,
-                })),
-                reply!(ServerResponse::ImportChunkOk => ()),
+                MaestroRpcMessage::Request(ServerRequest::CommitImport(ImportRef { import_id })),
+                reply!(ServerResponse::ImportProjectOk(response) => response),
                 IMPORT_TIMEOUT_SECS,
                 timed_out,
             )
             .await?;
-        }
-        let response = query_via_server(
-            connection_key,
-            app_state,
-            &not_found,
-            MaestroRpcMessage::Request(ServerRequest::CommitImport(ImportRef { import_id })),
-            reply!(ServerResponse::ImportProjectOk(response) => response),
-            IMPORT_TIMEOUT_SECS,
-            timed_out,
-        )
-        .await?;
-        log::info!(
-            "[import] project {project_id}: {}",
+            log::info!(
+                "[import] project {project_id}: {}",
+                match (response.imported, begun.merge) {
+                    (true, false) => "rows moved to its server",
+                    (true, true) => "rows merged into another app's on its server",
+                    (false, _) => "this app's rows reached its server before",
+                }
+            );
             if response.imported {
-                "rows moved to its server"
-            } else {
-                "its server already held rows, this app's were left out"
+                copy_attachments(app_state, &git_conn, project_path, copies).await;
             }
-        );
-        if response.imported {
-            copy_attachments(app_state, &git_conn, project_path, copies).await;
+            first_in = response.imported && !begun.merge;
         }
-        first_in = response.imported;
     }
 
     let auto_mode = {
@@ -540,6 +561,16 @@ fn gather(
         },
     )?;
 
+    // At least the highest id carried, which a merge reserves its range by.
+    let mut floors = floors(conn)?;
+    floors.tasks = floors.tasks.max(tasks.iter().map(|task| task.id).max());
+    floors.worktrees = floors
+        .worktrees
+        .max(worktrees.iter().map(|worktree| worktree.id).max());
+    floors.prompts = floors
+        .prompts
+        .max(prompts.iter().map(|prompt| prompt.id).max());
+
     Ok(ImportProjectRequest {
         project_path: project_path.to_string(),
         tasks,
@@ -551,7 +582,7 @@ fn gather(
         reviews,
         prompts,
         sessions: Vec::new(),
-        floors: floors(conn)?,
+        floors,
     })
 }
 
@@ -726,13 +757,15 @@ struct PendingCopy {
     relative: String,
 }
 
-/// Point each attachment whose file is on this machine (`present`) at a name of its own under its
-/// task's folder, one `existing` does not hold, and return the copies that makes owed. A row
-/// whose file is elsewhere keeps the path it has and shows as missing.
+/// Point each attachment whose file is on this machine (`present`) at a name of its own under the
+/// folder of its task's final id (`task_id + task_offset`), one `existing` does not hold, and
+/// return the copies that makes owed. A row whose file is elsewhere keeps the path it has and
+/// shows as missing.
 fn assign_destinations(
     attachments: &mut [TaskAttachment],
     present: &HashSet<i32>,
     existing: &HashMap<i32, HashSet<String>>,
+    task_offset: i32,
 ) -> Vec<PendingCopy> {
     let mut taken: HashMap<i32, HashSet<String>> = HashMap::new();
     let mut copies = Vec::new();
@@ -744,16 +777,17 @@ fn assign_destinations(
         let Some(name) = source.file_name().and_then(|n| n.to_str()) else {
             continue;
         };
-        let task_taken = taken.entry(attachment.task_id).or_insert_with(|| {
+        let task_id = attachment.task_id + task_offset;
+        let task_taken = taken.entry(task_id).or_insert_with(|| {
             existing
-                .get(&attachment.task_id)
+                .get(&task_id)
                 .into_iter()
                 .flatten()
-                .map(|name| format!("{TASK_ATTACHMENTS_DIR}/{}/{name}", attachment.task_id))
+                .map(|name| format!("{TASK_ATTACHMENTS_DIR}/{task_id}/{name}"))
                 .collect()
         });
         let relative = attachment_relative_path(
-            attachment.task_id,
+            task_id,
             name,
             &task_taken.iter().map(String::as_str).collect(),
         );
@@ -761,7 +795,7 @@ fn assign_destinations(
         attachment.file_path = relative.clone();
         copies.push(PendingCopy {
             attachment_id: attachment.id,
-            task_id: attachment.task_id,
+            task_id,
             source,
             relative,
         });
@@ -769,12 +803,14 @@ fn assign_destinations(
     copies
 }
 
-/// Decide where each attachment on this machine goes in the project, reading every destination
-/// folder first so no file already there is overwritten. Nothing is copied yet.
+/// Decide where each attachment on this machine goes in the project, under its task's final id,
+/// reading every destination folder first so no file already there is overwritten. Nothing is
+/// copied yet.
 async fn plan_attachments(
     git_conn: &GitConnection,
     project_path: &str,
     attachments: &mut [TaskAttachment],
+    task_offset: i32,
 ) -> Result<Vec<PendingCopy>, String> {
     let mut present = HashSet::new();
     let mut existing: HashMap<i32, HashSet<String>> = HashMap::new();
@@ -784,13 +820,11 @@ async fn plan_attachments(
             continue;
         }
         present.insert(attachment.id);
-        if existing.contains_key(&attachment.task_id) {
+        let task_id = attachment.task_id + task_offset;
+        if existing.contains_key(&task_id) {
             continue;
         }
-        let dir = on_project_machine(
-            project_path,
-            &format!("{TASK_ATTACHMENTS_DIR}/{}", attachment.task_id),
-        );
+        let dir = on_project_machine(project_path, &format!("{TASK_ATTACHMENTS_DIR}/{task_id}"));
         let names = if crate::connectivity::files::try_dir_exists(git_conn, &dir).await? {
             crate::connectivity::files::contents(git_conn, &dir, true)
                 .await?
@@ -800,9 +834,14 @@ async fn plan_attachments(
         } else {
             HashSet::new()
         };
-        existing.insert(attachment.task_id, names);
+        existing.insert(task_id, names);
     }
-    Ok(assign_destinations(attachments, &present, &existing))
+    Ok(assign_destinations(
+        attachments,
+        &present,
+        &existing,
+        task_offset,
+    ))
 }
 
 /// Make the copies the daemon's rows now point at. A failure is logged and the row shows as
@@ -1070,7 +1109,7 @@ mod tests {
         let present = HashSet::from([1, 2, 3]);
         let existing = HashMap::from([(7, HashSet::from(["notes.txt".to_string()]))]);
 
-        let copies = assign_destinations(&mut attachments, &present, &existing);
+        let copies = assign_destinations(&mut attachments, &present, &existing, 0);
         let paths: Vec<&str> = attachments.iter().map(|a| a.file_path.as_str()).collect();
         assert_eq!(
             paths,
@@ -1084,6 +1123,24 @@ mod tests {
         assert_eq!(copies.len(), 3);
         assert_eq!(copies[0].source, PathBuf::from("/home/me/notes.txt"));
         assert_eq!(copies[0].relative, paths[0]);
+    }
+
+    /// A merged board's tasks move up by the offset its server reserved, so copies go to the
+    /// folder of the id each task ends up with.
+    #[test]
+    fn destinations_use_the_task_id_after_a_merge() {
+        let mut attachments = vec![attachment(1, 7, "/home/me/notes.txt")];
+        let existing = HashMap::from([(7, HashSet::from(["notes.txt".to_string()]))]);
+        let copies = assign_destinations(&mut attachments, &HashSet::from([1]), &existing, 10);
+        assert_eq!(
+            attachments[0].file_path,
+            ".maestro/attachments/tasks/17/notes.txt"
+        );
+        assert_eq!(copies[0].task_id, 17);
+        assert_eq!(
+            attachments[0].task_id, 7,
+            "the server moves the row's own id"
+        );
     }
 
     #[tokio::test]

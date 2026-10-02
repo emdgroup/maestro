@@ -355,7 +355,7 @@ Decisions:
 | What                      | Tasks and their threads, worktrees, reviews and their comments, the project's prompts with their stars, and sessions: `state.json`'s restorable sessions become dormant rows, named from `session_aliases`                                                                                                                                 |
 | All or nothing            | One transaction in the daemon, however many requests carry it. Ids are kept, and each counter starts above the highest imported id                                                                                                                                                                                                         |
 | Chunks                    | The rows travel in chunks of about 4 MB, staged by the daemon and committed together in one transaction. Each counter's floor also comes from the app's `sqlite_sequence`, so an id the app minted and then deleted is not handed out again. Past sessions arrive closed, so Session History lists them and nothing loads them             |
-| Another machine got there | The daemon keeps a per-project import marker and refuses an import only when it is set; the app then marks its rows imported without a word. With no marker, rows the daemon wrote itself before the import are merged, renumbered above the imported ids. On a successful import, a session row the daemon already holds is kept as it is |
+| Another machine got there | The daemon keeps one import marker per project and source, the source being the app's install id. The same source is refused, and the app stamps its rows imported. The first source keeps its ids, and rows the daemon wrote itself before it are merged, renumbered above the imported ids, once nothing live names them. A later source is merged above the counters: `BeginImport` reserves the ranges and answers the task offset, so attachments are copied to the final id's folder before commit. A worktree whose folder or branch is already there keeps the existing row. A marker from before sources (NULL) refuses every source. A session row the daemon already holds is kept as it is |
 | Marking                   | The app stamps its own `projects` row, so it never asks again. The daemon sets its own marker in the import's transaction                                                                                                                                                                                                                  |
 
 Tasks:
@@ -471,8 +471,9 @@ Notes from phase 5:
 - **The daemon drives, not only stores.** Phase 5 is in scope.
 - **Project prompts move to the daemon.** Shared prompts stay in the app.
 - **No offline board.** A project does not open without its daemon, so nothing is lost.
-- **Import is first app in.** Once a project is imported, a second app's rows for it are not. Rows
-  the daemon wrote itself before the first import are merged above the imported ids (phase 4).
+- **Import is per app, first in keeps its ids.** A second app's rows are merged, renumbered above
+  the project's counters. Rows the daemon wrote itself before the first import are merged above the
+  imported ids (phase 4).
 - **Forge work stays in the app.** Pull request and CI steps run only while a window is attached (phase 5).
 - **A permission prompt waits for a user.** An unattended task runs in the permission mode it was
   given and blocks on a prompt until someone attaches.

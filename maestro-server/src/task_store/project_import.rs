@@ -1,38 +1,63 @@
-//! A project's rows as an app held them before the daemon kept them, taken in once.
+//! A project's rows as an app held them before the daemon kept them, taken in.
 //!
 //! All or nothing, in one transaction: a row that does not fit, such as a comment on a task the
-//! import does not carry, fails the foreign key and nothing is kept. A project imported once, by
-//! this app or another, has a row in `project_imports`, and a second import is refused before
-//! anything is written. An empty import sets it too.
+//! import does not carry, fails the foreign key and nothing is kept. Every import leaves a row in
+//! `project_imports` naming its source, the sending app installation, and an empty import sets it
+//! too. A source that imported the project before is refused before anything is written, and so is
+//! every source once a marker from before sources were recorded (`source_id` NULL) is there, since
+//! nobody can say whose rows that one carried.
 //!
-//! Without the marker the import merges. Rows the daemon wrote for the project before it (an
+//! The first source in keeps its ids. Rows the daemon wrote for the project before it (an
 //! automation's adopted worktree, a task or prompt an agent created) are moved above every id the
 //! import carries and above its floors, and every reference to them moves along, so the imported
 //! rows keep their ids and the folders and branches named after them still match.
+//!
+//! A later source is merged the other way round: the rows already there stay, and the incoming
+//! ones move up by offsets reserved at `begin`, so the app can copy attachments into the folder of
+//! each task's final id before it commits.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use maestro_protocol::{
-    BeginImportRequest, BeginImportResponse, ImportChunkRequest, ImportProjectRequest,
-    ImportProjectResponse, ProjectRef, ServerResponse,
+    BeginImportRequest, BeginImportResponse, ImportChunkRequest, ImportFloors,
+    ImportProjectRequest, ImportProjectResponse, ProjectRef, ServerResponse,
 };
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use super::{commit, json, text, transaction};
 use crate::automations::canonical_project_path;
+use crate::sessions::SessionMap;
 
 /// What every staged import together may hold before a begin or a chunk is refused.
 const STAGED_LIMIT_BYTES: usize = 512 * 1024 * 1024;
 /// A staged import nobody committed for this long is dropped on the next begin or chunk.
 const STAGED_TTL: Duration = Duration::from_secs(10 * 60);
 
-struct Staged {
+/// How much each kind of id of a merged import moves up.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct Offsets {
+    tasks: i32,
+    worktrees: i32,
+    prompts: i32,
+}
+
+pub struct Staged {
     request: ImportProjectRequest,
+    source_id: Option<String>,
+    /// `None` for the first source in, else the offsets `begin` reserved.
+    merge: Option<Offsets>,
     bytes: usize,
     touched: Instant,
+}
+
+impl Staged {
+    /// Canonical.
+    pub fn project_path(&self) -> &str {
+        &self.request.project_path
+    }
 }
 
 // ponytail: process-wide map rather than main-loop state, one daemon per machine makes them the same.
@@ -45,26 +70,50 @@ fn staged() -> std::sync::MutexGuard<'static, HashMap<String, Staged>> {
 }
 
 /// Opens a staged import; its rows arrive with `chunk`, and `take_staged` hands them to `answer`.
-pub fn begin(request: BeginImportRequest) -> Result<ServerResponse, String> {
-    let mut staged = staged();
-    if staged.values().map(|entry| entry.bytes).sum::<usize>() >= STAGED_LIMIT_BYTES {
+/// Refused here, with nothing staged, when the source imported the project before. A merge
+/// reserves its id ranges now: a reservation never committed only costs unused numbers.
+pub fn begin(conn: &mut Connection, request: BeginImportRequest) -> Result<ServerResponse, String> {
+    if staged().values().map(|entry| entry.bytes).sum::<usize>() >= STAGED_LIMIT_BYTES {
         return Err("Too many imports are staged on this server".to_string());
     }
+    let project_path = canonical_project_path(&request.project_path);
+    let tx = transaction(conn)?;
+    let markers = markers(&tx, &project_path)?;
+    if refused(&markers, request.source_id.as_deref()) {
+        return Ok(ServerResponse::BeginImportOk(BeginImportResponse {
+            import_id: String::new(),
+            imported_before: true,
+            merge: false,
+            task_offset: 0,
+        }));
+    }
+    let merge = if markers.is_empty() {
+        None
+    } else {
+        Some(reserve(&tx, &project_path, &request.floors)?)
+    };
+    commit(tx)?;
+
     let import_id = uuid::Uuid::new_v4().to_string();
-    staged.insert(
+    staged().insert(
         import_id.clone(),
         Staged {
             request: ImportProjectRequest {
-                project_path: request.project_path,
+                project_path,
                 floors: request.floors,
                 ..ImportProjectRequest::default()
             },
+            source_id: request.source_id,
+            merge,
             bytes: 0,
             touched: Instant::now(),
         },
     );
     Ok(ServerResponse::BeginImportOk(BeginImportResponse {
         import_id,
+        imported_before: false,
+        merge: merge.is_some(),
+        task_offset: merge.map_or(0, |offsets| offsets.tasks),
     }))
 }
 
@@ -93,30 +142,54 @@ pub fn chunk(request: ImportChunkRequest) -> Result<ServerResponse, String> {
 }
 
 /// Takes the staged import out, to be applied with `answer`.
-pub fn take_staged(import_id: &str) -> Result<ImportProjectRequest, String> {
-    staged()
-        .remove(import_id)
-        .map(|entry| entry.request)
-        .ok_or_else(|| unknown(import_id))
+pub fn take_staged(import_id: &str) -> Result<Staged, String> {
+    staged().remove(import_id).ok_or_else(|| unknown(import_id))
 }
 
 fn unknown(import_id: &str) -> String {
     format!("No import {import_id} is staged on this server")
 }
 
+/// The project's tasks something live names right now, which a first import must not renumber.
+#[derive(Debug, Default)]
+pub struct Live {
+    /// Bound to a session in the map, or held by a window.
+    pub tasks: HashSet<i32>,
+    /// A start is coming up somewhere on the machine, its task not yet in the session map.
+    pub starting: bool,
+}
+
+/// What `answer` needs to know of the daemon's running state. `project_path` is canonical.
+pub fn live(project_path: &str, sessions: &SessionMap) -> Live {
+    let mut tasks: HashSet<i32> = sessions
+        .values()
+        .filter_map(|session| session.project.as_ref())
+        .filter(|binding| canonical_project_path(&binding.project_path) == project_path)
+        .filter_map(|binding| binding.meta.task_id)
+        .collect();
+    tasks.extend(crate::pipeline_settings::held_tasks(project_path));
+    Live {
+        tasks,
+        // ponytail: the in-flight count is machine-wide, so any start defers a first import that
+        // would renumber; per-project counts if that ever keeps an import waiting long.
+        starting: crate::task_runner::in_flight() > 0,
+    }
+}
+
 /// The reply, and the pushes to broadcast after it: none when the import was refused.
 pub fn answer(
     conn: &mut Connection,
-    mut request: ImportProjectRequest,
+    staged: Staged,
+    live: &Live,
 ) -> Result<(ServerResponse, Vec<ServerResponse>), String> {
-    request.project_path = canonical_project_path(&request.project_path);
-    let imported = import(conn, &request)?;
+    let project_path = staged.request.project_path.clone();
+    let imported = import(conn, staged, live)?;
     let reply = ServerResponse::ImportProjectOk(ImportProjectResponse { imported });
     if !imported {
         return Ok((reply, Vec::new()));
     }
     let project = || ProjectRef {
-        project_path: request.project_path.clone(),
+        project_path: project_path.clone(),
     };
     let pushes = vec![
         ServerResponse::TasksChanged(project()),
@@ -136,17 +209,94 @@ CREATE TABLE IF NOT EXISTS project_imports (
 );
 ";
 
-/// `Ok(false)` when refused. `request.project_path` is already canonical.
-fn import(conn: &mut Connection, request: &ImportProjectRequest) -> Result<bool, String> {
-    let tx = transaction(conn)?;
-    let imported: bool = tx
-        .query_row(
-            "SELECT EXISTS (SELECT 1 FROM project_imports WHERE project_path = ?1)",
-            params![request.project_path],
+/// Version 9: one marker per project and source, so a second app's board is merged rather than
+/// refused. Markers from before keep a NULL source, which matches every source. Frozen.
+pub const V9_IMPORT_SOURCES: &str = "
+CREATE TABLE project_imports_v9 (
+    project_path TEXT NOT NULL,
+    -- The app installation that sent the import; NULL when not recorded.
+    source_id    TEXT,
+    imported_at  TEXT NOT NULL,
+    -- 'rows' when the import carried any, 'empty' when it carried none.
+    source       TEXT NOT NULL,
+    UNIQUE (project_path, source_id)
+);
+INSERT INTO project_imports_v9 (project_path, source_id, imported_at, source)
+    SELECT project_path, NULL, imported_at, source FROM project_imports;
+DROP TABLE project_imports;
+ALTER TABLE project_imports_v9 RENAME TO project_imports;
+";
+
+/// The source of every import the project has had, `None` for one from before sources.
+fn markers(tx: &Transaction, project: &str) -> Result<Vec<Option<String>>, String> {
+    let read = || -> rusqlite::Result<Vec<Option<String>>> {
+        tx.prepare("SELECT source_id FROM project_imports WHERE project_path = ?1")?
+            .query_map(params![project], |row| row.get(0))?
+            .collect()
+    };
+    read().map_err(|e| format!("Failed to read the project's import markers: {e}"))
+}
+
+/// Whether `source` may not import: it did before, a marker of unknown source could be its own, or
+/// it names no source while any marker is there.
+fn refused(markers: &[Option<String>], source: Option<&str>) -> bool {
+    markers
+        .iter()
+        .any(|marker| marker.is_none() || source.is_none() || marker.as_deref() == source)
+}
+
+/// Each kind's offset for a merge: its counter, highest id held or the import's floor, whichever is
+/// highest. The counter moves to the offset plus the floor, which reserves every id the import can
+/// land on, since the app sends floors no lower than its highest id.
+fn reserve(tx: &Transaction, project: &str, floors: &ImportFloors) -> Result<Offsets, String> {
+    let offset = |counter: &str, table: &str, floor: Option<i32>| -> Result<i32, String> {
+        tx.query_row(
+            &format!(
+                "SELECT MAX(COALESCE((SELECT {counter} FROM project_counters
+                                      WHERE project_path = ?1), 0),
+                            (SELECT COALESCE(MAX(id), 0) FROM {table} WHERE project_path = ?1),
+                            ?2)"
+            ),
+            params![project, floor.unwrap_or(0)],
             |row| row.get(0),
         )
-        .map_err(|e| format!("Failed to read the project's import marker: {e}"))?;
-    if imported {
+        .map_err(|e| format!("Failed to read the project's counters: {e}"))
+    };
+    let offsets = Offsets {
+        tasks: offset("last_task_id", "tasks", floors.tasks)?,
+        worktrees: offset("last_worktree_id", "worktrees", floors.worktrees)?,
+        prompts: offset("last_prompt_id", "prompts", floors.prompts)?,
+    };
+    tx.execute(
+        "INSERT INTO project_counters (project_path, last_task_id, last_worktree_id,
+                                       last_prompt_id)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(project_path) DO UPDATE SET
+             last_task_id = MAX(last_task_id, excluded.last_task_id),
+             last_worktree_id = MAX(last_worktree_id, excluded.last_worktree_id),
+             last_prompt_id = MAX(last_prompt_id, excluded.last_prompt_id)",
+        params![
+            project,
+            offsets.tasks + floors.tasks.unwrap_or(0),
+            offsets.worktrees + floors.worktrees.unwrap_or(0),
+            offsets.prompts + floors.prompts.unwrap_or(0),
+        ],
+    )
+    .map_err(|e| format!("Failed to reserve the import's ids: {e}"))?;
+    Ok(offsets)
+}
+
+/// `Ok(false)` when refused. The staged path is already canonical.
+fn import(conn: &mut Connection, staged: Staged, live: &Live) -> Result<bool, String> {
+    let Staged {
+        mut request,
+        source_id,
+        merge,
+        ..
+    } = staged;
+    let tx = transaction(conn)?;
+    let markers = markers(&tx, &request.project_path)?;
+    if refused(&markers, source_id.as_deref()) {
         return Ok(false);
     }
     let failed = |e: String| format!("Import failed, nothing was kept: {e}");
@@ -154,10 +304,121 @@ fn import(conn: &mut Connection, request: &ImportProjectRequest) -> Result<bool,
     // SQLite resets this when the transaction ends.
     tx.pragma_update(None, "defer_foreign_keys", "ON")
         .map_err(|e| failed(e.to_string()))?;
-    make_room(&tx, request).map_err(failed)?;
-    write(&tx, request).map_err(failed)?;
+    match merge {
+        Some(offsets) => renumber(&tx, &mut request, offsets).map_err(failed)?,
+        // Another source committed between this one's begin and now, so this one has to merge.
+        None if !markers.is_empty() => {
+            return Err(
+                "Another app's board reached the project's server first. Retry to merge this \
+                 one into it"
+                    .to_string(),
+            )
+        }
+        None => {
+            check_not_live(&tx, &request.project_path, live)?;
+            make_room(&tx, &request).map_err(failed)?;
+        }
+    }
+    write(&tx, &request, source_id.as_deref()).map_err(failed)?;
     commit(tx).map_err(failed)?;
     Ok(true)
+}
+
+/// `make_room` renumbers every task the daemon holds for the project, so it waits while a session,
+/// a hold or a start may name one of them by its current id.
+fn check_not_live(tx: &Transaction, project: &str, live: &Live) -> Result<(), String> {
+    let held: Vec<i32> = tx
+        .prepare("SELECT id FROM tasks WHERE project_path = ?1")
+        .and_then(|mut statement| {
+            statement
+                .query_map(params![project], |row| row.get(0))?
+                .collect()
+        })
+        .map_err(|e| format!("Failed to read the project's tasks: {e}"))?;
+    if held.is_empty() {
+        return Ok(());
+    }
+    if live.starting || held.iter().any(|id| live.tasks.contains(id)) {
+        return Err(
+            "A task on the project's server is being worked on right now, and taking this board \
+             in would renumber it. Retry once it settles"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// Move a merged import's ids up by `offsets`, every reference along with them. An incoming
+/// worktree whose folder or branch the project already has is left out, the row there kept.
+fn renumber(
+    tx: &Transaction,
+    request: &mut ImportProjectRequest,
+    offsets: Offsets,
+) -> Result<(), String> {
+    let existing: Vec<(String, String)> = tx
+        .prepare("SELECT path, branch_name FROM worktrees WHERE project_path = ?1")
+        .and_then(|mut statement| {
+            statement
+                .query_map(params![request.project_path], |row| {
+                    Ok((row.get(0)?, row.get(1)?))
+                })?
+                .collect()
+        })
+        .map_err(|e| e.to_string())?;
+    let (paths, branches): (HashSet<String>, HashSet<String>) = existing.into_iter().unzip();
+    let mut dropped = HashSet::new();
+    request.worktrees.retain(|worktree| {
+        let clash = paths.contains(&worktree.path) || branches.contains(&worktree.branch_name);
+        if clash {
+            crate::send_diag(
+                "warn",
+                format!(
+                    "[import] worktree {} ({}) of a merged board is already on the project's \
+                     server; the row there is kept",
+                    worktree.id, worktree.path
+                ),
+            );
+            dropped.insert(worktree.id);
+        }
+        !clash
+    });
+
+    let task = |id: i32| id + offsets.tasks;
+    for row in &mut request.tasks {
+        row.id = task(row.id);
+        row.workspace_worktree_id = row
+            .workspace_worktree_id
+            .filter(|id| !dropped.contains(id))
+            .map(|id| id + offsets.worktrees);
+    }
+    for row in &mut request.relationships {
+        row.from_task_id = task(row.from_task_id);
+        row.to_task_id = task(row.to_task_id);
+    }
+    for row in &mut request.instructions {
+        row.task_id = task(row.task_id);
+    }
+    for row in &mut request.comments {
+        row.task_id = task(row.task_id);
+    }
+    // The file path is already the final one: the app copied into the moved id's folder.
+    for row in &mut request.attachments {
+        row.task_id = task(row.task_id);
+    }
+    for row in &mut request.reviews {
+        row.task_id = task(row.task_id);
+    }
+    for row in &mut request.worktrees {
+        row.id += offsets.worktrees;
+        row.task_id = row.task_id.map(task);
+    }
+    for row in &mut request.prompts {
+        row.id += offsets.prompts;
+    }
+    for row in &mut request.sessions {
+        row.meta.task_id = row.meta.task_id.map(task);
+    }
+    Ok(())
 }
 
 /// Move the rows the daemon already holds for the project above everything the import brings.
@@ -255,7 +516,11 @@ fn make_room(tx: &Transaction, request: &ImportProjectRequest) -> Result<(), Str
     Ok(())
 }
 
-fn write(tx: &Transaction, request: &ImportProjectRequest) -> Result<(), String> {
+fn write(
+    tx: &Transaction,
+    request: &ImportProjectRequest,
+    source_id: Option<&str>,
+) -> Result<(), String> {
     let project = request.project_path.as_str();
     let sql = |e: rusqlite::Error| e.to_string();
 
@@ -513,8 +778,14 @@ fn write(tx: &Transaction, request: &ImportProjectRequest) -> Result<(), String>
         && request.prompts.is_empty()
         && request.sessions.is_empty();
     tx.execute(
-        "INSERT INTO project_imports (project_path, imported_at, source) VALUES (?1, ?2, ?3)",
-        params![project, now, if empty { "empty" } else { "rows" }],
+        "INSERT INTO project_imports (project_path, source_id, imported_at, source)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![
+            project,
+            source_id,
+            now,
+            if empty { "empty" } else { "rows" }
+        ],
     )
     .map_err(sql)?;
     Ok(())
@@ -658,6 +929,41 @@ mod tests {
         }
     }
 
+    /// Begin, one chunk and commit, as a window sends them, from `source`.
+    fn run_as(
+        conn: &mut Connection,
+        mut request: ImportProjectRequest,
+        source: &str,
+    ) -> Result<(ServerResponse, Vec<ServerResponse>), String> {
+        let begun = begin(
+            conn,
+            BeginImportRequest {
+                project_path: request.project_path.clone(),
+                floors: std::mem::take(&mut request.floors),
+                source_id: Some(source.to_string()),
+            },
+        )?;
+        let ServerResponse::BeginImportOk(begun) = begun else {
+            panic!("expected BeginImportOk, got {begun:?}");
+        };
+        if begun.imported_before {
+            let refused = ImportProjectResponse { imported: false };
+            return Ok((ServerResponse::ImportProjectOk(refused), Vec::new()));
+        }
+        chunk(ImportChunkRequest {
+            import_id: begun.import_id.clone(),
+            chunk: request,
+        })?;
+        answer(conn, take_staged(&begun.import_id)?, &Live::default())
+    }
+
+    fn run(
+        conn: &mut Connection,
+        request: ImportProjectRequest,
+    ) -> Result<(ServerResponse, Vec<ServerResponse>), String> {
+        run_as(conn, request, "app-a")
+    }
+
     fn count(conn: &Connection, table: &str) -> i64 {
         conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
             row.get(0)
@@ -668,7 +974,7 @@ mod tests {
     #[test]
     fn an_import_keeps_ids_and_the_next_rows_number_above_them() {
         let mut conn = crate::project_store::open_in_memory();
-        let (reply, pushes) = answer(&mut conn, full_request()).expect("import");
+        let (reply, pushes) = run(&mut conn, full_request()).expect("import");
         assert_eq!(
             reply,
             ServerResponse::ImportProjectOk(ImportProjectResponse { imported: true })
@@ -848,7 +1154,7 @@ mod tests {
         )
         .expect("bind");
 
-        let (reply, _) = answer(&mut conn, full_request()).expect("import");
+        let (reply, _) = run(&mut conn, full_request()).expect("import");
         assert_eq!(
             reply,
             ServerResponse::ImportProjectOk(ImportProjectResponse { imported: true })
@@ -904,12 +1210,12 @@ mod tests {
             project_path: PROJECT.to_string(),
             ..ImportProjectRequest::default()
         };
-        let (reply, _) = answer(&mut conn, empty).expect("empty import");
+        let (reply, _) = run(&mut conn, empty).expect("empty import");
         assert_eq!(
             reply,
             ServerResponse::ImportProjectOk(ImportProjectResponse { imported: true })
         );
-        let (reply, _) = answer(&mut conn, full_request()).expect("second import");
+        let (reply, _) = run(&mut conn, full_request()).expect("second import");
         assert_eq!(
             reply,
             ServerResponse::ImportProjectOk(ImportProjectResponse { imported: false })
@@ -922,7 +1228,7 @@ mod tests {
         let mut conn = crate::project_store::open_in_memory();
         let mut first = full_request();
         first.sessions.clear();
-        answer(&mut conn, first).expect("first import");
+        run(&mut conn, first).expect("first import");
         let before = count(&conn, "task_comments");
 
         let mut second = full_request();
@@ -931,7 +1237,7 @@ mod tests {
         second.worktrees.clear();
         second.reviews.clear();
         second.relationships.clear();
-        let (reply, pushes) = answer(&mut conn, second).expect("second import");
+        let (reply, pushes) = run(&mut conn, second).expect("second import");
         assert_eq!(
             reply,
             ServerResponse::ImportProjectOk(ImportProjectResponse { imported: false })
@@ -965,7 +1271,7 @@ mod tests {
 
         let mut request = full_request();
         request.sessions = vec![session("acp-1", "app name"), session("acp-2", "new")];
-        answer(&mut conn, request).expect("import");
+        run(&mut conn, request).expect("import");
 
         let sessions = crate::project_store::list(&conn, PROJECT, true).expect("sessions");
         let names: Vec<_> = sessions
@@ -999,7 +1305,7 @@ mod tests {
         let mut past = session("acp-old", "past");
         past.closed = true;
         request.sessions = vec![past];
-        answer(&mut conn, request).expect("import");
+        run(&mut conn, request).expect("import");
 
         let counters: (i32, i32) = conn
             .query_row(
@@ -1023,7 +1329,7 @@ mod tests {
         request
             .comments
             .push(comment(99, "on a task the import lacks"));
-        answer(&mut conn, request).expect_err("the foreign key refuses");
+        run(&mut conn, request).expect_err("the foreign key refuses");
 
         for table in [
             "tasks",
@@ -1038,10 +1344,250 @@ mod tests {
         ] {
             assert_eq!(count(&conn, table), 0, "{table} kept a row");
         }
-        let (reply, _) = answer(&mut conn, full_request()).expect("a retry");
+        let (reply, _) = run(&mut conn, full_request()).expect("a retry");
         assert_eq!(
             reply,
             ServerResponse::ImportProjectOk(ImportProjectResponse { imported: true })
         );
+    }
+
+    /// A second app's board after the first: the first keeps its ids, the second moves above them,
+    /// every reference along, and a worktree both boards name stays the first one's.
+    #[test]
+    fn a_second_source_is_merged_above_the_first() {
+        let mut conn = crate::project_store::open_in_memory();
+        run_as(&mut conn, full_request(), "app-a").expect("first import");
+
+        let mut second = full_request();
+        second.tasks[0].title = "B 3".to_string();
+        second.tasks[1].title = "B 7".to_string();
+        second.tasks[0].workspace_worktree_id = Some(10);
+        second.tasks[1].workspace_worktree_id = Some(9);
+        second.worktrees.push(Worktree {
+            id: 10,
+            project_path: PROJECT.to_string(),
+            task_id: Some(3),
+            branch_name: "maestro/3-b".to_string(),
+            base_branch: None,
+            path: ".maestro/worktrees/task-3".to_string(),
+            git_status: None,
+            created_at: AT.to_string(),
+        });
+        second.attachments = vec![maestro_protocol::TaskAttachment {
+            id: 1,
+            task_id: 3,
+            filename: "a.txt".to_string(),
+            file_path: ".maestro/attachments/tasks/10/a.txt".to_string(),
+            file_size: 1,
+            created_at: AT.to_string(),
+        }];
+        second.sessions = vec![session("acp-1", "B name"), session("acp-2", "B")];
+        second.floors = ImportFloors {
+            tasks: Some(7),
+            worktrees: Some(10),
+            prompts: Some(4),
+        };
+
+        let begun = begin(
+            &mut conn,
+            BeginImportRequest {
+                project_path: PROJECT.to_string(),
+                floors: second.floors.clone(),
+                source_id: Some("app-b".to_string()),
+            },
+        )
+        .expect("begin");
+        let ServerResponse::BeginImportOk(begun) = begun else {
+            panic!("expected BeginImportOk");
+        };
+        assert!(begun.merge && !begun.imported_before);
+        assert_eq!(begun.task_offset, 7);
+        chunk(ImportChunkRequest {
+            import_id: begun.import_id.clone(),
+            chunk: second,
+        })
+        .expect("chunk");
+        let (reply, _) = answer(
+            &mut conn,
+            take_staged(&begun.import_id).expect("staged"),
+            &Live::default(),
+        )
+        .expect("merge");
+        assert_eq!(
+            reply,
+            ServerResponse::ImportProjectOk(ImportProjectResponse { imported: true })
+        );
+
+        let title = |id| {
+            super::super::get(&conn, PROJECT, id)
+                .expect("read")
+                .map(|t| t.title)
+        };
+        assert_eq!(title(3).as_deref(), Some("Task 3"));
+        assert_eq!(title(7).as_deref(), Some("Task 7"));
+        assert_eq!(title(10).as_deref(), Some("B 3"));
+        assert_eq!(title(14).as_deref(), Some("B 7"));
+        let task = |id| {
+            super::super::get(&conn, PROJECT, id)
+                .expect("read")
+                .expect("a task")
+        };
+        assert_eq!(task(10).workspace_worktree_id, Some(20), "moved by 10");
+        assert_eq!(
+            task(14).workspace_worktree_id,
+            None,
+            "pinned to A's, left out"
+        );
+
+        let worktree = |id| super::super::worktrees::get(&conn, PROJECT, id).expect("worktree");
+        assert_eq!(worktree(9).and_then(|w| w.task_id), Some(7), "A's row kept");
+        assert_eq!(worktree(20).and_then(|w| w.task_id), Some(10));
+        assert_eq!(count(&conn, "worktrees"), 2);
+
+        let thread = |id| {
+            super::super::list_comments(&conn, PROJECT, id)
+                .expect("thread")
+                .len()
+        };
+        assert_eq!((thread(7), thread(14)), (2, 2));
+        let links = super::super::list_relationships(&conn, PROJECT, 10).expect("links");
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].to_task_id, 14);
+        let review = super::super::reviews::get_review(&conn, PROJECT, 14)
+            .expect("review")
+            .expect("the second review");
+        assert_eq!(review.comments.len(), 1);
+        let attachment: (i32, String) = conn
+            .query_row(
+                "SELECT task_id, file_path FROM task_attachments WHERE project_path = ?1",
+                params![PROJECT],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("attachment");
+        assert_eq!(
+            attachment,
+            (10, ".maestro/attachments/tasks/10/a.txt".to_string())
+        );
+        assert_eq!(
+            crate::prompt_store::get(&conn, PROJECT, 8)
+                .expect("prompt")
+                .map(|p| p.title),
+            Some("Review".to_string())
+        );
+
+        let sessions: Vec<(String, Option<String>, Option<i32>)> =
+            crate::project_store::list(&conn, PROJECT, true)
+                .expect("sessions")
+                .into_iter()
+                .map(|(row, _)| (row.acp_session_id, row.meta.session_name, row.meta.task_id))
+                .collect();
+        assert!(sessions.contains(&("acp-1".to_string(), Some("imported".to_string()), Some(7))));
+        assert!(sessions.contains(&("acp-2".to_string(), Some("B".to_string()), Some(14))));
+
+        assert_eq!(
+            super::super::create(&mut conn, &create_request("Next"))
+                .expect("create")
+                .id,
+            15
+        );
+        let (reply, _) = run_as(&mut conn, full_request(), "app-b").expect("again");
+        assert_eq!(
+            reply,
+            ServerResponse::ImportProjectOk(ImportProjectResponse { imported: false }),
+            "a merged source is refused the second time"
+        );
+    }
+
+    #[test]
+    fn a_marker_from_before_sources_refuses_every_source() {
+        let mut conn = crate::project_store::open_in_memory();
+        conn.execute(
+            "INSERT INTO project_imports (project_path, source_id, imported_at, source)
+             VALUES (?1, NULL, ?2, 'rows')",
+            params![PROJECT, AT],
+        )
+        .expect("legacy marker");
+        let (reply, _) = run_as(&mut conn, full_request(), "app-b").expect("import");
+        assert_eq!(
+            reply,
+            ServerResponse::ImportProjectOk(ImportProjectResponse { imported: false })
+        );
+        assert_eq!(count(&conn, "tasks"), 0);
+    }
+
+    /// A first import that began before another source committed has to start over, as a merge.
+    #[test]
+    fn a_first_import_overtaken_by_another_source_fails_to_be_retried() {
+        let mut conn = crate::project_store::open_in_memory();
+        let begun = begin(
+            &mut conn,
+            BeginImportRequest {
+                project_path: PROJECT.to_string(),
+                floors: ImportFloors::default(),
+                source_id: Some("app-b".to_string()),
+            },
+        )
+        .expect("begin");
+        let ServerResponse::BeginImportOk(begun) = begun else {
+            panic!("expected BeginImportOk");
+        };
+        assert!(!begun.merge);
+        run_as(&mut conn, full_request(), "app-a").expect("A gets there first");
+        let error = answer(
+            &mut conn,
+            take_staged(&begun.import_id).expect("staged"),
+            &Live::default(),
+        )
+        .expect_err("B has to merge");
+        assert!(error.contains("Retry"), "{error}");
+        let (reply, _) = run_as(&mut conn, full_request(), "app-b").expect("the retry merges");
+        assert_eq!(
+            reply,
+            ServerResponse::ImportProjectOk(ImportProjectResponse { imported: true })
+        );
+    }
+
+    /// Renumbering the daemon's own tasks waits while anything live names one of them.
+    #[test]
+    fn a_first_import_waits_while_a_daemon_task_is_live() {
+        for live in [
+            Live {
+                tasks: HashSet::from([1]),
+                starting: false,
+            },
+            Live {
+                tasks: HashSet::new(),
+                starting: true,
+            },
+        ] {
+            let mut conn = crate::project_store::open_in_memory();
+            super::super::create(&mut conn, &create_request("Agent")).expect("task");
+            let begun = begin(
+                &mut conn,
+                BeginImportRequest {
+                    project_path: PROJECT.to_string(),
+                    floors: ImportFloors::default(),
+                    source_id: Some("app-a".to_string()),
+                },
+            )
+            .expect("begin");
+            let ServerResponse::BeginImportOk(begun) = begun else {
+                panic!("expected BeginImportOk");
+            };
+            chunk(ImportChunkRequest {
+                import_id: begun.import_id.clone(),
+                chunk: full_request(),
+            })
+            .expect("chunk");
+            let error = answer(
+                &mut conn,
+                take_staged(&begun.import_id).expect("staged"),
+                &live,
+            )
+            .expect_err("refused while live");
+            assert!(error.contains("Retry"), "{error}");
+            assert_eq!(count(&conn, "tasks"), 1);
+            assert_eq!(count(&conn, "project_imports"), 0);
+        }
     }
 }
