@@ -18,10 +18,43 @@ const WORKTREE_DIR: &str = ".maestro/worktrees";
 
 /// Run one git command in `dir`, returning its stdout.
 pub(crate) async fn git(dir: &str, args: &[&str]) -> Result<String, String> {
-    let output = tokio::process::Command::new("git")
+    run(git_command(dir, args), args).await
+}
+
+/// `git` in `dir` that never waits on a prompt: nobody may be there to answer one.
+fn git_command(dir: &str, args: &[&str]) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new("git");
+    command
         .current_dir(dir)
         .args(args)
-        .no_console_window()
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "never")
+        .no_console_window();
+    command
+}
+
+/// A git command that talks to a remote: ssh asks nothing either, unless the user chose how git
+/// runs ssh, and the command is killed if it hangs past `limit` regardless.
+pub(crate) async fn git_remote(
+    dir: &str,
+    args: &[&str],
+    limit: std::time::Duration,
+) -> Result<String, String> {
+    let mut command = git_command(dir, args);
+    let user_chose = std::env::var_os("GIT_SSH_COMMAND").is_some()
+        || std::env::var_os("GIT_SSH").is_some()
+        || git(dir, &["config", "--get", "core.sshCommand"]).await.is_ok();
+    if !user_chose {
+        command.env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes");
+    }
+    command.kill_on_drop(true);
+    tokio::time::timeout(limit, run(command, args))
+        .await
+        .unwrap_or_else(|_| Err(format!("git {} timed out after {limit:?}", args.join(" "))))
+}
+
+async fn run(mut command: tokio::process::Command, args: &[&str]) -> Result<String, String> {
+    let output = command
         .output()
         .await
         .map_err(|e| format!("cannot run git {}: {e}", args.join(" ")))?;

@@ -126,6 +126,9 @@ async fn has_changes(project_path: &str, task: &Task, worktree: Option<&str>) ->
     }
 }
 
+/// How long a push may take before it is given up as hung.
+const PUSH_LIMIT: std::time::Duration = std::time::Duration::from_secs(120);
+
 /// Push `branch` from `dir` to the project's configured remote, else the one it tracks, else
 /// `origin`.
 pub(crate) async fn push_branch(
@@ -145,9 +148,16 @@ pub(crate) async fn push_branch(
         .filter(|r| !r.is_empty())
         .unwrap_or_else(|| "origin".to_string()),
     };
-    git(dir, &["push", "--set-upstream", &remote, branch])
-        .await
-        .map(|_| ())
+    if remote.starts_with('-') {
+        return Err(format!("'{remote}' is not a remote name"));
+    }
+    crate::worktree::git_remote(
+        dir,
+        &["push", "--set-upstream", "--", &remote, branch],
+        PUSH_LIMIT,
+    )
+    .await
+    .map(|_| ())
 }
 
 fn store_write(
@@ -731,5 +741,9 @@ mod tests {
             .unwrap();
         let heads = git(&fork, &["branch", "--list", "fix"]).await.unwrap();
         assert!(heads.contains("fix"));
+        // A remote that reads as an option is refused before git sees it.
+        assert!(push_branch(&repo, "fix", Some("--mirror".to_string()))
+            .await
+            .is_err());
     }
 }
