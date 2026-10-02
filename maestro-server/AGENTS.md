@@ -213,9 +213,12 @@ the canonical path from the app's `project_id`.
   rebuilding `tasks`.
 - **Attachments are copied into the project.** Attaching copies the file to
   `.maestro/attachments/tasks/<task_id>/` on the project's machine, through the transfer path prompt
-  attachments use, and the row holds the project-relative path. Starting a task reads each copy
-  there (`prepare_task_attachments`) and embeds it as before: an image inline, text pasted in, a PDF
-  linked. A missing copy is offered for removal; one too big to send is offered and kept.
+  attachments use, and the row holds the project-relative path. The daemon reads each copy there
+  when it composes the prompt and embeds it as before: an image inline, text pasted in, a PDF
+  linked. A start from a window first checks them with `prepare_task_attachments` and shows a
+  dialog: a missing copy is offered for removal, one too big to send is offered and kept, and the
+  user can cancel the start. A start the daemon makes on its own skips them with a note in the
+  thread.
 - **The zombie worktree sweep asks the daemon.** Its candidates come from `ListWorktrees` and
   `ListTasks`, and a pass is skipped when the daemon cannot answer, rather than deleting a folder a
   row still names.
@@ -314,7 +317,7 @@ task, and waits for `TaskSessionStarted`. It is deliberately not prefixed with
 **A sign-in refusal names its agent.** `StartTask` refuses with `auth_required:<agent_id>`
 (`auth_required_for`), because the daemon picks the stage's agent and the window cannot know which
 one to sign in to. The picker's choice travels as the request's one-shot `agent_id`, which wins over
-the task's and is never written to it.
+the task's and is never written to it. The picker also makes it the project's default agent.
 
 ## Automations live in the daemon
 
