@@ -86,7 +86,7 @@ pub(crate) fn decide(
 }
 
 /// The role in a session row's `role` meta, `{"role": "Coder", ...}`.
-fn parse_role(meta: Option<String>) -> Option<AgentRole> {
+pub(crate) fn parse_role(meta: Option<String>) -> Option<AgentRole> {
     let value: Value = serde_json::from_str(&meta?).ok()?;
     serde_json::from_value(value.get("role")?.clone()).ok()
 }

@@ -189,10 +189,12 @@ fn transition(
 }
 
 /// Resolve the turn and write it. Returns the stage to start next, if any, and the pushes owed.
+/// `role` is the one the session was started for.
 pub(crate) async fn resolve(
     store: &crate::project_store::Store,
     project_path: &str,
     task_id: i32,
+    role: Option<AgentRole>,
     stop_reason: &str,
     facts: TurnFacts,
 ) -> (Option<AgentRole>, Vec<ServerResponse>) {
@@ -211,6 +213,16 @@ pub(crate) async fn resolve(
             }
         }
     };
+    // A superseded session prompted after its hand-off ends no turn of the stage now running.
+    if let (Some(session), Some(stage)) = (role, crate::task_restart::role(task.phase)) {
+        if session != stage {
+            send_diag(
+                "debug",
+                format!("[task] ignoring a {session:?} turn end on task {task_id}, now {stage:?}'s"),
+            );
+            return (None, pushes);
+        }
+    }
 
     let has_changes = if !facts.user_interrupted
         && writes(task.phase)
@@ -308,6 +320,7 @@ pub(crate) fn spawn(
     driver: Driver,
     project_path: String,
     task_id: i32,
+    role: Option<AgentRole>,
     stop_reason: String,
     facts: TurnFacts,
 ) {
@@ -318,6 +331,7 @@ pub(crate) fn spawn(
             &driver.store,
             &project_path,
             task_id,
+            role,
             &stop_reason,
             facts,
         ))
@@ -419,6 +433,11 @@ async fn apply(
     for push in pushes {
         broadcast(&everyone, push).await;
     }
+}
+
+/// The role a task session was started for, `None` when its meta does not say.
+pub(crate) fn role_of(session: &crate::sessions::ActiveSession) -> Option<AgentRole> {
+    crate::session::task_gate::parse_role(session.project.as_ref()?.meta.role.clone())
 }
 
 /// The task a session works, with its project path canonical.
@@ -632,7 +651,7 @@ mod tests {
     #[tokio::test]
     async fn a_coder_done_with_a_reviewer_profile_hands_to_the_reviewer() {
         let (_dir, project, store, id) = setup(true);
-        let (next, pushes) = resolve(&store, &project, id, "end_turn", facts(true, "done")).await;
+        let (next, pushes) = resolve(&store, &project, id, None, "end_turn", facts(true, "done")).await;
         assert_eq!(next, Some(AgentRole::Reviewer));
         assert!(!pushes.is_empty());
     }
@@ -640,7 +659,7 @@ mod tests {
     #[tokio::test]
     async fn a_coder_done_without_one_goes_to_the_user() {
         let (_dir, project, store, id) = setup(false);
-        let (next, _) = resolve(&store, &project, id, "end_turn", facts(true, "done")).await;
+        let (next, _) = resolve(&store, &project, id, None, "end_turn", facts(true, "done")).await;
         assert_eq!(next, None);
     }
 
@@ -648,8 +667,27 @@ mod tests {
     async fn a_turn_end_resolves_the_path_a_window_spelled() {
         let (dir, _, store, id) = setup(true);
         let raw = format!("{}/", dir.path().to_string_lossy());
-        let (next, _) = resolve(&store, &raw, id, "end_turn", facts(true, "done")).await;
+        let (next, _) = resolve(&store, &raw, id, None, "end_turn", facts(true, "done")).await;
         assert_eq!(next, Some(AgentRole::Reviewer));
+    }
+
+    #[tokio::test]
+    async fn a_turn_end_of_another_stages_session_is_ignored() {
+        let (_dir, project, store, id) = setup(true);
+        let (next, pushes) = resolve(
+            &store,
+            &project,
+            id,
+            Some(AgentRole::Reviewer),
+            "end_turn",
+            facts(true, "done"),
+        )
+        .await;
+        assert_eq!((next, pushes.len()), (None, 0));
+        let task = crate::task_store::get(&*store.lock().await, &project, id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(task.phase, Some(TaskPhase::Implementing));
     }
 
     #[tokio::test]

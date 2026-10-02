@@ -820,9 +820,9 @@ async fn run_server(
                     }
                 };
                 // A task's session: resolve the turn and start the next stage, off the loop.
-                let task_binding = sessions
-                    .get(&ended.session_id)
-                    .and_then(task_turn::task_of);
+                let ending = sessions.get(&ended.session_id);
+                let task_binding = ending.and_then(task_turn::task_of);
+                let role = ending.and_then(task_turn::role_of);
                 if let (Some(store), Some((project_path, task_id))) =
                     (project_store.as_ref(), task_binding)
                 {
@@ -836,6 +836,7 @@ async fn run_server(
                         },
                         project_path,
                         task_id,
+                        role,
                         ended.stop_reason.clone(),
                         ended.facts.clone(),
                     );
