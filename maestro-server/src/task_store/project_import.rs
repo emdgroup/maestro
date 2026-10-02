@@ -70,9 +70,15 @@ fn staged() -> std::sync::MutexGuard<'static, HashMap<String, Staged>> {
 }
 
 /// Opens a staged import; its rows arrive with `chunk`, and `take_staged` hands them to `answer`.
-/// Refused here, with nothing staged, when the source imported the project before. A merge
-/// reserves its id ranges now: a reservation never committed only costs unused numbers.
-pub fn begin(conn: &mut Connection, request: BeginImportRequest) -> Result<ServerResponse, String> {
+/// Refused here, with nothing staged, when the source imported the project before, and failed here
+/// when a first import would renumber a task something `live` names, so the app copies no
+/// attachments for an import that cannot commit. `answer` checks both again. A merge reserves its
+/// id ranges now: a reservation never committed only costs unused numbers.
+pub fn begin(
+    conn: &mut Connection,
+    request: BeginImportRequest,
+    live: &Live,
+) -> Result<ServerResponse, String> {
     if staged().values().map(|entry| entry.bytes).sum::<usize>() >= STAGED_LIMIT_BYTES {
         return Err("Too many imports are staged on this server".to_string());
     }
@@ -88,6 +94,7 @@ pub fn begin(conn: &mut Connection, request: BeginImportRequest) -> Result<Serve
         }));
     }
     let merge = if markers.is_empty() {
+        check_not_live(&tx, &project_path, live)?;
         None
     } else {
         Some(reserve(&tx, &project_path, &request.floors)?)
@@ -943,6 +950,7 @@ mod tests {
                 floors: std::mem::take(&mut request.floors),
                 source_id: Some(source.to_string()),
             },
+            &Live::default(),
         )?;
         let ServerResponse::BeginImportOk(begun) = begun else {
             panic!("expected BeginImportOk, got {begun:?}");
@@ -1396,6 +1404,7 @@ mod tests {
                 floors: second.floors.clone(),
                 source_id: Some("app-b".to_string()),
             },
+            &Live::default(),
         )
         .expect("begin");
         let ServerResponse::BeginImportOk(begun) = begun else {
@@ -1527,6 +1536,7 @@ mod tests {
                 floors: ImportFloors::default(),
                 source_id: Some("app-b".to_string()),
             },
+            &Live::default(),
         )
         .expect("begin");
         let ServerResponse::BeginImportOk(begun) = begun else {
@@ -1548,7 +1558,8 @@ mod tests {
         );
     }
 
-    /// Renumbering the daemon's own tasks waits while anything live names one of them.
+    /// Renumbering the daemon's own tasks waits while anything live names one of them: refused at
+    /// begin, before the app copies anything, and again at commit for what went live meanwhile.
     #[test]
     fn a_first_import_waits_while_a_daemon_task_is_live() {
         for live in [
@@ -1563,15 +1574,14 @@ mod tests {
         ] {
             let mut conn = crate::project_store::open_in_memory();
             super::super::create(&mut conn, &create_request("Agent")).expect("task");
-            let begun = begin(
-                &mut conn,
-                BeginImportRequest {
-                    project_path: PROJECT.to_string(),
-                    floors: ImportFloors::default(),
-                    source_id: Some("app-a".to_string()),
-                },
-            )
-            .expect("begin");
+            let request = || BeginImportRequest {
+                project_path: PROJECT.to_string(),
+                floors: ImportFloors::default(),
+                source_id: Some("app-a".to_string()),
+            };
+            let error = begin(&mut conn, request(), &live).expect_err("refused at begin");
+            assert!(error.contains("Retry"), "{error}");
+            let begun = begin(&mut conn, request(), &Live::default()).expect("begin");
             let ServerResponse::BeginImportOk(begun) = begun else {
                 panic!("expected BeginImportOk");
             };

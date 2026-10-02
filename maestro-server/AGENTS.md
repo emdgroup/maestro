@@ -233,7 +233,7 @@ the daemon commits in one transaction, with counters kept above the app's ids an
 the daemon keeps one marker per project and source. The same source is refused, and the app then
 stamps its project. The first source keeps its ids, and rows the daemon wrote itself before it are
 moved above them, which waits (a retryable failure) while a session, hold or start names one of
-those tasks. A later source is merged: `BeginImport` reserves id ranges above the counters and
+those tasks: checked at `BeginImport`, before the app copies any attachment, and again at commit. A later source is merged: `BeginImport` reserves id ranges above the counters and
 answers the task offset, the app copies attachments into each task's final folder before it
 commits, and the incoming rows move up with every reference. An incoming worktree whose folder or
 branch is already there is left out, and a task whose `task-<id>` folder, row or generated
