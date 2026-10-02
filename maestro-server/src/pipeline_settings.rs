@@ -40,6 +40,15 @@ const MB_PER_AGENT: u64 = 400;
 const RESERVED_MB: u64 = 1024;
 /// How long a hold survives unrenewed when the client names no TTL.
 pub(crate) const HOLD_TTL: Duration = Duration::from_secs(10);
+/// The longest a client may ask a hold to last, so a stray TTL cannot keep a task off the queue.
+const MAX_HOLD_TTL: Duration = Duration::from_secs(5 * 60);
+
+/// The TTL a hold request asks for, bounded.
+pub(crate) fn hold_ttl(ttl_ms: Option<u64>) -> Duration {
+    ttl_ms
+        .map_or(HOLD_TTL, Duration::from_millis)
+        .min(MAX_HOLD_TTL)
+}
 
 const DEFAULT_CAPACITY: CapacitySettings = CapacitySettings {
     concurrency_mode: ConcurrencyMode::Auto,
@@ -194,7 +203,9 @@ fn holds() -> std::sync::MutexGuard<'static, HashMap<(String, i32), Instant>> {
 
 /// Take or renew a hold. `project_path` is canonical.
 fn hold(project_path: &str, task_id: i32, ttl: Duration) {
-    holds().insert((project_path.to_string(), task_id), Instant::now() + ttl);
+    let now = Instant::now();
+    let expires_at = now.checked_add(ttl).unwrap_or(now);
+    holds().insert((project_path.to_string(), task_id), expires_at);
 }
 
 fn release(project_path: &str, task_id: i32) {
@@ -211,7 +222,7 @@ pub fn is_held(project_path: &str, task_id: i32) -> bool {
 pub fn answer_hold(request: ServerRequest) -> Result<ServerResponse, String> {
     match request {
         ServerRequest::HoldTask(r) => {
-            let ttl = r.ttl_ms.map_or(HOLD_TTL, Duration::from_millis);
+            let ttl = hold_ttl(r.ttl_ms);
             hold(&canonical_project_path(&r.project_path), r.task_id, ttl);
             Ok(ServerResponse::HoldTaskOk)
         }
@@ -406,5 +417,15 @@ mod tests {
         assert!(!held(4));
         hold(&canonical_project_path(path), 4, HOLD_TTL);
         assert!(held(4));
+
+        // A TTL no clock can add is bounded rather than a panic on the main loop.
+        assert_eq!(hold_ttl(Some(u64::MAX)), MAX_HOLD_TTL);
+        answer_hold(ServerRequest::HoldTask(HoldTaskRequest {
+            project_path: path.to_string(),
+            task_id: 5,
+            ttl_ms: Some(u64::MAX),
+        }))
+        .unwrap();
+        assert!(held(5));
     }
 }

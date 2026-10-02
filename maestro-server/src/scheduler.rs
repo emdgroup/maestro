@@ -124,9 +124,7 @@ pub(crate) fn hold_changed(request: &ServerRequest) {
         ServerRequest::HoldTask(r) => {
             let path = canonical_project_path(&r.project_path);
             let task_id = r.task_id;
-            let ttl = r
-                .ttl_ms
-                .map_or(crate::pipeline_settings::HOLD_TTL, Duration::from_millis);
+            let ttl = crate::pipeline_settings::hold_ttl(r.ttl_ms);
             tokio::spawn(async move {
                 tokio::time::sleep(ttl + Duration::from_millis(50)).await;
                 if !crate::pipeline_settings::is_held(&path, task_id) {
