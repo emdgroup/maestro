@@ -45,7 +45,7 @@ One full-window screen, no app header bar.
    - No sentence. Earlier versions said `<N agents> at work. <M things> waiting on you.`; that was
      replaced by the scoreboard.
 4. **A two-column row** above the connections (`grid grid-cols-2 gap-5`):
-   - left, the dashed **"Add a connection"** panel: `Add a connection`, `Where your project lives` under it, then the three type buttons (SSH host, WSL distro, Container) in a row;
+   - left, the glass **"Add a connection"** panel, styled like every other panel: `Add a connection`, `Where your project lives` under it, then the three type buttons (SSH host, WSL distro, Container) in a row;
    - right, the glass **Integrations** panel, the whole panel a button opening the integrations
      manager: `Integrations` with a muted `Manage ›` on the right, `Issues and pull requests, for
 every connection` under it, then one chip per provider. A configured provider is a `pill` chip
@@ -73,7 +73,7 @@ All values below are in `mock.html` as CSS classes of the same name.
 | `pane`         | project tiles, choices inside dialogs             | `background` at 38% inside a glass panel, 1px border at 7%; hover lifts 2px and raises to 62%                                                                         |
 | `pane.sel`     | the chosen option in a dialog                     | border and fill in `--accent`                                                                                                                                         |
 | `pane.attn`    | a project tile that needs you                     | amber `#f59e0b` at 13% over `background` at 30%, border amber at 34%; hover raises them to 19% and 48%                                                                |
-| `ghost`        | "Add project" tile, "Add a connection" panel      | 1.5px dashed border of `foreground` at 18%; hover turns it `--accent` with an 8% fill                                                                                 |
+| `ghost`        | "Add project" tile                                | 1.5px dashed border of `foreground` at 18%; hover turns it `--accent` with an 8% fill                                                                                 |
 | `pill`         | small glass buttons (Connect, Start, icon badges) | `card` at 50%, `blur(14px)`                                                                                                                                           |
 | `field`        | inputs                                            | `background` at 55%, border at 12%, `--accent` border on focus                                                                                                        |
 | `scrim`        | behind a dialog                                   | `background` at 30%, `blur(6px)`                                                                                                                                      |
@@ -88,6 +88,17 @@ shakes once.
 **Header row:** a 36px glass icon tile (computer, server, terminal or container), the name in `text-lg`
 semibold with the host underneath in `11px` muted, then on the right the status and the `⋯` button.
 
+**Header note** (connected panels), muted `text-xs`, parts joined with `·`, nothing when there is
+nothing to say:
+
+- **Capacity, only when reached:** `At capacity` (medium weight) then `<N> waiting for an agent`,
+  N being the queued tasks on the connection. There is no gauge or slot count: it would not scale to
+  dozens of agents, and capacity matters only when it holds work back.
+- **Automations:** `<name> running` while one runs, else `<N> automations · next <time>`, else
+  nothing.
+
+Example: `At capacity · 5 waiting for an agent · nightly-lint running`.
+
 **Rename** is not in the `⋯` menu. Hovering a panel fades in a small pencil button right after the
 name (every connection but This computer, in every state). It turns the name into a `field` input
 in place, text selected; Enter or leaving the field saves, Escape cancels, an empty name is ignored.
@@ -101,14 +112,14 @@ the panel again expands it. Each connection remembers its state.
 
 Status by state:
 
-| State          | Right side of the header                               | Body                                                                                   |
-| -------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| Connected      | the `⋯` button only (no capacity indicator; see below) | project tiles, then the "Add project" tile                                             |
-| Not connected  | a `Connect` pill only, no status and no `⋯`            | none: the panel is the header row alone                                                |
-| Signing in     | `Not connected`, muted                                 | inline password form (below)                                                           |
-| Connecting     | `Connecting…`                                          | three inline steps with spinner and check marks                                        |
-| Server stopped | `Server stopped`, panel at 75% opacity                 | `The Maestro server is stopped. Nothing runs here until it starts.` and a `Start` pill |
-| Unreachable    | `Unreachable` in rose, panel at 75% opacity            | `Not answering. Its projects keep their state and come back when it does.`             |
+| State          | Right side of the header                       | Body                                                                                   |
+| -------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Connected      | muted text, then `⋯` (see "Header note" below) | project tiles, then the "Add project" tile                                             |
+| Not connected  | a `Connect` pill only, no status and no `⋯`    | none: the panel is the header row alone                                                |
+| Signing in     | `Not connected`, muted                         | inline password form (below)                                                           |
+| Connecting     | `Connecting…`                                  | three inline steps with spinner and check marks                                        |
+| Server stopped | `Server stopped`, panel at 75% opacity         | `The Maestro server is stopped. Nothing runs here until it starts.` and a `Start` pill |
+| Unreachable    | `Unreachable` in rose, panel at 75% opacity    | `Not answering. Its projects keep their state and come back when it does.`             |
 
 **Project tile** (`pane`, min height 132px, grid `repeat(auto-fill, minmax(230px, 1fr))`):
 
@@ -207,8 +218,8 @@ previous one, so a window never holds projects it is not showing.
 
 ## Open items
 
-- **What a connected panel's header shows on the right.** The agent slots (`4/4 agents` with one pill
-  per slot) were removed because they do not scale to dozens of agents. The replacement is open.
+- **The Integrations panel content.** Options are being compared; it stays the panel's current
+  height and shows the configured providers by their icons.
 
 ## Reusing what exists
 

@@ -332,9 +332,9 @@
             <div id="scores" class="ml-auto flex gap-10"></div>
           </section>
           <div class="grid grid-cols-2 gap-5 mb-5">
-            <section id="add-connection" class="ghost rounded-[22px] p-5 text-muted-foreground">
+            <section id="add-connection" class="glass rounded-[22px] p-5">
               <div class="text-sm font-medium text-foreground">Add a connection</div>
-              <div class="text-xs mt-0.5">Where your project lives</div>
+              <div class="text-xs text-muted-foreground mt-0.5">Where your project lives</div>
               <div class="flex gap-2 mt-4" id="add-conn-types"></div>
             </section>
             <button
@@ -588,6 +588,7 @@
           state: "up",
           seen: true,
           auto: 3,
+          next: "14:00",
           proj: [
             {
               n: "maestro",
@@ -612,6 +613,8 @@
           state: "up",
           seen: true,
           auto: 5,
+          running: "nightly-lint",
+          full: true,
           proj: [
             {
               n: "api-gateway",
@@ -646,6 +649,7 @@
           state: "idle",
           pw: true,
           auto: 1,
+          next: "02:00",
           later: [
             { n: "model-train", path: "/data/model-train", work: 1, review: 0, queued: 2 },
             {
@@ -1284,6 +1288,27 @@
           '\')" class="ghost rounded-2xl min-h-[132px] flex flex-col items-center justify-center gap-1.5 text-muted-foreground cursor-pointer"><span class="text-2xl leading-none font-light">+</span><span class="text-xs">Add project</span></button>'
         );
       }
+      /* right of a connected header: capacity only when it is reached, then automations */
+      function upNote(c) {
+        var parts = [];
+        if (c.full) {
+          var w = 0;
+          c.proj.forEach(function (p) {
+            w += p.queued;
+          });
+          parts.push(
+            '<span class="font-medium text-foreground/80">At capacity</span> · ' +
+              w +
+              " waiting for an agent",
+          );
+        }
+        if (c.running) parts.push(c.running + " running");
+        else if (c.auto)
+          parts.push(
+            c.auto + " automation" + (c.auto > 1 ? "s" : "") + (c.next ? " · next " + c.next : ""),
+          );
+        return parts.length ? "<span>" + parts.join(" · ") + "</span>" : "";
+      }
       function body(c) {
         if (c.state === "up" && c.min)
           return (
@@ -1448,7 +1473,7 @@
           .map(function (c) {
             var status =
               c.state === "up"
-                ? ""
+                ? upNote(c)
                 : c.state === "connecting"
                   ? "<span>Connecting…</span>"
                   : c.state === "stopped"
