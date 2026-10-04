@@ -38,15 +38,14 @@ One full-window screen, no app header bar.
    colour, theme, settings, window controls. The strip doubles as the drag region.
 3. **Hero**, one row, bottom-aligned (`flex items-end gap-12`):
    - left, the 3D logo `public/maestro-logo.png` at 64px with a soft drop shadow, then `Maestro` in
-     `28px` semibold and under it, muted `text-xs`, `<P> projects on <C> connections`;
+     `28px` semibold and under it, muted `text-xs`, `Conduct your agents in concert`;
    - right, a scoreboard of three numbers, `52px` semibold tabular, each with a muted `text-xs`
      label under it: `working` (`--accent`), `need you` (amber,
      `text-amber-600 dark:text-amber-400`), `to review` (purple, `--color-purple-500`, the Review column's colour). A zero fades to 40%.
    - No sentence. Earlier versions said `<N agents> at work. <M things> waiting on you.`; that was
      replaced by the scoreboard.
 4. **A two-column row** above the connections (`grid grid-cols-2 gap-5`):
-   - left, the dashed **"Add a connection"** panel: `Add a connection`, `Run agents on another
-machine` under it, then the three type buttons (SSH host, WSL distro, Container) in a row;
+   - left, the dashed **"Add a connection"** panel: `Add a connection`, `Where your project lives` under it, then the three type buttons (SSH host, WSL distro, Container) in a row;
    - right, the glass **Integrations** panel, the whole panel a button opening the integrations
      manager: `Integrations` with a muted `Manage ›` on the right, `Issues and pull requests, for
 every connection` under it, then one chip per provider. A configured provider is a `pill` chip
@@ -102,14 +101,14 @@ the panel again expands it. Each connection remembers its state.
 
 Status by state:
 
-| State          | Right side of the header                                            | Body                                                                                   |
-| -------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Connected      | agent slots as pills, filled `--accent` for used, then `4/4 agents` | project tiles, then the "Add project" tile                                             |
-| Not connected  | a `Connect` pill only, no status and no `⋯`                         | none: the panel is the header row alone                                                |
-| Signing in     | `Not connected`, muted                                              | inline password form (below)                                                           |
-| Connecting     | `Connecting…`                                                       | three inline steps with spinner and check marks                                        |
-| Server stopped | `Server stopped`, panel at 75% opacity                              | `The Maestro server is stopped. Nothing runs here until it starts.` and a `Start` pill |
-| Unreachable    | `Unreachable` in rose, panel at 75% opacity                         | `Not answering. Its projects keep their state and come back when it does.`             |
+| State          | Right side of the header                               | Body                                                                                   |
+| -------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| Connected      | the `⋯` button only (no capacity indicator; see below) | project tiles, then the "Add project" tile                                             |
+| Not connected  | a `Connect` pill only, no status and no `⋯`            | none: the panel is the header row alone                                                |
+| Signing in     | `Not connected`, muted                                 | inline password form (below)                                                           |
+| Connecting     | `Connecting…`                                          | three inline steps with spinner and check marks                                        |
+| Server stopped | `Server stopped`, panel at 75% opacity                 | `The Maestro server is stopped. Nothing runs here until it starts.` and a `Start` pill |
+| Unreachable    | `Unreachable` in rose, panel at 75% opacity            | `Not answering. Its projects keep their state and come back when it does.`             |
 
 **Project tile** (`pane`, min height 132px, grid `repeat(auto-fill, minmax(230px, 1fr))`):
 
@@ -208,7 +207,8 @@ previous one, so a window never holds projects it is not showing.
 
 ## Open items
 
-None at the moment.
+- **What a connected panel's header shows on the right.** The agent slots (`4/4 agents` with one pill
+  per slot) were removed because they do not scale to dozens of agents. The replacement is open.
 
 ## Reusing what exists
 
