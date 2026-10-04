@@ -1776,9 +1776,13 @@
               back +
               '" class="mr-2 mt-3 h-7 w-7 rounded-full grid place-items-center text-muted-foreground hover:bg-foreground/10 cursor-pointer">‹</button>'
             : "") +
-          '<div><div class="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">' +
-          eyebrow +
-          '</div><div class="hl text-2xl font-semibold mt-0.5">' +
+          "<div>" +
+          (eyebrow
+            ? '<div class="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">' +
+              eyebrow +
+              "</div>"
+            : "") +
+          '<div class="hl text-2xl font-semibold mt-0.5">' +
           title +
           '</div></div><button onclick="hide(\'int-scrim\')" class="ml-auto h-7 w-7 rounded-full grid place-items-center text-muted-foreground hover:bg-foreground/10 cursor-pointer">✕</button></div>' +
           body;
@@ -1786,15 +1790,17 @@
       }
       function intDetails(ix) {
         var i = INT[ix];
+        /* one header row: icon, provider, capabilities; the account is a field below */
         intSheet(
-          PNAME[i.p],
-          i.acc,
           "",
-          '<div class="flex items-center gap-3 mt-4">' +
+          '<span class="flex items-center gap-3">' +
             bicon(i.p) +
-            '<div class="flex gap-1">' +
+            PNAME[i.p] +
+            '<span class="flex gap-1 font-normal tracking-normal">' +
             capTags(i.p) +
-            '</div></div><div class="mt-4 space-y-3"><div><div class="text-[11px] text-muted-foreground">Account</div><div class="font-mono text-xs mt-1">' +
+            "</span></span>",
+          "",
+          '<div class="mt-5 space-y-3"><div><div class="text-[11px] text-muted-foreground">Account</div><div class="font-mono text-xs mt-1">' +
             i.acc +
             '</div></div><div><div class="text-[11px] text-muted-foreground">Instance</div><div class="font-mono text-xs mt-1">' +
             i.host +

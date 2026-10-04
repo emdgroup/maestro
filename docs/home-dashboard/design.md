@@ -157,8 +157,8 @@ shown by CSS, never by re-rendering, so hovering cannot flicker.
 click outside, Esc, or a second click on the tile. While one card is pinned, hovering another tile
 opens nothing.
 
-**An integration row** opens its details sheet: eyebrow the provider, title the account, the icon
-and capability tags, `Account` and `Instance`, then `Disconnect` (rose, text) and `Edit
+**An integration row** opens its details sheet. Its header is one row: the icon, the provider
+name as the title, and the capability tags. Below come `Account` and `Instance`, then `Disconnect` (rose, text) and `Edit
 credentials`. One provided by the gh CLI says `Managed by the gh CLI. Sign out there to remove
 it.` and has neither button. This is `IntegrationDetailModal` restyled.
 
