@@ -36,11 +36,14 @@ One full-window screen, no app header bar.
    unchanged. Everything above it is glass, so the bubbles show through.
 2. **Corner controls.** Floating top-right with no bar behind them, as on today's picker: accent
    colour, theme, settings, window controls. The strip doubles as the drag region.
-3. **Hero.** A sentence, not a row of stats, `40px` semibold, tight tracking:
-   - `<N agents> at work. <M things> waiting on you.` The first count is green
-     (`text-emerald-700 dark:text-emerald-400`), the second amber
-     (`text-amber-600 dark:text-amber-400`).
-   - Under it, muted `text-sm`: `<P> projects on <C> connections · <R> tasks ready for review`.
+3. **Hero**, one row, bottom-aligned (`flex items-end gap-12`):
+   - left, the 3D logo `public/maestro-logo.png` at 64px with a soft drop shadow, then `Maestro` in
+     `28px` semibold and under it, muted `text-xs`, `<P> projects on <C> connections`;
+   - right, a scoreboard of three numbers, `52px` semibold tabular, each with a muted `text-xs`
+     label under it: `working` (green, `text-emerald-700 dark:text-emerald-400`), `need you` (amber,
+     `text-amber-600 dark:text-amber-400`), `to review` (foreground). A zero fades to 40%.
+   - No sentence. Earlier versions said `<N agents> at work. <M things> waiting on you.`; that was
+     replaced by the scoreboard.
 4. **A two-column row** above the connections (`grid grid-cols-2 gap-5`):
    - left, the dashed **"Add a connection"** panel: `Add a connection`, `Run agents on another
 machine` under it, then the three type buttons (SSH host, WSL distro, Container) in a row;
