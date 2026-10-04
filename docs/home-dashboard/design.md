@@ -88,16 +88,9 @@ shakes once.
 **Header row:** a 36px glass icon tile (computer, server, terminal or container), the name in `text-lg`
 semibold with the host underneath in `11px` muted, then on the right the status and the `⋯` button.
 
-**Header note** (connected panels), muted `text-xs`, parts joined with `·`, nothing when there is
-nothing to say:
-
-- **Capacity, only when reached:** `At capacity` (medium weight) then `<N> waiting for an agent`,
-  N being the queued tasks on the connection. There is no gauge or slot count: it would not scale to
-  dozens of agents, and capacity matters only when it holds work back.
-- **Automations:** `<name> running` while one runs, else `<N> automations · next <time>`, else
-  nothing.
-
-Example: `At capacity · 5 waiting for an agent · nightly-lint running`.
+**Header note** (connected panels): muted `text-xs`, `<N> automation(s) running` while any run on
+the connection, else nothing. Capacity and the next scheduled run were tried and dropped as too
+long; there is no capacity gauge or slot count either, since it would not scale to dozens of agents.
 
 **Rename** is not in the `⋯` menu. Hovering a panel fades in a small pencil button right after the
 name (every connection but This computer, in every state). It turns the name into a `field` input
