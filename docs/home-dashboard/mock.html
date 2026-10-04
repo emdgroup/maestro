@@ -748,16 +748,7 @@
             "menuOpen=null;render();toast('Connection settings: " + c.name + "')",
           ),
         );
-        if (c.kind !== "local")
-          it.push(
-            mi(
-              "m-rename-" + c.id,
-              "pen",
-              "Rename",
-              "",
-              "menuOpen=null;render();toast('Rename " + c.name + "')",
-            ),
-          );
+
         if (c.kind === "ssh" && c.state !== "signin")
           it.push(
             mi(
@@ -1168,14 +1159,64 @@
           "</span></span>"
         );
       }
-      function tile(c, p) {
-        var state = p.needs
-          ? ["Needs you", "text-amber-600 dark:text-amber-400"]
+      function projState(p) {
+        return p.needs
+          ? ["Needs you", "text-amber-600 dark:text-amber-400", 0]
           : p.work
-            ? ["Working", "text-emerald-700 dark:text-emerald-400"]
+            ? ["Working", "text-emerald-700 dark:text-emerald-400", 1]
             : p.queued || p.review
-              ? ["Idle", "text-muted-foreground"]
-              : ["Quiet", "text-muted-foreground/60"];
+              ? ["Idle", "text-muted-foreground", 2]
+              : ["Quiet", "text-muted-foreground/60", 3];
+      }
+      /* minimized panel: one line of chips, the ones that need attention first */
+      function chip(p) {
+        var st = projState(p);
+        return (
+          '<a id="chip-' +
+          p.n +
+          '" onclick="toast(\'Open ' +
+          p.n +
+          '\')" class="pane ' +
+          (p.needs ? "attn " : "") +
+          'shrink-0 rounded-full pl-3 pr-2.5 py-1 flex items-center gap-2 text-xs cursor-pointer"><span class="font-medium">' +
+          p.n +
+          '</span><span class="text-[11px] ' +
+          st[1] +
+          '">' +
+          st[0] +
+          "</span></a>"
+        );
+      }
+      function startRename(id) {
+        conn(id).editing = true;
+        render();
+        var f = $("name-" + id);
+        f.focus();
+        f.select();
+      }
+      function saveName(id) {
+        var c = conn(id);
+        if (!c.editing) return;
+        var v = $("name-" + id).value.trim();
+        if (v) c.name = v;
+        c.editing = false;
+        render();
+      }
+      function nameKey(e, id) {
+        if (e.key === "Enter") saveName(id);
+        if (e.key === "Escape") {
+          conn(id).editing = false;
+          render();
+        }
+      }
+      function panelClick(e, id) {
+        var c = conn(id);
+        if (c.state !== "up" || e.target.closest("a,button,input,form,.menu-wrap")) return;
+        c.min = !c.min;
+        render();
+      }
+      function tile(c, p) {
+        var state = projState(p);
         return (
           '<a id="tile-' +
           p.n +
@@ -1245,6 +1286,18 @@
         );
       }
       function body(c) {
+        if (c.state === "up" && c.min)
+          return (
+            '<div class="reveal mt-3 flex gap-2 overflow-hidden" style="mask-image:linear-gradient(to right,#000 92%,transparent)">' +
+            c.proj
+              .slice()
+              .sort(function (a, b) {
+                return projState(a)[2] - projState(b)[2];
+              })
+              .map(chip)
+              .join("") +
+            "</div>"
+          );
         if (c.state === "up")
           return (
             '<div class="reveal grid gap-3 mt-4" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr))">' +
@@ -1407,9 +1460,33 @@
               '<span class="h-9 w-9 rounded-xl grid place-items-center pill text-muted-foreground">' +
               svg(c.kind, 17) +
               "</span>" +
-              '<div><div class="hl text-lg font-semibold leading-tight">' +
-              c.name +
-              '</div><div class="text-[11px] text-muted-foreground">' +
+              '<div class="min-w-0">' +
+              (c.editing
+                ? '<input id="name-' +
+                  c.id +
+                  '" name="name-' +
+                  c.id +
+                  '" value="' +
+                  c.name +
+                  '" onkeydown="nameKey(event,\'' +
+                  c.id +
+                  "')\" onblur=\"saveName('" +
+                  c.id +
+                  '\')" class="field hl text-lg font-semibold h-7 px-2 -ml-2 rounded-lg w-60"/>'
+                : '<div class="flex items-center gap-1"><div class="hl text-lg font-semibold leading-tight">' +
+                  c.name +
+                  "</div>" +
+                  (c.kind === "local"
+                    ? ""
+                    : '<button id="rename-' +
+                      c.id +
+                      '" onclick="startRename(\'' +
+                      c.id +
+                      '\')" title="Rename" class="h-6 w-6 rounded-md grid place-items-center text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:bg-foreground/10 hover:text-foreground cursor-pointer">' +
+                      svg("pen", 13) +
+                      "</button>") +
+                  "</div>") +
+              '<div class="text-[11px] text-muted-foreground">' +
               c.detail +
               "</div></div>" +
               '<div class="ml-auto flex items-center gap-4 text-xs text-muted-foreground">' +
@@ -1435,8 +1512,11 @@
             return (
               '<section id="conn-' +
               c.id +
-              '" class="glass rounded-[22px] p-5 relative ' +
+              '" onclick="panelClick(event,\'' +
+              c.id +
+              '\')" class="group glass rounded-[22px] p-5 relative ' +
               (c.state === "idle" ? "" : "col-span-2 ") +
+              (c.state === "up" ? "cursor-pointer " : "") +
               (menuOpen === c.id ? "z-20" : "") +
               " " +
               (c.state === "down" || c.state === "stopped" ? "opacity-75" : "") +

@@ -82,6 +82,17 @@ shakes once.
 **Header row:** a 36px glass icon tile (computer, server, terminal or container), the name in `text-lg`
 semibold with the host underneath in `11px` muted, then on the right the status and the `⋯` button.
 
+**Rename** is not in the `⋯` menu. Hovering a panel fades in a small pencil button right after the
+name (every connection but This computer, in every state). It turns the name into a `field` input
+in place, text selected; Enter or leaving the field saves, Escape cancels, an empty name is ignored.
+
+**Minimized panel.** Clicking a connected panel anywhere that is not a tile, button, input or menu
+collapses it to two rows: the unchanged header, then one line of project chips. A chip is a
+rounded-full `pane` with the project name and its status word in the status colour, tinted amber
+(`pane.attn`) when it needs you, and opens the project like a tile does. Chips are ordered Needs
+you, Working, Idle, Quiet, never wrap, and fade out at the right edge when they overflow. Clicking
+the panel again expands it. Each connection remembers its state.
+
 Status by state:
 
 | State          | Right side of the header                                       | Body                                                                                   |
@@ -164,7 +175,6 @@ Items depend on state:
 | Try again                                    | unreachable          |
 | Start server                                 | server stopped       |
 | Settings, hint `Agents, capacity, webhooks`  | always               |
-| Rename                                       | not This computer    |
 | Change sign-in, hint with the current method | SSH, not mid-sign-in |
 | Restart server                               | connected            |
 | Stop server (rose)                           | connected            |
