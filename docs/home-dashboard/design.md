@@ -49,7 +49,11 @@ machine` under it, then the three type buttons (SSH host, WSL distro, Container)
 every connection` under it, then one chip per provider. A configured provider is a `pill` chip
      with its name and account (`GitHub billy`); one not set up is a faint dashed chip with its name
      only.
-5. **One glass panel per connection**, stacked with `space-y-5`, This computer first.
+5. **One glass panel per connection** in a two-column grid (`grid grid-cols-2 gap-5`). A connected
+   panel spans both columns; a not-connected panel is one row tall and takes one column, so they
+   pair up. Order: This computer, then every connection attached this session, then the ones not
+   connected yet. A panel keeps its place while signing in (spanning both columns) and joins the
+   attached group once attached.
 6. **Version indicator** bottom-right (`v0.34.0`), opening the existing `UpdateCard` popover.
 
 ## Visual system

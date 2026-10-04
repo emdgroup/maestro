@@ -328,7 +328,7 @@
               <div class="flex flex-wrap gap-2 mt-4" id="integration-list"></div>
             </button>
           </div>
-          <div id="connections" class="space-y-5"></div>
+          <div id="connections" class="grid grid-cols-2 gap-5"></div>
         </main>
 
         <div
@@ -562,6 +562,7 @@
           home: "C:\\Users\\billy\\src",
           sep: "\\",
           state: "up",
+          seen: true,
           cap: [1, 4],
           auto: 3,
           proj: [
@@ -586,6 +587,7 @@
           home: "/home/billy/src",
           sep: "/",
           state: "up",
+          seen: true,
           cap: [4, 4],
           auto: 5,
           proj: [
@@ -944,6 +946,7 @@
           if (c.step > 2) {
             clearInterval(iv);
             c.state = "up";
+            c.seen = true;
             c.proj = c.later;
             render();
           } else render();
@@ -1379,60 +1382,71 @@
                 i[0] +
                 "</span>";
         }).join("");
-        $("connections").innerHTML = CONN.map(function (c) {
-          var status =
-            c.state === "up"
-              ? slots(c)
-              : c.state === "connecting"
-                ? "<span>Connecting…</span>"
-                : c.state === "stopped"
-                  ? "<span>Server stopped</span>"
-                  : c.state === "idle" || c.state === "signin"
-                    ? "<span>Not connected</span>"
-                    : '<span class="text-rose-600 dark:text-rose-400">Unreachable</span>';
-          var head =
-            '<div class="flex items-center gap-3">' +
-            '<span class="h-9 w-9 rounded-xl grid place-items-center pill text-muted-foreground">' +
-            svg(c.kind, 17) +
-            "</span>" +
-            '<div><div class="hl text-lg font-semibold leading-tight">' +
-            c.name +
-            '</div><div class="text-[11px] text-muted-foreground">' +
-            c.detail +
-            "</div></div>" +
-            '<div class="ml-auto flex items-center gap-4 text-xs text-muted-foreground">' +
-            (c.state === "idle"
-              ? '<button id="connect-' +
-                c.id +
-                '" onclick="connectTo(\'' +
-                c.id +
-                '\')" class="pill rounded-full px-3 py-1.5 text-foreground cursor-pointer hover:bg-foreground/10">Connect</button>'
-              : status +
-                '<span class="menu-wrap relative"><button id="menu-' +
-                c.id +
-                '" onclick="toggleMenu(\'' +
-                c.id +
-                '\')" class="h-7 w-7 rounded-full grid place-items-center cursor-pointer ' +
-                (menuOpen === c.id
-                  ? "bg-foreground/10 text-foreground"
-                  : "hover:bg-foreground/10") +
-                '">⋯</button>' +
-                (menuOpen === c.id ? menuFor(c) : "") +
-                "</span>") +
-            "</div></div>";
-          return (
-            '<section id="conn-' +
-            c.id +
-            '" class="glass rounded-[22px] p-5 relative ' +
-            (menuOpen === c.id ? "z-20" : "") +
-            " " +
-            (c.state === "down" || c.state === "stopped" ? "opacity-75" : "") +
-            '">' +
-            head +
-            body(c) +
-            "</section>"
-          );
-        }).join("");
+        /* attached connections first, then the ones never connected this session, two to a row */
+        var order = CONN.filter(function (c) {
+          return c.seen;
+        }).concat(
+          CONN.filter(function (c) {
+            return !c.seen;
+          }),
+        );
+        $("connections").innerHTML = order
+          .map(function (c) {
+            var status =
+              c.state === "up"
+                ? slots(c)
+                : c.state === "connecting"
+                  ? "<span>Connecting…</span>"
+                  : c.state === "stopped"
+                    ? "<span>Server stopped</span>"
+                    : c.state === "idle" || c.state === "signin"
+                      ? "<span>Not connected</span>"
+                      : '<span class="text-rose-600 dark:text-rose-400">Unreachable</span>';
+            var head =
+              '<div class="flex items-center gap-3">' +
+              '<span class="h-9 w-9 rounded-xl grid place-items-center pill text-muted-foreground">' +
+              svg(c.kind, 17) +
+              "</span>" +
+              '<div><div class="hl text-lg font-semibold leading-tight">' +
+              c.name +
+              '</div><div class="text-[11px] text-muted-foreground">' +
+              c.detail +
+              "</div></div>" +
+              '<div class="ml-auto flex items-center gap-4 text-xs text-muted-foreground">' +
+              (c.state === "idle"
+                ? '<button id="connect-' +
+                  c.id +
+                  '" onclick="connectTo(\'' +
+                  c.id +
+                  '\')" class="pill rounded-full px-3 py-1.5 text-foreground cursor-pointer hover:bg-foreground/10">Connect</button>'
+                : status +
+                  '<span class="menu-wrap relative"><button id="menu-' +
+                  c.id +
+                  '" onclick="toggleMenu(\'' +
+                  c.id +
+                  '\')" class="h-7 w-7 rounded-full grid place-items-center cursor-pointer ' +
+                  (menuOpen === c.id
+                    ? "bg-foreground/10 text-foreground"
+                    : "hover:bg-foreground/10") +
+                  '">⋯</button>' +
+                  (menuOpen === c.id ? menuFor(c) : "") +
+                  "</span>") +
+              "</div></div>";
+            return (
+              '<section id="conn-' +
+              c.id +
+              '" class="glass rounded-[22px] p-5 relative ' +
+              (c.state === "idle" ? "" : "col-span-2 ") +
+              (menuOpen === c.id ? "z-20" : "") +
+              " " +
+              (c.state === "down" || c.state === "stopped" ? "opacity-75" : "") +
+              '">' +
+              head +
+              body(c) +
+              "</section>"
+            );
+          })
+          .join("");
       }
       render();
     </script>
