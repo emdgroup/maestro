@@ -40,8 +40,8 @@ One full-window screen, no app header bar.
    - left, the 3D logo `public/maestro-logo.png` at 64px with a soft drop shadow, then `Maestro` in
      `28px` semibold and under it, muted `text-xs`, `<P> projects on <C> connections`;
    - right, a scoreboard of three numbers, `52px` semibold tabular, each with a muted `text-xs`
-     label under it: `working` (green, `text-emerald-700 dark:text-emerald-400`), `need you` (amber,
-     `text-amber-600 dark:text-amber-400`), `to review` (foreground). A zero fades to 40%.
+     label under it: `working` (`--accent`), `need you` (amber,
+     `text-amber-600 dark:text-amber-400`), `to review` (purple, `--color-purple-500`, the Review column's colour). A zero fades to 40%.
    - No sentence. Earlier versions said `<N agents> at work. <M things> waiting on you.`; that was
      replaced by the scoreboard.
 4. **A two-column row** above the connections (`grid grid-cols-2 gap-5`):
@@ -60,6 +60,10 @@ every connection` under it, then one chip per provider. A configured provider is
 6. **Version indicator** bottom-right (`v0.34.0`), opening the existing `UpdateCard` popover.
 
 ## Visual system
+
+**Colour meaning.** Working is the user's accent colour (`--accent`), never green: green reads as
+done. Review is purple-500, the Review column's colour on the board (`KanbanColumn.tsx`). Needs you
+is amber. Green is kept for completed steps only (the check marks of a connecting checklist).
 
 All values below are in `mock.html` as CSS classes of the same name.
 
@@ -98,26 +102,27 @@ the panel again expands it. Each connection remembers its state.
 
 Status by state:
 
-| State          | Right side of the header                                       | Body                                                                                   |
-| -------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Connected      | agent slots as pills, filled green for used, then `4/4 agents` | project tiles, then the "Add project" tile                                             |
-| Not connected  | a `Connect` pill only, no status and no `⋯`                    | none: the panel is the header row alone                                                |
-| Signing in     | `Not connected`, muted                                         | inline password form (below)                                                           |
-| Connecting     | `Connecting…`                                                  | three inline steps with spinner and check marks                                        |
-| Server stopped | `Server stopped`, panel at 75% opacity                         | `The Maestro server is stopped. Nothing runs here until it starts.` and a `Start` pill |
-| Unreachable    | `Unreachable` in rose, panel at 75% opacity                    | `Not answering. Its projects keep their state and come back when it does.`             |
+| State          | Right side of the header                                            | Body                                                                                   |
+| -------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Connected      | agent slots as pills, filled `--accent` for used, then `4/4 agents` | project tiles, then the "Add project" tile                                             |
+| Not connected  | a `Connect` pill only, no status and no `⋯`                         | none: the panel is the header row alone                                                |
+| Signing in     | `Not connected`, muted                                              | inline password form (below)                                                           |
+| Connecting     | `Connecting…`                                                       | three inline steps with spinner and check marks                                        |
+| Server stopped | `Server stopped`, panel at 75% opacity                              | `The Maestro server is stopped. Nothing runs here until it starts.` and a `Start` pill |
+| Unreachable    | `Unreachable` in rose, panel at 75% opacity                         | `Not answering. Its projects keep their state and come back when it does.`             |
 
 **Project tile** (`pane`, min height 132px, grid `repeat(auto-fill, minmax(230px, 1fr))`):
 
 - The project name, `17px` semibold. No colour dot, no activity dot.
 - The path under it, monospace `11px`, in the connection's own separator (`~\src\x` on Windows,
   `~/src/x` elsewhere).
-- A status word top-right, `11px`: **Working** (green, pulsing gently), **Needs you** (amber),
+- A status word top-right, `11px`: **Working** (`--accent`, pulsing gently), **Needs you** (amber),
   **Idle** (muted, open tasks but no agent), **Quiet** (faint, nothing open).
 - A tile that needs you is tinted amber all over (`pane.attn`). There is no edge or stripe.
 - One context line: the blocking prompt in amber (`Permission to run a migration`), else a running
   automation (`nightly-lint running`), else `Open in this window`, else `Open on <holder>`.
-- Three counts at the bottom: `working`, `review`, `queued`. A zero fades to half opacity.
+- Three counts at the bottom: `working` in `--accent`, `review` in purple-500, `queued` in the
+  foreground colour. A zero fades to half opacity.
 - The whole tile is the link into the project. A tile held by another window runs the existing
   takeover flow when clicked; there is no separate button for it.
 

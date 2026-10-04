@@ -27,6 +27,7 @@
         --primary: oklch(0% 0 0);
         --primary-foreground: oklch(100% 0 0);
         --border: oklch(90% 0.01 70);
+        --accent: oklch(50% 0.15 250);
       }
       .dark {
         --background: oklch(20% 0.01 250);
@@ -37,6 +38,7 @@
         --primary: oklch(96% 0 0);
         --primary-foreground: oklch(15% 0 0);
         --border: oklch(32% 0.01 250);
+        --accent: oklch(75% 0.15 250);
       }
       body {
         margin: 0;
@@ -49,7 +51,6 @@
   <body>
     <style>
       #stage {
-        --accent: #8b5cf6;
         position: relative;
         overflow: hidden;
         border-radius: 14px;
@@ -172,6 +173,13 @@
         border-color: color-mix(in oklab, var(--accent) 70%, transparent);
         background: color-mix(in oklab, var(--accent) 8%, transparent);
         color: var(--foreground);
+      }
+      /* working is the accent colour, review the Review column's purple-500 */
+      .c-work {
+        color: var(--accent);
+      }
+      .c-review {
+        color: var(--color-purple-500, oklch(62.7% 0.265 303.9));
       }
       .logo {
         filter: drop-shadow(0 6px 14px rgb(0 0 0/0.18));
@@ -1177,7 +1185,7 @@
         return p.needs
           ? ["Needs you", "text-amber-600 dark:text-amber-400", 0]
           : p.work
-            ? ["Working", "text-emerald-700 dark:text-emerald-400", 1]
+            ? ["Working", "c-work", 1]
             : p.queued || p.review
               ? ["Idle", "text-muted-foreground", 2]
               : ["Quiet", "text-muted-foreground/60", 3];
@@ -1263,8 +1271,8 @@
                   : "") +
           "</div>" +
           '<div class="mt-auto pt-3 flex gap-4">' +
-          stat(p.work, "working", "text-emerald-700 dark:text-emerald-400") +
-          stat(p.review, "review", "") +
+          stat(p.work, "working", "c-work") +
+          stat(p.review, "review", "c-review") +
           stat(p.queued, "queued", "") +
           "</div></a>"
         );
@@ -1286,7 +1294,7 @@
               return (
                 '<span class="h-3 w-[5px] rounded-full" style="background:' +
                 (i < c.cap[0]
-                  ? "#10b981"
+                  ? "var(--accent)"
                   : "color-mix(in oklab,var(--foreground) 15%,transparent)") +
                 '"></span>'
               );
@@ -1415,9 +1423,9 @@
         });
         $("sub").textContent = projects + " projects on " + up.length + " connections";
         $("scores").innerHTML = [
-          [working, "working", "text-emerald-700 dark:text-emerald-400"],
+          [working, "working", "c-work"],
           [wait, "need you", "text-amber-600 dark:text-amber-400"],
-          [review, "to review", ""],
+          [review, "to review", "c-review"],
         ]
           .map(function (s) {
             return (
