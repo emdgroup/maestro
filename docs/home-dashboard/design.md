@@ -65,7 +65,8 @@ All values below are in `mock.html` as CSS classes of the same name.
 | Class          | Use                                               | Recipe                                                                                                                                                                |
 | -------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `glass`        | connection panels, dialogs                        | `card` at 42% over transparent, `backdrop-filter: blur(20px) saturate(150%)`, 1px border of `foreground` at 9%, inset top highlight of white at 20%, soft drop shadow |
-| `glass-strong` | menus, confirmation dialogs                       | as `glass` with `card` at 72% and `blur(24px)`, so text over moving bubbles stays readable                                                                            |
+| `glass-strong` | confirmation dialogs                              | as `glass` with `card` at 72% and `blur(24px)`, so text over moving bubbles stays readable                                                                            |
+| `pop-pane`     | menus and hover cards inside a glass panel        | opaque `background`, 1px border at 7%, drop shadow. A glass panel is a backdrop root, so a blurred popup in it would show the panels below unblurred                  |
 | `pane`         | project tiles, choices inside dialogs             | `background` at 38% inside a glass panel, 1px border at 7%; hover lifts 2px and raises to 62%                                                                         |
 | `pane.sel`     | the chosen option in a dialog                     | border and fill in `--accent`                                                                                                                                         |
 | `pane.attn`    | a project tile that needs you                     | amber `#f59e0b` at 13% over `background` at 30%, border amber at 34%; hover raises them to 19% and 48%                                                                |
@@ -208,7 +209,7 @@ appear and the hero counts update.
 
 ## Connection menu (`⋯`)
 
-A `glass-strong` popover anchored under the button, 256px wide. A header gives the name and one line
+A `pop-pane` popover anchored under the button, 256px wide. A header gives the name and one line
 of state (`Maestro server 0.34.0 · up 3d 6h`, `Not connected` while signing in, `Server stopped`, `Last seen 2h ago`).
 Items depend on state:
 
