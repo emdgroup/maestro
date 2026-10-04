@@ -14,6 +14,9 @@ Approved on 2026-10-04. A first version put Integrations in a pill top-right and
 you" tile with an amber left edge; both were rejected and replaced the same day by the Integrations
 panel and the amber tint described below.
 
+**Frozen on 2026-10-04.** Implementation follows this document and the mock; a change to either
+goes through the user first.
+
 ## What changed in the architecture, and why it shapes the design
 
 Tasks, sessions, the task pipeline, automations and project locks all live in each connection's
