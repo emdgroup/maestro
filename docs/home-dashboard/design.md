@@ -83,7 +83,7 @@ Status by state:
 | State          | Right side of the header                                       | Body                                                                                   |
 | -------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Connected      | agent slots as pills, filled green for used, then `4/4 agents` | project tiles, then the "Add project" tile                                             |
-| Not connected  | `Not connected`, muted                                         | `Connect to see what is running here.` and a `Connect` pill                            |
+| Not connected  | a `Connect` pill only, no status and no `⋯`                    | none: the panel is the header row alone                                                |
 | Signing in     | `Not connected`, muted                                         | inline password form (below)                                                           |
 | Connecting     | `Connecting…`                                                  | three inline steps with spinner and check marks                                        |
 | Server stopped | `Server stopped`, panel at 75% opacity                         | `The Maestro server is stopped. Nothing runs here until it starts.` and a `Start` pill |
@@ -137,7 +137,7 @@ installs its server on the host the first time.`, then `Connect`. This folds tod
 ## Connecting
 
 Home attaches to This computer on its own and to nothing else. Every other connection starts at
-`Not connected` with a `Connect` pill, however it signs in. `Connect` attaches straight away when no
+a one-row panel with a `Connect` pill, however it signs in. `Connect` attaches straight away when no
 prompt is needed (SSH agent, key file, saved password, WSL, container) and shows the inline
 password form otherwise. Once attached, a connection stays attached until the app closes; there is
 no Disconnect. The hero counts only attached connections.
@@ -145,19 +145,18 @@ no Disconnect. The hero counts only attached connections.
 **Inline sign-in** happens in the panel, not a dialog: a focused password field, `Sign in`, `Cancel`,
 and under it `Remember in the system keychain` (ticked by default) and the hint `Or use a key: ⋯ ›
 Change sign-in`. An empty submit shakes the row and says `Enter the password for <user@host>.` `Cancel`
-returns the panel to `Not connected`. A submit shows `Signing in`, `Reaching the Maestro server`,
+returns the panel to its one-row state. A submit shows `Signing in`, `Reaching the Maestro server`,
 `Reading projects` inline (a connection with no password shows `Reaching <name>` first), then the tiles
 appear and the hero counts update.
 
 ## Connection menu (`⋯`)
 
 A `glass-strong` popover anchored under the button, 256px wide. A header gives the name and one line
-of state (`Maestro server 0.34.0 · up 3d 6h`, `Not connected`, `Server stopped`, `Last seen 2h ago`).
+of state (`Maestro server 0.34.0 · up 3d 6h`, `Not connected` while signing in, `Server stopped`, `Last seen 2h ago`).
 Items depend on state:
 
 | Item                                         | Shown when           |
 | -------------------------------------------- | -------------------- |
-| Connect                                      | not connected        |
 | Try again                                    | unreachable          |
 | Start server                                 | server stopped       |
 | Settings, hint `Agents, capacity, webhooks`  | always               |

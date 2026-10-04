@@ -723,17 +723,6 @@
                 : "Not connected") +
           "</div></div>" +
           sep;
-        if (c.state === "idle") {
-          it.push(
-            mi(
-              "m-connect-" + c.id,
-              "play",
-              "Connect",
-              "",
-              "menuOpen=null;connectTo('" + c.id + "')",
-            ),
-          );
-        }
         if (c.state === "down") {
           it.push(
             mi(
@@ -1264,14 +1253,7 @@
             addProject(c) +
             "</div>"
           );
-        if (c.state === "idle")
-          return (
-            '<div class="mt-4 flex items-center gap-3 text-xs text-muted-foreground"><span>Connect to see what is running here.</span><button id="connect-' +
-            c.id +
-            '" onclick="connectTo(\'' +
-            c.id +
-            '\')" class="pill rounded-full px-3 py-1.5 text-foreground cursor-pointer hover:bg-foreground/10">Connect</button></div>'
-          );
+        if (c.state === "idle") return "";
         if (c.state === "signin")
           return (
             '<form id="signin-form-' +
@@ -1419,16 +1401,25 @@
             c.detail +
             "</div></div>" +
             '<div class="ml-auto flex items-center gap-4 text-xs text-muted-foreground">' +
-            status +
-            '<span class="menu-wrap relative"><button id="menu-' +
-            c.id +
-            '" onclick="toggleMenu(\'' +
-            c.id +
-            '\')" class="h-7 w-7 rounded-full grid place-items-center cursor-pointer ' +
-            (menuOpen === c.id ? "bg-foreground/10 text-foreground" : "hover:bg-foreground/10") +
-            '">⋯</button>' +
-            (menuOpen === c.id ? menuFor(c) : "") +
-            "</span></div></div>";
+            (c.state === "idle"
+              ? '<button id="connect-' +
+                c.id +
+                '" onclick="connectTo(\'' +
+                c.id +
+                '\')" class="pill rounded-full px-3 py-1.5 text-foreground cursor-pointer hover:bg-foreground/10">Connect</button>'
+              : status +
+                '<span class="menu-wrap relative"><button id="menu-' +
+                c.id +
+                '" onclick="toggleMenu(\'' +
+                c.id +
+                '\')" class="h-7 w-7 rounded-full grid place-items-center cursor-pointer ' +
+                (menuOpen === c.id
+                  ? "bg-foreground/10 text-foreground"
+                  : "hover:bg-foreground/10") +
+                '">⋯</button>' +
+                (menuOpen === c.id ? menuFor(c) : "") +
+                "</span>") +
+            "</div></div>";
           return (
             '<section id="conn-' +
             c.id +
