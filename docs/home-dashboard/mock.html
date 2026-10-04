@@ -181,6 +181,82 @@
       .c-review {
         color: var(--color-purple-500, oklch(62.7% 0.265 303.9));
       }
+      /* integration tiles and their hover card: the pane look of the Add a connection buttons.
+         The card sits inside a glass panel, which is a backdrop root, so its own blur cannot reach
+         the panels below; it has to be opaque to stay readable. */
+      .pop-pane {
+        background: var(--background);
+        border: 1px solid color-mix(in oklab, var(--foreground) 7%, transparent);
+        box-shadow: 0 20px 50px -18px rgb(0 0 0/0.35);
+      }
+      .card {
+        display: none;
+        position: absolute;
+        left: -8px;
+        top: 42px;
+        padding-top: 8px;
+        z-index: 20;
+      }
+      .wrap:hover .card,
+      .wrap.pinned .card {
+        display: block;
+      }
+      #integrations.has-pin .wrap:not(.pinned):hover .card {
+        display: none;
+      }
+      .card > div {
+        animation: drop 0.14s ease-out;
+        transform-origin: top left;
+      }
+      .wrap:hover .tile,
+      .wrap.pinned .tile {
+        transform: translateY(-2px);
+        border-color: color-mix(in oklab, var(--accent) 60%, transparent);
+      }
+      .wrap.pinned .tile {
+        box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 35%, transparent);
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        padding: 7px 9px;
+        border-radius: 10px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .row:hover {
+        background: color-mix(in oklab, var(--foreground) 7%, transparent);
+      }
+      .ico {
+        object-fit: contain;
+      }
+      .dark .ico.mono {
+        filter: invert(1);
+      }
+      .badge {
+        position: absolute;
+        right: -5px;
+        top: -5px;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        border-radius: 9px;
+        font-size: 10px;
+        font-weight: 600;
+        display: grid;
+        place-items: center;
+        background: var(--foreground);
+        color: var(--background);
+      }
+      .cap {
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 6px;
+        background: color-mix(in oklab, var(--foreground) 7%, transparent);
+        color: var(--muted-foreground);
+      }
       .logo {
         filter: drop-shadow(0 6px 14px rgb(0 0 0/0.18));
       }
@@ -337,20 +413,7 @@
               <div class="text-xs text-muted-foreground mt-0.5">Where your project lives</div>
               <div class="flex gap-2 mt-4" id="add-conn-types"></div>
             </section>
-            <button
-              id="integrations"
-              onclick="toast('Integrations')"
-              class="glass rounded-[22px] p-5 text-left cursor-pointer transition-transform hover:-translate-y-0.5"
-            >
-              <div class="flex items-baseline">
-                <div class="text-sm font-medium">Integrations</div>
-                <div class="ml-auto text-[11px] text-muted-foreground">Manage ›</div>
-              </div>
-              <div class="text-xs text-muted-foreground mt-0.5">
-                Issues and pull requests, for every connection
-              </div>
-              <div class="flex flex-wrap gap-2 mt-4" id="integration-list"></div>
-            </button>
+            <section id="integrations" class="glass rounded-[22px] p-5 relative z-10"></section>
           </div>
           <div id="connections" class="grid grid-cols-2 gap-5"></div>
         </main>
@@ -497,6 +560,15 @@
               ></button>
             </div>
           </div>
+        </div>
+
+        <div
+          id="int-scrim"
+          style="display: none"
+          onclick="if (event.target === this) hide('int-scrim');"
+          class="scrim absolute inset-0 z-30 flex items-start justify-center pt-32"
+        >
+          <div id="int-sheet" class="sheet glass rounded-[22px] w-[520px] p-6"></div>
         </div>
 
         <div
@@ -668,13 +740,6 @@
           auto: 0,
           later: [{ n: "dotfiles", path: "~/dotfiles", work: 0, review: 0, queued: 1 }],
         },
-      ];
-      var INTEGRATIONS = [
-        ["GitHub", "billy", true],
-        ["Linear", "acme", true],
-        ["GitLab", "", false],
-        ["Bitbucket", "", false],
-        ["Azure DevOps", "", false],
       ];
       var addingTo = null,
         connType = null,
@@ -1432,17 +1497,7 @@
             "</button>"
           );
         }).join("");
-        $("integration-list").innerHTML = INTEGRATIONS.map(function (i) {
-          return i[2]
-            ? '<span class="pill rounded-full px-2.5 py-1 text-xs"><span class="font-medium">' +
-                i[0] +
-                '</span> <span class="text-muted-foreground">' +
-                i[1] +
-                "</span></span>"
-            : '<span class="rounded-full px-2.5 py-1 text-xs text-muted-foreground/70 border border-dashed border-foreground/15">' +
-                i[0] +
-                "</span>";
-        }).join("");
+        drawIntegrations();
         /* attached connections first, then the ones never connected this session, two to a row */
         var order = CONN.filter(function (c) {
           return c.seen;
@@ -1536,6 +1591,271 @@
           })
           .join("");
       }
+      /* integrations: one tile per provider, a count badge when several, a hover card per tile */
+      var PNAME = {
+        github: "GitHub",
+        gitlab: "GitLab",
+        bitbucket: "Bitbucket",
+        azuredevops: "Azure DevOps",
+        gitea: "Gitea",
+        forgejo: "Forgejo",
+        jira: "Jira",
+        linear: "Linear",
+      };
+      var PCAPS = {
+        github: ["issues", "pull requests"],
+        gitlab: ["issues", "merge requests"],
+        bitbucket: ["pull requests"],
+        azuredevops: ["issues", "pull requests"],
+        gitea: ["issues", "pull requests"],
+        forgejo: ["issues", "pull requests"],
+        jira: ["issues"],
+        linear: ["issues"],
+      };
+      var INT = [
+        { p: "github", acc: "billy", host: "github.com", gh: true },
+        { p: "github", acc: "emd-release-bot", host: "github.emd.com" },
+        { p: "gitlab", acc: "b.rothstein", host: "gitlab.internal" },
+        { p: "linear", acc: "acme", host: "linear.app" },
+        { p: "jira", acc: "billy@acme.com", host: "acme.atlassian.net" },
+      ];
+      var intPick = null;
+      function bicon(slug, sm) {
+        var s = sm ? 16 : 20;
+        var fallback =
+          "<span class=&quot;grid place-items-center text-[11px] font-semibold&quot; style=&quot;width:" +
+          s +
+          "px;height:" +
+          s +
+          "px&quot;>" +
+          PNAME[slug][0] +
+          "</span>";
+        return (
+          '<img class="ico' +
+          (slug === "github" ? " mono" : "") +
+          '" style="width:' +
+          s +
+          "px;height:" +
+          s +
+          'px" src="https://cdn.simpleicons.org/' +
+          slug +
+          '" alt="" onerror="this.outerHTML=\'' +
+          fallback +
+          "'\"/>"
+        );
+      }
+      function capTags(p) {
+        return PCAPS[p]
+          .map(function (c) {
+            return '<span class="cap">' + c + "</span>";
+          })
+          .join(" ");
+      }
+      function intGroups() {
+        var g = [],
+          m = {};
+        INT.forEach(function (i, ix) {
+          if (!m[i.p]) {
+            m[i.p] = { p: i.p, items: [] };
+            g.push(m[i.p]);
+          }
+          m[i.p].items.push(ix);
+        });
+        return g;
+      }
+      function unpin() {
+        document.querySelectorAll(".wrap.pinned").forEach(function (w) {
+          w.classList.remove("pinned");
+        });
+        $("integrations").classList.remove("has-pin");
+      }
+      function togglePin(p) {
+        var w = $("wrap-" + p),
+          was = w.classList.contains("pinned");
+        unpin();
+        if (!was) {
+          w.classList.add("pinned");
+          $("integrations").classList.add("has-pin");
+        }
+      }
+      function intCard(g) {
+        var n = g.items.length;
+        return (
+          '<div class="card"><div class="pop-pane w-72 rounded-2xl p-1.5 text-sm">' +
+          '<div class="px-2.5 pt-1.5 pb-1 flex items-baseline"><span class="text-xs font-medium">' +
+          PNAME[g.p] +
+          '</span><span class="ml-auto text-[11px] text-muted-foreground">' +
+          n +
+          " account" +
+          (n > 1 ? "s" : "") +
+          '</span></div><div class="mx-2.5 mb-1.5 flex gap-1">' +
+          capTags(g.p) +
+          "</div>" +
+          g.items
+            .map(function (ix) {
+              var i = INT[ix];
+              return (
+                '<button id="int-' +
+                ix +
+                '" onclick="intDetails(' +
+                ix +
+                ')" class="row">' +
+                bicon(i.p, 1) +
+                '<span class="min-w-0 flex-1"><span class="block text-xs font-medium truncate">' +
+                i.acc +
+                (i.gh ? ' <span class="cap">gh cli</span>' : "") +
+                '</span><span class="block text-[11px] text-muted-foreground font-mono truncate">' +
+                i.host +
+                '</span></span><span class="text-muted-foreground text-xs">›</span></button>'
+              );
+            })
+            .join("") +
+          '<div class="my-1 h-px bg-foreground/10"></div><button onclick="intForm(\'' +
+          g.p +
+          '\')" class="row text-xs text-muted-foreground"><span class="w-4 text-center">+</span>Add another ' +
+          PNAME[g.p] +
+          " account</button></div></div>"
+        );
+      }
+      function drawIntegrations() {
+        var g = intGroups();
+        $("integrations").classList.remove("has-pin");
+        $("integrations").innerHTML =
+          '<div class="text-sm font-medium">Integrations</div><div class="text-xs text-muted-foreground mt-0.5">' +
+          (INT.length
+            ? INT.length +
+              " integration" +
+              (INT.length > 1 ? "s" : "") +
+              (g.length > 1 ? " across " + g.length + " services" : "")
+            : "Issues and pull requests, for every connection") +
+          '</div><div class="flex gap-2.5 mt-4">' +
+          g
+            .map(function (x) {
+              return (
+                '<span id="wrap-' +
+                x.p +
+                '" class="wrap relative"><button id="tile-int-' +
+                x.p +
+                '" onclick="togglePin(\'' +
+                x.p +
+                '\')" class="tile pane relative h-[42px] w-[42px] rounded-xl grid place-items-center cursor-pointer">' +
+                bicon(x.p) +
+                (x.items.length > 1
+                  ? '<span class="badge num">' + x.items.length + "</span>"
+                  : "") +
+                "</button>" +
+                intCard(x) +
+                "</span>"
+              );
+            })
+            .join("") +
+          '<button id="add-integration" onclick="intAdd()" title="Add an integration" class="ghost h-[42px] w-[42px] rounded-xl grid place-items-center text-muted-foreground cursor-pointer text-xl font-light leading-none">+</button></div>';
+      }
+      function intSheet(eyebrow, title, back, body) {
+        unpin();
+        $("int-sheet").innerHTML =
+          '<div class="flex items-start">' +
+          (back
+            ? '<button onclick="' +
+              back +
+              '" class="mr-2 mt-3 h-7 w-7 rounded-full grid place-items-center text-muted-foreground hover:bg-foreground/10 cursor-pointer">‹</button>'
+            : "") +
+          '<div><div class="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">' +
+          eyebrow +
+          '</div><div class="hl text-2xl font-semibold mt-0.5">' +
+          title +
+          '</div></div><button onclick="hide(\'int-scrim\')" class="ml-auto h-7 w-7 rounded-full grid place-items-center text-muted-foreground hover:bg-foreground/10 cursor-pointer">✕</button></div>' +
+          body;
+        show("int-scrim");
+      }
+      function intDetails(ix) {
+        var i = INT[ix];
+        intSheet(
+          PNAME[i.p],
+          i.acc,
+          "",
+          '<div class="flex items-center gap-3 mt-4">' +
+            bicon(i.p) +
+            '<div class="flex gap-1">' +
+            capTags(i.p) +
+            '</div></div><div class="mt-4 space-y-3"><div><div class="text-[11px] text-muted-foreground">Account</div><div class="font-mono text-xs mt-1">' +
+            i.acc +
+            '</div></div><div><div class="text-[11px] text-muted-foreground">Instance</div><div class="font-mono text-xs mt-1">' +
+            i.host +
+            "</div></div></div>" +
+            (i.gh
+              ? '<div class="mt-5 text-xs text-muted-foreground">Managed by the gh CLI. Sign out there to remove it.</div>'
+              : '<div class="flex mt-6"><button onclick="intRemove(' +
+                ix +
+                ')" class="h-9 px-3 rounded-xl text-xs text-rose-600 hover:bg-rose-500/10 cursor-pointer">Disconnect</button><button onclick="toast(\'Edit credentials\')" class="ml-auto ' +
+                BTN +
+                '">Edit credentials</button></div>'),
+        );
+      }
+      function intRemove(ix) {
+        var i = INT[ix];
+        INT.splice(ix, 1);
+        hide("int-scrim");
+        drawIntegrations();
+        toast(PNAME[i.p] + " " + i.acc + " disconnected");
+      }
+      function intAdd() {
+        intSheet(
+          "Add an integration",
+          "Choose a service",
+          "",
+          '<div class="grid grid-cols-2 gap-2 mt-5">' +
+            Object.keys(PNAME)
+              .map(function (x) {
+                return (
+                  '<button id="pick-' +
+                  x +
+                  '" onclick="intForm(\'' +
+                  x +
+                  '\',1)" class="pane rounded-xl p-3 flex items-center gap-3 text-left cursor-pointer">' +
+                  bicon(x) +
+                  '<span><span class="block text-xs font-medium">' +
+                  PNAME[x] +
+                  '</span><span class="flex gap-1 mt-1">' +
+                  capTags(x) +
+                  "</span></span></button>"
+                );
+              })
+              .join("") +
+            "</div>",
+        );
+      }
+      function intForm(p, fromPicker) {
+        intPick = p;
+        var url = p !== "github" && p !== "linear";
+        intSheet(
+          "Add an integration",
+          "Connect " + PNAME[p],
+          fromPicker ? "intAdd()" : "",
+          '<div class="mt-5 space-y-3">' +
+            (url
+              ? '<div><label class="text-[11px] text-muted-foreground">Instance URL</label><input id="int-url" name="int-url" class="field w-full h-9 px-3 mt-1 rounded-xl text-xs font-mono" placeholder="https://' +
+                (p === "jira" ? "yourorg.atlassian.net" : p + ".example.com") +
+                '"/></div>'
+              : "") +
+            '<div><label class="text-[11px] text-muted-foreground">Token</label><input id="int-token" name="int-token" type="password" class="field w-full h-9 px-3 mt-1 rounded-xl text-xs" placeholder="Paste a token"/></div>' +
+            '<div class="text-[11px] text-muted-foreground">How to create one ›</div></div><div class="flex mt-6"><button id="int-go" onclick="intAdded()" class="ml-auto ' +
+            BTN +
+            '">Connect</button></div>',
+        );
+      }
+      function intAdded() {
+        INT.push({ p: intPick, acc: "new-account", host: intPick + ".example.com" });
+        hide("int-scrim");
+        drawIntegrations();
+        toast(PNAME[intPick] + " connected");
+      }
+      document.addEventListener("click", function (e) {
+        if (!e.target.closest(".wrap")) unpin();
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") unpin();
+      });
       render();
     </script>
   </body>

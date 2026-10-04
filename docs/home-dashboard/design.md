@@ -46,11 +46,7 @@ One full-window screen, no app header bar.
      replaced by the scoreboard.
 4. **A two-column row** above the connections (`grid grid-cols-2 gap-5`):
    - left, the glass **"Add a connection"** panel, styled like every other panel: `Add a connection`, `Where your project lives` under it, then the three type buttons (SSH host, WSL distro, Container) in a row;
-   - right, the glass **Integrations** panel, the whole panel a button opening the integrations
-     manager: `Integrations` with a muted `Manage ›` on the right, `Issues and pull requests, for
-every connection` under it, then one chip per provider. A configured provider is a `pill` chip
-     with its name and account (`GitHub billy`); one not set up is a faint dashed chip with its name
-     only.
+   - right, the glass **Integrations** panel (see "Integrations panel" below), the same height.
 5. **One glass panel per connection** in a two-column grid (`grid grid-cols-2 gap-5`). A connected
    panel spans both columns; a not-connected panel is one row tall and takes one column, so they
    pair up. Order: This computer, then every connection attached this session, then the ones not
@@ -132,6 +128,41 @@ Status by state:
 **"Add project" tile:** a `ghost` tile the same size as a project, a light `+` and `Add project`. It is
 always the last tile of a connected panel.
 
+## Integrations panel
+
+`Integrations`, then a muted line: `<N> integrations across <S> services`, or `Issues and pull
+requests, for every connection` when there are none. Then one row of 42px square tiles:
+
+- **One tile per provider, not per account.** There can be several integrations of one provider
+  (two GitHub accounts, a gitlab.com and a self-hosted GitLab), so a tile carries a count badge
+  (foreground on background, top-right) when it holds more than one. The provider list is short and
+  fixed (eight today), so the row cannot outgrow the panel.
+- **Tiles use the `pane` look** of the Add a connection buttons, with the provider's `BrandIcon`.
+- **A dashed `+` tile** always ends the row. With no integration it is the only tile.
+- There is no `Manage` link: the tiles and `+` cover everything it did.
+
+**Hovering a tile** opens a card under it (`pop-pane`: the `pane` colours made opaque, since the
+glass panel it sits in is a backdrop root and its blur cannot reach the panels below). The card
+lists the provider name, `<N> accounts`, its capability tags (`issues`, `pull requests`, `merge
+requests`), one row per integration (icon, account, instance in monospace, a `gh cli` tag when
+the gh CLI provides it, `›`), and last `+ Add another <provider> account`. An invisible strip
+bridges the gap between tile and card, so the pointer can move onto it and click a row. The card is
+shown by CSS, never by re-rendering, so hovering cannot flicker.
+
+**Clicking a tile** pins its card open (accent border and a 2px accent ring on the tile) until a
+click outside, Esc, or a second click on the tile. While one card is pinned, hovering another tile
+opens nothing.
+
+**An integration row** opens its details sheet: eyebrow the provider, title the account, the icon
+and capability tags, `Account` and `Instance`, then `Disconnect` (rose, text) and `Edit
+credentials`. One provided by the gh CLI says `Managed by the gh CLI. Sign out there to remove
+it.` and has neither button. This is `IntegrationDetailModal` restyled.
+
+**`+` and `Add another …`** open `Add an integration`: first `Choose a service`, a two-column grid
+of the eight providers (icon, name, capability tags), then `Connect <provider>` with the fields
+`IntegrationConnectDialog` asks for and its per-provider instructions, and `Connect`. `Add another
+<provider> account` skips the first step; from the grid, a `‹` goes back to it.
+
 ## Dialogs
 
 All dialogs are a `glass` sheet over the blurred `scrim`, closed by clicking outside or `✕`, with a
@@ -211,17 +242,16 @@ previous one, so a window never holds projects it is not showing.
 
 ## Open items
 
-- **The Integrations panel content.** Options are being compared; it stays the panel's current
-  height and shows the configured providers by their icons.
+None at the moment.
 
 ## Reusing what exists
 
-| Board element                      | Existing code to reuse                                                      |
-| ---------------------------------- | --------------------------------------------------------------------------- |
-| Background                         | `screen-gradient` (`src/index.css`), `AccentBubbles`                        |
-| Corner controls, version indicator | `ProjectPicker.tsx` top strip and `VersionBadge`                            |
-| SSH, WSL, container forms          | `SshFormPanel`, `WslPickerPanel`, `ContainerPickerPanel`, `ssh-auth-modal/` |
-| Connecting checklist               | `PreflightModal` and the deploy it drives                                   |
-| Open folder, Clone, Start fresh    | `FilePicker`, `CloneProjectDialog`, `CreateProjectDialog`                   |
-| Lock holder and takeover           | `ProjectList` lock badges, `ProjectTakeoverDialog`                          |
-| Integrations                       | `integrations-tab/`                                                         |
+| Board element                      | Existing code to reuse                                                                                          |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Background                         | `screen-gradient` (`src/index.css`), `AccentBubbles`                                                            |
+| Corner controls, version indicator | `ProjectPicker.tsx` top strip and `VersionBadge`                                                                |
+| SSH, WSL, container forms          | `SshFormPanel`, `WslPickerPanel`, `ContainerPickerPanel`, `ssh-auth-modal/`                                     |
+| Connecting checklist               | `PreflightModal` and the deploy it drives                                                                       |
+| Open folder, Clone, Start fresh    | `FilePicker`, `CloneProjectDialog`, `CreateProjectDialog`                                                       |
+| Lock holder and takeover           | `ProjectList` lock badges, `ProjectTakeoverDialog`                                                              |
+| Integrations                       | `integrations-tab/`: `BrandIcon`, `IntegrationConnectDialog`, `IntegrationDetailModal`, `PROVIDER_CAPABILITIES` |
