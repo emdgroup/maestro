@@ -60,13 +60,17 @@ One full-window screen, no app header bar.
 done. Review is purple-500, the Review column's colour on the board (`KanbanColumn.tsx`). Needs you
 is amber. Green is kept for completed steps only (the check marks of a connecting checklist).
 
+Menus and hover cards sit inside a glass panel, and an element with `backdrop-filter` is a backdrop
+root: a blurred child can only blur that element, not what lies under it. So a panel draws its
+glass on a `::before` (behind its content, `isolation: isolate`), which leaves its popups free to
+blur the page. In the app the popups are portalled out of the panel, which avoids the issue too.
+
 All values below are in `mock.html` as CSS classes of the same name.
 
 | Class          | Use                                               | Recipe                                                                                                                                                                |
 | -------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `glass`        | connection panels, dialogs                        | `card` at 42% over transparent, `backdrop-filter: blur(20px) saturate(150%)`, 1px border of `foreground` at 9%, inset top highlight of white at 20%, soft drop shadow |
+| `glass`        | panels, dialogs, menus, hover cards               | `card` at 42% over transparent, `backdrop-filter: blur(20px) saturate(150%)`, 1px border of `foreground` at 9%, inset top highlight of white at 20%, soft drop shadow |
 | `glass-strong` | confirmation dialogs                              | as `glass` with `card` at 72% and `blur(24px)`, so text over moving bubbles stays readable                                                                            |
-| `pop-pane`     | menus and hover cards inside a glass panel        | opaque `background`, 1px border at 7%, drop shadow. A glass panel is a backdrop root, so a blurred popup in it would show the panels below unblurred                  |
 | `pane`         | project tiles, choices inside dialogs             | `background` at 38% inside a glass panel, 1px border at 7%; hover lifts 2px and raises to 62%                                                                         |
 | `pane.sel`     | the chosen option in a dialog                     | border and fill in `--accent`                                                                                                                                         |
 | `pane.attn`    | a project tile that needs you                     | amber `#f59e0b` at 13% over `background` at 30%, border amber at 34%; hover raises them to 19% and 48%                                                                |
@@ -131,8 +135,7 @@ always the last tile of a connected panel.
 
 ## Integrations panel
 
-`Integrations`, then a muted line: `<N> integrations across <S> services`, or `Issues and pull
-requests, for every connection` when there are none. Then one row of 42px square tiles:
+`Integrations`, then a muted line: `Issues and pull requests, for every connection`. Then one row of 42px square tiles:
 
 - **One tile per provider, not per account.** There can be several integrations of one provider
   (two GitHub accounts, a gitlab.com and a self-hosted GitLab), so a tile carries a count badge
@@ -142,8 +145,8 @@ requests, for every connection` when there are none. Then one row of 42px square
 - **A dashed `+` tile** always ends the row. With no integration it is the only tile.
 - There is no `Manage` link: the tiles and `+` cover everything it did.
 
-**Hovering a tile** opens a card under it (`pop-pane`: the `pane` colours made opaque, since the
-glass panel it sits in is a backdrop root and its blur cannot reach the panels below). The card
+**Hovering a tile** opens a card under it (`glass`, like the dialogs, so what lies under it shows through
+blurred). The card
 lists the provider name, `<N> accounts`, its capability tags (`issues`, `pull requests`, `merge
 requests`), one row per integration (icon, account, instance in monospace, a `gh cli` tag when
 the gh CLI provides it, `›`), and last `+ Add another <provider> account`. An invisible strip
@@ -209,7 +212,7 @@ appear and the hero counts update.
 
 ## Connection menu (`⋯`)
 
-A `pop-pane` popover anchored under the button, 256px wide. A header gives the name and one line
+A `glass` popover anchored under the button, 256px wide. A header gives the name and one line
 of state (`Maestro server 0.34.0 · up 3d 6h`, `Not connected` while signing in, `Server stopped`, `Last seen 2h ago`).
 Items depend on state:
 

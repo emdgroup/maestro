@@ -181,14 +181,35 @@
       .c-review {
         color: var(--color-purple-500, oklch(62.7% 0.265 303.9));
       }
-      /* integration tiles and their hover card: the pane look of the Add a connection buttons.
-         The card sits inside a glass panel, which is a backdrop root, so its own blur cannot reach
-         the panels below; it has to be opaque to stay readable. */
-      .pop-pane {
-        background: var(--background);
-        border: 1px solid color-mix(in oklab, var(--foreground) 7%, transparent);
-        box-shadow: 0 20px 50px -18px rgb(0 0 0/0.35);
+      /* A panel draws its glass on ::before. An element with backdrop-filter is a backdrop root, so
+         a menu or hover card inside the panel itself could only blur the panel, not what lies
+         under it; on a pseudo-element the panel stays transparent to its popups' blur. */
+      section.glass {
+        position: relative;
+        isolation: isolate;
+        background: none;
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+        box-shadow: 0 18px 40px -24px rgb(0 0 0/0.35);
       }
+      section.glass::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        border-radius: inherit;
+        pointer-events: none;
+        background: color-mix(in oklab, var(--card) 42%, transparent);
+        -webkit-backdrop-filter: blur(20px) saturate(150%);
+        backdrop-filter: blur(20px) saturate(150%);
+        box-shadow: 0 1px 0 color-mix(in oklab, white 20%, transparent) inset;
+      }
+      .pop {
+        box-shadow:
+          0 1px 0 color-mix(in oklab, white 20%, transparent) inset,
+          0 20px 50px -18px rgb(0 0 0/0.35);
+      }
+      /* integration tiles and their hover card */
       .card {
         display: none;
         position: absolute;
@@ -876,7 +897,7 @@
         return (
           '<div id="menu-pop-' +
           c.id +
-          '" class="menu pop-pane absolute right-0 top-9 z-20 w-64 rounded-2xl p-1.5 text-sm">' +
+          '" class="menu glass pop absolute right-0 top-9 z-20 w-64 rounded-2xl p-1.5 text-sm">' +
           head +
           it.join("") +
           "</div>"
@@ -1681,7 +1702,7 @@
       function intCard(g) {
         var n = g.items.length;
         return (
-          '<div class="card"><div class="pop-pane w-72 rounded-2xl p-1.5 text-sm">' +
+          '<div class="card"><div class="glass pop w-72 rounded-2xl p-1.5 text-sm">' +
           '<div class="px-2.5 pt-1.5 pb-1 flex items-baseline"><span class="text-xs font-medium">' +
           PNAME[g.p] +
           '</span><span class="ml-auto text-[11px] text-muted-foreground">' +
@@ -1722,12 +1743,7 @@
         $("integrations").classList.remove("has-pin");
         $("integrations").innerHTML =
           '<div class="text-sm font-medium">Integrations</div><div class="text-xs text-muted-foreground mt-0.5">' +
-          (INT.length
-            ? INT.length +
-              " integration" +
-              (INT.length > 1 ? "s" : "") +
-              (g.length > 1 ? " across " + g.length + " services" : "")
-            : "Issues and pull requests, for every connection") +
+          "Issues and pull requests, for every connection" +
           '</div><div class="flex gap-2.5 mt-4">' +
           g
             .map(function (x) {
