@@ -10,8 +10,9 @@ sign-in and the connection menu work. It is the reference for spacing, type size
 Where this document and the mock disagree, the mock wins on visuals and this document wins on
 behaviour.
 
-Approved on 2026-10-04, with two elements rejected (see "Open items"). They are already removed from
-`mock.html`.
+Approved on 2026-10-04. A first version put Integrations in a pill top-right and marked a "needs
+you" tile with an amber left edge; both were rejected and replaced the same day by the Integrations
+panel and the amber tint described below.
 
 ## What changed in the architecture, and why it shapes the design
 
@@ -40,8 +41,15 @@ One full-window screen, no app header bar.
      (`text-emerald-700 dark:text-emerald-400`), the second amber
      (`text-amber-600 dark:text-amber-400`).
    - Under it, muted `text-sm`: `<P> projects on <C> connections · <R> tasks ready for review`.
-4. **One glass panel per connection**, stacked with `space-y-5`.
-5. **"Add a connection" panel** last, dashed.
+4. **A two-column row** above the connections (`grid grid-cols-2 gap-5`):
+   - left, the dashed **"Add a connection"** panel: `Add a connection`, `Run agents on another
+machine` under it, then the three type buttons (SSH host, WSL distro, Container) in a row;
+   - right, the glass **Integrations** panel, the whole panel a button opening the integrations
+     manager: `Integrations` with a muted `Manage ›` on the right, `Issues and pull requests, for
+every connection` under it, then one chip per provider. A configured provider is a `pill` chip
+     with its name and account (`GitHub billy`); one not set up is a faint dashed chip with its name
+     only.
+5. **One glass panel per connection**, stacked with `space-y-5`, This computer first.
 6. **Version indicator** bottom-right (`v0.34.0`), opening the existing `UpdateCard` popover.
 
 ## Visual system
@@ -54,8 +62,9 @@ All values below are in `mock.html` as CSS classes of the same name.
 | `glass-strong` | menus, confirmation dialogs                       | as `glass` with `card` at 72% and `blur(24px)`, so text over moving bubbles stays readable                                                                            |
 | `pane`         | project tiles, choices inside dialogs             | `background` at 38% inside a glass panel, 1px border at 7%; hover lifts 2px and raises to 62%                                                                         |
 | `pane.sel`     | the chosen option in a dialog                     | border and fill in `--accent`                                                                                                                                         |
+| `pane.attn`    | a project tile that needs you                     | amber `#f59e0b` at 13% over `background` at 30%, border amber at 34%; hover raises them to 19% and 48%                                                                |
 | `ghost`        | "Add project" tile, "Add a connection" panel      | 1.5px dashed border of `foreground` at 18%; hover turns it `--accent` with an 8% fill                                                                                 |
-| `pill`         | small glass buttons (Sign in, Start, icon badges) | `card` at 50%, `blur(14px)`                                                                                                                                           |
+| `pill`         | small glass buttons (Connect, Start, icon badges) | `card` at 50%, `blur(14px)`                                                                                                                                           |
 | `field`        | inputs                                            | `background` at 55%, border at 12%, `--accent` border on focus                                                                                                        |
 | `scrim`        | behind a dialog                                   | `background` at 30%, `blur(6px)`                                                                                                                                      |
 
@@ -74,8 +83,8 @@ Status by state:
 | State          | Right side of the header                                       | Body                                                                                   |
 | -------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Connected      | agent slots as pills, filled green for used, then `4/4 agents` | project tiles, then the "Add project" tile                                             |
-| Not signed in  | `Not signed in` in amber                                       | `Sign in to see what is running here.` and a `Sign in` pill                            |
-| Signing in     | `Not signed in` in amber                                       | inline password form (below)                                                           |
+| Not connected  | `Not connected`, muted                                         | `Connect to see what is running here.` and a `Connect` pill                            |
+| Signing in     | `Not connected`, muted                                         | inline password form (below)                                                           |
 | Connecting     | `Connecting…`                                                  | three inline steps with spinner and check marks                                        |
 | Server stopped | `Server stopped`, panel at 75% opacity                         | `The Maestro server is stopped. Nothing runs here until it starts.` and a `Start` pill |
 | Unreachable    | `Unreachable` in rose, panel at 75% opacity                    | `Not answering. Its projects keep their state and come back when it does.`             |
@@ -87,6 +96,7 @@ Status by state:
   `~/src/x` elsewhere).
 - A status word top-right, `11px`: **Working** (green, pulsing gently), **Needs you** (amber),
   **Idle** (muted, open tasks but no agent), **Quiet** (faint, nothing open).
+- A tile that needs you is tinted amber all over (`pane.attn`). There is no edge or stripe.
 - One context line: the blocking prompt in amber (`Permission to run a migration`), else a running
   automation (`nightly-lint running`), else `Open in this window`, else `Open on <holder>`.
 - Three counts at the bottom: `working`, `review`, `queued`. A zero fades to half opacity.
@@ -124,29 +134,38 @@ installs its server on the host the first time.`, then `Connect`. This folds tod
   `Starting it`, `Ready`, then closes and the new panel appears. This is the existing preflight and
   deploy, shown in place of `PreflightModal`.
 
+## Connecting
+
+Home attaches to This computer on its own and to nothing else. Every other connection starts at
+`Not connected` with a `Connect` pill, however it signs in. `Connect` attaches straight away when no
+prompt is needed (SSH agent, key file, saved password, WSL, container) and shows the inline
+password form otherwise. Once attached, a connection stays attached until the app closes; there is
+no Disconnect. The hero counts only attached connections.
+
 **Inline sign-in** happens in the panel, not a dialog: a focused password field, `Sign in`, `Cancel`,
 and under it `Remember in the system keychain` (ticked by default) and the hint `Or use a key: ⋯ ›
-Change sign-in`. An empty submit shakes the row and says `Enter the password for <user@host>.` A
-submit shows `Signing in`, `Reaching the Maestro server`, `Reading projects` inline, then the tiles
+Change sign-in`. An empty submit shakes the row and says `Enter the password for <user@host>.` `Cancel`
+returns the panel to `Not connected`. A submit shows `Signing in`, `Reaching the Maestro server`,
+`Reading projects` inline (a connection with no password shows `Reaching <name>` first), then the tiles
 appear and the hero counts update.
 
 ## Connection menu (`⋯`)
 
 A `glass-strong` popover anchored under the button, 256px wide. A header gives the name and one line
-of state (`Maestro server 0.34.0 · up 3d 6h`, `Not signed in`, `Server stopped`, `Last seen 2h ago`).
+of state (`Maestro server 0.34.0 · up 3d 6h`, `Not connected`, `Server stopped`, `Last seen 2h ago`).
 Items depend on state:
 
-| Item                                         | Shown when        |
-| -------------------------------------------- | ----------------- |
-| Sign in…                                     | not signed in     |
-| Try again                                    | unreachable       |
-| Start server                                 | server stopped    |
-| Settings, hint `Agents, capacity, webhooks`  | always            |
-| Rename                                       | not This computer |
-| Change sign-in, hint with the current method | SSH and signed in |
-| Restart server                               | connected         |
-| Stop server (rose)                           | connected         |
-| Remove connection (rose)                     | not This computer |
+| Item                                         | Shown when           |
+| -------------------------------------------- | -------------------- |
+| Connect                                      | not connected        |
+| Try again                                    | unreachable          |
+| Start server                                 | server stopped       |
+| Settings, hint `Agents, capacity, webhooks`  | always               |
+| Rename                                       | not This computer    |
+| Change sign-in, hint with the current method | SSH, not mid-sign-in |
+| Restart server                               | connected            |
+| Stop server (rose)                           | connected            |
+| Remove connection (rose)                     | not This computer    |
 
 Stop, Restart and Remove confirm in a `glass-strong` dialog listing the consequences, computed from
 the connection's live state:
@@ -168,13 +187,7 @@ previous one, so a window never holds projects it is not showing.
 
 ## Open items
 
-- **The Integrations entry point.** The mock had a glass pill top-right with overlapping provider
-  badges. Rejected. Integrations still have to be reachable from this screen; the placement is open.
-- **The "needs you" marker on a tile.** The amber left edge was rejected. The tile keeps the amber
-  `Needs you` status word and the amber context line; whether it needs anything more is open.
-- **Which connections connect on their own.** Showing a panel's projects needs its daemon attached.
-  Proposal: attach automatically to every connection that needs no prompt (local, WSL, containers,
-  SSH with an agent, a key or a saved password), and leave the rest at `Sign in`.
+None at the moment.
 
 ## Reusing what exists
 

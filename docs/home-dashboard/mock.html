@@ -145,6 +145,22 @@
         background: color-mix(in oklab, var(--accent) 10%, transparent);
         transform: none;
       }
+      .pane.attn {
+        background: color-mix(
+          in oklab,
+          #f59e0b 13%,
+          color-mix(in oklab, var(--background) 30%, transparent)
+        );
+        border-color: color-mix(in oklab, #f59e0b 34%, transparent);
+      }
+      .pane.attn:hover {
+        background: color-mix(
+          in oklab,
+          #f59e0b 19%,
+          color-mix(in oklab, var(--background) 45%, transparent)
+        );
+        border-color: color-mix(in oklab, #f59e0b 48%, transparent);
+      }
       .ghost {
         border: 1.5px dashed color-mix(in oklab, var(--foreground) 18%, transparent);
         transition:
@@ -291,16 +307,28 @@
             <h1 id="headline" class="hl text-[40px] leading-[1.1] font-semibold max-w-[820px]"></h1>
             <div id="sub" class="mt-3 text-sm text-muted-foreground"></div>
           </section>
-          <div id="connections" class="space-y-5"></div>
-          <section id="add-connection" class="ghost rounded-[22px] mt-5 p-5 text-muted-foreground">
-            <div class="flex items-center gap-6">
-              <div class="shrink-0">
-                <div class="text-sm font-medium text-foreground">Add a connection</div>
-                <div class="text-xs mt-0.5">Run agents on another machine</div>
+          <div class="grid grid-cols-2 gap-5 mb-5">
+            <section id="add-connection" class="ghost rounded-[22px] p-5 text-muted-foreground">
+              <div class="text-sm font-medium text-foreground">Add a connection</div>
+              <div class="text-xs mt-0.5">Run agents on another machine</div>
+              <div class="flex gap-2 mt-4" id="add-conn-types"></div>
+            </section>
+            <button
+              id="integrations"
+              onclick="toast('Integrations')"
+              class="glass rounded-[22px] p-5 text-left cursor-pointer transition-transform hover:-translate-y-0.5"
+            >
+              <div class="flex items-baseline">
+                <div class="text-sm font-medium">Integrations</div>
+                <div class="ml-auto text-[11px] text-muted-foreground">Manage ›</div>
               </div>
-              <div class="flex gap-2 ml-auto" id="add-conn-types"></div>
-            </div>
-          </section>
+              <div class="text-xs text-muted-foreground mt-0.5">
+                Issues and pull requests, for every connection
+              </div>
+              <div class="flex flex-wrap gap-2 mt-4" id="integration-list"></div>
+            </button>
+          </div>
+          <div id="connections" class="space-y-5"></div>
         </main>
 
         <div
@@ -591,7 +619,8 @@
           detail: "ml@10.0.4.22",
           home: "/home/ml",
           sep: "/",
-          state: "auth",
+          state: "idle",
+          pw: true,
           cap: [1, 2],
           auto: 1,
           later: [
@@ -606,7 +635,23 @@
             },
           ],
         },
-        { id: "wsl", name: "Ubuntu", kind: "wsl", detail: "WSL", state: "down" },
+        {
+          id: "wsl",
+          name: "Ubuntu",
+          kind: "wsl",
+          detail: "WSL",
+          state: "idle",
+          cap: [0, 2],
+          auto: 0,
+          later: [{ n: "dotfiles", path: "~/dotfiles", work: 0, review: 0, queued: 1 }],
+        },
+      ];
+      var INTEGRATIONS = [
+        ["GitHub", "billy", true],
+        ["Linear", "acme", true],
+        ["GitLab", "", false],
+        ["Bitbucket", "", false],
+        ["Azure DevOps", "", false],
       ];
       var addingTo = null,
         connType = null,
@@ -675,17 +720,17 @@
               ? "Server stopped"
               : c.state === "down"
                 ? "Last seen 2h ago"
-                : "Not signed in") +
+                : "Not connected") +
           "</div></div>" +
           sep;
-        if (c.state === "auth" || c.state === "signin") {
+        if (c.state === "idle") {
           it.push(
             mi(
-              "m-signin-" + c.id,
-              "key",
-              "Sign in…",
+              "m-connect-" + c.id,
+              "play",
+              "Connect",
               "",
-              "menuOpen=null;startSignIn('" + c.id + "')",
+              "menuOpen=null;connectTo('" + c.id + "')",
             ),
           );
         }
@@ -722,13 +767,13 @@
               "menuOpen=null;render();toast('Rename " + c.name + "')",
             ),
           );
-        if (c.kind === "ssh" && c.state !== "auth" && c.state !== "signin")
+        if (c.kind === "ssh" && c.state !== "signin")
           it.push(
             mi(
               "m-auth-" + c.id,
               "key",
               "Change sign-in",
-              "Agent",
+              c.pw ? "Password" : "Agent",
               "menuOpen=null;render();toast('Sign-in method for " + c.name + "')",
             ),
           );
@@ -875,10 +920,12 @@
           }, 600);
         }, 600);
       }
-      /* inline sign-in */
-      function startSignIn(id) {
-        conn(id).state = "signin";
-        conn(id).err = null;
+      /* connect on demand; a password connection asks inline first */
+      function connectTo(id) {
+        var c = conn(id);
+        if (!c.pw) return attach(c);
+        c.state = "signin";
+        c.err = null;
         render();
         setTimeout(function () {
           var f = $("pw-" + id);
@@ -886,7 +933,7 @@
         }, 0);
       }
       function cancelSignIn(id) {
-        conn(id).state = "auth";
+        conn(id).state = "idle";
         render();
       }
       function submitSignIn(id) {
@@ -897,6 +944,9 @@
           render();
           return;
         }
+        attach(c);
+      }
+      function attach(c) {
         c.state = "connecting";
         c.step = 0;
         render();
@@ -1139,7 +1189,9 @@
           p.n +
           '" onclick="toast(\'Open ' +
           p.n +
-          '\')" class="pane rounded-2xl p-4 cursor-pointer flex flex-col min-h-[132px]">' +
+          '\')" class="pane ' +
+          (p.needs ? "attn " : "") +
+          'rounded-2xl p-4 cursor-pointer flex flex-col min-h-[132px]">' +
           '<div class="flex items-start gap-2"><div class="min-w-0"><div class="hl text-[17px] font-semibold truncate">' +
           p.n +
           '</div><div class="text-[11px] text-muted-foreground font-mono truncate">' +
@@ -1212,13 +1264,13 @@
             addProject(c) +
             "</div>"
           );
-        if (c.state === "auth")
+        if (c.state === "idle")
           return (
-            '<div class="mt-4 flex items-center gap-3 text-xs text-muted-foreground"><span>Sign in to see what is running here.</span><button id="signin-' +
+            '<div class="mt-4 flex items-center gap-3 text-xs text-muted-foreground"><span>Connect to see what is running here.</span><button id="connect-' +
             c.id +
-            '" onclick="startSignIn(\'' +
+            '" onclick="connectTo(\'' +
             c.id +
-            '\')" class="pill rounded-full px-3 py-1.5 text-foreground cursor-pointer hover:bg-foreground/10">Sign in</button></div>'
+            '\')" class="pill rounded-full px-3 py-1.5 text-foreground cursor-pointer hover:bg-foreground/10">Connect</button></div>'
           );
         if (c.state === "signin")
           return (
@@ -1257,7 +1309,11 @@
             "</div></form>"
           );
         if (c.state === "connecting") {
-          var steps = ["Signing in", "Reaching the Maestro server", "Reading projects"];
+          var steps = [
+            c.pw ? "Signing in" : "Reaching " + c.name,
+            "Reaching the Maestro server",
+            "Reading projects",
+          ];
           return (
             '<div class="mt-4 flex items-center gap-5 text-xs">' +
             steps
@@ -1305,9 +1361,6 @@
             projects++;
           });
         });
-        wait += CONN.filter(function (c) {
-          return c.state === "auth" || c.state === "signin";
-        }).length;
         $("headline").innerHTML =
           '<span class="text-emerald-700 dark:text-emerald-400">' +
           working +
@@ -1333,6 +1386,17 @@
             "</button>"
           );
         }).join("");
+        $("integration-list").innerHTML = INTEGRATIONS.map(function (i) {
+          return i[2]
+            ? '<span class="pill rounded-full px-2.5 py-1 text-xs"><span class="font-medium">' +
+                i[0] +
+                '</span> <span class="text-muted-foreground">' +
+                i[1] +
+                "</span></span>"
+            : '<span class="rounded-full px-2.5 py-1 text-xs text-muted-foreground/70 border border-dashed border-foreground/15">' +
+                i[0] +
+                "</span>";
+        }).join("");
         $("connections").innerHTML = CONN.map(function (c) {
           var status =
             c.state === "up"
@@ -1341,8 +1405,8 @@
                 ? "<span>Connecting…</span>"
                 : c.state === "stopped"
                   ? "<span>Server stopped</span>"
-                  : c.state === "auth" || c.state === "signin"
-                    ? '<span class="text-amber-600 dark:text-amber-400">Not signed in</span>'
+                  : c.state === "idle" || c.state === "signin"
+                    ? "<span>Not connected</span>"
                     : '<span class="text-rose-600 dark:text-rose-400">Unreachable</span>';
           var head =
             '<div class="flex items-center gap-3">' +
