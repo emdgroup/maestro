@@ -21,17 +21,6 @@ const whole = (): Box => ({
   height: window.innerHeight,
 });
 
-function place(element: HTMLElement, box: Box, radius: number, opacity: number) {
-  Object.assign(element.style, {
-    left: `${box.left}px`,
-    top: `${box.top}px`,
-    width: `${box.width}px`,
-    height: `${box.height}px`,
-    borderRadius: `${radius}px`,
-    opacity: String(opacity),
-  });
-}
-
 const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
 
 /**
@@ -48,33 +37,47 @@ export function ProjectZoomLayer() {
   useLayoutEffect(() => {
     const element = scope.current;
     if (!zoom || !element) return;
+    // Every step goes through `animate`, even the jumps: it keeps its own copy of each value, so
+    // a style written by hand is one it does not know about, and a fade from a value it thinks is
+    // already 0 does nothing and leaves the card over the window.
+    // The style is written as well, so the card is there on the very next paint.
+    const jump = (box: Box, radius: number) => {
+      const target = { ...px(box), borderRadius: `${radius}px`, opacity: "1" };
+      Object.assign(element.style, target);
+      return animate(element, target, { duration: 0 });
+    };
     const run = async () => {
-      if (zoom.kind === "open") {
-        if (reduceMotion) {
-          place(element, whole(), 0, 1);
+      try {
+        if (zoom.kind === "open") {
+          await jump(reduceMotion ? whole() : (zoom.from ?? middle()), reduceMotion ? 0 : 16);
+          if (!reduceMotion)
+            await animate(
+              element,
+              { ...px(whole()), borderRadius: 0 },
+              { duration: GROW, ease: EASE },
+            );
+          zoom.grown();
+          await nextFrame();
+          await animate(element, { opacity: 0 }, { duration: 0.22 });
         } else {
-          place(element, zoom.from ?? middle(), 16, 1);
-          await animate(
-            element,
-            { ...px(whole()), borderRadius: 0 },
-            { duration: GROW, ease: EASE },
-          );
+          await jump(whole(), 0);
+          // Home draws its tiles on the frame after the switch.
+          await nextFrame();
+          await nextFrame();
+          if (!reduceMotion)
+            await animate(
+              element,
+              { ...px(zoom.to() ?? middle()), borderRadius: 16 },
+              { duration: GROW, ease: EASE },
+            );
+          await animate(element, { opacity: 0 }, { duration: 0.18 });
         }
-        zoom.grown();
-        await nextFrame();
-        await animate(element, { opacity: 0 }, { duration: 0.22 });
-      } else {
-        place(element, whole(), 0, 1);
-        // Home draws its tiles on the frame after the switch.
-        await nextFrame();
-        await nextFrame();
-        if (!reduceMotion) {
-          const to = zoom.to() ?? middle();
-          await animate(element, { ...px(to), borderRadius: 16 }, { duration: GROW, ease: EASE });
-        }
-        await animate(element, { opacity: 0 }, { duration: 0.18 });
+      } finally {
+        // Never leave the card over the window, nor an open waiting on it.
+        if (zoom.kind === "open") zoom.grown();
+        element.style.opacity = "0";
+        useZoomStore.setState({ zoom: null });
       }
-      useZoomStore.setState({ zoom: null });
     };
     void run();
   }, [zoom, reduceMotion, animate, scope]);
