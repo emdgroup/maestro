@@ -222,7 +222,7 @@ mod tests {
         // A trailing separator, so it only lines up with the store's rows once canonicalized. It
         // comes back as sent.
         let sent = format!("{}/", requested.path().to_string_lossy());
-        summaries.requested(&[sent.clone()]);
+        summaries.requested(std::slice::from_ref(&sent));
         summaries.project_store(&projects).unwrap();
         summaries.automations(&automations).unwrap();
         summaries.locks(vec![ProjectLockInfo {
