@@ -6,6 +6,7 @@ import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { executionQueryKeys } from "@/services/execution.service";
 import { useNavigationStore } from "@/store/navigationStore";
+import { connectionKeyId, useHomeStore } from "@/store/homeStore";
 import type {
   Automation,
   AutomationRun,
@@ -293,7 +294,11 @@ export function useStopBackgroundServerMutation() {
 
   return useMutation({
     mutationFn: (connection: ConnectionKey) => api.stopBackgroundServer(connection),
-    onSuccess: () => queryClient.removeQueries({ queryKey: automationQueryKeys.base }),
+    // Hook-level, so it still runs once the caller has left the project and unmounted.
+    onSuccess: (_, connection) => {
+      queryClient.removeQueries({ queryKey: automationQueryKeys.base });
+      useHomeStore.getState().setPhase(connectionKeyId(connection), { kind: "stopped" });
+    },
     onError: createErrorToastHandler("Could not stop the background server"),
   });
 }
