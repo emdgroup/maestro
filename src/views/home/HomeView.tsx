@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Settings } from "lucide-react";
+import { ChevronDown, ChevronUp, Settings } from "lucide-react";
 import type { ConnectionKey } from "@/types/bindings";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
@@ -53,8 +53,41 @@ export function HomeView() {
   const [addingTo, setAddingTo] = useState<HomeConnection | null>(null);
   const [signInFor, setSignInFor] = useState<HomeConnection | null>(null);
   const [signingIn, setSigningIn] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState({ up: false, down: false });
 
   useConnectionLossEvents();
+
+  // Which edges of the page have more past them: those fade out and get a chevron.
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const update = () => {
+      const up = scroller.scrollTop > 1;
+      const down = scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 1;
+      setMore((prev) => (prev.up === up && prev.down === down ? prev : { up, down }));
+    };
+    update();
+    scroller.addEventListener("scroll", update, { passive: true });
+    // The page grows as connections attach and load, which does not resize the scroller itself.
+    const observer = new ResizeObserver(update);
+    observer.observe(scroller);
+    if (scroller.firstElementChild) observer.observe(scroller.firstElementChild);
+    return () => {
+      scroller.removeEventListener("scroll", update);
+      observer.disconnect();
+    };
+  }, []);
+
+  /** Most of a page, so a line or two stays in view to keep the reader's place. */
+  const scrollPage = (direction: 1 | -1) => {
+    const scroller = scrollRef.current;
+    scroller?.scrollBy({
+      top: direction * scroller.clientHeight * 0.85,
+      behavior: document.documentElement.classList.contains("reduce-motion") ? "auto" : "smooth",
+    });
+  };
+  const busy = waitingOn || importing;
 
   // Home attaches to This computer on its own, and to nothing else.
   useEffect(() => {
@@ -140,7 +173,6 @@ export function HomeView() {
       {/* The screen paints its own background, so these cannot sit behind it on a negative
           layer the way they do in the header — they go at z-0 and the content is raised. */}
       <span aria-hidden className="screen-gradient z-0" />
-      <AccentBubbles variant="screen" className="z-0" />
 
       {/* No AppHeader here, so this strip is the window's drag region. */}
       <div
@@ -169,63 +201,95 @@ export function HomeView() {
         <WindowControls className="-mr-2 ml-1" />
       </div>
 
-      {/* The page scrolls under the background and drag strip, which stay put, with no bar. */}
-      <div className="absolute inset-0 scrollbar-none overflow-y-auto">
-        <main className="relative z-10 mx-auto max-w-[1200px] px-12 pt-20 pb-14">
-          <Hero working={totals.working} needYou={totals.needYou} toReview={totals.toReview} />
-          <div className="mb-5 grid grid-cols-2 gap-5">
-            <AddConnectionPanel />
-            <IntegrationsPanel />
-          </div>
-          <div className="grid grid-cols-2 gap-5">
-            {ordered.map((connection) => {
-              const phase = phases[connection.id] ?? { kind: "idle" as const };
-              const summary = summaries.get(connection.id);
-              return (
-                <ConnectionPanel
-                  key={connection.id}
-                  connection={
-                    connection.id === "local" && summary?.hostname
-                      ? { ...connection, detail: summary.hostname }
-                      : connection
-                  }
-                  phase={phase}
-                  projects={cardsFor(connection)}
-                  runningAutomations={summary?.runningAutomations ?? 0}
-                  minimized={minimized.includes(connection.id)}
-                  onToggleMinimized={() => toggleMinimized(connection.id)}
-                  openingProject={opening}
-                  onOpenProject={(card) => void openCard(connection, card)}
-                  onRemoveProject={(card) => removeCard(connection, card)}
-                  onAddProject={() => setAddingTo(connection)}
-                  menu={
-                    <ConnectionMenu
-                      connection={connection}
-                      phase={phase}
-                      projects={cardsFor(connection)}
-                      server={summary?.server ?? null}
-                      onSettings={() => setSettingsFor(connection.key)}
-                      onChangeSignIn={() => setSignInFor(connection)}
-                      onRemove={
-                        connection.id === "local" ? undefined : () => removeConnection(connection)
-                      }
-                    />
-                  }
-                />
-              );
-            })}
-          </div>
-          {(waitingOn || importing) && (
-            <div className="home-pill fixed bottom-6 left-1/2 z-40 -translate-x-1/2 rounded-lg px-3 py-1.5 text-xs">
-              {waitingOn
-                ? `Waiting for Maestro on ${waitingOn}…`
-                : "Moving this project's board to its server…"}
+      {/* Between the drag strip and the version line; the page scrolls inside with no bar. */}
+      <div
+        data-more-up={more.up || undefined}
+        data-more-down={more.down || undefined}
+        className="home-scroll absolute inset-x-0 top-12 bottom-12"
+      >
+        <AccentBubbles variant="screen" className="home-bubbles" />
+        <div ref={scrollRef} className="absolute inset-0 scrollbar-none overflow-y-auto">
+          <main className="relative z-10 mx-auto max-w-[1200px] px-12 pt-8 pb-4">
+            <Hero working={totals.working} needYou={totals.needYou} toReview={totals.toReview} />
+            <div className="mb-5 grid grid-cols-2 gap-5">
+              <AddConnectionPanel />
+              <IntegrationsPanel />
             </div>
-          )}
-        </main>
+            <div className="grid grid-cols-2 gap-5">
+              {ordered.map((connection) => {
+                const phase = phases[connection.id] ?? { kind: "idle" as const };
+                const summary = summaries.get(connection.id);
+                return (
+                  <ConnectionPanel
+                    key={connection.id}
+                    connection={
+                      connection.id === "local" && summary?.hostname
+                        ? { ...connection, detail: summary.hostname }
+                        : connection
+                    }
+                    phase={phase}
+                    projects={cardsFor(connection)}
+                    runningAutomations={summary?.runningAutomations ?? 0}
+                    minimized={minimized.includes(connection.id)}
+                    onToggleMinimized={() => toggleMinimized(connection.id)}
+                    openingProject={opening}
+                    onOpenProject={(card) => void openCard(connection, card)}
+                    onRemoveProject={(card) => removeCard(connection, card)}
+                    onAddProject={() => setAddingTo(connection)}
+                    menu={
+                      <ConnectionMenu
+                        connection={connection}
+                        phase={phase}
+                        projects={cardsFor(connection)}
+                        server={summary?.server ?? null}
+                        onSettings={() => setSettingsFor(connection.key)}
+                        onChangeSignIn={() => setSignInFor(connection)}
+                        onRemove={
+                          connection.id === "local" ? undefined : () => removeConnection(connection)
+                        }
+                      />
+                    }
+                  />
+                );
+              })}
+            </div>
+          </main>
+        </div>
       </div>
 
+      {/* Outside the page, centred on the strip above and the version line below. */}
+      {more.up && (
+        <button
+          type="button"
+          data-direction="up"
+          onClick={() => scrollPage(-1)}
+          aria-label="Scroll up"
+          className="home-chevron absolute top-2.5 left-1/2 z-30 flex h-7 w-10 -translate-x-1/2 cursor-pointer items-center justify-center transition-opacity starting:opacity-0 [&>svg]:h-5 [&>svg]:w-5"
+        >
+          <ChevronUp strokeWidth={2.4} />
+        </button>
+      )}
+      {more.down && !busy && (
+        <button
+          type="button"
+          data-direction="down"
+          onClick={() => scrollPage(1)}
+          aria-label="Scroll down"
+          className="home-chevron absolute bottom-2.5 left-1/2 z-30 flex h-7 w-10 -translate-x-1/2 cursor-pointer items-center justify-center transition-opacity starting:opacity-0 [&>svg]:h-5 [&>svg]:w-5"
+        >
+          <ChevronDown strokeWidth={2.4} />
+        </button>
+      )}
+
       <VersionBadge />
+
+      {busy && (
+        <div className="home-pill absolute bottom-6 left-1/2 z-40 -translate-x-1/2 rounded-lg px-3 py-1.5 text-xs">
+          {waitingOn
+            ? `Waiting for Maestro on ${waitingOn}…`
+            : "Moving this project's board to its server…"}
+        </div>
+      )}
 
       <Dialog open={settingsFor !== null} onOpenChange={(open) => !open && setSettingsFor(null)}>
         {/* The close button defaults to `top-4`, which centres a 32px control against a 64px
