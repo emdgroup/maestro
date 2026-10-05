@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.35.0](https://github.com/emdgroup/maestro/compare/v0.34.0...v0.35.0) (2026-10-05)
+
+
+### Features
+
+* **home:** bound the scrolling page and add edge chevrons ([#480](https://github.com/emdgroup/maestro/issues/480)) ([2585978](https://github.com/emdgroup/maestro/commit/25859785c17e2633a273aaf90ec5061d0e722bb2))
+* **worktrees:** delete worktrees in the background ([#481](https://github.com/emdgroup/maestro/issues/481)) ([c8fb6a9](https://github.com/emdgroup/maestro/commit/c8fb6a9d59c5076e17eb0c62f7cc177d141a15ff))
+
+
+### Bug Fixes
+
+* **home:** scroll the dashboard when its panels overflow ([#475](https://github.com/emdgroup/maestro/issues/475)) ([9253bb8](https://github.com/emdgroup/maestro/commit/9253bb85bf0b4d79308103f8609d06ecee456e4d))
+
 ## [0.34.0](https://github.com/emdgroup/maestro/compare/v0.33.0...v0.34.0) (2026-10-05)
 
 
