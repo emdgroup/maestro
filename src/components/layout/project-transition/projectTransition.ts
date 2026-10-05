@@ -57,7 +57,15 @@ export function zoomToHome(project: Project, leave: () => void) {
     leave();
     // Home is drawn by now, from the summaries it already holds.
     tile = tileOf(project);
-    if (tile) tile.style.viewTransitionName = ZOOM;
+    if (!tile) return;
+    tile.style.viewTransitionName = ZOOM;
+    // The tiles fade in when their panel appears, and the browser takes its picture of Home on
+    // the first frame of that fade, so the project would shrink into an invisible tile. Finish the
+    // entrance now; the endless ones (a Working label's pulse) cannot be finished and need not be.
+    const panel = tile.closest("[data-home-connection]");
+    for (const animation of panel?.getAnimations({ subtree: true }) ?? []) {
+      if (animation.effect?.getComputedTiming().iterations !== Infinity) animation.finish();
+    }
   });
   // A name left behind would pair the tile with the project again on the next open.
   void transition?.finished.finally(() => {
