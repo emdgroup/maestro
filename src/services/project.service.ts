@@ -10,7 +10,7 @@ import type {
   ProjectConfigResponse,
   ProfilesDocument,
 } from "@/types/bindings";
-import { localConnectionId } from "@/contexts/ConnectionContext";
+const localConnectionId = "local";
 
 /**
  * Project service providing type-safe operations for project management.
@@ -109,30 +109,6 @@ export function useProjectRemotes(projectId: number | null) {
 }
 
 /**
- * Which of these projects a Maestro window holds, as the connection's server sees it.
- *
- * Refetched whenever that server says a lock changed, which it tells every window it serves.
- */
-export function useProjectLocks(connection: ConnectionKey, projectIds: number[]) {
-  const queryClient = useQueryClient();
-  useEffect(() => {
-    const unlisten = listen("project-locks-changed", () => {
-      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.locks() });
-    });
-    return () => {
-      void unlisten.then((stop) => stop());
-    };
-  }, [queryClient]);
-
-  return useQuery({
-    queryKey: projectQueryKeys.locksFor(connectionQueryKey(connection), projectIds),
-    queryFn: () => api.listProjectLocks(connection, projectIds),
-    enabled: projectIds.length > 0,
-    staleTime: 5000,
-  });
-}
-
-/**
  * What Home shows for each connection: its server's status and every project on it.
  *
  * Refetched every 5 seconds and whenever any server says a task, an automation run or a lock
@@ -203,24 +179,6 @@ export function useCreateProject() {
       void queryClient.invalidateQueries({ queryKey: key });
     },
     onError: createErrorToastHandler("Failed to create project"),
-  });
-}
-
-/**
- * Mutation hook for deleting a project
- */
-export function useDeleteProject(connectionId: number | string | null | undefined) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (projectId: number) => api.deleteProject(projectId),
-    onSuccess: (_data, projectId) => {
-      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.details(projectId) });
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.listByConnection(connectionId ?? localConnectionId),
-      });
-    },
-    onError: createErrorToastHandler("Failed to delete project"),
   });
 }
 

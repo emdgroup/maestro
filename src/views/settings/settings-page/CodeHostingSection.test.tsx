@@ -25,7 +25,7 @@ vi.mock("@/services/integration.service", async (importOriginal) => ({
  * The connect flow is the project picker's dialog, driven here exactly as the Issue tracking
  * page drives it. These tests are about whether the card offers it, not what it does.
  */
-vi.mock("@/views/project-picker/integrations-tab/IntegrationConnectDialog", () => ({
+vi.mock("@/views/home/integrations/IntegrationConnectDialog", () => ({
   IntegrationConnectDialog: ({ open, provider }: { open: boolean; provider: string }) =>
     open ? <div data-testid="connect-dialog">{provider}</div> : null,
 }));

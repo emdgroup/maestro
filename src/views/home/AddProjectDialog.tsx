@@ -9,13 +9,24 @@ import {
   useWslHome,
 } from "@/services/connection.service";
 import { useCloneProject, useCreateNewProject } from "@/services/project.service";
-import { FilePicker } from "@/views/project-picker/file-picker/FilePicker";
-import { ProviderRepoPicker } from "@/views/project-picker/provider-repo-picker/ProviderRepoPicker";
-import { deriveRepoName } from "@/views/project-picker/clone-project-dialog/CloneProjectDialog";
+import { FilePicker } from "@/views/home/file-picker/FilePicker";
+import { ProviderRepoPicker } from "@/views/home/provider-repo-picker/ProviderRepoPicker";
 import type { HomeConnection } from "./ConnectionPanel";
 import { HomeSheet } from "./HomeSheet";
 
 type Choice = "open" | "clone" | "create";
+
+/** `https://github.com/owner/repo.git` gives `repo`. */
+export function deriveRepoName(url: string): string {
+  return (
+    url
+      .trim()
+      .replace(/\/+$/, "")
+      .replace(/\.git$/, "")
+      .split("/")
+      .pop() ?? ""
+  );
+}
 
 const CHOICES: { choice: Choice; title: string; line: string; Icon: typeof Plus }[] = [
   {

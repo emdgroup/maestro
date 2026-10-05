@@ -9,7 +9,7 @@ import {
 import type { IntegrationStatus } from "@/services/integration.service";
 import { BrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { cn } from "@/lib/utils";
-import { IntegrationConnectDialog } from "@/views/project-picker/integrations-tab/IntegrationConnectDialog";
+import { IntegrationConnectDialog } from "@/views/home/integrations/IntegrationConnectDialog";
 import { ChooseServiceDialog } from "./ChooseServiceDialog";
 import { IntegrationDetailsDialog } from "./IntegrationDetailsDialog";
 

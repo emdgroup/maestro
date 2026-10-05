@@ -37,7 +37,7 @@ import {
   useListIntegrations,
   useProjectIssueTrackingConfig,
 } from "@/services/integration.service";
-import { IntegrationMissingDialog } from "@/views/project-picker/integrations-tab/IntegrationMissingDialog";
+import { IntegrationMissingDialog } from "@/views/home/integrations/IntegrationMissingDialog";
 import { useUpdater } from "@/hooks/useUpdater";
 import { useProjectStartupTab } from "@/hooks/useProjectStartupTab";
 import { useDefaultAgentFallback } from "@/hooks/useDefaultAgentFallback";

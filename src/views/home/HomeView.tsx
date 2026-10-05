@@ -10,8 +10,8 @@ import { ThemeToggle } from "@/components/common/theme-toggle/ThemeToggle";
 import { GlobalAccentColorPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
 import { WindowControls } from "@/components/layout/window-chrome/WindowControls";
 import { SettingsPage } from "@/views/settings/settings-page/SettingsPage";
-import { SshAuthModal } from "@/views/project-picker/ssh-auth-modal/SshAuthModal";
-import type { AuthSubmission } from "@/views/project-picker/ssh-auth-modal/ssh-auth-utils";
+import { SshAuthModal } from "@/views/home/ssh-auth-modal/SshAuthModal";
+import type { AuthSubmission } from "@/views/home/ssh-auth-modal/ssh-auth-utils";
 import {
   connectionQueryKeys,
   dockerQueryKeys,

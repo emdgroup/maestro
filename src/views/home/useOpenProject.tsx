@@ -16,7 +16,7 @@ import {
   isProjectLockedError,
   projectLockHolder,
 } from "@/lib/error-utils";
-import { GitInitDialog } from "@/views/project-picker/project-list/GitInitDialog";
+import { GitInitDialog } from "@/views/home/GitInitDialog";
 import {
   AlertDialog,
   AlertDialogAction,

@@ -4,7 +4,7 @@ import { BrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { Button } from "@/ui/button";
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
-import { IntegrationConnectDialog } from "@/views/project-picker/integrations-tab/IntegrationConnectDialog";
+import { IntegrationConnectDialog } from "@/views/home/integrations/IntegrationConnectDialog";
 import {
   PROVIDER_NAMES,
   useCodeHostingStatus,

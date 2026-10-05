@@ -32,7 +32,7 @@ vi.mock("@/views/settings/issue-tracking-forms/IssueTrackingProviderForm", () =>
     <div data-testid="provider-form">{provider}</div>
   ),
 }));
-vi.mock("@/views/project-picker/integrations-tab/IntegrationConnectDialog", () => ({
+vi.mock("@/views/home/integrations/IntegrationConnectDialog", () => ({
   IntegrationConnectDialog: () => null,
 }));
 

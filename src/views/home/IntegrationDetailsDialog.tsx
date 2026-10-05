@@ -4,7 +4,7 @@ import { Button } from "@/ui/button";
 import { BrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { useSaveIntegration, PROVIDER_NAMES } from "@/services/integration.service";
 import type { IntegrationStatus } from "@/services/integration.service";
-import { getProviderFields } from "@/views/project-picker/integrations-tab/integration-provider-config";
+import { getProviderFields } from "@/views/home/integrations/integration-provider-config";
 import { CapabilityTags } from "./IntegrationsPanel";
 import { HomeSheet } from "./HomeSheet";
 

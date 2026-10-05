@@ -71,7 +71,3 @@ export const useHomeStore = create<HomeState>()(
       }),
   })),
 );
-
-const IDLE: ConnectionPhase = { kind: "idle" };
-
-export const useConnectionPhase = (id: string) => useHomeStore((s) => s.phases[id] ?? IDLE);

@@ -1,21 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ProjectList } from "./ProjectList";
-import { ConnectionContext } from "@/contexts/ConnectionContext";
+import { useOpenProject } from "./useOpenProject";
 
-// Track call order
-const callOrder: string[] = [];
-const mockGitInitProject = vi.fn().mockImplementation(() => {
-  callOrder.push("gitInit");
-  return Promise.resolve();
-});
-const mockCreateProject = vi.fn().mockImplementation(() => {
-  callOrder.push("createProject");
-  return Promise.resolve({ id: 1, name: "test", path: "/test" });
-});
-
-const recentProjects = vi.hoisted(() => [] as Array<{ id: number; path: string }>);
 const requestTakeover = vi.hoisted(() => vi.fn());
 const openProject = vi.hoisted(() => vi.fn());
 const setSelectedProject = vi.hoisted(() => vi.fn());
@@ -34,47 +21,17 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 vi.mock("@/lib/tauri-utils", () => ({
-  api: {
-    openProject,
-    primeProjectServer,
-    releaseActiveProjectLock,
-  },
+  api: { openProject, primeProjectServer, releaseActiveProjectLock },
 }));
 
 vi.mock("@/services/project.service", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/services/project.service")>();
   return {
     ...actual,
-    useGitInitProject: () => ({
-      mutateAsync: mockGitInitProject,
-      isPending: false,
-    }),
-    useCreateProject: () => ({
-      mutateAsync: mockCreateProject,
-      isPending: false,
-    }),
-    useCloneProject: () => ({
-      mutateAsync: vi.fn(),
-      isPending: false,
-    }),
-    useCreateNewProject: () => ({
-      mutateAsync: vi.fn(),
-      isPending: false,
-    }),
-    useDeleteProject: () => ({
-      mutate: vi.fn(),
-      isPending: false,
-    }),
-    useRecentProjects: () => ({
-      data: recentProjects,
-      isLoading: false,
-    }),
+    useGitInitProject: () => ({ mutateAsync: vi.fn() }),
+    useCreateProject: () => ({ mutateAsync: vi.fn() }),
     useCheckIsGitRepo: () => ({ mutateAsync: () => Promise.resolve(true) }),
     useRequestProjectTakeover: () => ({ mutateAsync: requestTakeover }),
-    useProjectLocks: () => ({
-      data: [],
-      isLoading: false,
-    }),
   };
 });
 
@@ -83,67 +40,28 @@ vi.mock("@/store/projectStore", () => ({
   applyProjectStartupTab: () => Promise.resolve(),
 }));
 
-// Mock child components to isolate
-vi.mock("../ProjectsListLayout", () => ({
-  ProjectsListLayout: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="projects-list-layout">{children}</div>
-  ),
-}));
+function Harness() {
+  const { openProject: open, importing, dialogs } = useOpenProject();
+  return (
+    <>
+      <button onClick={() => void open(7)}>Open maestro</button>
+      {importing && <span>Moving this project's board to its server…</span>}
+      {dialogs}
+    </>
+  );
+}
 
-vi.mock("../FilePicker", () => ({
-  FilePicker: () => <div data-testid="file-picker">FilePicker</div>,
-}));
-
-vi.mock("../CloneProjectDialog", () => ({
-  CloneProjectDialog: () => null,
-}));
-
-vi.mock("../CreateProjectDialog", () => ({
-  CreateProjectDialog: () => null,
-}));
-
-vi.mock("../ConnectionHeader", () => ({
-  ConnectionHeader: () => <div data-testid="connection-header">ConnectionHeader</div>,
-}));
-
-vi.mock("../ProjectListItem", () => ({
-  ProjectListItem: () => <div data-testid="project-list-item">ProjectListItem</div>,
-}));
-
-vi.mock("@/hooks/useProjectPickerNavigation", () => ({
-  useProjectPickerNavigation: () => ({
-    navigateToConnections: vi.fn(),
-  }),
-}));
-
-function renderList() {
+function renderHarness() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <ConnectionContext.Provider
-        value={{
-          view: "projects",
-          setView: vi.fn(),
-          activeConnection: { type: "local", id: 0, displayName: "Local" },
-          setActiveConnection: vi.fn(),
-          preflightStatus: "passed",
-          preflightResult: null,
-          preflightError: null,
-          startPreflight: vi.fn(),
-          ignoreWarnings: vi.fn(),
-          resetPreflight: vi.fn(),
-        }}
-      >
-        <ProjectList />
-      </ConnectionContext.Provider>
+      <Harness />
     </QueryClientProvider>,
   );
 }
 
-describe("ProjectList", () => {
+describe("useOpenProject", () => {
   beforeEach(() => {
-    callOrder.length = 0;
-    recentProjects.length = 0;
     vi.clearAllMocks();
     primeProjectServer.mockResolvedValue(undefined);
     releaseActiveProjectLock.mockResolvedValue(undefined);
@@ -151,7 +69,6 @@ describe("ProjectList", () => {
 
   describe("a project whose board could not be moved to its server", () => {
     beforeEach(() => {
-      recentProjects.push({ id: 7, path: "/work/maestro" });
       openProject.mockResolvedValue({ id: 7, path: "/work/maestro" });
     });
 
@@ -159,8 +76,8 @@ describe("ProjectList", () => {
       primeProjectServer.mockRejectedValueOnce(
         "IMPORT_FAILED:The board could not be moved: disk full",
       );
-      renderList();
-      fireEvent.click(screen.getByText("/work/maestro"));
+      renderHarness();
+      fireEvent.click(screen.getByText("Open maestro"));
       await waitFor(() => expect(toastError).toHaveBeenCalled());
       const [message, options] = toastError.mock.calls[0];
       expect(message).toBe("The board could not be moved: disk full");
@@ -175,8 +92,8 @@ describe("ProjectList", () => {
 
     it("still opens when priming fails for another reason", async () => {
       primeProjectServer.mockRejectedValueOnce("agent failed to start");
-      renderList();
-      fireEvent.click(screen.getByText("/work/maestro"));
+      renderHarness();
+      fireEvent.click(screen.getByText("Open maestro"));
       await waitFor(() => expect(setSelectedProject).toHaveBeenCalled());
       expect(toastError).not.toHaveBeenCalled();
       expect(releaseActiveProjectLock).not.toHaveBeenCalled();
@@ -189,12 +106,12 @@ describe("ProjectList", () => {
           finishPrime = resolve;
         }),
       );
-      renderList();
-      fireEvent.click(screen.getByText("/work/maestro"));
-      await screen.findByText("Warming up…");
+      renderHarness();
+      fireEvent.click(screen.getByText("Open maestro"));
+      await waitFor(() => expect(primeProjectServer).toHaveBeenCalled());
 
       act(() => eventHandlers.get("project-importing")?.({ payload: 8 }));
-      expect(screen.getByText("Warming up…")).toBeTruthy();
+      expect(screen.queryByText("Moving this project's board to its server…")).toBeNull();
 
       act(() => eventHandlers.get("project-importing")?.({ payload: 7 }));
       expect(screen.getByText("Moving this project's board to its server…")).toBeTruthy();
@@ -202,20 +119,14 @@ describe("ProjectList", () => {
     });
   });
 
-  it("imports useGitInitProject from project.service and renders without error", () => {
-    const { container } = renderList();
-    expect(container).toBeTruthy();
-  });
-
   describe("a project another window holds", () => {
     beforeEach(() => {
-      recentProjects.push({ id: 7, path: "/work/maestro" });
       openProject.mockRejectedValueOnce(new Error("PROJECT_LOCKED:desktop"));
     });
 
     async function askForTakeover() {
-      renderList();
-      fireEvent.click(screen.getByText("/work/maestro"));
+      renderHarness();
+      fireEvent.click(screen.getByText("Open maestro"));
       await screen.findByText("Open in Maestro on desktop. Request takeover?");
       fireEvent.click(screen.getByText("Request takeover"));
     }

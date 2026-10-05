@@ -19,11 +19,11 @@ Notes for working in this directory. The repository-wide rules are in the root `
 | `reviewStore`          | Diff data, selected file, and loading state for `ReviewModal`                                                                                                 |
 | `sessionActivityStore` | Per-execution live status (`spawning` / `thinking` / `acting` / `awaiting`) shown in `AgentActivityPanel`                                                     |
 | `configStore`          | App-wide settings (theme, model defaults) cached from Tauri                                                                                                   |
+| `homeStore`            | Each connection's phase on Home (idle, signing in, connecting, up, failed, stopped, unreachable), attach order, minimized panels                              |
 
 ## Contexts
 
 - `KanbanContext` — provides `projectId`, `projectPath`, `onTaskClick` to the kanban component subtree (avoids prop-drilling through `BoardView → KanbanColumn → TaskCard`)
-- `ConnectionContext` — provides active `Connection` (local vs SSH vs WSL) and connection ID to the project picker subtree
 
 ## base-ui Component Pitfall
 
