@@ -12,17 +12,10 @@ import { WindowControls } from "@/components/layout/window-chrome/WindowControls
 import { SettingsPage } from "@/views/settings/settings-page/SettingsPage";
 import { SshAuthModal } from "@/views/home/ssh-auth-modal/SshAuthModal";
 import type { AuthSubmission } from "@/views/home/ssh-auth-modal/ssh-auth-utils";
-import {
-  connectionQueryKeys,
-  dockerQueryKeys,
-  useDockerConnections,
-  useSshConnections,
-  useWslConnections,
-  wslQueryKeys,
-} from "@/services/connection.service";
+import { connectionQueryKeys, dockerQueryKeys, wslQueryKeys } from "@/services/connection.service";
 import { api } from "@/lib/tauri-utils";
 import { getErrorMessage } from "@/lib/error-utils";
-import { connectionKeyId, projectKey, useHomeStore } from "@/store/homeStore";
+import { projectKey, useHomeStore } from "@/store/homeStore";
 import { AddConnectionPanel } from "./AddConnection";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { ConnectionMenu } from "./ConnectionMenu";
@@ -32,45 +25,12 @@ import { Hero } from "./Hero";
 import { IntegrationsPanel } from "./IntegrationsPanel";
 import type { ProjectCard } from "./ProjectTile";
 import { VersionBadge } from "./VersionBadge";
-import { attach, useConnectionLossEvents } from "./useConnectionActions";
+import { attach, signInWith, useConnectionLossEvents } from "./useConnectionActions";
+import { useHomeConnections } from "./useHomeConnections";
 import { useHomeSummaries } from "./useHomeSummaries";
 import { useOpenProject } from "./useOpenProject";
 
 const LOCAL: ConnectionKey = { type: "local" };
-
-/** Every saved connection, This computer first. */
-function useHomeConnections(): HomeConnection[] {
-  const { data: ssh = [] } = useSshConnections();
-  const { data: wsl = [] } = useWslConnections();
-  const { data: docker = [] } = useDockerConnections();
-  return useMemo(
-    () => [
-      { key: LOCAL, id: "local", name: "This computer", detail: "" },
-      ...ssh.map((connection) => ({
-        key: { type: "ssh", id: connection.id } as ConnectionKey,
-        id: connectionKeyId({ type: "ssh", id: connection.id }),
-        name: connection.display_name ?? connection.host,
-        detail: `${connection.username}@${connection.host}`,
-        ssh: connection,
-      })),
-      ...wsl.map((connection) => ({
-        key: { type: "wsl", id: connection.id } as ConnectionKey,
-        id: connectionKeyId({ type: "wsl", id: connection.id }),
-        name: connection.display_name ?? connection.distro_name,
-        detail: "WSL",
-        wsl: connection,
-      })),
-      ...docker.map((connection) => ({
-        key: { type: "docker", id: connection.id } as ConnectionKey,
-        id: connectionKeyId({ type: "docker", id: connection.id }),
-        name: connection.display_name ?? connection.container_name,
-        detail: connection.image_name ?? "Container",
-        docker: connection,
-      })),
-    ],
-    [ssh, wsl, docker],
-  );
-}
 
 /**
  * The screen Maestro opens on: every connection with the live state of its projects. It replaces
@@ -159,19 +119,9 @@ export function HomeView() {
   const changeSignIn = async (submission: AuthSubmission) => {
     const connection = signInFor;
     if (!connection || connection.key.type !== "ssh") return;
-    const id = connection.key.id;
     setSigningIn(true);
     try {
-      if (submission.method === "password")
-        await api.connectSshWithPassword(id, submission.password, submission.savePassword);
-      if (submission.method === "key-file")
-        await api.connectSshWithKey(
-          id,
-          submission.keyPath,
-          submission.passphrase ?? null,
-          submission.savePassphrase,
-        );
-      if (submission.method === "agent") await api.connectSshWithAgent(id);
+      await signInWith(connection.key, submission);
       setSignInFor(null);
       await queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
       await attach(connection.key);

@@ -56,14 +56,6 @@ export function connectionQueryKey(connection: ConnectionKey): number | string {
   return localConnectionId;
 }
 
-export function useRecentProjects(connection: ConnectionKey) {
-  return useQuery({
-    queryKey: projectQueryKeys.listByConnection(connectionQueryKey(connection)),
-    queryFn: () => api.getConnectionProjects(connection),
-    staleTime: Infinity,
-  });
-}
-
 /**
  * Query hook for fetching a single project by ID
  */

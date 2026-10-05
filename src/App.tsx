@@ -71,7 +71,7 @@ function App() {
 
   // Subscribe to project store for project selection
   const currentProject = useSelectedProject();
-  const { clearSelectedProject, setSelectedProject } = useSelectedProjectActions();
+  const { clearSelectedProject } = useSelectedProjectActions();
 
   // Query hooks for settings
   const { isLoading: settingsLoading, error: settingsError, data: appSettings } = useSettings();
@@ -300,8 +300,6 @@ function App() {
             currentProject={currentProject}
             activeView={activeTab}
             onViewChange={setActiveTab}
-            onProjectChange={setSelectedProject}
-            onBackToPicker={clearSelectedProject}
             onOpenSettings={openSettings}
             connectionQuiet={connectionHealth === "quiet"}
           />

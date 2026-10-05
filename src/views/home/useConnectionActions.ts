@@ -7,6 +7,7 @@ import { getErrorMessage } from "@/lib/error-utils";
 import { useConfigStore } from "@/store/configStore";
 import { connectionKeyId, useHomeStore } from "@/store/homeStore";
 import type { ConnectionPhase } from "@/store/homeStore";
+import type { AuthSubmission } from "./ssh-auth-modal/ssh-auth-utils";
 
 const setPhase = (id: string, phase: ConnectionPhase) =>
   useHomeStore.getState().setPhase(id, phase);
@@ -68,6 +69,23 @@ export async function signIn(
     return;
   }
   await attach(connection);
+}
+
+/** Sign in to an SSH host with what the sign-in dialog collected. The caller attaches after. */
+export async function signInWith(
+  connection: Extract<ConnectionKey, { type: "ssh" }>,
+  submission: AuthSubmission,
+) {
+  if (submission.method === "password")
+    await api.connectSshWithPassword(connection.id, submission.password, submission.savePassword);
+  if (submission.method === "key-file")
+    await api.connectSshWithKey(
+      connection.id,
+      submission.keyPath,
+      submission.passphrase ?? null,
+      submission.savePassphrase,
+    );
+  if (submission.method === "agent") await api.connectSshWithAgent(connection.id);
 }
 
 export async function stopServer(connection: ConnectionKey) {

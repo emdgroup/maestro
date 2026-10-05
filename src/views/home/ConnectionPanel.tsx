@@ -28,7 +28,12 @@ export interface HomeConnection {
   docker?: DockerConnection;
 }
 
-const ICONS = { local: Monitor, ssh: Server, wsl: SquareTerminal, docker: Container };
+export const CONNECTION_ICONS = {
+  local: Monitor,
+  ssh: Server,
+  wsl: SquareTerminal,
+  docker: Container,
+};
 
 const SERVER_BUSY = "server_busy: ";
 
@@ -267,7 +272,7 @@ export function ConnectionPanel({
   onAddProject,
   menu,
 }: ConnectionPanelProps) {
-  const Icon = ICONS[connection.key.type];
+  const Icon = CONNECTION_ICONS[connection.key.type];
   const up = phase.kind === "up";
 
   const status =
