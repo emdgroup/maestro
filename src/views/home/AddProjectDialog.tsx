@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { FolderOpen, GitFork, Plus } from "lucide-react";
-import { Dialog, DialogContent } from "@/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
   useDockerHome,
@@ -263,6 +262,13 @@ function AddProjectSheet({
               />
               <button
                 type="button"
+                onClick={() => setBrowsing("into")}
+                className="home-pill h-9 cursor-pointer rounded-xl px-3 text-xs"
+              >
+                Browse…
+              </button>
+              <button
+                type="button"
                 disabled={busy || !name.trim() || !into.trim()}
                 onClick={() =>
                   void finish(async () => {
@@ -283,20 +289,24 @@ function AddProjectSheet({
         </div>
       </HomeSheet>
 
-      <Dialog open={browsing !== null} onOpenChange={(open) => !open && setBrowsing(null)}>
-        <DialogContent className="flex h-150 flex-col p-0 md:max-w-4xl">
-          <FilePicker
-            connection={connection.ssh}
-            wslConnection={connection.wsl}
-            dockerConnection={connection.docker}
-            onProjectSelect={(path) => {
-              if (browsing === "folder") setFolder(path);
-              else setInto(path);
-              setBrowsing(null);
-            }}
-          />
-        </DialogContent>
-      </Dialog>
+      <HomeSheet
+        open={browsing !== null}
+        onOpenChange={(open) => !open && setBrowsing(null)}
+        eyebrow={`On ${connection.name}`}
+        title={browsing === "folder" ? "Choose a folder" : "Choose where it goes"}
+        className="sm:max-w-[620px]"
+      >
+        <FilePicker
+          connection={connection.ssh}
+          wslConnection={connection.wsl}
+          dockerConnection={connection.docker}
+          onProjectSelect={(path) => {
+            if (browsing === "folder") setFolder(path);
+            else setInto(path);
+            setBrowsing(null);
+          }}
+        />
+      </HomeSheet>
     </>
   );
 }

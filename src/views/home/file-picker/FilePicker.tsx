@@ -1,5 +1,4 @@
 import { useEffect, useCallback, useRef, useState } from "react";
-import { Button } from "@/ui/button";
 import type { SshConnection, WslConnection, DockerConnection } from "@/types/bindings";
 import { Folder, Home, FolderUp, HardDrive, FolderOpen } from "lucide-react";
 import { Switch } from "@/ui/switch";
@@ -190,28 +189,11 @@ export function FilePicker({
     <div
       ref={containerRef}
       tabIndex={0}
-      className="flex flex-col h-full max-h-full overflow-hidden outline-none"
+      className="mt-5 flex h-[420px] flex-col overflow-hidden outline-none"
     >
-      <div className="text-center p-6 pb-4 shrink-0">
-        <h2 className="text-2xl font-semibold mb-2">Select Project Directory</h2>
-        {connection && (
-          <p className="text-sm text-muted-foreground">
-            Connected to {connection.connection_string}
-          </p>
-        )}
-        {wslConnection && (
-          <p className="text-sm text-muted-foreground">WSL: {wslConnection.distro_name}</p>
-        )}
-        {dockerConnection && (
-          <p className="text-sm text-muted-foreground">
-            Container: {dockerConnection.container_name}
-          </p>
-        )}
-      </div>
-
-      <div className="flex-1 flex flex-col px-6 pb-6 min-h-0 overflow-hidden gap-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
         {/* Breadcrumb Navigation */}
-        <div className="pb-4 border-b border-border shrink-0">
+        <div className="shrink-0 text-xs">
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
@@ -220,9 +202,9 @@ export function FilePicker({
                     <button
                       {...props}
                       onClick={() => navigation.navigateToBreadcrumb(-1)}
-                      className="flex items-center gap-1 text-sm hover:text-accent transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5 cursor-pointer"
+                      className="flex cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-xs transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
                     >
-                      <Home className="w-4 h-4" />
+                      <Home className="size-3.5" />
                       <span>{navigation.isDrivesRoot ? "Drives" : "Root"}</span>
                     </button>
                   )}
@@ -237,7 +219,7 @@ export function FilePicker({
                         <button
                           {...props}
                           onClick={() => navigation.navigateToBreadcrumb(index)}
-                          className="text-sm hover:text-accent transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded px-1 py-0.5 cursor-pointer"
+                          className="cursor-pointer rounded-md px-1 py-0.5 font-mono text-xs transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
                         >
                           {part}
                         </button>
@@ -251,11 +233,11 @@ export function FilePicker({
         </div>
 
         {/* Directory List */}
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-foreground/[0.07] bg-background/40 p-1.5">
           {loading ? (
             <p className="text-sm text-muted-foreground text-center py-8">Loading directories...</p>
           ) : (
-            <div className="divide-y divide-border">
+            <div className="space-y-0.5">
               {/* Show drives on Windows when at drives root */}
               {navigation.isDrivesRoot ? (
                 initialization.drives.length === 0 ? (
@@ -270,11 +252,11 @@ export function FilePicker({
                       }}
                       onClick={() => navigation.navigateToDirectory(drive)}
                       disabled={loading}
-                      className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-muted/30 hover:text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
-                        keyboard.selectedIndex === index ? "bg-accent" : ""
+                      className={`flex w-full cursor-pointer items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 text-left font-mono text-xs transition-colors hover:bg-foreground/[0.07] focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-50 ${
+                        keyboard.selectedIndex === index ? "bg-foreground/[0.08]" : ""
                       }`}
                     >
-                      <HardDrive className="w-4 h-4 shrink-0" />
+                      <HardDrive className="size-4 shrink-0 text-muted-foreground" />
                       <span className="truncate">{drive}</span>
                     </button>
                   ))
@@ -290,11 +272,11 @@ export function FilePicker({
                       }}
                       onClick={navigation.navigateToParent}
                       disabled={loading}
-                      className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-muted/30 hover:text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
-                        keyboard.selectedIndex === 0 ? "bg-accent" : ""
+                      className={`flex w-full cursor-pointer items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 text-left font-mono text-xs transition-colors hover:bg-foreground/[0.07] focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-50 ${
+                        keyboard.selectedIndex === 0 ? "bg-foreground/[0.08]" : ""
                       }`}
                     >
-                      <FolderUp className="w-4 h-4 shrink-0" />
+                      <FolderUp className="size-4 shrink-0 text-muted-foreground" />
                       <span className="truncate">..</span>
                     </button>
                   )}
@@ -318,11 +300,11 @@ export function FilePicker({
                           }}
                           onClick={() => navigation.navigateToDirectory(dir)}
                           disabled={loading}
-                          className={`w-full text-left flex items-center gap-2 font-mono text-sm py-2.5 px-2 hover:bg-muted/30 hover:text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
-                            keyboard.selectedIndex === itemIndex ? "bg-accent" : ""
+                          className={`flex w-full cursor-pointer items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 text-left font-mono text-xs transition-colors hover:bg-foreground/[0.07] focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-50 ${
+                            keyboard.selectedIndex === itemIndex ? "bg-foreground/[0.08]" : ""
                           }`}
                         >
-                          <Folder className="size-4 shrink-0" />
+                          <Folder className="size-4 shrink-0 text-muted-foreground" />
                           <span className="truncate">{dir}</span>
                         </button>
                       );
@@ -335,7 +317,7 @@ export function FilePicker({
         </div>
 
         {/* Action Bar */}
-        <div className="border-t border-border flex items-center gap-4 shrink-0 pt-4">
+        <div className="flex shrink-0 items-center gap-4">
           <div className="flex items-center gap-2 shrink-0">
             <Switch
               id="show-hidden"
@@ -345,28 +327,27 @@ export function FilePicker({
             />
             <Label
               htmlFor="show-hidden"
-              className="text-xs font-normal cursor-pointer whitespace-nowrap"
+              className="cursor-pointer text-[11px] font-normal whitespace-nowrap text-muted-foreground"
             >
               Show hidden
             </Label>
           </div>
 
-          <div className="ml-auto">
-            <p className="text-xs text-muted-foreground font-mono truncate">
+          <div className="ml-auto min-w-0">
+            <p className="truncate font-mono text-[11px] text-muted-foreground">
               {navigation.isDrivesRoot ? "Select a drive" : navigation.currentPath}
             </p>
           </div>
 
-          <Button
+          <button
+            type="button"
             onClick={handleSelectCurrentDirectory}
             disabled={loading || externalLoading || navigation.isDrivesRoot}
-            variant="default"
-            size="default"
-            className="shrink-0 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+            className="flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl bg-primary px-4 text-xs text-primary-foreground disabled:opacity-50"
           >
-            <FolderOpen className="size-4" />
-            {externalLoading ? "Opening..." : "Open"}
-          </Button>
+            <FolderOpen className="size-3.5" />
+            {externalLoading ? "Opening…" : "Choose"}
+          </button>
         </div>
       </div>
     </div>
