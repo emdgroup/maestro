@@ -186,16 +186,9 @@ export function AgentActivityPanel({
   const composeBarRef = useRef<ComposeBarHandle>(null);
   const composeBarWrapperRef = useRef<HTMLDivElement>(null);
   const agentItemsCountRef = useRef(0);
-  const sessionUpdateRef = useRef<((payload: Record<string, unknown>) => void) | undefined>(
-    undefined,
-  );
   const canvasesRestoredRef = useRef<((surfaceIds: string[]) => void) | undefined>(undefined);
 
-  const [liveState, liveDispatch] = useAcpActivity(
-    sessionId,
-    sessionUpdateRef,
-    canvasesRestoredRef,
-  );
+  const [liveState, liveDispatch] = useAcpActivity(sessionId, canvasesRestoredRef);
   const {
     configOptions,
     configValues,
@@ -207,7 +200,7 @@ export function AgentActivityPanel({
     pendingElicitation,
     setPendingElicitation,
     pendingCanvasAwaits,
-  } = useAcpSessionLifecycle(sessionId, onUsageChangeRef, sessionUpdateRef);
+  } = useAcpSessionLifecycle(sessionId, onUsageChangeRef);
 
   const [, setScrollRestoreToken] = useState(0);
 
@@ -573,7 +566,7 @@ export function AgentActivityPanel({
   });
 
   // One prompt however many canvases came back, and only to ask the agent to arm `canvas_await` —
-  // after which every click is answered directly and costs nothing. `useAcpActivity` owns the
+  // after which every click is answered directly and costs nothing. `sessionRuntime` owns the
   // once-per-session part, which cannot live in this component: it remounts.
   useEffect(() => {
     canvasesRestoredRef.current = (surfaceIds: string[]) => {
@@ -614,15 +607,11 @@ export function AgentActivityPanel({
     }
   }, [lastItem, effectiveAuthKey, agentId, connection, lastUserMessage, setAuthRequired]);
 
+  // The output itself is buffered by the session's runtime; this only opens its tab.
   useEffect(() => {
     const unlisten = listen<{ terminal_id: string; output: string }>(
       `acp://terminal-output/${sessionId}`,
       (event) => {
-        liveDispatch({
-          type: "terminal_output",
-          terminalId: event.payload.terminal_id,
-          output: event.payload.output,
-        });
         const isAuth = event.payload.terminal_id.startsWith("auth-terminal-");
         openAcpTerminalTab(event.payload.terminal_id, { isAuthTerminal: isAuth });
       },
@@ -630,7 +619,7 @@ export function AgentActivityPanel({
     return () => {
       unlisten.then((fn) => fn?.());
     };
-  }, [sessionId, liveDispatch, openAcpTerminalTab]);
+  }, [sessionId, openAcpTerminalTab]);
 
   useEffect(() => {
     const unlisten = listen<string>(`acp://session-error/${sessionId}`, (e) => {
