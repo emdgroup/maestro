@@ -44,6 +44,7 @@ export interface ConnectionPanelProps {
   onToggleMinimized: () => void;
   openingProject: number | null;
   onOpenProject: (project: ProjectCard) => void;
+  onRemoveProject: (project: ProjectCard) => void;
   onAddProject: () => void;
   menu: ReactNode;
 }
@@ -253,6 +254,7 @@ export function ConnectionPanel({
   onToggleMinimized,
   openingProject,
   onOpenProject,
+  onRemoveProject,
   onAddProject,
   menu,
 }: ConnectionPanelProps) {
@@ -308,6 +310,7 @@ export function ConnectionPanel({
             project={project}
             opening={openingProject !== null && openingProject === project.projectId}
             onOpen={() => onOpenProject(project)}
+            onRemove={() => onRemoveProject(project)}
           />
         ))}
         <AddProjectTile onClick={onAddProject} />

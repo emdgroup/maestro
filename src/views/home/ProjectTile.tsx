@@ -1,4 +1,4 @@
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** What a tile shows about one project, from its connection's summary. */
@@ -32,7 +32,7 @@ export function projectStatus(project: ProjectCard): Status {
 /** `/home/billy/src/x` as `~/src/x`, `C:\Users\billy\src\x` as `~\src\x`. */
 export function displayPath(path: string) {
   return path.replace(
-    /^(\/home\/[^/]+|\/Users\/[^/]+|\/root|[A-Za-z]:\\Users\\[^\\]+)(?=[\\/]|$)/,
+    /^(\/home\/[^/]+|\/Users\/[^/]+|\/root|[A-Za-z]:[\\/]Users[\\/][^\\/]+)(?=[\\/]|$)/,
     "~",
   );
 }
@@ -57,9 +57,10 @@ interface TileProps {
   project: ProjectCard;
   opening: boolean;
   onOpen: () => void;
+  onRemove: () => void;
 }
 
-export function ProjectTile({ project, opening, onOpen }: TileProps) {
+export function ProjectTile({ project, opening, onOpen, onRemove }: TileProps) {
   const status = projectStatus(project);
   const context = project.blockingPrompt ? (
     <span className="text-amber-600 dark:text-amber-400">{project.blockingPrompt}</span>
@@ -69,38 +70,53 @@ export function ProjectTile({ project, opening, onOpen }: TileProps) {
     `Open on ${project.holder}`
   ) : null;
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      data-attention={project.needsYou}
-      className="home-pane flex min-h-[132px] cursor-pointer flex-col rounded-2xl p-4 text-left"
-    >
-      <div className="flex w-full items-start gap-2">
-        <div className="min-w-0">
-          <div className="truncate text-[17px] font-semibold tracking-[-0.025em]">
-            {project.name}
+    // The remove button sits over the status word rather than inside the tile, which is a button.
+    <div className="group/tile relative flex">
+      <button
+        type="button"
+        onClick={onOpen}
+        data-attention={project.needsYou}
+        className="home-pane flex min-h-[132px] w-full cursor-pointer flex-col rounded-2xl p-4 text-left"
+      >
+        <div className="flex w-full items-start gap-2">
+          <div className="min-w-0">
+            <div className="truncate text-[17px] font-semibold tracking-[-0.025em]">
+              {project.name}
+            </div>
+            <div className="truncate font-mono text-[11px] text-muted-foreground">
+              {displayPath(project.path)}
+            </div>
           </div>
-          <div className="truncate font-mono text-[11px] text-muted-foreground">
-            {displayPath(project.path)}
-          </div>
+          <span
+            className={cn(
+              "ml-auto shrink-0 text-[11px] font-medium",
+              !opening && "group-focus-within/tile:invisible group-hover/tile:invisible",
+              status.className,
+              status.rank === 1 && "animate-pulse",
+            )}
+          >
+            {opening ? <Loader2 className="size-3.5 animate-spin" /> : status.label}
+          </span>
         </div>
-        <span
-          className={cn(
-            "ml-auto shrink-0 text-[11px] font-medium",
-            status.className,
-            status.rank === 1 && "animate-pulse",
-          )}
+        <div className="mt-2 h-4 w-full truncate text-xs text-muted-foreground">{context}</div>
+        <div className="mt-auto flex gap-4 pt-3">
+          <Count value={project.working} label="working" className="home-working" />
+          <Count value={project.review} label="review" className="home-review" />
+          <Count value={project.queued} label="queued" />
+        </div>
+      </button>
+      {!opening && (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove ${project.name} from Home`}
+          title="Remove from Home"
+          className="invisible absolute top-3 right-3 grid size-6 cursor-pointer place-items-center rounded-full text-muted-foreground group-focus-within/tile:visible group-hover/tile:visible hover:bg-foreground/10 hover:text-foreground"
         >
-          {opening ? <Loader2 className="size-3.5 animate-spin" /> : status.label}
-        </span>
-      </div>
-      <div className="mt-2 h-4 w-full truncate text-xs text-muted-foreground">{context}</div>
-      <div className="mt-auto flex gap-4 pt-3">
-        <Count value={project.working} label="working" className="home-working" />
-        <Count value={project.review} label="review" className="home-review" />
-        <Count value={project.queued} label="queued" />
-      </div>
-    </button>
+          <X className="size-3.5" />
+        </button>
+      )}
+    </div>
   );
 }
 

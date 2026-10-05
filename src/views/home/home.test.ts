@@ -46,6 +46,7 @@ describe("displayPath", () => {
   it("shortens the home folder on either platform", () => {
     expect(displayPath("/home/billy/src/x")).toBe("~/src/x");
     expect(displayPath("C:\\Users\\billy\\src\\x")).toBe("~\\src\\x");
+    expect(displayPath("C:/Users/billy/maestro-demo")).toBe("~/maestro-demo");
     expect(displayPath("/data/x")).toBe("/data/x");
   });
 });

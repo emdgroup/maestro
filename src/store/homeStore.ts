@@ -25,10 +25,16 @@ export function connectionKeyId(connection: ConnectionKey): string {
 }
 
 const MINIMIZED_KEY = "home.minimized";
+const HIDDEN_KEY = "home.hidden";
 
-function readMinimized(): string[] {
+/** A project as Home's hidden list names it: its connection, then its path. */
+export function projectKey(connectionId: string, path: string) {
+  return `${connectionId}|${path}`;
+}
+
+function readList(key: string): string[] {
   try {
-    const stored: unknown = JSON.parse(localStorage.getItem(MINIMIZED_KEY) ?? "[]");
+    const stored: unknown = JSON.parse(localStorage.getItem(key) ?? "[]");
     return Array.isArray(stored) ? stored.filter((id) => typeof id === "string") : [];
   } catch {
     return [];
@@ -41,15 +47,22 @@ interface HomeState {
   attachedOrder: string[];
   /** Collapsed panels, remembered across restarts. */
   minimized: string[];
+  /**
+   * Projects removed from Home, by `projectKey`, remembered across restarts. Only hidden: the
+   * server still holds their boards, so opening the folder again brings them back.
+   */
+  hidden: string[];
   setPhase: (id: string, phase: ConnectionPhase) => void;
   toggleMinimized: (id: string) => void;
+  setHidden: (key: string, hidden: boolean) => void;
 }
 
 export const useHomeStore = create<HomeState>()(
   immer((set) => ({
     phases: {},
     attachedOrder: [],
-    minimized: readMinimized(),
+    minimized: readList(MINIMIZED_KEY),
+    hidden: readList(HIDDEN_KEY),
 
     setPhase: (id, phase) =>
       set((state) => {
@@ -68,6 +81,13 @@ export const useHomeStore = create<HomeState>()(
           ? state.minimized.filter((other) => other !== id)
           : [...state.minimized, id];
         localStorage.setItem(MINIMIZED_KEY, JSON.stringify(state.minimized));
+      }),
+
+    setHidden: (key, hidden) =>
+      set((state) => {
+        state.hidden = state.hidden.filter((other) => other !== key);
+        if (hidden) state.hidden.push(key);
+        localStorage.setItem(HIDDEN_KEY, JSON.stringify(state.hidden));
       }),
   })),
 );

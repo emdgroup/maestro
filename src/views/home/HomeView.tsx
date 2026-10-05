@@ -22,7 +22,7 @@ import {
 } from "@/services/connection.service";
 import { api } from "@/lib/tauri-utils";
 import { getErrorMessage } from "@/lib/error-utils";
-import { connectionKeyId, useHomeStore } from "@/store/homeStore";
+import { connectionKeyId, projectKey, useHomeStore } from "@/store/homeStore";
 import { AddConnectionPanel } from "./AddConnection";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { ConnectionMenu } from "./ConnectionMenu";
@@ -83,6 +83,8 @@ export function HomeView() {
   const attachedOrder = useHomeStore((s) => s.attachedOrder);
   const minimized = useHomeStore((s) => s.minimized);
   const toggleMinimized = useHomeStore((s) => s.toggleMinimized);
+  const hidden = useHomeStore((s) => s.hidden);
+  const setHidden = useHomeStore((s) => s.setHidden);
   const { openProject, openPath, opening, waitingOn, importing, dialogs } = useOpenProject();
   const [settingsFor, setSettingsFor] = useState<ConnectionKey | "app" | null>(null);
   const [addingTo, setAddingTo] = useState<HomeConnection | null>(null);
@@ -113,7 +115,24 @@ export function HomeView() {
   }, [connections, attachedOrder]);
 
   const cardsFor = (connection: HomeConnection): ProjectCard[] | null =>
-    summaries.get(connection.id)?.projects ?? null;
+    summaries
+      .get(connection.id)
+      ?.projects.filter((card) => !hidden.includes(projectKey(connection.id, card.path))) ?? null;
+
+  const removeCard = (connection: HomeConnection, card: ProjectCard) => {
+    const key = projectKey(connection.id, card.path);
+    setHidden(key, true);
+    toast.success(`${card.name} removed from Home`, {
+      description: "Its board stays on the server. Open the folder again to bring it back.",
+      action: { label: "Undo", onClick: () => setHidden(key, false) },
+    });
+  };
+
+  /** Opening a folder Home was told to forget brings its tile back. */
+  const openFolder = (path: string, connection: HomeConnection) => {
+    setHidden(projectKey(connection.id, path), false);
+    return openPath(path, connection.key);
+  };
   const allCards = up.flatMap((connection) => cardsFor(connection) ?? []);
   const totals = {
     working: allCards.reduce((sum, card) => sum + card.working, 0),
@@ -222,6 +241,7 @@ export function HomeView() {
                 onToggleMinimized={() => toggleMinimized(connection.id)}
                 openingProject={opening}
                 onOpenProject={(card) => void openCard(connection, card)}
+                onRemoveProject={(card) => removeCard(connection, card)}
                 onAddProject={() => setAddingTo(connection)}
                 menu={
                   <ConnectionMenu
@@ -269,7 +289,7 @@ export function HomeView() {
       <AddProjectDialog
         connection={addingTo}
         onClose={() => setAddingTo(null)}
-        onOpenPath={(path) => openPath(path, addingTo?.key ?? LOCAL)}
+        onOpenPath={(path) => openFolder(path, addingTo ?? connections[0])}
         onOpenProject={(projectId) => openProject(projectId)}
       />
       <SshAuthModal
