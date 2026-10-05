@@ -97,7 +97,8 @@ the connection, else nothing. Capacity and the next scheduled run were tried and
 long; there is no capacity gauge or slot count either, since it would not scale to dozens of agents.
 
 **Rename** is not in the `⋯` menu. Hovering a panel fades in a small pencil button right after the
-name (every connection but This computer, in every state). It turns the name into a `field` input
+name (SSH connections only for now, in every state: WSL and container connections have no name of
+their own yet, see `implementation.md`). It turns the name into a `field` input
 in place, text selected; Enter or leaving the field saves, Escape cancels, an empty name is ignored.
 
 **Minimized panel.** Clicking a connected panel anywhere that is not a tile, button, input or menu
