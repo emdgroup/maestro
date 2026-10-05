@@ -1080,6 +1080,87 @@
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
 }
+/* Home's page stops at the drag strip above and the version line below, and fades out at an edge
+   only while there is more of it that way. The lengths are registered so the fade can transition.
+   A mask stops every backdrop-filter inside it from seeing anything outside, which is why the
+   bubbles the glass panels blur live inside this box too. */
+@property --home-fade-top {
+  syntax: "<length>";
+  initial-value: 0px;
+  inherits: false;
+}
+@property --home-fade-bottom {
+  syntax: "<length>";
+  initial-value: 0px;
+  inherits: false;
+}
+.home-scroll {
+  transition:
+    --home-fade-top 0.25s,
+    --home-fade-bottom 0.25s;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--home-fade-top),
+    #000 calc(100% - var(--home-fade-bottom)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--home-fade-top),
+    #000 calc(100% - var(--home-fade-bottom)),
+    transparent 100%
+  );
+}
+.home-scroll[data-more-up] {
+  --home-fade-top: 56px;
+}
+.home-scroll[data-more-down] {
+  --home-fade-bottom: 56px;
+}
+/* The field is clipped at the strip now rather than the window's edge, so it fades out there too. */
+.home-bubbles {
+  -webkit-mask-image: linear-gradient(
+    to top,
+    transparent 0,
+    #000 16px,
+    #000 calc(100% - 48px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to top,
+    transparent 0,
+    #000 16px,
+    #000 calc(100% - 48px),
+    transparent
+  );
+}
+.home-chevron {
+  color: var(--accent);
+  filter: drop-shadow(0 0 4px color-mix(in oklab, var(--accent) 90%, transparent))
+    drop-shadow(0 0 10px color-mix(in oklab, var(--accent) 55%, transparent));
+}
+.home-chevron:hover {
+  filter: drop-shadow(0 0 5px var(--accent))
+    drop-shadow(0 0 16px color-mix(in oklab, var(--accent) 80%, transparent));
+}
+.home-chevron[data-direction="up"] > svg {
+  animation: home-nudge-up 1.8s ease-in-out infinite;
+}
+.home-chevron[data-direction="down"] > svg {
+  animation: home-nudge-down 1.8s ease-in-out infinite;
+}
+@keyframes home-nudge-up {
+  50% {
+    transform: translateY(-2px);
+  }
+}
+@keyframes home-nudge-down {
+  50% {
+    transform: translateY(2px);
+  }
+}
 /* Working is the accent, never green: green reads as done. Review is the Review column's purple. */
 /* Opening a project from Home: its tile and the project's window share `project-zoom`, so the
    browser grows one into the other (projectTransition.ts). The snapshots keep their top-left

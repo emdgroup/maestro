@@ -56,6 +56,12 @@ One full-window screen, no app header bar.
    connected yet. A panel keeps its place while signing in (spanning both columns) and joins the
    attached group once attached.
 6. **Version indicator** bottom-right (`v0.34.0`), opening the existing `UpdateCard` popover.
+7. **Scrolling.** Items 3 to 5 scroll, with no scrollbar, between two invisible boundaries: the
+   48px strip of corner controls above and the version line below. Nothing scrolls behind either.
+   At an edge with more content past it, the page fades out over 56px and a bare chevron glows in
+   the accent colour, centred outside the boundary (in the strip, or on the version line). A
+   click scrolls 85% of the visible height. With nothing more that way, no fade and no chevron.
+   The bubbles live inside the boundaries too, so the glass still has them to blur.
 
 ## Visual system
 
