@@ -65,12 +65,11 @@ async openProject(projectId: number) : Promise<Result<Project, string>> {
 }
 },
 /**
- * Release the active project lock held by this instance, and stop the connection servers it was
- * using. Called when the user navigates back to the project picker.
+ * Release the project lock this window holds. Called when the user goes back to Home.
  * 
- * This is where a connection server dies — leaving the project or quitting, not closing the last
- * session on it. Dropping the entry drops the child with it (`kill_on_drop`), and each reader
- * task ends its own sessions as its transport closes.
+ * The relays to the connections' servers stay, so Home can keep reading them; they live until
+ * the app closes. The sessions this window held are forgotten, not closed, as `ProjectKicked`
+ * leaves them: opening the project again adopts or reloads them from the server.
  */
 async releaseActiveProjectLock() : Promise<Result<null, string>> {
     try {

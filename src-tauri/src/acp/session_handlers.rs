@@ -497,8 +497,8 @@ pub async fn restore_acp_session(
     project_id: Option<i32>,
     task: TaskMetadata,
 ) -> Result<String, String> {
-    // A webview reload, and leaving a project for the picker, both leave the backend's session map
-    // untouched, and Session History lists a conversation whether or not it is open. Loading one
+    // A webview reload leaves the backend's session map untouched, and Session History lists a
+    // conversation whether or not it is open. Loading one
     // this side already holds would show the same session twice, so hand back the live one.
     let live = app_state
         .acp

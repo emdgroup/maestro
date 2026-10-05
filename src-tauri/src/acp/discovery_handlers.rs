@@ -62,8 +62,8 @@ const MAESTRO_REQUIRED_TOOLS: [(&str, &str); 2] = [
 /// Start the relay to a connection's resident server unless one is already up, deploying the
 /// server first where the connection needs it.
 ///
-/// Preflight is the usual caller, but not the only one: going back to the picker drops every
-/// relay, and the picker still has to ask the server who holds which project.
+/// Preflight is the usual caller, but not the only one: opening a project and the picker's lock
+/// badges attach too, so neither depends on a preflight having run first.
 pub async fn ensure_connection_server(
     app_state: &Arc<AppState>,
     connection_key: ConnectionKey,
