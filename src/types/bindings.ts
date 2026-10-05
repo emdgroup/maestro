@@ -92,6 +92,18 @@ async listProjectLocks(connection: ConnectionKey, projectIds: number[]) : Promis
 }
 },
 /**
+ * The connection's server status and every project it or this app knows of. Never starts a
+ * relay: a connection Home has not attached to answers "No connection server".
+ */
+async getHomeSummary(connection: ConnectionKey) : Promise<Result<HomeSummary, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_home_summary", { connection }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Ask whoever holds a project to give it up. `true` once it is this window's; the caller opens
  * it as usual after that.
  */
@@ -3598,6 +3610,36 @@ export type FileTransferResult = { transfer_id: string; bytes_transferred: numbe
  * A GitLab project option for combobox display.
  */
 export type GitLabProjectOption = { id: number; path_with_namespace: string; name: string; clone_url: string | null }
+export type HomeProject = { 
+/**
+ * `None` for a project only the server knows, which opening registers here.
+ */
+project_id: number | null; path: string; 
+/**
+ * The folder's name.
+ */
+name: string; queued: number; in_progress: number; review: number; 
+/**
+ * Agents mid-turn.
+ */
+working_agents: number; 
+/**
+ * Prompts waiting on the user, plus tasks with the ball on the user.
+ */
+needs_you: number; blocking_prompt: string | null; running_automations: string[]; lock_holder: string | null; 
+/**
+ * Held by this window.
+ */
+lock_yours: boolean }
+export type HomeSummary = { version: string; 
+/**
+ * RFC 3339.
+ */
+started_at: string; live_sessions: number; 
+/**
+ * Automation runs still going, across every project on the connection.
+ */
+running_runs: number; projects: HomeProject[] }
 /**
  * Returned to frontend via IPC — NEVER includes raw token (per D-01 security constraint)
  */

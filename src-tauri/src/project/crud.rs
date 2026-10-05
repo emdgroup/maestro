@@ -59,7 +59,7 @@ pub(crate) async fn register_project_in_db(
 /// Fetch projects for a connection from an open DB connection.
 /// Isolated into a helper so all borrow-checker temporaries are fully dropped
 /// before the caller proceeds to async SSH I/O.
-fn fetch_projects_from_db(
+pub(crate) fn fetch_projects_from_db(
     conn: &rusqlite::Connection,
     connection_key: ConnectionKey,
 ) -> Result<Vec<Project>, String> {

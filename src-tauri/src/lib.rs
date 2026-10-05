@@ -38,6 +38,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::open_project,
         crate::ipc::release_active_project_lock,
         crate::ipc::list_project_locks,
+        crate::ipc::get_home_summary,
         crate::ipc::request_project_takeover,
         crate::ipc::answer_project_takeover,
         crate::ipc::delete_project,

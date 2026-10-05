@@ -32,6 +32,8 @@ export const projectQueryKeys = {
   locks: () => [...projectQueryKeys.base, "locks"] as const,
   locksFor: (connectionId: number | string, ids: number[]) =>
     [...projectQueryKeys.locks(), connectionId, ids] as const,
+  home: () => [...projectQueryKeys.base, "home"] as const,
+  homeFor: (connectionId: number | string) => [...projectQueryKeys.home(), connectionId] as const,
   profiles: (projectId: number) => [...projectQueryKeys.base, "profiles", projectId] as const,
   remotes: (projectId: number) => [...projectQueryKeys.base, "remotes", projectId] as const,
 };
@@ -127,6 +129,34 @@ export function useProjectLocks(connection: ConnectionKey, projectIds: number[])
     queryFn: () => api.listProjectLocks(connection, projectIds),
     enabled: projectIds.length > 0,
     staleTime: 5000,
+  });
+}
+
+/**
+ * What Home shows for one connection: its server's status and every project on it.
+ *
+ * Refetched every 5 seconds and whenever any server says a task, an automation run or a lock
+ * changed. Fails with "No connection server" until the connection is attached.
+ */
+export function useHomeSummary(connection: ConnectionKey, enabled: boolean) {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const unlistens = ["tasks-changed", "automation-run-changed", "project-locks-changed"].map(
+      (event) =>
+        listen(event, () => {
+          void queryClient.invalidateQueries({ queryKey: projectQueryKeys.home() });
+        }),
+    );
+    return () => {
+      for (const unlisten of unlistens) void unlisten.then((stop) => stop());
+    };
+  }, [queryClient]);
+
+  return useQuery({
+    queryKey: projectQueryKeys.homeFor(connectionQueryKey(connection)),
+    queryFn: () => api.getHomeSummary(connection),
+    enabled,
+    refetchInterval: 5000,
   });
 }
 
