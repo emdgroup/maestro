@@ -1,5 +1,6 @@
 import { Loader2, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 
 /** What a tile shows about one project, from its connection's summary. */
 export interface ProjectCard {
@@ -109,15 +110,23 @@ export function ProjectTile({ project, opening, onOpen, onRemove }: TileProps) {
         </div>
       </button>
       {!opening && (
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label={`Remove ${project.name} from Home`}
-          title="Remove from Home"
-          className="invisible absolute top-3 right-3 grid size-6 cursor-pointer place-items-center rounded-full text-muted-foreground group-focus-within/tile:visible group-hover/tile:visible hover:bg-foreground/10 hover:text-foreground"
-        >
-          <X className="size-3.5" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onClick={onRemove}
+                aria-label={`Remove ${project.name} from Home`}
+                className="invisible absolute top-3 right-3 grid size-6 cursor-pointer place-items-center rounded-full text-muted-foreground group-focus-within/tile:visible group-hover/tile:visible hover:bg-foreground/10 hover:text-foreground"
+              />
+            }
+          >
+            <X className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipContent>
+            <p className="text-xs">Remove from Home</p>
+          </TooltipContent>
+        </Tooltip>
       )}
     </div>
   );

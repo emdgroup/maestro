@@ -10,6 +10,7 @@ import { useUpdateSshConnection } from "@/services/connection.service";
 import { useHomeStore } from "@/store/homeStore";
 import type { ConnectionPhase } from "@/store/homeStore";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { AddProjectTile, ProjectChip, ProjectTile, projectStatus } from "./ProjectTile";
 import type { ProjectCard } from "./ProjectTile";
 import { attach, connect, signIn } from "./useConnectionActions";
@@ -224,18 +225,26 @@ function ConnectionName({ connection }: { connection: HomeConnection }) {
         {connection.name}
       </div>
       {connection.ssh && (
-        <button
-          type="button"
-          aria-label="Rename"
-          title="Rename"
-          onClick={() => {
-            setDraft(connection.name);
-            setEditing(true);
-          }}
-          className="grid size-6 cursor-pointer place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover/panel:opacity-100 hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100"
-        >
-          <Pencil className="size-3.5" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                aria-label="Rename"
+                onClick={() => {
+                  setDraft(connection.name);
+                  setEditing(true);
+                }}
+                className="grid size-6 cursor-pointer place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover/panel:opacity-100 hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100"
+              />
+            }
+          >
+            <Pencil className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipContent>
+            <p className="text-xs">Rename</p>
+          </TooltipContent>
+        </Tooltip>
       )}
     </div>
   );
