@@ -10,7 +10,8 @@ import {
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
-import { Loader2 } from "lucide-react";
+import { ChevronLeft, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useSaveIntegration, PROVIDER_NAMES } from "@/services/integration.service";
 import { getProviderFields } from "./integration-provider-config";
 import { ProviderInstructions } from "./ProviderInstructions";
@@ -20,6 +21,11 @@ interface IntegrationConnectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: (id: string) => void;
+  /** Shows a back arrow before the title, when this dialog is the second step of a flow. */
+  onBack?: () => void;
+  /** Restyles the sheet and its backdrop, e.g. as Home's glass. */
+  contentClassName?: string;
+  overlayClassName?: string;
 }
 
 function BitbucketModeToggle({
@@ -57,6 +63,9 @@ export function IntegrationConnectDialog({
   open,
   onOpenChange,
   onSuccess,
+  onBack,
+  contentClassName,
+  overlayClassName,
 }: IntegrationConnectDialogProps) {
   const [token, setToken] = useState("");
   const [instanceUrl, setInstanceUrl] = useState("");
@@ -154,9 +163,24 @@ export function IntegrationConnectDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className={cn("sm:max-w-md", contentClassName)}
+        overlayClassName={overlayClassName}
+      >
         <DialogHeader>
-          <DialogTitle>Connect {providerName}</DialogTitle>
+          <div className="flex items-center gap-2">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                aria-label="Back"
+                className="-ml-1 grid size-7 cursor-pointer place-items-center rounded-full text-muted-foreground hover:bg-foreground/10"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+            )}
+            <DialogTitle>Connect {providerName}</DialogTitle>
+          </div>
           <DialogDescription>Enter your credentials to connect {providerName}.</DialogDescription>
         </DialogHeader>
 
