@@ -25,10 +25,16 @@ impl Summaries {
             })
     }
 
-    /// The client's own projects, listed even when the daemon holds nothing for them.
+    /// The client's own projects, listed even when the daemon holds nothing for them, under the
+    /// path the client sent so it can match them without knowing how the daemon canonicalizes.
     pub fn requested(&mut self, paths: &[String]) {
         for path in paths {
-            self.entry(canonical_project_path(path));
+            self.0
+                .entry(canonical_project_path(path))
+                .or_insert_with(|| ProjectSummary {
+                    project_path: path.clone(),
+                    ..ProjectSummary::default()
+                });
         }
     }
 
@@ -118,7 +124,7 @@ impl Summaries {
         }
     }
 
-    /// Every path, as `ListProjectLocks` takes them: what was sent beside its canonical form.
+    /// Every canonical path, paired with itself as `ListProjectLocks` takes them.
     pub fn lock_query(&self) -> Vec<(String, String)> {
         self.0
             .keys()
@@ -126,6 +132,7 @@ impl Summaries {
             .collect()
     }
 
+    /// `locks` as `ListProjectLocks` answers [`Self::lock_query`]: by canonical path.
     pub fn locks(&mut self, locks: Vec<ProjectLockInfo>) {
         for lock in locks {
             let summary = self.entry(lock.project_path);
@@ -212,8 +219,10 @@ mod tests {
             .unwrap();
 
         let mut summaries = Summaries::default();
-        // A trailing separator, so it only lines up with the store's rows once canonicalized.
-        summaries.requested(&[format!("{}/", requested.path().to_string_lossy())]);
+        // A trailing separator, so it only lines up with the store's rows once canonicalized. It
+        // comes back as sent.
+        let sent = format!("{}/", requested.path().to_string_lossy());
+        summaries.requested(&[sent.clone()]);
         summaries.project_store(&projects).unwrap();
         summaries.automations(&automations).unwrap();
         summaries.locks(vec![ProjectLockInfo {
@@ -229,7 +238,7 @@ mod tests {
 
         let paths: Vec<&str> = listed.keys().map(String::as_str).collect();
         let mut expected = vec![
-            requested_path.as_str(),
+            sent.as_str(),
             "/srv/automations",
             "/srv/sessions",
             "/srv/tasks",
@@ -237,7 +246,7 @@ mod tests {
         expected.sort();
         assert_eq!(paths, expected);
 
-        let mine = &listed[&requested_path];
+        let mine = &listed[&sent];
         assert_eq!(
             (mine.queued, mine.in_progress, mine.review, mine.needs_you),
             (1, 1, 1, 2)

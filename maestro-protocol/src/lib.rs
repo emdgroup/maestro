@@ -4723,7 +4723,8 @@ pub struct HomeSummaryResponse {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectSummary {
-    /// Canonical, as the server files the project's rows.
+    /// As the client sent it for a requested project, so it can be matched without knowing how
+    /// the server canonicalizes; canonical for the rest.
     pub project_path: String,
     pub queued: u32,
     pub in_progress: u32,
