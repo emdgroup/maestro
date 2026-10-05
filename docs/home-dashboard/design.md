@@ -125,7 +125,10 @@ Status by state:
 - The path under it, monospace `11px`, in the connection's own separator (`~\src\x` on Windows,
   `~/src/x` elsewhere).
 - A status word top-right, `11px`: **Working** (`--accent`, pulsing gently), **Needs you** (amber),
-  **Idle** (muted, open tasks but no agent), **Quiet** (faint, nothing open).
+  **Idle** (muted, open tasks but no agent), **Quiet** (faint, nothing open). Hovering the tile
+  swaps the word for a `✕` that removes the tile from Home. Removing only hides it, per connection
+  and path: the server keeps the board and would list the project again. A toast offers Undo, and
+  opening the folder again brings the tile back.
 - A tile that needs you is tinted amber all over (`pane.attn`). There is no edge or stripe.
 - One context line: the blocking prompt in amber (`Permission to run a migration`), else a running
   automation (`nightly-lint running`), else `Open in this window`, else `Open on <holder>`.

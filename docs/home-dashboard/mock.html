@@ -1332,6 +1332,14 @@
         c.min = !c.min;
         render();
       }
+      function removeTile(id, n) {
+        var c = conn(id);
+        c.proj = c.proj.filter(function (p) {
+          return p.n !== n;
+        });
+        render();
+        toast(n + " removed from Home");
+      }
       function tile(c, p) {
         var state = projState(p);
         return (
@@ -1341,13 +1349,20 @@
           p.n +
           '\')" class="pane ' +
           (p.needs ? "attn " : "") +
-          'rounded-2xl p-4 cursor-pointer flex flex-col min-h-[132px]">' +
+          'group/tile relative rounded-2xl p-4 cursor-pointer flex flex-col min-h-[132px]">' +
           '<div class="flex items-start gap-2"><div class="min-w-0"><div class="hl text-[17px] font-semibold truncate">' +
           p.n +
           '</div><div class="text-[11px] text-muted-foreground font-mono truncate">' +
           p.path +
           "</div></div>" +
-          '<span class="ml-auto text-[11px] font-medium ' +
+          '<button id="remove-' +
+          p.n +
+          '" title="Remove from Home" onclick="event.stopPropagation();removeTile(\'' +
+          c.id +
+          "','" +
+          p.n +
+          '\')" class="invisible group-hover/tile:visible absolute top-3 right-3 h-6 w-6 rounded-full grid place-items-center text-muted-foreground hover:bg-foreground/10 hover:text-foreground cursor-pointer">✕</button>' +
+          '<span class="ml-auto group-hover/tile:invisible text-[11px] font-medium ' +
           state[1] +
           " " +
           (p.work && !p.needs ? "pulse" : "") +
