@@ -183,6 +183,11 @@ export interface SettingsHost {
   inProject: boolean;
   /** False for a project that is not a git repository. */
   isGitRepo: boolean;
+  /**
+   * A connection without a project: Home's connection menu, which offers that connection's own
+   * pages (concurrency, background server, webhooks) and the app's.
+   */
+  forConnection?: boolean;
 }
 
 /**
@@ -196,7 +201,11 @@ export interface SettingsHost {
 export function visiblePages(host: SettingsHost): SettingsPageDef[] {
   return orderedPages(
     SETTINGS_PAGES.filter(
-      (page) => (host.inProject || page.scope === "app") && (page.id !== "git" || host.isGitRepo),
+      (page) =>
+        (host.inProject ||
+          page.scope === "app" ||
+          (host.forConnection === true && page.scope === "connection")) &&
+        (page.id !== "git" || host.isGitRepo),
     ),
   );
 }

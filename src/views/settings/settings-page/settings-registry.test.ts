@@ -26,3 +26,19 @@ describe("resolveDeepLinkedPage", () => {
     expect(resolveDeepLinkedPage(inProject, "nonsense")).toBeNull();
   });
 });
+
+describe("visiblePages", () => {
+  /** Home's connection menu: that connection's pages first, no project pages, then the app's. */
+  it("offers a connection's pages without a project", () => {
+    const ids = visiblePages({ inProject: false, isGitRepo: false, forConnection: true }).map(
+      (page) => page.id,
+    );
+    expect(ids.slice(0, 3)).toEqual(["concurrency", "background-server", "webhooks"]);
+    expect(ids).not.toContain("agents");
+    expect(ids).toContain("appearance");
+  });
+
+  it("offers only the app's pages with neither", () => {
+    expect(onWelcome.every((page) => page.scope === "app")).toBe(true);
+  });
+});
