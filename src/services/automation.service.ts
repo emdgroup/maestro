@@ -288,17 +288,31 @@ export function useSetBackgroundServerAutostartMutation() {
   });
 }
 
+const showStopError = createErrorToastHandler("Could not stop the background server");
+
 /** Stop the server, ending every session and run on it. */
 export function useStopBackgroundServerMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (connection: ConnectionKey) => api.stopBackgroundServer(connection),
-    // Hook-level, so it still runs once the caller has left the project and unmounted.
+    // Hook-level, so these still run once the caller has left the project and unmounted. Home
+    // shows the connection stopping meanwhile, and puts it back if the stop fails.
+    onMutate: (connection) => {
+      const id = connectionKeyId(connection);
+      const before = useHomeStore.getState().phases[id];
+      useHomeStore.getState().setPhase(id, { kind: "stopping" });
+      return { before };
+    },
     onSuccess: (_, connection) => {
       queryClient.removeQueries({ queryKey: automationQueryKeys.base });
       useHomeStore.getState().setPhase(connectionKeyId(connection), { kind: "stopped" });
     },
-    onError: createErrorToastHandler("Could not stop the background server"),
+    onError: (error, connection, context) => {
+      useHomeStore
+        .getState()
+        .setPhase(connectionKeyId(connection), context?.before ?? { kind: "idle" });
+      showStopError(error);
+    },
   });
 }

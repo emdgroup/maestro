@@ -60,10 +60,18 @@ function Spinner() {
 }
 
 /** The three steps of attaching, inline under the header. */
-function ConnectingSteps({ connection, step }: { connection: HomeConnection; step: number }) {
+function ConnectingSteps({
+  connection,
+  step,
+  starting,
+}: {
+  connection: HomeConnection;
+  step: number;
+  starting?: boolean;
+}) {
   const steps = [
     connection.key.type === "ssh" ? "Signing in" : `Reaching ${connection.name}`,
-    "Reaching the Maestro server",
+    starting ? "Starting the Maestro server" : "Reaching the Maestro server",
     "Reading projects",
   ];
   return (
@@ -283,7 +291,9 @@ export function ConnectionPanel({
         </span>
       ) : null
     ) : phase.kind === "connecting" ? (
-      <span>Connecting…</span>
+      <span>{phase.starting ? "Starting…" : "Connecting…"}</span>
+    ) : phase.kind === "stopping" ? (
+      <span>Stopping…</span>
     ) : phase.kind === "stopped" ? (
       <span>Server stopped</span>
     ) : phase.kind === "signin" || phase.kind === "failed" ? (
@@ -338,7 +348,14 @@ export function ConnectionPanel({
       />
     );
   } else if (phase.kind === "connecting") {
-    body = <ConnectingSteps connection={connection} step={phase.step} />;
+    body = <ConnectingSteps connection={connection} step={phase.step} starting={phase.starting} />;
+  } else if (phase.kind === "stopping") {
+    body = (
+      <div className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Spinner />
+        Stopping the Maestro server. Its agent sessions and automation runs end with it.
+      </div>
+    );
   } else if (phase.kind === "failed") {
     body = <FailedBody connection={connection} phase={phase} />;
   } else if (phase.kind === "stopped") {
@@ -375,7 +392,8 @@ export function ConnectionPanel({
         "group/panel home-glass rounded-[22px] p-5",
         phase.kind !== "idle" && "col-span-2",
         up && "cursor-pointer",
-        (phase.kind === "stopped" || phase.kind === "unreachable") && "opacity-75",
+        (phase.kind === "stopping" || phase.kind === "stopped" || phase.kind === "unreachable") &&
+          "opacity-75",
       )}
     >
       <div className="flex items-center gap-3">

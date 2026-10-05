@@ -130,7 +130,9 @@ function phaseLine(phase: ConnectionPhase, cards: ProjectCard[] | null) {
     case "up":
       return cards ? `${cards.length} ${cards.length === 1 ? "project" : "projects"}` : "Connected";
     case "connecting":
-      return "Connecting…";
+      return phase.starting ? "Starting…" : "Connecting…";
+    case "stopping":
+      return "Stopping…";
     case "signin":
       return "Needs a password";
     case "failed":
@@ -245,10 +247,10 @@ function ConnectionEntry({
               </div>
             )}
           </>
-        ) : phase.kind === "connecting" ? (
+        ) : phase.kind === "connecting" || phase.kind === "stopping" ? (
           <div className="flex items-center justify-center gap-2 py-5 text-xs text-muted-foreground">
             <Loader2 className="size-3.5 animate-spin" />
-            Connecting…
+            {line}
           </div>
         ) : (
           <div className="flex flex-col items-center gap-3 px-3 py-5 text-center text-xs text-muted-foreground">

@@ -18,7 +18,12 @@ const setPhase = (id: string, phase: ConnectionPhase) =>
  */
 export async function attach(connection: ConnectionKey, replace = false) {
   const id = connectionKeyId(connection);
-  setPhase(id, { kind: "connecting", step: 1 });
+  const before = useHomeStore.getState().phases[id]?.kind;
+  setPhase(id, {
+    kind: "connecting",
+    step: 1,
+    starting: before === "stopped" || before === "stopping",
+  });
   const response = await commands.preflightConnection(connection, replace);
   if (response.status === "error") {
     setPhase(id, { kind: "failed", error: response.error, result: null });
@@ -88,13 +93,26 @@ export async function signInWith(
   if (submission.method === "agent") await api.connectSshWithAgent(connection.id);
 }
 
+/** Shows the panel stopping until the server is gone, and puts it back if the stop fails. */
+async function stopping(connection: ConnectionKey) {
+  const id = connectionKeyId(connection);
+  const before = useHomeStore.getState().phases[id];
+  setPhase(id, { kind: "stopping" });
+  try {
+    await api.stopBackgroundServer(connection);
+  } catch (error) {
+    setPhase(id, before ?? { kind: "idle" });
+    throw error;
+  }
+}
+
 export async function stopServer(connection: ConnectionKey) {
-  await api.stopBackgroundServer(connection);
+  await stopping(connection);
   setPhase(connectionKeyId(connection), { kind: "stopped" });
 }
 
 export async function restartServer(connection: ConnectionKey) {
-  await api.stopBackgroundServer(connection);
+  await stopping(connection);
   await attach(connection);
 }
 

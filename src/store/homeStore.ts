@@ -12,11 +12,16 @@ import type { ConnectionKey, PreflightResult } from "@/types/bindings";
 export type ConnectionPhase =
   | { kind: "idle" }
   | { kind: "signin"; error: string | null }
-  /** Step 0 signs in or reaches the host, 1 reaches the Maestro server, 2 reads the projects. */
-  | { kind: "connecting"; step: 0 | 1 | 2 }
+  /**
+   * Step 0 signs in or reaches the host, 1 reaches the Maestro server, 2 reads the projects.
+   * `starting` when the server was stopped, so step 1 starts it rather than finding it.
+   */
+  | { kind: "connecting"; step: 0 | 1 | 2; starting?: boolean }
   | { kind: "up" }
   /** The connect stopped short: the server is busy with another build, or tools are missing. */
   | { kind: "failed"; error: string | null; result: PreflightResult | null }
+  /** Asked to stop; its sessions and runs are ending. */
+  | { kind: "stopping" }
   | { kind: "stopped" }
   | { kind: "unreachable" };
 
