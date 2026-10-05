@@ -65,11 +65,15 @@ export function ConnectionMenu({
   const state =
     up && server
       ? `Maestro server ${server.version} · up ${formatUptime(server.startedAt)}`
-      : phase.kind === "stopped"
-        ? "Server stopped"
-        : phase.kind === "unreachable"
-          ? "Not answering"
-          : "Not connected";
+      : phase.kind === "stopping"
+        ? "Stopping server"
+        : phase.kind === "connecting" && phase.starting
+          ? "Starting server"
+          : phase.kind === "stopped"
+            ? "Server stopped"
+            : phase.kind === "unreachable"
+              ? "Not answering"
+              : "Not connected";
 
   const working = (projects ?? []).reduce((sum, project) => sum + project.working, 0);
   const holders = [

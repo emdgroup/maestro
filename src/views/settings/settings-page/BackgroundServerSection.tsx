@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Cog, MessageSquare, Server } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
 import { Label } from "@/ui/label";
@@ -167,7 +168,13 @@ export function BackgroundServerSection({ connection }: { connection: Connection
               variant="destructive"
               onClick={() => {
                 setConfirming(false);
-                stop.mutate(connection, { onSuccess: clearSelectedProject });
+                // Leave now: stopping waits on every session to end, and the project is gone
+                // either way. The toast carries the wait; the mutation's own handler reports errors.
+                clearSelectedProject();
+                toast.promise(stop.mutateAsync(connection), {
+                  loading: "Stopping the background server",
+                  success: "Background server stopped",
+                });
               }}
             >
               Stop server
