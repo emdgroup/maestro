@@ -181,7 +181,7 @@ line, and the chosen one highlighted:
 
 - **Open a folder** (`A repository already on this machine`): path field starting at the connection's
   usual source folder with its own separator, `Browse…` (the existing remote `FilePicker`), `Open`.
-- **Clone** (`From GitHub or any git URL`): URL field, `Into` folder field, `Clone`.
+- **Clone** (`From GitHub or any git URL`): a Provider tab (repositories from connected integrations, as `ProviderRepoPicker` lists them) and a URL tab, then the `Into` folder field and `Clone`.
 - **Start fresh** (`A new, empty repository`): project name, `in` folder field, `Create`.
 
 **Add a connection**, opened from one of three `pane` buttons in the dashed panel (SSH host, WSL

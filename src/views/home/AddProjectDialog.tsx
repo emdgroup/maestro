@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
-import { FolderOpen, GitFork, Plus } from "lucide-react";
+import { useState } from "react";
+import { FolderOpen, GitFork, Globe, Link, Plus } from "lucide-react";
 import { Dialog, DialogContent } from "@/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   useDockerHome,
@@ -9,6 +10,7 @@ import {
 } from "@/services/connection.service";
 import { useCloneProject, useCreateNewProject } from "@/services/project.service";
 import { FilePicker } from "@/views/project-picker/file-picker/FilePicker";
+import { ProviderRepoPicker } from "@/views/project-picker/provider-repo-picker/ProviderRepoPicker";
 import { deriveRepoName } from "@/views/project-picker/clone-project-dialog/CloneProjectDialog";
 import type { HomeConnection } from "./ConnectionPanel";
 import { HomeSheet } from "./HomeSheet";
@@ -80,21 +82,19 @@ function AddProjectSheet({
   const home = useHomeFolder(connection);
   const sep = home?.includes("\\") ? "\\" : "/";
   const [choice, setChoice] = useState<Choice | null>(null);
-  const [folder, setFolder] = useState("");
-  const [into, setInto] = useState("");
+  // Both start at the home folder, which may still be loading, until the user types.
+  const [folderTyped, setFolder] = useState<string | null>(null);
+  const [intoTyped, setInto] = useState<string | null>(null);
+  const folder = folderTyped ?? (home ? home + sep : "");
+  const into = intoTyped ?? home ?? "";
   const [url, setUrl] = useState("");
+  const [cloneTab, setCloneTab] = useState("provider");
+  const [provider, setProvider] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [browsing, setBrowsing] = useState<"folder" | "into" | null>(null);
   const [busy, setBusy] = useState(false);
   const { mutateAsync: cloneProject } = useCloneProject();
   const { mutateAsync: createProject } = useCreateNewProject();
-
-  useEffect(() => {
-    if (home && !into) {
-      setInto(home);
-      setFolder(home + sep);
-    }
-  }, [home, into, sep]);
 
   const ids = {
     connectionId: connection.key.type === "ssh" ? connection.key.id : null,
@@ -168,14 +168,45 @@ function AddProjectSheet({
           )}
           {choice === "clone" && (
             <div className="space-y-2">
-              <input
-                aria-label="Repository URL"
-                autoFocus
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                placeholder="github.com/owner/repo or any git URL"
-                className={cn(FIELD, "w-full")}
-              />
+              <Tabs value={cloneTab} onValueChange={setCloneTab}>
+                <TabsList className="w-full">
+                  <TabsTrigger value="provider">
+                    <Globe className="size-3.5" />
+                    Provider
+                  </TabsTrigger>
+                  <TabsTrigger value="url">
+                    <Link className="size-3.5" />
+                    URL
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="provider">
+                  <ProviderRepoPicker
+                    disabled={busy}
+                    onRepoSelected={(cloneUrl, _name, selected) => {
+                      setUrl(cloneUrl);
+                      setProvider(selected ?? null);
+                    }}
+                  />
+                  {provider && url && (
+                    <div className="mt-2 truncate font-mono text-[11px] text-muted-foreground">
+                      {url}
+                    </div>
+                  )}
+                </TabsContent>
+                <TabsContent value="url">
+                  <input
+                    aria-label="Repository URL"
+                    autoFocus
+                    value={url}
+                    onChange={(event) => {
+                      setUrl(event.target.value);
+                      setProvider(null);
+                    }}
+                    placeholder="github.com/owner/repo or any git URL"
+                    className={cn(FIELD, "w-full")}
+                  />
+                </TabsContent>
+              </Tabs>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-muted-foreground">Into</span>
                 <input
@@ -193,7 +224,7 @@ function AddProjectSheet({
                         url: url.trim(),
                         targetPath: `${into.trim().replace(/[\\/]+$/, "")}${sep}${repoName}`,
                         ...ids,
-                        provider: null,
+                        provider,
                       });
                       await onOpenProject(created.id);
                     })

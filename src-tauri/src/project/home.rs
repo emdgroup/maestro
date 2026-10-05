@@ -18,6 +18,8 @@ pub struct HomeSummary {
     pub live_sessions: u32,
     /// Automation runs still going, across every project on the connection.
     pub running_runs: u32,
+    /// This machine's name, for This computer only.
+    pub hostname: Option<String>,
     pub projects: Vec<HomeProject>,
 }
 
@@ -103,6 +105,10 @@ pub async fn get_home_summary(
         started_at: summary.status.started_at,
         live_sessions: summary.status.live_sessions,
         running_runs: summary.status.running_runs,
+        hostname: matches!(connection, ConnectionKey::Local)
+            .then(crate::project::lock::hostname)
+            .flatten()
+            .map(str::to_string),
         projects,
     })
 }

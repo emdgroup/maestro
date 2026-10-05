@@ -7,7 +7,7 @@ import { useShortcuts } from "@/hooks/useShortcuts";
 import { motion, useAnimationControls } from "framer-motion";
 import { useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { AppHeader } from "@/components/layout/app-header/AppHeader";
-import { ProjectPickerView } from "@/views/project-picker/ProjectPickerView";
+import { HomeView } from "@/views/home/HomeView";
 import { useSettings } from "@/services/settings.service";
 import { useActiveSessionsQuery } from "@/services/execution.service";
 import { useSessionNotifications } from "@/hooks/useSessionNotifications";
@@ -283,7 +283,7 @@ function App() {
   }
 
   if (!currentProject) {
-    return <ProjectPickerView />;
+    return <HomeView />;
   }
 
   const fallback = (

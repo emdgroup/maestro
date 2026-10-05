@@ -130,3 +130,31 @@ pub async fn list_docker_connections(
         .map_err(|e| format!("DB row failed: {e}"))?;
     Ok(rows)
 }
+
+/// Delete a container connection and its associated project history.
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_docker_connection(
+    app_state: State<'_, Arc<AppState>>,
+    connection_id: i32,
+) -> Result<(), String> {
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {e}"))?;
+    conn.execute(
+        "DELETE FROM projects WHERE docker_connection_id = ?",
+        [connection_id],
+    )
+    .map_err(|e| format!("Failed to remove projects: {e}"))?;
+    let rows_deleted = conn
+        .execute(
+            "DELETE FROM docker_connections WHERE id = ?",
+            [connection_id],
+        )
+        .map_err(|e| format!("Failed to delete Docker connection: {e}"))?;
+    if rows_deleted == 0 {
+        return Err(format!("Docker connection {connection_id} not found"));
+    }
+    Ok(())
+}

@@ -37,20 +37,20 @@ describe("app launch", () => {
     await expect(browser).toHaveTitle("Maestro");
   });
 
-  it("renders the project picker rather than an error boundary", async () => {
-    // Nothing is selected on a fresh data directory, so the picker is the expected first screen.
-    // The tagline is a stable anchor: ProjectPicker.tsx renders it unconditionally.
-    await expect(browser.$("h3=An agent orchestrator tool.")).toBeDisplayed();
+  it("renders Home rather than an error boundary", async () => {
+    // Nothing is selected on a fresh data directory, so Home is the expected first screen.
+    // The subtitle is a stable anchor: Hero.tsx renders it unconditionally.
+    await expect(browser.$("div=Conduct your agents in concert")).toBeDisplayed();
 
     // The boot sequence surfaces backend failures as this banner instead of throwing, so a
-    // rendered picker alone does not prove the backend came up.
+    // rendered Home alone does not prove the backend came up.
     expect(await browser.$("body").getText()).not.toContain("Error loading settings");
   });
 
-  it("offers the local connection", async () => {
-    // Scoped to the span that actually holds the text — a bare `*=` match resolves to an
+  it("lists this computer", async () => {
+    // Scoped to the element that actually holds the text — a bare `*=` match resolves to an
     // enclosing element that reports itself as not displayed.
-    await expect(browser.$("span*=Browse local filesystem")).toBeDisplayed();
+    await expect(browser.$("div=This computer")).toBeDisplayed();
   });
 });
 

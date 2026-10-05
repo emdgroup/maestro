@@ -2443,6 +2443,17 @@ async listDockerConnections() : Promise<Result<DockerConnection[], string>> {
 }
 },
 /**
+ * Delete a container connection and its associated project history.
+ */
+async deleteDockerConnection(connectionId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_docker_connection", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * List all connected integrations from the registry.
  * Runs a silent one-time migration: if the registry is empty for a known provider
  * but a legacy key exists, moves it to the new keyed format.
@@ -3638,7 +3649,11 @@ started_at: string; live_sessions: number;
 /**
  * Automation runs still going, across every project on the connection.
  */
-running_runs: number; projects: HomeProject[] }
+running_runs: number; 
+/**
+ * This machine's name, for This computer only.
+ */
+hostname: string | null; projects: HomeProject[] }
 /**
  * Returned to frontend via IPC — NEVER includes raw token (per D-01 security constraint)
  */

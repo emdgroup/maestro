@@ -1060,6 +1060,16 @@
         });
         show("proj-scrim");
       }
+      function cloneTab(t) {
+        ["provider", "url"].forEach(function (x) {
+          document.getElementById("clone-tab-" + x).className =
+            "clone-tab flex-1 h-7 rounded-md cursor-pointer " +
+            (x === t ? "bg-card shadow-sm" : "text-muted-foreground");
+        });
+        document.getElementById("clone-provider").style.display =
+          t === "provider" ? "flex" : "none";
+        document.getElementById("clone-url").style.display = t === "url" ? "block" : "none";
+      }
       function pickProj(o) {
         ["open", "clone", "create"].forEach(function (x) {
           $("opt-" + x).classList.toggle("sel", x === o);
@@ -1079,7 +1089,7 @@
             '">Open</button></div>';
         else if (o === "clone")
           d =
-            '<div class="space-y-2"><input id="clone-url" name="clone-url" class="field w-full h-9 px-3 rounded-xl text-xs font-mono" placeholder="github.com/owner/repo or any git URL"/><div class="flex gap-2 items-center"><span class="text-[11px] text-muted-foreground">Into</span><input id="clone-into" name="clone-into" class="field flex-1 h-9 px-3 rounded-xl text-xs font-mono" value="' +
+            '<div class="space-y-2"><div class="flex gap-1 p-[3px] rounded-lg bg-foreground/5 text-xs"><button id="clone-tab-provider" onclick="cloneTab(\'provider\')" class="clone-tab flex-1 h-7 rounded-md cursor-pointer bg-card shadow-sm">Provider</button><button id="clone-tab-url" onclick="cloneTab(\'url\')" class="clone-tab flex-1 h-7 rounded-md cursor-pointer text-muted-foreground">URL</button></div><div id="clone-provider" class="flex gap-2"><button id="clone-gh" class="pill h-8 px-3 rounded-xl text-xs cursor-pointer">GitHub</button><button id="clone-gl" class="pill h-8 px-3 rounded-xl text-xs cursor-pointer">GitLab</button></div><input id="clone-url" name="clone-url" style="display:none" class="field w-full h-9 px-3 rounded-xl text-xs font-mono" placeholder="github.com/owner/repo or any git URL"/><div class="flex gap-2 items-center"><span class="text-[11px] text-muted-foreground">Into</span><input id="clone-into" name="clone-into" class="field flex-1 h-9 px-3 rounded-xl text-xs font-mono" value="' +
             h +
             '"/><button id="clone-go" onclick="projDone()" class="' +
             BTN +

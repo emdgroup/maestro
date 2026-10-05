@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
@@ -133,12 +133,12 @@ export function useProjectLocks(connection: ConnectionKey, projectIds: number[])
 }
 
 /**
- * What Home shows for one connection: its server's status and every project on it.
+ * What Home shows for each connection: its server's status and every project on it.
  *
  * Refetched every 5 seconds and whenever any server says a task, an automation run or a lock
- * changed. Fails with "No connection server" until the connection is attached.
+ * changed. Only ask for attached connections: the rest fail with "No connection server".
  */
-export function useHomeSummary(connection: ConnectionKey, enabled: boolean) {
+export function useHomeSummaries(connections: ConnectionKey[]) {
   const queryClient = useQueryClient();
   useEffect(() => {
     const unlistens = ["tasks-changed", "automation-run-changed", "project-locks-changed"].map(
@@ -152,11 +152,12 @@ export function useHomeSummary(connection: ConnectionKey, enabled: boolean) {
     };
   }, [queryClient]);
 
-  return useQuery({
-    queryKey: projectQueryKeys.homeFor(connectionQueryKey(connection)),
-    queryFn: () => api.getHomeSummary(connection),
-    enabled,
-    refetchInterval: 5000,
+  return useQueries({
+    queries: connections.map((connection) => ({
+      queryKey: projectQueryKeys.homeFor(connectionQueryKey(connection)),
+      queryFn: () => api.getHomeSummary(connection),
+      refetchInterval: 5000,
+    })),
   });
 }
 

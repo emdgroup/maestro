@@ -239,6 +239,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::docker_download_file,
         crate::ipc::save_docker_connection,
         crate::ipc::list_docker_connections,
+        crate::ipc::delete_docker_connection,
         // Integration management (Phase 55)
         crate::ipc::list_integrations,
         crate::ipc::save_integration,

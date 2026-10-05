@@ -26,10 +26,10 @@ use crate::project::Project;
 /// two must be changed together. What follows it is the holder's label.
 pub const PROJECT_LOCKED_PREFIX: &str = "PROJECT_LOCKED:";
 
-/// How this window introduces itself to whoever it takes a project from.
-fn label() -> &'static str {
-    static LABEL: OnceLock<String> = OnceLock::new();
-    LABEL.get_or_init(|| {
+/// This machine's hostname, if `hostname` answers.
+pub(crate) fn hostname() -> Option<&'static str> {
+    static NAME: OnceLock<Option<String>> = OnceLock::new();
+    NAME.get_or_init(|| {
         std::process::Command::new("hostname")
             .no_console_window()
             .output()
@@ -37,8 +37,13 @@ fn label() -> &'static str {
             .and_then(|out| String::from_utf8(out.stdout).ok())
             .map(|name| name.trim().to_string())
             .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| "another machine".to_string())
     })
+    .as_deref()
+}
+
+/// How this window introduces itself to whoever it takes a project from.
+fn label() -> &'static str {
+    hostname().unwrap_or("another machine")
 }
 
 fn connection_of(project: &Project) -> ConnectionKey {
