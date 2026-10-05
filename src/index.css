@@ -954,7 +954,12 @@
   border: 1px solid color-mix(in oklab, var(--foreground) 9%, transparent);
   box-shadow: 0 18px 40px -24px rgb(0 0 0 / 0.35);
 }
-.home-glass::before,
+/* Panels are clearer than popups, so the bubbles drifting behind them stay distinct. */
+.home-glass::before {
+  background: color-mix(in oklab, var(--card) 30%, transparent);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  backdrop-filter: blur(8px) saturate(140%);
+}
 .home-pop {
   background: color-mix(in oklab, var(--card) 42%, transparent);
   -webkit-backdrop-filter: blur(20px) saturate(150%);
@@ -987,7 +992,7 @@
     0 20px 50px -18px rgb(0 0 0 / 0.45);
 }
 .home-pane {
-  background: color-mix(in oklab, var(--background) 38%, transparent);
+  background: color-mix(in oklab, var(--background) 28%, transparent);
   border: 1px solid color-mix(in oklab, var(--foreground) 7%, transparent);
   transition:
     background 0.18s,
