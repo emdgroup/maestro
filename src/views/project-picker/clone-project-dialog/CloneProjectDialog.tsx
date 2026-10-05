@@ -264,7 +264,7 @@ export function CloneProjectDialog({
   );
 }
 
-function deriveRepoName(url: string): string {
+export function deriveRepoName(url: string): string {
   try {
     const cleaned = url
       .trim()

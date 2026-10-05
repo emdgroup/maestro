@@ -1,6 +1,11 @@
 import { useState, type ReactNode } from "react";
 import { Check, Container, Loader2, Monitor, Pencil, Server, SquareTerminal } from "lucide-react";
-import type { ConnectionKey, SshConnection } from "@/types/bindings";
+import type {
+  ConnectionKey,
+  DockerConnection,
+  SshConnection,
+  WslConnection,
+} from "@/types/bindings";
 import { useUpdateSshConnection } from "@/services/connection.service";
 import { useHomeStore } from "@/store/homeStore";
 import type { ConnectionPhase } from "@/store/homeStore";
@@ -18,6 +23,8 @@ export interface HomeConnection {
   /** The host under the name: the machine, `user@host`, `WSL`, or the container's image. */
   detail: string;
   ssh?: SshConnection;
+  wsl?: WslConnection;
+  docker?: DockerConnection;
 }
 
 const ICONS = { local: Monitor, ssh: Server, wsl: SquareTerminal, docker: Container };

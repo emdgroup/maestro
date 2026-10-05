@@ -31,7 +31,15 @@ const KINDS: { kind: Kind; label: string; Icon: typeof Server }[] = [
 const BUTTON = "h-9 cursor-pointer rounded-xl bg-primary px-4 text-xs text-primary-foreground";
 
 /** The checklist an added connection goes through, read from its phase on Home. */
-function Checklist({ target, host, error }: { target: string; host: string; error: string | null }) {
+function Checklist({
+  target,
+  host,
+  error,
+}: {
+  target: string;
+  host: string;
+  error: string | null;
+}) {
   const phase = useHomeStore((s) => s.phases[target]);
   // Reaching the host comes before the connection has a phase; the attach then installs and
   // starts the server in one call, so those two steps finish together.
@@ -61,7 +69,11 @@ function Checklist({ target, host, error }: { target: string; host: string; erro
   );
 }
 
-function SshForm({ onConnect }: { onConnect: (run: () => Promise<ConnectionKey>, host: string) => void }) {
+function SshForm({
+  onConnect,
+}: {
+  onConnect: (run: () => Promise<ConnectionKey>, host: string) => void;
+}) {
   const [address, setAddress] = useState("");
   const [name, setName] = useState("");
   const [auth, setAuth] = useState<Auth>("agent");
@@ -138,7 +150,8 @@ function SshForm({ onConnect }: { onConnect: (run: () => Promise<ConnectionKey>,
         ))}
       </div>
       <div className="mt-2 min-h-[44px] text-xs text-muted-foreground">
-        {auth === "agent" && "Uses the keys your SSH agent already holds. Nothing is stored by Maestro."}
+        {auth === "agent" &&
+          "Uses the keys your SSH agent already holds. Nothing is stored by Maestro."}
         {auth === "key" && (
           <div className="flex gap-2">
             <input
@@ -196,7 +209,11 @@ function SshForm({ onConnect }: { onConnect: (run: () => Promise<ConnectionKey>,
   );
 }
 
-function WslList({ onConnect }: { onConnect: (run: () => Promise<ConnectionKey>, host: string) => void }) {
+function WslList({
+  onConnect,
+}: {
+  onConnect: (run: () => Promise<ConnectionKey>, host: string) => void;
+}) {
   const { data: distros = [] } = useWslDistros();
   const { data: saved = [] } = useWslConnections();
   return (
@@ -340,8 +357,7 @@ export function AddConnectionPanel() {
   };
 
   const offered = KINDS.filter(
-    ({ kind: offer }) =>
-      offer === "ssh" || (offer === "wsl" ? distros.length > 0 : !noContainers),
+    ({ kind: offer }) => offer === "ssh" || (offer === "wsl" ? distros.length > 0 : !noContainers),
   );
   const title = KINDS.find((entry) => entry.kind === kind)?.label ?? "";
 
