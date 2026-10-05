@@ -275,18 +275,20 @@ previous one, so a window never holds projects it is not showing.
 
 **Transitions**, drawn in `transitions.html` beside this file:
 
-- **Opening from Home** (a tile, a chip, a folder, a clone): once the project is ready, a card grows
-  out of its tile to cover the window (0.38 s), the window switches underneath it, and the card
-  fades off the project (0.22 s). A project with no tile yet grows from the middle of the window.
-  The tile keeps its spinner while the project is getting ready.
-- **The house** plays it backwards: a card covers the project, the window switches to Home, and the
-  card shrinks into the project's tile (or its chip) and fades.
+- **Opening from Home** (a tile, a chip, a folder, a clone): once the project is ready, the tile
+  grows into the project's window (0.4 s) while Home fades out behind it. It is a view transition:
+  the browser snapshots the tile and the window, both named `project-zoom`, and morphs one into the
+  other, so the real content moves rather than a placeholder. A project with no tile yet
+  cross-fades in. The tile keeps its spinner while the project is getting ready.
+- **The house** plays it backwards: the window shrinks into the project's tile (or its chip) while
+  Home fades in.
 - **Switching** from the header's menus: the project's views slide out vertically on the click, and
   the next project's slide in from the other side once it is open. The direction follows the menus'
   order, connection by connection: a project further down comes in from below, one higher up from
   above. An open that does not happen (it fails, or waits on a takeover) slides the current project
   back.
-- With Reduce motion on, the card only fades and the slide only cross-fades.
+- With Reduce motion on, or a webview without view transitions, opening and going Home switch at
+  once, and the slide only cross-fades.
 
 ## Open items
 

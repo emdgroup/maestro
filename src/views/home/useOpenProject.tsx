@@ -38,8 +38,11 @@ function connectionIds(connection: ConnectionKey) {
 }
 
 export interface OpenProjectOptions {
-  /** Runs once the project is ready, before the window switches to it; the switch waits for it. */
-  beforeShow?: (project: Project) => Promise<unknown> | void;
+  /**
+   * Switches the window to the project once it is ready, by calling `show`, wrapped in whatever
+   * transition the caller plays. Without it the window switches straight away.
+   */
+  switchTo?: (project: Project, show: () => void) => Promise<unknown>;
   /** An open that ended without switching: it failed, or waits on a takeover or a git init. */
   onAbandon?: () => void;
 }
@@ -113,8 +116,8 @@ export function useOpenProject(options: OpenProjectOptions = {}) {
         primeProject(projectId),
         applyProjectStartupTab(project.id),
       ]);
-      await options.beforeShow?.(project);
-      setSelectedProject(project, isGitRepo);
+      const show = () => setSelectedProject(project, isGitRepo);
+      await (options.switchTo ? options.switchTo(project, show) : show());
     } catch (error) {
       options.onAbandon?.();
       if (isProjectLockedError(error)) {

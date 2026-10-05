@@ -29,7 +29,7 @@ import { attach, signInWith, useConnectionLossEvents } from "./useConnectionActi
 import { useHomeConnections } from "./useHomeConnections";
 import { useHomeSummaries } from "./useHomeSummaries";
 import { useOpenProject } from "./useOpenProject";
-import { growIntoProject, tileBox } from "@/components/layout/project-transition/projectTransition";
+import { zoomIntoProject } from "@/components/layout/project-transition/projectTransition";
 
 const LOCAL: ConnectionKey = { type: "local" };
 
@@ -47,7 +47,7 @@ export function HomeView() {
   const hidden = useHomeStore((s) => s.hidden);
   const setHidden = useHomeStore((s) => s.setHidden);
   const { openProject, openPath, opening, waitingOn, importing, dialogs } = useOpenProject({
-    beforeShow: (project) => growIntoProject(tileBox(project)),
+    switchTo: zoomIntoProject,
   });
   const [settingsFor, setSettingsFor] = useState<ConnectionKey | "app" | null>(null);
   const [addingTo, setAddingTo] = useState<HomeConnection | null>(null);

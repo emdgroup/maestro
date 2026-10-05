@@ -310,7 +310,8 @@ function App() {
   return (
     <TooltipProvider>
       <ShortcutHintProvider>
-        <div className="app flex flex-col h-screen bg-background">
+        {/* Named so the view transition from Home morphs the project's tile into this window. */}
+        <div className="app flex flex-col h-screen bg-background [view-transition-name:project-zoom]">
           <AppHeader
             currentProject={currentProject}
             activeView={activeTab}

@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { flushSync } from "react-dom";
 import type { useAnimationControls } from "framer-motion";
 import type { Project } from "@/types/bindings";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
@@ -7,41 +7,62 @@ import { PAGE_TRANSITION_DURATION, PAGE_TRANSITION_EASING } from "@/utils/consta
 
 /**
  * The two ways the window changes project, see "Navigation into a project" in
- * docs/home-dashboard/design.md: from Home a card grows out of the project's tile and back into
- * it, and between projects the view slides up or down by the projects' order in the header's menus.
+ * docs/home-dashboard/design.md: from Home the project grows out of its tile and back into it, and
+ * between projects the view slides up or down by the projects' order in the header's menus.
  */
 
-export interface Box {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
+/** The name the tile and the project's window share, so the browser morphs one into the other. */
+const ZOOM = "project-zoom";
 
-type Zoom =
-  | { kind: "open"; from: Box | null; grown: () => void }
-  | { kind: "close"; to: () => Box | null };
-
-export const useZoomStore = create<{ zoom: Zoom | null }>(() => ({ zoom: null }));
-
-/** Grow a card from `from`, or the middle of the window, until it covers the window. */
-export function growIntoProject(from: Box | null): Promise<void> {
-  return new Promise((grown) => useZoomStore.setState({ zoom: { kind: "open", from, grown } }));
-}
-
-/** Cover the window now, then shrink into `to` once Home has drawn the tile it asks for. */
-export function shrinkToHome(to: () => Box | null) {
-  useZoomStore.setState({ zoom: { kind: "close", to } });
-}
-
-/** Where the project's tile, or its chip on a minimized panel, sits on Home. */
-export function tileBox(project: Project): Box | null {
+/** The project's tile on Home, or its chip on a minimized panel. */
+function tileOf(project: Project): HTMLElement | null {
   const connection = connectionKeyId(connectionKeyFromProject(project));
   const panel = document.querySelector(`[data-home-connection="${CSS.escape(connection)}"]`);
-  const tile = panel?.querySelector(`[data-home-project="${CSS.escape(project.path)}"]`);
-  if (!tile) return null;
-  const { left, top, width, height } = tile.getBoundingClientRect();
-  return { left, top, width, height };
+  return (
+    panel?.querySelector<HTMLElement>(`[data-home-project="${CSS.escape(project.path)}"]`) ?? null
+  );
+}
+
+/**
+ * Run `update` as a view transition: the browser snapshots the window before and after and
+ * animates between them, the project's tile and window morphing into each other. Without the API
+ * (an older WebKitGTK) or with Reduce motion on, the switch is immediate.
+ */
+function morph(update: () => void): ViewTransition | null {
+  if (
+    !document.startViewTransition ||
+    document.documentElement.classList.contains("reduce-motion")
+  ) {
+    update();
+    return null;
+  }
+  return document.startViewTransition(() => flushSync(update));
+}
+
+/** Open the project out of its tile. `show` switches the window to it. */
+export function zoomIntoProject(project: Project, show: () => void) {
+  const tile = tileOf(project);
+  if (tile) tile.style.viewTransitionName = ZOOM;
+  const transition = morph(() => {
+    if (tile) tile.style.viewTransitionName = "";
+    show();
+  });
+  return transition?.updateCallbackDone ?? Promise.resolve();
+}
+
+/** Go back to Home, the project shrinking into its tile. `leave` switches the window to Home. */
+export function zoomToHome(project: Project, leave: () => void) {
+  let tile: HTMLElement | null = null;
+  const transition = morph(() => {
+    leave();
+    // Home is drawn by now, from the summaries it already holds.
+    tile = tileOf(project);
+    if (tile) tile.style.viewTransitionName = ZOOM;
+  });
+  // A name left behind would pair the tile with the project again on the next open.
+  void transition?.finished.finally(() => {
+    if (tile) tile.style.viewTransitionName = "";
+  });
 }
 
 type Controls = ReturnType<typeof useAnimationControls>;

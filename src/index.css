@@ -1081,6 +1081,24 @@
   backdrop-filter: blur(6px);
 }
 /* Working is the accent, never green: green reads as done. Review is the Review column's purple. */
+/* Opening a project from Home: its tile and the project's window share `project-zoom`, so the
+   browser grows one into the other (projectTransition.ts). The snapshots keep their top-left
+   corner and are cropped, not stretched, while the box between them changes shape. */
+::view-transition-group(project-zoom) {
+  animation-duration: 0.4s;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+::view-transition-old(project-zoom),
+::view-transition-new(project-zoom) {
+  height: 100%;
+  object-fit: cover;
+  object-position: left top;
+  animation-duration: 0.4s;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.4s;
+}
 .home-working {
   color: var(--accent);
 }

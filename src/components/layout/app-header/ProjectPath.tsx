@@ -22,11 +22,10 @@ import { useHomeConnections } from "@/views/home/useHomeConnections";
 import { useHomeSummaries } from "@/views/home/useHomeSummaries";
 import { useOpenProject } from "@/views/home/useOpenProject";
 import {
-  shrinkToHome,
   slideBack,
   slideOut,
-  tileBox,
   whenSlidOut,
+  zoomToHome,
 } from "@/components/layout/project-transition/projectTransition";
 
 const segment =
@@ -295,7 +294,7 @@ export function ProjectPath({ project }: { project: Project }) {
   const hidden = useHomeStore((s) => s.hidden);
   const setHidden = useHomeStore((s) => s.setHidden);
   const { openProject, openPath, opening, dialogs } = useOpenProject({
-    beforeShow: whenSlidOut,
+    switchTo: (_project, show) => whenSlidOut().then(show),
     onAbandon: slideBack,
   });
   const [addingTo, setAddingTo] = useState<HomeConnection | null>(null);
@@ -340,8 +339,7 @@ export function ProjectPath({ project }: { project: Project }) {
 
   // The project shrinks back into its tile on Home.
   const goHome = () => {
-    shrinkToHome(() => tileBox(project));
-    clearSelectedProject();
+    zoomToHome(project, clearSelectedProject);
   };
 
   const submitSignIn = async (submission: AuthSubmission) => {

@@ -9,7 +9,6 @@ import { AppErrorBoundary } from "@/components/common/AppErrorBoundary";
 import { AppContextMenu } from "@/components/common/context-menu/AppContextMenu";
 import { WindowResizeHandles } from "@/components/layout/window-chrome/WindowResizeHandles";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ProjectZoomLayer } from "@/components/layout/project-transition/ProjectZoomLayer";
 
 // Detect and apply system theme synchronously before React renders
 // This prevents flash of unstyled content on startup
@@ -32,8 +31,6 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <AppErrorBoundary>
           <App />
         </AppErrorBoundary>
-        {/* Outside App, which swaps Home for the project underneath it. */}
-        <ProjectZoomLayer />
       </ThemeProvider>
     </QueryProvider>
   </React.StrictMode>,

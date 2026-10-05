@@ -153,8 +153,8 @@ describe("useOpenProject", () => {
   });
 
   describe("the transition around an open", () => {
-    function Transitioned({ beforeShow, onAbandon }: OpenProjectOptions) {
-      const { openProject: open, dialogs } = useOpenProject({ beforeShow, onAbandon });
+    function Transitioned({ switchTo, onAbandon }: OpenProjectOptions) {
+      const { openProject: open, dialogs } = useOpenProject({ switchTo, onAbandon });
       return (
         <>
           <button onClick={() => void open(7)}>Open maestro</button>
@@ -175,12 +175,20 @@ describe("useOpenProject", () => {
 
     it("switches only once the transition has played", async () => {
       openProject.mockResolvedValue({ id: 7, path: "/work/maestro" });
-      let played = () => {};
-      const beforeShow = vi.fn(() => new Promise<void>((resolve) => (played = resolve)));
-      renderTransitioned({ beforeShow });
-      await waitFor(() => expect(beforeShow).toHaveBeenCalled());
+      let play = () => {};
+      const switchTo = vi.fn(
+        (_project: unknown, show: () => void) =>
+          new Promise<void>((resolve) => {
+            play = () => {
+              show();
+              resolve();
+            };
+          }),
+      );
+      renderTransitioned({ switchTo });
+      await waitFor(() => expect(switchTo).toHaveBeenCalled());
       expect(setSelectedProject).not.toHaveBeenCalled();
-      act(() => played());
+      act(() => play());
       await waitFor(() => expect(setSelectedProject).toHaveBeenCalled());
     });
 
