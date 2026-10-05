@@ -246,9 +246,31 @@ Adding the connection again brings them back.` Rose button `Remove`.
 
 ## Navigation into a project
 
-Clicking a tile opens the project. The in-project header gets a way back to this board; the
-breadcrumb explored earlier (`Home / connection / project`) is the starting point, to be settled when
-that header is designed. Switching to a project on another connection releases the lock held on the
+Clicking a tile opens the project. The left of the in-project header becomes a path of three parts,
+`Home / connection / project`, drawn in `switcher.html` beside this file.
+
+- **Home**, a house icon, goes back to this board. It replaces "Close project", so the window
+  releases the project's lock. An amber dot sits on it while another project needs the user, and
+  its tooltip names it: `Home · billing needs you`, or `Home · 3 projects need you`.
+- **The connection**, its Home icon and name with a chevron, opens a menu of every connection: the
+  icon tile, the name, and under it `<N> projects`, `Not connected`, `Connecting…`,
+  `Needs a password` or `Could not connect`. An amber dot marks a connection with a project that
+  needs the user; this one has a check. Hovering or clicking a connection, or pressing Right,
+  opens a side panel flush against the menu:
+  - Connected: its projects as small tiles, needs-you first as the chips sort, each with its name,
+    path, status word, one line of context and the three counts, then `Add project`. On another
+    connection a footnote reads `Opening one releases <project>`.
+  - Not connected, stopped or unreachable: `Not connected. Its projects show here once it is.` and
+    a `Connect` pill, Home's own connect. The panel stays open, so the tiles appear in place.
+  - Needs a password: a `Sign in…` pill that opens the SSH sign-in dialog.
+  - Connecting: a spinner. Could not connect: an `Open Home` pill, since Home shows why.
+- **The project**, in semibold with a chevron, opens a menu of this connection's projects as rows:
+  name, path, one line of context (or the counts) and the status word, the current one checked;
+  then `Add project`, which opens the Add project dialog for this connection.
+
+Both menus use the `home-pop-strong` glass. Projects removed from Home stay out of them, and opening
+one goes through the same path as a tile: the lock, a takeover when another window holds it, the
+first-open import. Switching to a project on another connection releases the lock held on the
 previous one, so a window never holds projects it is not showing.
 
 ## Open items
