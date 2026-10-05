@@ -136,7 +136,7 @@ export function HomeView() {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-background text-sm text-foreground">
+    <div className="relative h-screen overflow-hidden bg-background text-sm text-foreground">
       {/* The screen paints its own background, so these cannot sit behind it on a negative
           layer the way they do in the header — they go at z-0 and the content is raised. */}
       <span aria-hidden className="screen-gradient z-0" />
@@ -169,58 +169,61 @@ export function HomeView() {
         <WindowControls className="-mr-2 ml-1" />
       </div>
 
-      <main className="relative z-10 mx-auto max-w-[1200px] px-12 pt-20 pb-14">
-        <Hero working={totals.working} needYou={totals.needYou} toReview={totals.toReview} />
-        <div className="mb-5 grid grid-cols-2 gap-5">
-          <AddConnectionPanel />
-          <IntegrationsPanel />
-        </div>
-        <div className="grid grid-cols-2 gap-5">
-          {ordered.map((connection) => {
-            const phase = phases[connection.id] ?? { kind: "idle" as const };
-            const summary = summaries.get(connection.id);
-            return (
-              <ConnectionPanel
-                key={connection.id}
-                connection={
-                  connection.id === "local" && summary?.hostname
-                    ? { ...connection, detail: summary.hostname }
-                    : connection
-                }
-                phase={phase}
-                projects={cardsFor(connection)}
-                runningAutomations={summary?.runningAutomations ?? 0}
-                minimized={minimized.includes(connection.id)}
-                onToggleMinimized={() => toggleMinimized(connection.id)}
-                openingProject={opening}
-                onOpenProject={(card) => void openCard(connection, card)}
-                onRemoveProject={(card) => removeCard(connection, card)}
-                onAddProject={() => setAddingTo(connection)}
-                menu={
-                  <ConnectionMenu
-                    connection={connection}
-                    phase={phase}
-                    projects={cardsFor(connection)}
-                    server={summary?.server ?? null}
-                    onSettings={() => setSettingsFor(connection.key)}
-                    onChangeSignIn={() => setSignInFor(connection)}
-                    onRemove={
-                      connection.id === "local" ? undefined : () => removeConnection(connection)
-                    }
-                  />
-                }
-              />
-            );
-          })}
-        </div>
-        {(waitingOn || importing) && (
-          <div className="home-pill fixed bottom-6 left-1/2 z-40 -translate-x-1/2 rounded-lg px-3 py-1.5 text-xs">
-            {waitingOn
-              ? `Waiting for Maestro on ${waitingOn}…`
-              : "Moving this project's board to its server…"}
+      {/* The page scrolls under the background and drag strip, which stay put, with no bar. */}
+      <div className="absolute inset-0 scrollbar-none overflow-y-auto">
+        <main className="relative z-10 mx-auto max-w-[1200px] px-12 pt-20 pb-14">
+          <Hero working={totals.working} needYou={totals.needYou} toReview={totals.toReview} />
+          <div className="mb-5 grid grid-cols-2 gap-5">
+            <AddConnectionPanel />
+            <IntegrationsPanel />
           </div>
-        )}
-      </main>
+          <div className="grid grid-cols-2 gap-5">
+            {ordered.map((connection) => {
+              const phase = phases[connection.id] ?? { kind: "idle" as const };
+              const summary = summaries.get(connection.id);
+              return (
+                <ConnectionPanel
+                  key={connection.id}
+                  connection={
+                    connection.id === "local" && summary?.hostname
+                      ? { ...connection, detail: summary.hostname }
+                      : connection
+                  }
+                  phase={phase}
+                  projects={cardsFor(connection)}
+                  runningAutomations={summary?.runningAutomations ?? 0}
+                  minimized={minimized.includes(connection.id)}
+                  onToggleMinimized={() => toggleMinimized(connection.id)}
+                  openingProject={opening}
+                  onOpenProject={(card) => void openCard(connection, card)}
+                  onRemoveProject={(card) => removeCard(connection, card)}
+                  onAddProject={() => setAddingTo(connection)}
+                  menu={
+                    <ConnectionMenu
+                      connection={connection}
+                      phase={phase}
+                      projects={cardsFor(connection)}
+                      server={summary?.server ?? null}
+                      onSettings={() => setSettingsFor(connection.key)}
+                      onChangeSignIn={() => setSignInFor(connection)}
+                      onRemove={
+                        connection.id === "local" ? undefined : () => removeConnection(connection)
+                      }
+                    />
+                  }
+                />
+              );
+            })}
+          </div>
+          {(waitingOn || importing) && (
+            <div className="home-pill fixed bottom-6 left-1/2 z-40 -translate-x-1/2 rounded-lg px-3 py-1.5 text-xs">
+              {waitingOn
+                ? `Waiting for Maestro on ${waitingOn}…`
+                : "Moving this project's board to its server…"}
+            </div>
+          )}
+        </main>
+      </div>
 
       <VersionBadge />
 
