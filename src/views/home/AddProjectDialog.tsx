@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { FolderOpen, GitFork, Globe, Link, Plus } from "lucide-react";
+import { FolderOpen, GitFork, Plus } from "lucide-react";
 import { Dialog, DialogContent } from "@/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   useDockerHome,
@@ -13,6 +12,7 @@ import { FilePicker } from "@/views/home/file-picker/FilePicker";
 import { ProviderRepoPicker } from "@/views/home/provider-repo-picker/ProviderRepoPicker";
 import type { HomeConnection } from "./ConnectionPanel";
 import { HomeSheet } from "./HomeSheet";
+import { Segmented } from "./Segmented";
 
 type Choice = "open" | "clone" | "create";
 
@@ -99,7 +99,7 @@ function AddProjectSheet({
   const folder = folderTyped ?? (home ? home + sep : "");
   const into = intoTyped ?? home ?? "";
   const [url, setUrl] = useState("");
-  const [cloneTab, setCloneTab] = useState("provider");
+  const [cloneTab, setCloneTab] = useState<"provider" | "url">("provider");
   const [provider, setProvider] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [browsing, setBrowsing] = useState<"folder" | "into" | null>(null);
@@ -179,18 +179,16 @@ function AddProjectSheet({
           )}
           {choice === "clone" && (
             <div className="space-y-2">
-              <Tabs value={cloneTab} onValueChange={setCloneTab}>
-                <TabsList className="w-full">
-                  <TabsTrigger value="provider">
-                    <Globe className="size-3.5" />
-                    Provider
-                  </TabsTrigger>
-                  <TabsTrigger value="url">
-                    <Link className="size-3.5" />
-                    URL
-                  </TabsTrigger>
-                </TabsList>
-                <TabsContent value="provider">
+              <Segmented
+                value={cloneTab}
+                onChange={setCloneTab}
+                options={[
+                  ["provider", "Provider"],
+                  ["url", "URL"],
+                ]}
+              />
+              {cloneTab === "provider" ? (
+                <div className="home-form">
                   <ProviderRepoPicker
                     disabled={busy}
                     onRepoSelected={(cloneUrl, _name, selected) => {
@@ -203,21 +201,20 @@ function AddProjectSheet({
                       {url}
                     </div>
                   )}
-                </TabsContent>
-                <TabsContent value="url">
-                  <input
-                    aria-label="Repository URL"
-                    autoFocus
-                    value={url}
-                    onChange={(event) => {
-                      setUrl(event.target.value);
-                      setProvider(null);
-                    }}
-                    placeholder="github.com/owner/repo or any git URL"
-                    className={cn(FIELD, "w-full")}
-                  />
-                </TabsContent>
-              </Tabs>
+                </div>
+              ) : (
+                <input
+                  aria-label="Repository URL"
+                  autoFocus
+                  value={url}
+                  onChange={(event) => {
+                    setUrl(event.target.value);
+                    setProvider(null);
+                  }}
+                  placeholder="github.com/owner/repo or any git URL"
+                  className={cn(FIELD, "w-full")}
+                />
+              )}
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-muted-foreground">Into</span>
                 <input

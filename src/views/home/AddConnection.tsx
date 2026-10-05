@@ -17,6 +17,7 @@ import {
 } from "@/services/connection.service";
 import { connectionKeyId, useHomeStore } from "@/store/homeStore";
 import { HomeSheet } from "./HomeSheet";
+import { Segmented } from "./Segmented";
 import { attach } from "./useConnectionActions";
 
 type Kind = "ssh" | "wsl" | "docker";
@@ -126,28 +127,16 @@ function SshForm({
         />
       </label>
       <div className="mt-4 text-[11px] text-muted-foreground">Sign in with</div>
-      <div className="mt-1 grid grid-cols-3 gap-1 rounded-xl border border-foreground/10 bg-background/45 p-1 text-xs">
-        {(
-          [
+      <div className="mt-1">
+        <Segmented
+          value={auth}
+          onChange={setAuth}
+          options={[
             ["agent", "SSH agent"],
             ["key", "Key file"],
             ["password", "Password"],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => setAuth(value)}
-            className={cn(
-              "h-8 cursor-pointer rounded-lg",
-              auth === value
-                ? "bg-card/90 font-medium shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {label}
-          </button>
-        ))}
+          ]}
+        />
       </div>
       <div className="mt-2 min-h-[44px] text-xs text-muted-foreground">
         {auth === "agent" &&

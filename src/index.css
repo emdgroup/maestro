@@ -1047,6 +1047,29 @@
   outline: none;
   border-color: color-mix(in oklab, var(--accent) 70%, transparent);
 }
+/* Forms Home borrows, such as the repository pickers in Clone, take its field look. */
+.home-form [data-slot="label"] {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+}
+.home-form [data-slot="input"],
+.home-form [data-slot="input-group"] {
+  height: 2.25rem;
+  border-radius: 0.75rem;
+  font-size: 0.75rem;
+  box-shadow: none;
+  background: color-mix(in oklab, var(--background) 55%, transparent);
+  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+}
+.home-form [data-slot="input-group"] input {
+  font-size: 0.75rem;
+}
+.home-form [data-slot="input"]:focus-visible,
+.home-form [data-slot="input-group"]:focus-within {
+  box-shadow: none;
+  border-color: color-mix(in oklab, var(--accent) 70%, transparent);
+}
 .home-scrim {
   background: color-mix(in oklab, var(--background) 30%, transparent);
   -webkit-backdrop-filter: blur(6px);

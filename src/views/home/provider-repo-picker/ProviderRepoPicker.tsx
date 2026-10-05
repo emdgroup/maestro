@@ -60,7 +60,7 @@ export function ProviderRepoPicker({ onRepoSelected, disabled }: ProviderRepoPic
             type="button"
             disabled={disabled}
             onClick={() => setSelectedProvider(provider.provider)}
-            className="flex flex-1 min-w-[120px] items-center gap-2.5 rounded-lg border border-border bg-muted px-3 py-2.5 text-sm font-medium text-foreground hover:border-accent hover:bg-accent/5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="home-pane flex min-w-[120px] flex-1 cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
           >
             <BrandIcon slug={provider.provider} width={18} height={18} />
             <span className="flex-1 text-left">{PROVIDER_NAMES[provider.provider]}</span>
@@ -75,9 +75,12 @@ export function ProviderRepoPicker({ onRepoSelected, disabled }: ProviderRepoPic
     <div className="space-y-3">
       {/* Selected provider card + X */}
       <div className="flex items-center gap-2">
-        <div className="flex flex-1 items-center gap-2.5 rounded-lg border border-accent bg-accent/10 px-3 py-2">
+        <div
+          data-selected
+          className="home-pane flex flex-1 items-center gap-2.5 rounded-xl px-3 py-2"
+        >
           <BrandIcon slug={selectedProvider} width={18} height={18} />
-          <span className="text-sm font-medium">{PROVIDER_NAMES[selectedProvider]}</span>
+          <span className="text-xs font-medium">{PROVIDER_NAMES[selectedProvider]}</span>
           <span className="size-1.5 rounded-full bg-success shrink-0" />
         </div>
         <Button

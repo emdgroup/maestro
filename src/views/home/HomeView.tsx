@@ -173,7 +173,7 @@ export function HomeView() {
       {/* No AppHeader here, so this strip is the window's drag region. */}
       <div
         data-tauri-drag-region
-        className="absolute inset-x-0 top-0 z-10 flex h-12 items-center justify-end gap-1 px-4"
+        className="absolute inset-x-0 top-0 z-20 flex h-12 items-center justify-end gap-1 px-4"
       >
         <GlobalAccentColorPicker />
         <ThemeToggle />
