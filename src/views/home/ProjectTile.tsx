@@ -71,12 +71,15 @@ export function ProjectTile({ project, opening, onOpen, onRemove }: TileProps) {
   ) : null;
   return (
     // The remove button sits over the status word rather than inside the tile, which is a button.
-    <div className="group/tile relative flex">
+    // The pane, and its hover lift, is on the wrapper so the two move together.
+    <div
+      data-attention={project.needsYou}
+      className="group/tile home-pane relative flex rounded-2xl"
+    >
       <button
         type="button"
         onClick={onOpen}
-        data-attention={project.needsYou}
-        className="home-pane flex min-h-[132px] w-full cursor-pointer flex-col rounded-2xl p-4 text-left"
+        className="flex min-h-[132px] w-full cursor-pointer flex-col rounded-2xl p-4 text-left"
       >
         <div className="flex w-full items-start gap-2">
           <div className="min-w-0">
