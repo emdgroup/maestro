@@ -28,7 +28,7 @@ function tileOf(project: Project): HTMLElement | null {
  * animates between them, the project's tile and window morphing into each other. Without the API
  * (an older WebKitGTK) or with Reduce motion on, the switch is immediate.
  */
-function morph(update: () => void): ViewTransition | null {
+function morph(update: () => void, drawn?: () => void): ViewTransition | null {
   if (
     !document.startViewTransition ||
     document.documentElement.classList.contains("reduce-motion")
@@ -36,7 +36,11 @@ function morph(update: () => void): ViewTransition | null {
     update();
     return null;
   }
-  return document.startViewTransition(() => flushSync(update));
+  // `flushSync` renders when its callback returns, so the new page exists only after it.
+  return document.startViewTransition(() => {
+    flushSync(update);
+    drawn?.();
+  });
 }
 
 /** Open the project out of its tile. `show` switches the window to it. */
@@ -53,8 +57,7 @@ export function zoomIntoProject(project: Project, show: () => void) {
 /** Go back to Home, the project shrinking into its tile. `leave` switches the window to Home. */
 export function zoomToHome(project: Project, leave: () => void) {
   let tile: HTMLElement | null = null;
-  const transition = morph(() => {
-    leave();
+  const transition = morph(leave, () => {
     // Home is drawn by now, from the summaries it already holds.
     tile = tileOf(project);
     if (!tile) return;
