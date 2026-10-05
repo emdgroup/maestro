@@ -1,0 +1,327 @@
+import { useState, useRef } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
+import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
+import { Label } from "@/ui/label";
+import { ChevronLeft, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useSaveIntegration, PROVIDER_NAMES } from "@/services/integration.service";
+import { getProviderFields } from "./integration-provider-config";
+import { ProviderInstructions } from "./ProviderInstructions";
+
+interface IntegrationConnectDialogProps {
+  provider: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess?: (id: string) => void;
+  /** Shows a back arrow before the title, when this dialog is the second step of a flow. */
+  onBack?: () => void;
+  /** Restyles the sheet and its backdrop, e.g. as Home's glass. */
+  contentClassName?: string;
+  overlayClassName?: string;
+}
+
+function BitbucketModeToggle({
+  mode,
+  onChange,
+  disabled,
+}: {
+  mode: "cloud" | "server";
+  onChange: (m: "cloud" | "server") => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="flex rounded-md border border-border overflow-hidden w-fit">
+      {(["cloud", "server"] as const).map((m) => (
+        <button
+          key={m}
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(m)}
+          className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+            mode === m
+              ? "bg-primary text-primary-foreground"
+              : "bg-background text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          {m === "cloud" ? "Cloud" : "Server / DC"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function IntegrationConnectDialog({
+  provider,
+  open,
+  onOpenChange,
+  onSuccess,
+  onBack,
+  contentClassName,
+  overlayClassName,
+}: IntegrationConnectDialogProps) {
+  const [token, setToken] = useState("");
+  const [instanceUrl, setInstanceUrl] = useState("");
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [bitbucketMode, setBitbucketMode] = useState<"cloud" | "server">("cloud");
+  const [attempted, setAttempted] = useState(false);
+  const formRef = useRef<HTMLDivElement>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { mutateAsync: saveIntegration, isPending } = useSaveIntegration();
+
+  const providerName = PROVIDER_NAMES[provider] ?? provider;
+  const fields = getProviderFields(provider);
+  const isBitbucket = provider === "bitbucket";
+
+  const instanceUrlRequired = !isBitbucket && fields.showInstanceUrl;
+  // Bitbucket asks for no email at all: both deployments authenticate with a bearer token, which
+  // carries the identity on its own.
+  const emailRequired = !isBitbucket && fields.showEmail;
+  const isSubmitDisabled =
+    isPending ||
+    !token.trim() ||
+    (instanceUrlRequired && !instanceUrl.trim()) ||
+    (emailRequired && !email.trim());
+
+  const triggerValidation = () => {
+    const el = formRef.current;
+    if (el) {
+      el.classList.remove("animate-shake");
+      void el.offsetWidth;
+      el.classList.add("animate-shake");
+    }
+    setAttempted(true);
+    if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+    shakeTimerRef.current = setTimeout(() => setAttempted(false), 2000);
+  };
+
+  const startHoverTimer = () => {
+    if (!isSubmitDisabled) return;
+    hoverTimerRef.current = setTimeout(triggerValidation, 500);
+  };
+
+  const cancelHoverTimer = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setToken("");
+      setInstanceUrl("");
+      setEmail("");
+      setError(null);
+      setBitbucketMode("cloud");
+      setAttempted(false);
+      cancelHoverTimer();
+      if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+    }
+    onOpenChange(nextOpen);
+  };
+
+  const handleModeChange = (m: "cloud" | "server") => {
+    setBitbucketMode(m);
+    setToken("");
+    setInstanceUrl("");
+    setEmail("");
+    setError(null);
+    setAttempted(false);
+  };
+
+  const handleSubmit = async () => {
+    if (isSubmitDisabled) return;
+    setError(null);
+    try {
+      const id = await saveIntegration({
+        provider,
+        token: token.trim(),
+        instanceUrl: isBitbucket
+          ? bitbucketMode === "server"
+            ? instanceUrl.trim() || null
+            : null
+          : instanceUrl.trim() || null,
+        email: isBitbucket ? null : email.trim() || null,
+      });
+      handleOpenChange(false);
+      onSuccess?.(id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        className={cn("sm:max-w-md", contentClassName)}
+        overlayClassName={overlayClassName}
+      >
+        <DialogHeader>
+          <div className="flex items-center gap-2">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                aria-label="Back"
+                className="-ml-1 grid size-7 cursor-pointer place-items-center rounded-full text-muted-foreground hover:bg-foreground/10"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+            )}
+            <DialogTitle>Connect {providerName}</DialogTitle>
+          </div>
+          <DialogDescription>Enter your credentials to connect {providerName}.</DialogDescription>
+        </DialogHeader>
+
+        <div ref={formRef} className="space-y-4 py-2">
+          {isBitbucket && (
+            <BitbucketModeToggle
+              mode={bitbucketMode}
+              onChange={handleModeChange}
+              disabled={isPending}
+            />
+          )}
+
+          {isBitbucket ? (
+            <>
+              {bitbucketMode === "server" && (
+                <div className="space-y-2">
+                  <Label htmlFor="integration-instance-url">Instance URL</Label>
+                  <Input
+                    id="integration-instance-url"
+                    placeholder="https://bitbucket.mycompany.com"
+                    value={instanceUrl}
+                    onChange={(e) => setInstanceUrl(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="integration-token" required>
+                  {bitbucketMode === "cloud" ? "API Token" : "HTTP Access Token"}
+                </Label>
+                <Input
+                  id="integration-token"
+                  type="password"
+                  placeholder={
+                    bitbucketMode === "cloud" ? "Enter API token" : "Enter HTTP access token"
+                  }
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  disabled={isPending}
+                  aria-required="true"
+                  aria-invalid={attempted && !token.trim() ? "true" : undefined}
+                />
+                {attempted && !token.trim() && (
+                  <p className="text-xs text-destructive">
+                    {bitbucketMode === "cloud" ? "API token" : "Access token"} is required
+                  </p>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              {fields.showInstanceUrl && (
+                <div className="space-y-2">
+                  <Label htmlFor="integration-instance-url" required>
+                    {fields.instanceUrlLabel}
+                  </Label>
+                  <Input
+                    id="integration-instance-url"
+                    placeholder={fields.instanceUrlPlaceholder}
+                    value={instanceUrl}
+                    onChange={(e) => setInstanceUrl(e.target.value)}
+                    disabled={isPending}
+                    aria-required="true"
+                    aria-invalid={attempted && !instanceUrl.trim() ? "true" : undefined}
+                  />
+                  {attempted && !instanceUrl.trim() && (
+                    <p className="text-xs text-destructive">
+                      {fields.instanceUrlLabel} is required
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {fields.showEmail && (
+                <div className="space-y-2">
+                  <Label htmlFor="integration-email" required>
+                    Email
+                  </Label>
+                  <Input
+                    id="integration-email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={isPending}
+                    aria-required="true"
+                    aria-invalid={attempted && !email.trim() ? "true" : undefined}
+                  />
+                  {attempted && !email.trim() && (
+                    <p className="text-xs text-destructive">Email is required</p>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="integration-token" required>
+                  {fields.tokenLabel}
+                </Label>
+                <Input
+                  id="integration-token"
+                  type="password"
+                  placeholder={`Enter ${fields.tokenLabel.toLowerCase()}`}
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  disabled={isPending}
+                  aria-required="true"
+                  aria-invalid={attempted && !token.trim() ? "true" : undefined}
+                />
+                {attempted && !token.trim() && (
+                  <p className="text-xs text-destructive">{fields.tokenLabel} is required</p>
+                )}
+              </div>
+            </>
+          )}
+
+          <ProviderInstructions
+            provider={provider}
+            bitbucketMode={isBitbucket ? bitbucketMode : undefined}
+          />
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={isPending}>
+            Cancel
+          </Button>
+          <div onMouseEnter={startHoverTimer} onMouseLeave={cancelHoverTimer}>
+            <Button onClick={handleSubmit} disabled={isSubmitDisabled}>
+              {isPending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                "Connect"
+              )}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

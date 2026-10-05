@@ -939,3 +939,172 @@
 @utility animate-shake {
   animation: shake 0.35s ease-in-out;
 }
+
+/* ── Home dashboard glass ──
+   The recipes of docs/home-dashboard/design.md, "Visual system". Everything on Home sits over the
+   screen gradient and its bubbles, so surfaces are translucent and blur what passes behind them.
+
+   A panel draws its glass on ::before rather than on itself. An element with backdrop-filter is a
+   backdrop root: a menu or hover card inside it could only blur the panel, never the tiles and
+   panels it overlaps. On a pseudo-element the panel stays transparent to its popups' blur.
+   isolation keeps the pseudo-element behind the panel's content but inside the panel. */
+.home-glass {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid color-mix(in oklab, var(--foreground) 9%, transparent);
+  box-shadow: 0 18px 40px -24px rgb(0 0 0 / 0.35);
+}
+/* Panels are clearer than popups, so the bubbles drifting behind them stay distinct. */
+.home-glass::before {
+  background: color-mix(in oklab, var(--card) 30%, transparent);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  backdrop-filter: blur(8px) saturate(140%);
+}
+.home-pop {
+  background: color-mix(in oklab, var(--card) 42%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+}
+.home-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 1px 0 color-mix(in oklab, white 20%, transparent) inset;
+}
+/* Menus, hover cards and dialogs: glass applied directly, since nothing nests popups inside them. */
+.home-pop {
+  border: 1px solid color-mix(in oklab, var(--foreground) 9%, transparent);
+  box-shadow:
+    0 1px 0 color-mix(in oklab, white 20%, transparent) inset,
+    0 20px 50px -18px rgb(0 0 0 / 0.35);
+}
+/* Confirmations: denser, so the consequences stay readable over moving bubbles. */
+.home-pop-strong {
+  background: color-mix(in oklab, var(--card) 72%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid color-mix(in oklab, var(--foreground) 11%, transparent);
+  box-shadow:
+    0 1px 0 color-mix(in oklab, white 20%, transparent) inset,
+    0 20px 50px -18px rgb(0 0 0 / 0.45);
+}
+.home-pane {
+  background: color-mix(in oklab, var(--background) 28%, transparent);
+  border: 1px solid color-mix(in oklab, var(--foreground) 7%, transparent);
+  transition:
+    background 0.18s,
+    transform 0.18s,
+    border-color 0.18s;
+}
+.home-pane:hover {
+  background: color-mix(in oklab, var(--background) 62%, transparent);
+  transform: translateY(-2px);
+  border-color: color-mix(in oklab, var(--foreground) 14%, transparent);
+}
+.home-pane[data-selected="true"] {
+  border-color: color-mix(in oklab, var(--accent) 70%, transparent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  transform: none;
+}
+/* A project that needs the user: tinted amber all over, never an edge stripe. */
+.home-pane[data-attention="true"] {
+  background: color-mix(
+    in oklab,
+    #f59e0b 13%,
+    color-mix(in oklab, var(--background) 30%, transparent)
+  );
+  border-color: color-mix(in oklab, #f59e0b 34%, transparent);
+}
+.home-pane[data-attention="true"]:hover {
+  background: color-mix(
+    in oklab,
+    #f59e0b 19%,
+    color-mix(in oklab, var(--background) 45%, transparent)
+  );
+  border-color: color-mix(in oklab, #f59e0b 48%, transparent);
+}
+.home-ghost {
+  border: 1.5px dashed color-mix(in oklab, var(--foreground) 18%, transparent);
+  transition:
+    border-color 0.18s,
+    background 0.18s,
+    color 0.18s;
+}
+.home-ghost:hover {
+  border-color: color-mix(in oklab, var(--accent) 70%, transparent);
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+  color: var(--foreground);
+}
+.home-pill {
+  background: color-mix(in oklab, var(--card) 50%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid color-mix(in oklab, var(--foreground) 10%, transparent);
+}
+.home-field {
+  background: color-mix(in oklab, var(--background) 55%, transparent);
+  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+}
+.home-field:focus {
+  outline: none;
+  border-color: color-mix(in oklab, var(--accent) 70%, transparent);
+}
+/* Forms Home borrows, such as the repository pickers in Clone, take its field look. */
+.home-form [data-slot="label"] {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+}
+.home-form [data-slot="input"],
+.home-form [data-slot="input-group"] {
+  height: 2.25rem;
+  border-radius: 0.75rem;
+  font-size: 0.75rem;
+  box-shadow: none;
+  background: color-mix(in oklab, var(--background) 55%, transparent);
+  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+}
+.home-form [data-slot="input-group"] input {
+  font-size: 0.75rem;
+}
+.home-form [data-slot="input"]:focus-visible,
+.home-form [data-slot="input-group"]:focus-within {
+  box-shadow: none;
+  border-color: color-mix(in oklab, var(--accent) 70%, transparent);
+}
+.home-scrim {
+  background: color-mix(in oklab, var(--background) 30%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+/* Working is the accent, never green: green reads as done. Review is the Review column's purple. */
+/* Opening a project from Home: its tile and the project's window share `project-zoom`, so the
+   browser grows one into the other (projectTransition.ts). The snapshots keep their top-left
+   corner and are cropped, not stretched, while the box between them changes shape. */
+::view-transition-group(project-zoom) {
+  animation-duration: 0.4s;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+::view-transition-old(project-zoom),
+::view-transition-new(project-zoom) {
+  height: 100%;
+  object-fit: cover;
+  object-position: left top;
+  animation-duration: 0.4s;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.4s;
+}
+.home-working {
+  color: var(--accent);
+}
+.home-review {
+  color: var(--color-purple-500);
+}
+.home-logo {
+  filter: drop-shadow(0 6px 14px rgb(0 0 0 / 0.18));
+}

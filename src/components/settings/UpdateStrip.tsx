@@ -18,7 +18,7 @@ import appIconUrl from "../../../src-tauri/icons/32x32.png?url";
  * A strip rather than a page, because "am I up to date" is a status the user wants answered on
  * arrival, not one they should have to navigate to. The auto-update switch — the only thing
  * here that is actually a setting — moves into the popover on the right, so the bar stays one
- * line. `UpdateCard` still exists for the welcome screen's version badge, which has room for
+ * line. `UpdateCard` still exists for the Home's version badge, which has room for
  * the tall form.
  */
 export function UpdateStrip({ padEnd = false }: { padEnd?: boolean }) {

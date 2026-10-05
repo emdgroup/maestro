@@ -25,9 +25,9 @@ import { resolveDeepLinkedPage, visiblePages } from "./settings-registry";
 
 interface SettingsPageProps {
   /**
-   * Both absent on the welcome screen, where there is no project and no connection to scope
-   * anything to — the connection and project groups are then not registered at all, rather
-   * than registered and disabled.
+   * Both absent for Home's own settings, where there is nothing to scope to: the connection and
+   * project groups are then not registered at all, rather than registered and disabled. A
+   * connection alone (Home's connection menu) registers that connection's pages.
    */
   projectId?: number;
   connection?: ConnectionKey;
@@ -52,7 +52,7 @@ export function SettingsPage({
   // Ordered here rather than only in the sidebar, so "the first page" — what opens by
   // default — is the one the sidebar shows at the top: a project page in a project, and
   // Updates on the welcome screen, where there is no nearer scope.
-  const pages = visiblePages({ inProject, isGitRepo });
+  const pages = visiblePages({ inProject, isGitRepo, forConnection: connection !== undefined });
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [query, setQuery] = useState("");

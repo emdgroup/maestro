@@ -59,7 +59,7 @@ pub(crate) async fn register_project_in_db(
 /// Fetch projects for a connection from an open DB connection.
 /// Isolated into a helper so all borrow-checker temporaries are fully dropped
 /// before the caller proceeds to async SSH I/O.
-fn fetch_projects_from_db(
+pub(crate) fn fetch_projects_from_db(
     conn: &rusqlite::Connection,
     connection_key: ConnectionKey,
 ) -> Result<Vec<Project>, String> {
@@ -282,19 +282,33 @@ pub async fn open_project(
     Ok(project)
 }
 
-/// Release the active project lock held by this instance, and stop the connection servers it was
-/// using. Called when the user navigates back to the project picker.
+/// Release the project lock this window holds. Called when the user goes back to Home.
 ///
-/// This is where a connection server dies — leaving the project or quitting, not closing the last
-/// session on it. Dropping the entry drops the child with it (`kill_on_drop`), and each reader
-/// task ends its own sessions as its transport closes.
+/// The relays to the connections' servers stay, so Home can keep reading them; they live until
+/// the app closes. The sessions this window held are forgotten, not closed, as `ProjectKicked`
+/// leaves them: opening the project again adopts or reloads them from the server.
 #[tauri::command]
 #[specta::specta]
 pub async fn release_active_project_lock(
     app_state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    app_state.release_active_project_lock();
-    app_state.acp.connection_servers.lock().await.clear();
+    if let Some((_, key)) = app_state.release_active_project_lock() {
+        let release = crate::acp::transport::ServerRequest::ReleaseProjectLock;
+        if let Err(e) =
+            crate::acp::connection_server::send_via_server(key, &app_state, release).await
+        {
+            log::warn!("could not release the project lock on {key:?}: {e}");
+        }
+    }
+    let held: Vec<String> = app_state
+        .acp
+        .sessions
+        .lock()
+        .await
+        .keys()
+        .cloned()
+        .collect();
+    crate::acp::session_ops::forget_sessions(&app_state, &held).await;
     Ok(())
 }
 

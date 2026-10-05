@@ -89,9 +89,10 @@ export const config: WebdriverIO.Config = {
   mochaOpts: { ui: "bdd", timeout: 120_000 },
 
   /**
-   * The picker slides between its connections and projects panels, and the outgoing one is
-   * `invisible` mid-transition. The default 3s can expire inside that window on a slow machine,
-   * so element assertions get a wider budget — they still return as soon as the element settles.
+   * Home attaches to This computer as it opens, deploying its server on a fresh data directory,
+   * and its panel fills in once that answers. The default 3s can expire inside that window on a
+   * slow machine, so element assertions get a wider budget; they still return as soon as the
+   * element settles.
    */
   waitforTimeout: 15_000,
 

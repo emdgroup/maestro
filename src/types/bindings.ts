@@ -65,12 +65,11 @@ async openProject(projectId: number) : Promise<Result<Project, string>> {
 }
 },
 /**
- * Release the active project lock held by this instance, and stop the connection servers it was
- * using. Called when the user navigates back to the project picker.
+ * Release the project lock this window holds. Called when the user goes back to Home.
  * 
- * This is where a connection server dies — leaving the project or quitting, not closing the last
- * session on it. Dropping the entry drops the child with it (`kill_on_drop`), and each reader
- * task ends its own sessions as its transport closes.
+ * The relays to the connections' servers stay, so Home can keep reading them; they live until
+ * the app closes. The sessions this window held are forgotten, not closed, as `ProjectKicked`
+ * leaves them: opening the project again adopts or reloads them from the server.
  */
 async releaseActiveProjectLock() : Promise<Result<null, string>> {
     try {
@@ -86,6 +85,18 @@ async releaseActiveProjectLock() : Promise<Result<null, string>> {
 async listProjectLocks(connection: ConnectionKey, projectIds: number[]) : Promise<Result<ProjectLockEntry[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_project_locks", { connection, projectIds }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The connection's server status and every project it or this app knows of. Never starts a
+ * relay: a connection Home has not attached to answers "No connection server".
+ */
+async getHomeSummary(connection: ConnectionKey) : Promise<Result<HomeSummary, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_home_summary", { connection }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2432,6 +2443,17 @@ async listDockerConnections() : Promise<Result<DockerConnection[], string>> {
 }
 },
 /**
+ * Delete a container connection and its associated project history.
+ */
+async deleteDockerConnection(connectionId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_docker_connection", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * List all connected integrations from the registry.
  * Runs a silent one-time migration: if the registry is empty for a known provider
  * but a legacy key exists, moves it to the new keyed format.
@@ -3598,6 +3620,40 @@ export type FileTransferResult = { transfer_id: string; bytes_transferred: numbe
  * A GitLab project option for combobox display.
  */
 export type GitLabProjectOption = { id: number; path_with_namespace: string; name: string; clone_url: string | null }
+export type HomeProject = { 
+/**
+ * `None` for a project only the server knows, which opening registers here.
+ */
+project_id: number | null; path: string; 
+/**
+ * The folder's name.
+ */
+name: string; queued: number; in_progress: number; review: number; 
+/**
+ * Agents mid-turn.
+ */
+working_agents: number; 
+/**
+ * Prompts waiting on the user, plus tasks with the ball on the user.
+ */
+needs_you: number; blocking_prompt: string | null; running_automations: string[]; lock_holder: string | null; 
+/**
+ * Held by this window.
+ */
+lock_yours: boolean }
+export type HomeSummary = { version: string; 
+/**
+ * RFC 3339.
+ */
+started_at: string; live_sessions: number; 
+/**
+ * Automation runs still going, across every project on the connection.
+ */
+running_runs: number; 
+/**
+ * This machine's name, for This computer only.
+ */
+hostname: string | null; projects: HomeProject[] }
 /**
  * Returned to frontend via IPC — NEVER includes raw token (per D-01 security constraint)
  */

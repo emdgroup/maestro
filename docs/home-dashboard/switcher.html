@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Maestro in-project header: approved mock</title>
+    <!-- Standalone copy of the in-project header switcher, as approved. Open it in a browser.
+     Tokens are the app's light theme from src/index.css; add class="dark" on <html> for dark. -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @custom-variant dark (&:where(.dark, .dark *));
+      @theme inline {
+        --color-background: var(--background);
+        --color-foreground: var(--foreground);
+        --color-card: var(--card);
+        --color-muted: var(--muted);
+        --color-muted-foreground: var(--muted-foreground);
+        --color-primary: var(--primary);
+        --color-primary-foreground: var(--primary-foreground);
+        --color-border: var(--border);
+      }
+      :root {
+        --background: oklch(98% 0.015 70);
+        --foreground: oklch(45% 0.01 250);
+        --card: oklch(99.5% 0.01 70);
+        --muted: oklch(94% 0.015 70);
+        --muted-foreground: oklch(45% 0.01 250);
+        --primary: oklch(0% 0 0);
+        --primary-foreground: oklch(100% 0 0);
+        --border: oklch(90% 0.01 70);
+        --accent: oklch(50% 0.15 250);
+      }
+      .dark {
+        --background: oklch(20% 0.01 250);
+        --foreground: oklch(92% 0.01 250);
+        --card: oklch(24% 0.01 250);
+        --muted: oklch(28% 0.01 250);
+        --muted-foreground: oklch(70% 0.01 250);
+        --primary: oklch(96% 0 0);
+        --primary-foreground: oklch(15% 0 0);
+        --border: oklch(32% 0.01 250);
+        --accent: oklch(75% 0.15 250);
+      }
+      body {
+        margin: 0;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: system-ui, sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <style>
+      .stage {
+        position: relative;
+        border-radius: 14px;
+        overflow: hidden;
+        background: var(--background);
+        border: 1px solid var(--border);
+        height: 400px;
+      }
+      .hdr {
+        position: relative;
+        height: 52px;
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        padding: 0 16px;
+        gap: 16px;
+        background: linear-gradient(
+          to bottom,
+          color-mix(in oklab, var(--accent) 16%, transparent),
+          transparent
+        );
+      }
+      .board {
+        position: absolute;
+        inset: 60px 16px 0;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        opacity: 0.45;
+      }
+      .col {
+        border-radius: 12px;
+        background: color-mix(in oklab, var(--muted) 60%, transparent);
+        padding: 10px;
+      }
+      .card {
+        height: 46px;
+        border-radius: 8px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        margin-top: 8px;
+      }
+      .seg {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 8px;
+        border-radius: 8px;
+        font-size: 12px;
+        white-space: nowrap;
+        color: var(--foreground);
+        cursor: pointer;
+      }
+      .seg:hover,
+      .seg.on {
+        background: color-mix(in oklab, var(--foreground) 8%, transparent);
+      }
+      .seg.proj {
+        font-weight: 600;
+      }
+      .sep {
+        color: color-mix(in oklab, var(--muted-foreground) 50%, transparent);
+        font-size: 13px;
+      }
+      .homebtn {
+        position: relative;
+        width: 28px;
+        padding: 0;
+        justify-content: center;
+      }
+      .adot {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #f59e0b;
+        box-shadow: 0 0 0 2px var(--background);
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #f59e0b;
+        flex: none;
+      }
+      .pop {
+        position: absolute;
+        top: 50px;
+        z-index: 5;
+        border-radius: 14px;
+        background: color-mix(in oklab, var(--card) 72%, transparent);
+        backdrop-filter: blur(24px) saturate(160%);
+        border: 1px solid color-mix(in oklab, var(--foreground) 11%, transparent);
+        box-shadow:
+          0 1px 0 color-mix(in oklab, white 20%, transparent) inset,
+          0 20px 50px -18px rgb(0 0 0/0.45);
+        padding: 6px;
+        font-size: 12px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 9px;
+        border-radius: 9px;
+        cursor: pointer;
+      }
+      .row:hover,
+      .row.hl {
+        background: color-mix(in oklab, var(--foreground) 7%, transparent);
+      }
+      .row.att {
+        background: color-mix(in oklab, #f59e0b 12%, transparent);
+      }
+      .hr {
+        height: 1px;
+        margin: 5px 4px;
+        background: color-mix(in oklab, var(--foreground) 8%, transparent);
+      }
+      .mut {
+        color: var(--muted-foreground);
+      }
+      .mut2 {
+        color: color-mix(in oklab, var(--muted-foreground) 60%, transparent);
+      }
+      .amb {
+        color: #d97706;
+      }
+      .dark .amb {
+        color: #fbbf24;
+      }
+      .acc {
+        color: var(--accent);
+      }
+      .pur {
+        color: #a855f7;
+      }
+      .mono {
+        font-family: ui-monospace, monospace;
+        font-size: 10.5px;
+      }
+      .icon {
+        display: grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 7px;
+        background: color-mix(in oklab, var(--foreground) 6%, transparent);
+        flex: none;
+      }
+      .tile {
+        border-radius: 12px;
+        background: color-mix(in oklab, var(--background) 40%, transparent);
+        border: 1px solid color-mix(in oklab, var(--foreground) 8%, transparent);
+        padding: 9px 10px;
+        cursor: pointer;
+        margin-top: 6px;
+      }
+      .tile:first-of-type {
+        margin-top: 0;
+      }
+      .tile:hover {
+        background: color-mix(in oklab, var(--background) 75%, transparent);
+      }
+      .tile.att {
+        background: color-mix(in oklab, #f59e0b 13%, transparent);
+        border-color: color-mix(in oklab, #f59e0b 35%, transparent);
+      }
+      .subhd {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 6px 8px;
+        font-size: 11px;
+        color: var(--muted-foreground);
+      }
+      .pillbtn {
+        font-size: 11px;
+        font-weight: 500;
+        padding: 4px 14px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: white;
+        cursor: pointer;
+      }
+      .note {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--muted-foreground);
+        padding: 4px 9px 6px;
+      }
+      h2 {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      ul.pc {
+        font-size: 12px;
+        line-height: 1.6;
+        padding-left: 16px;
+        list-style: disc;
+      }
+    </style>
+
+    <div class="p-5 space-y-6 text-foreground">
+      <div id="intro" class="rounded-lg border bg-card p-4 text-sm leading-relaxed">
+        <div class="font-semibold mb-1">In-project header: Home / connection / project</div>
+        <ul class="pc">
+          <li>
+            <b>House</b>: back to Home, releases the project lock. Amber dot while another project
+            needs you; the tooltip names it.
+          </li>
+          <li>
+            <b>Connection menu</b>: every connection. Hovering, clicking or pressing Right on one
+            opens a side panel of its projects as small tiles, needs-you first, then Add project.
+          </li>
+          <li>
+            <b>Project menu</b>: this connection's projects as rows, the current one checked, then
+            Add project.
+          </li>
+          <li>
+            Opening a project on another connection releases the lock on this one; the side panel
+            says so.
+          </li>
+        </ul>
+      </div>
+
+      <section id="sw-conn" class="space-y-2">
+        <h2>1. Connection menu, devbox's side panel open</h2>
+        <div class="stage" id="s1" style="height: 500px"></div>
+      </section>
+
+      <section id="sw-off" class="space-y-2">
+        <h2>2. A connection that is not connected</h2>
+        <p class="text-sm mut">
+          Connect runs Home's own connect and the panel stays open, so the tiles appear in place. A
+          host that needs a password shows Sign in…, which opens the SSH sign-in dialog.
+        </p>
+        <div class="stage" id="s2" style="height: 300px"></div>
+      </section>
+
+      <section id="sw-proj" class="space-y-2">
+        <h2>3. Project menu</h2>
+        <div class="stage" id="s3" style="height: 300px"></div>
+      </section>
+    </div>
+
+    <script>
+      var I = {
+        home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
+        local: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+        ssh: '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
+        wsl: '<path d="m5 17 5-5-5-5M12 19h7"/>',
+        chev: '<path d="m6 9 6 6 6-6"/>',
+        right: '<path d="m9 6 6 6-6 6"/>',
+        check: '<path d="M20 6 9 17l-5-5"/>',
+        plus: '<path d="M12 5v14M5 12h14"/>',
+        gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+        sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/>',
+        lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+      };
+      function s(k, z, w) {
+        return (
+          '<svg width="' +
+          (z || 14) +
+          '" height="' +
+          (z || 14) +
+          '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' +
+          (w || 1.8) +
+          '" stroke-linecap="round" stroke-linejoin="round">' +
+          I[k] +
+          "</svg>"
+        );
+      }
+      var CONN = [
+        {
+          id: "local",
+          name: "This computer",
+          kind: "local",
+          up: true,
+          proj: [
+            { n: "maestro", p: "~\\maestro", w: 1, r: 2, q: 1, here: true },
+            { n: "docs-site", p: "~\\src\\docs-site", w: 0, r: 0, q: 2 },
+            { n: "scratch", p: "~\\src\\scratch", w: 0, r: 0, q: 0 },
+          ],
+        },
+        {
+          id: "devbox",
+          name: "devbox",
+          kind: "ssh",
+          up: true,
+          proj: [
+            {
+              n: "billing",
+              p: "~/src/billing",
+              w: 1,
+              r: 0,
+              q: 0,
+              needs: "Permission to run a migration",
+            },
+            {
+              n: "api-gateway",
+              p: "~/src/api-gateway",
+              w: 2,
+              r: 1,
+              q: 2,
+              ctx: "nightly-lint running",
+            },
+            { n: "auth-service", p: "~/src/auth-service", w: 1, r: 0, q: 3 },
+            {
+              n: "search-indexer",
+              p: "~/src/search-indexer",
+              w: 0,
+              r: 0,
+              q: 0,
+              ctx: "Open on WS-7F2",
+            },
+          ],
+        },
+        { id: "gpu", name: "gpu-runner-02", kind: "ssh", up: false },
+        { id: "wsl", name: "Ubuntu", kind: "wsl", up: false },
+      ];
+      function st(p) {
+        return p.needs
+          ? ["Needs you", "amb", 0]
+          : p.w
+            ? ["Working", "acc", 1]
+            : p.q || p.r
+              ? ["Idle", "mut", 2]
+              : ["Quiet", "mut2", 3];
+      }
+      function sorted(ps) {
+        return ps.slice().sort(function (a, b) {
+          return st(a)[2] - st(b)[2];
+        });
+      }
+      function ctx(p) {
+        return p.needs
+          ? '<span class="amb">' + p.needs + "</span>"
+          : p.ctx
+            ? p.ctx
+            : [p.w && p.w + " working", p.r && p.r + " review", p.q && p.q + " queued"]
+                .filter(Boolean)
+                .join(" · ") || "Nothing queued";
+      }
+      function header(o) {
+        return (
+          '<div class="hdr"><div class="flex items-center gap-1 min-w-0"><span class="seg homebtn" aria-label="Home">' +
+          s("home", 15) +
+          '<span class="adot"></span></span><span class="sep">/</span><span class="seg' +
+          (o.conn ? " on" : "") +
+          '"><span class="mut">' +
+          s("local", 14) +
+          '</span>This computer<span class="mut">' +
+          s("chev", 12) +
+          '</span></span><span class="sep">/</span><span class="seg proj' +
+          (o.proj ? " on" : "") +
+          '">maestro<span class="mut">' +
+          s("chev", 12) +
+          '</span></span></div><div class="flex gap-1 rounded-lg p-1" style="background:color-mix(in oklab,var(--muted) 60%,transparent)">' +
+          ["Tasks", "Agents", "Collections", "Workspaces"]
+            .map(function (t, i) {
+              return (
+                '<span class="px-3 py-1 rounded-md text-xs ' +
+                (i ? "mut" : "acc bg-background shadow-sm") +
+                '">' +
+                t +
+                "</span>"
+              );
+            })
+            .join("") +
+          '</div><div class="flex justify-end gap-3 mut">' +
+          s("sun", 15) +
+          s("gear", 15) +
+          '</div></div><div class="board">' +
+          [3, 2, 2, 1]
+            .map(function (n) {
+              var c =
+                '<div class="col"><div class="h-2 w-16 rounded" style="background:color-mix(in oklab,var(--foreground) 10%,transparent)"></div>';
+              for (var i = 0; i < n; i++) c += '<div class="card"></div>';
+              return c + "</div>";
+            })
+            .join("") +
+          "</div>"
+        );
+      }
+      function connMenu(sel) {
+        return (
+          '<div class="pop" style="left:52px;width:240px">' +
+          CONN.map(function (c) {
+            var need = (c.proj || []).some(function (p) {
+              return p.needs;
+            });
+            return (
+              '<div class="row' +
+              (c.id === sel ? " hl" : "") +
+              '"><span class="icon mut">' +
+              s(c.kind, 13) +
+              '</span><span class="flex-1 min-w-0"><span class="block font-medium truncate">' +
+              c.name +
+              '</span><span class="block text-[10.5px] ' +
+              (c.up ? "mut" : "mut2") +
+              '">' +
+              (c.up ? c.proj.length + " projects" : "Not connected") +
+              "</span></span>" +
+              (need ? '<span class="dot"></span>' : "") +
+              (c.id === "local" ? '<span class="acc">' + s("check", 13, 2.2) + "</span>" : "") +
+              '<span class="mut">' +
+              s("right", 13) +
+              "</span></div>"
+            );
+          }).join("") +
+          "</div>"
+        );
+      }
+      function tile(p) {
+        var t = st(p);
+        return (
+          '<div class="tile' +
+          (p.needs ? " att" : "") +
+          '"><div class="flex items-baseline gap-2"><span class="font-semibold text-[13px] truncate">' +
+          p.n +
+          '</span><span class="mono mut truncate flex-1">' +
+          p.p +
+          '</span><span class="text-[11px] font-medium ' +
+          t[1] +
+          '">' +
+          t[0] +
+          '</span></div><div class="text-[11px] mut truncate mt-0.5">' +
+          (p.needs ? '<span class="amb">' + p.needs + "</span>" : p.ctx || "&nbsp;") +
+          '</div><div class="flex gap-3 mt-1 text-[11px]"><span><b class="' +
+          (p.w ? "acc" : "mut2") +
+          '">' +
+          p.w +
+          '</b> <span class="mut">working</span></span><span><b class="' +
+          (p.r ? "pur" : "mut2") +
+          '">' +
+          p.r +
+          '</b> <span class="mut">review</span></span><span><b class="' +
+          (p.q ? "" : "mut2") +
+          '">' +
+          p.q +
+          '</b> <span class="mut">queued</span></span></div></div>'
+        );
+      }
+      function el(id, h) {
+        document.getElementById(id).innerHTML = h;
+      }
+      var dev = CONN[1];
+      el(
+        "s1",
+        header({ conn: true }) +
+          connMenu("devbox") +
+          '<div class="pop" style="left:302px;top:50px;width:320px"><div class="subhd">' +
+          s("ssh", 12) +
+          'devbox<span class="ml-auto">4 projects</span></div>' +
+          sorted(dev.proj).map(tile).join("") +
+          '<div class="hr"></div><div class="row mut">' +
+          s("plus", 13) +
+          'Add project</div><div class="note">' +
+          s("lock", 11) +
+          "Opening one releases maestro</div></div>",
+      );
+      el(
+        "s2",
+        header({ conn: true }) +
+          connMenu("gpu") +
+          '<div class="pop" style="left:302px;top:50px;width:320px"><div class="subhd">' +
+          s("ssh", 12) +
+          'gpu-runner-02</div><div class="flex flex-col items-center gap-3 py-5 text-center"><div class="text-[12px] mut">Not connected. Its projects show here once it is.</div><span class="pillbtn">Connect</span></div></div>',
+      );
+      el(
+        "s3",
+        header({ proj: true }) +
+          '<div class="pop" style="left:180px;width:300px">' +
+          sorted(CONN[0].proj)
+            .map(function (p) {
+              var t = st(p);
+              return (
+                '<div class="row' +
+                (p.needs ? " att" : "") +
+                '"><div class="min-w-0 flex-1"><div class="flex items-baseline gap-2"><span class="font-medium">' +
+                p.n +
+                '</span><span class="mono mut truncate">' +
+                p.p +
+                '</span></div><div class="text-[11px] mut truncate mt-0.5">' +
+                ctx(p) +
+                "</div></div>" +
+                (p.here
+                  ? '<span class="acc">' + s("check", 14, 2.2) + "</span>"
+                  : '<span class="text-[11px] font-medium ' + t[1] + '">' + t[0] + "</span>") +
+                "</div>"
+              );
+            })
+            .join("") +
+          '<div class="hr"></div><div class="row mut">' +
+          s("plus", 13) +
+          "Add project</div></div>",
+      );
+    </script>
+  </body>
+</html>

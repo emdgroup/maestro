@@ -210,12 +210,10 @@ impl AppState {
         }
     }
 
-    /// Forget the project this window holds. The server lets go of it when the relay that took it
-    /// detaches, which every caller of this brings about by dropping the relays.
-    pub fn release_active_project_lock(&self) {
-        if let Ok(mut current) = self.active_project_lock.lock() {
-            *current = None;
-        }
+    /// Forget the project this window holds, and say which it was. The server lets go of it when
+    /// told to with `ReleaseProjectLock`, or when the relay that took it detaches.
+    pub fn release_active_project_lock(&self) -> Option<(i32, ConnectionKey)> {
+        self.active_project_lock.lock().ok()?.take()
     }
 }
 

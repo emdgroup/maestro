@@ -3,7 +3,7 @@ import { CircleDot, Plus } from "lucide-react";
 import { Button } from "@/ui/button";
 import { BrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { IssueTrackingProviderForm } from "@/views/settings/issue-tracking-forms/IssueTrackingProviderForm";
-import { IntegrationConnectDialog } from "@/views/project-picker/integrations-tab/IntegrationConnectDialog";
+import { IntegrationConnectDialog } from "@/views/home/integrations/IntegrationConnectDialog";
 import {
   useDetectIssueTracking,
   useProjectIssueTrackingConfig,

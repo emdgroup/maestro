@@ -1,0 +1,1909 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Maestro home dashboard: approved mock</title>
+    <!-- Standalone copy of the canvas the design was approved on. Open it in a browser.
+     Tokens are the app's light theme from src/index.css; add class="dark" on <html> for dark. -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @custom-variant dark (&:where(.dark, .dark *));
+      @theme inline {
+        --color-background: var(--background);
+        --color-foreground: var(--foreground);
+        --color-card: var(--card);
+        --color-muted: var(--muted);
+        --color-muted-foreground: var(--muted-foreground);
+        --color-primary: var(--primary);
+        --color-primary-foreground: var(--primary-foreground);
+        --color-border: var(--border);
+      }
+      :root {
+        --background: oklch(98% 0.015 70);
+        --foreground: oklch(45% 0.01 250);
+        --card: oklch(99.5% 0.01 70);
+        --muted: oklch(94% 0.015 70);
+        --muted-foreground: oklch(45% 0.01 250);
+        --primary: oklch(0% 0 0);
+        --primary-foreground: oklch(100% 0 0);
+        --border: oklch(90% 0.01 70);
+        --accent: oklch(50% 0.15 250);
+      }
+      .dark {
+        --background: oklch(20% 0.01 250);
+        --foreground: oklch(92% 0.01 250);
+        --card: oklch(24% 0.01 250);
+        --muted: oklch(28% 0.01 250);
+        --muted-foreground: oklch(70% 0.01 250);
+        --primary: oklch(96% 0 0);
+        --primary-foreground: oklch(15% 0 0);
+        --border: oklch(32% 0.01 250);
+        --accent: oklch(75% 0.15 250);
+      }
+      body {
+        margin: 0;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: system-ui, sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <style>
+      #stage {
+        position: relative;
+        overflow: hidden;
+        border-radius: 14px;
+        min-height: 900px;
+        background: var(--background);
+      }
+      #stage .tint {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(
+            120% 70% at 25% 0%,
+            color-mix(in oklab, var(--accent) 40%, transparent),
+            transparent 70%
+          ),
+          radial-gradient(
+            70% 55% at 100% 35%,
+            color-mix(in oklab, var(--accent) 22%, transparent),
+            transparent 70%
+          );
+        pointer-events: none;
+      }
+      #stage .bubbles {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+      }
+      #stage .b {
+        position: absolute;
+        bottom: -40px;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle at 32% 30%,
+          color-mix(in oklab, var(--accent) 30%, white),
+          color-mix(in oklab, var(--accent) 70%, transparent) 62%
+        );
+        opacity: 0.45;
+        animation: rise linear infinite;
+      }
+      @keyframes rise {
+        0% {
+          transform: translate(0, 0);
+          opacity: 0;
+        }
+        10% {
+          opacity: 0.45;
+        }
+        50% {
+          transform: translate(14px, -460px);
+        }
+        90% {
+          opacity: 0.35;
+        }
+        100% {
+          transform: translate(-6px, -960px);
+          opacity: 0;
+        }
+      }
+      .glass {
+        background: color-mix(in oklab, var(--card) 42%, transparent);
+        -webkit-backdrop-filter: blur(20px) saturate(150%);
+        backdrop-filter: blur(20px) saturate(150%);
+        border: 1px solid color-mix(in oklab, var(--foreground) 9%, transparent);
+        box-shadow:
+          0 1px 0 color-mix(in oklab, white 20%, transparent) inset,
+          0 18px 40px -24px rgb(0 0 0/0.35);
+      }
+      .glass-strong {
+        background: color-mix(in oklab, var(--card) 72%, transparent);
+        -webkit-backdrop-filter: blur(24px) saturate(160%);
+        backdrop-filter: blur(24px) saturate(160%);
+        border: 1px solid color-mix(in oklab, var(--foreground) 11%, transparent);
+        box-shadow:
+          0 1px 0 color-mix(in oklab, white 20%, transparent) inset,
+          0 20px 50px -18px rgb(0 0 0/0.45);
+      }
+      .pane {
+        background: color-mix(in oklab, var(--background) 28%, transparent);
+        border: 1px solid color-mix(in oklab, var(--foreground) 7%, transparent);
+        transition:
+          background 0.18s,
+          transform 0.18s,
+          border-color 0.18s;
+      }
+      .pane:hover {
+        background: color-mix(in oklab, var(--background) 62%, transparent);
+        transform: translateY(-2px);
+        border-color: color-mix(in oklab, var(--foreground) 14%, transparent);
+      }
+      .pane.sel {
+        border-color: color-mix(in oklab, var(--accent) 70%, transparent);
+        background: color-mix(in oklab, var(--accent) 10%, transparent);
+        transform: none;
+      }
+      .pane.attn {
+        background: color-mix(
+          in oklab,
+          #f59e0b 13%,
+          color-mix(in oklab, var(--background) 30%, transparent)
+        );
+        border-color: color-mix(in oklab, #f59e0b 34%, transparent);
+      }
+      .pane.attn:hover {
+        background: color-mix(
+          in oklab,
+          #f59e0b 19%,
+          color-mix(in oklab, var(--background) 45%, transparent)
+        );
+        border-color: color-mix(in oklab, #f59e0b 48%, transparent);
+      }
+      .ghost {
+        border: 1.5px dashed color-mix(in oklab, var(--foreground) 18%, transparent);
+        transition:
+          border-color 0.18s,
+          background 0.18s,
+          color 0.18s;
+      }
+      .ghost:hover {
+        border-color: color-mix(in oklab, var(--accent) 70%, transparent);
+        background: color-mix(in oklab, var(--accent) 8%, transparent);
+        color: var(--foreground);
+      }
+      /* working is the accent colour, review the Review column's purple-500 */
+      .c-work {
+        color: var(--accent);
+      }
+      .c-review {
+        color: var(--color-purple-500, oklch(62.7% 0.265 303.9));
+      }
+      /* A panel draws its glass on ::before. An element with backdrop-filter is a backdrop root, so
+         a menu or hover card inside the panel itself could only blur the panel, not what lies
+         under it; on a pseudo-element the panel stays transparent to its popups' blur. */
+      section.glass {
+        position: relative;
+        isolation: isolate;
+        background: none;
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+        box-shadow: 0 18px 40px -24px rgb(0 0 0/0.35);
+      }
+      section.glass::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        border-radius: inherit;
+        pointer-events: none;
+        background: color-mix(in oklab, var(--card) 30%, transparent);
+        -webkit-backdrop-filter: blur(8px) saturate(140%);
+        backdrop-filter: blur(8px) saturate(140%);
+        box-shadow: 0 1px 0 color-mix(in oklab, white 20%, transparent) inset;
+      }
+      .pop {
+        box-shadow:
+          0 1px 0 color-mix(in oklab, white 20%, transparent) inset,
+          0 20px 50px -18px rgb(0 0 0/0.35);
+      }
+      /* integration tiles and their hover card */
+      .card {
+        display: none;
+        position: absolute;
+        left: -8px;
+        top: 42px;
+        padding-top: 8px;
+        z-index: 20;
+      }
+      .wrap:hover .card,
+      .wrap.pinned .card {
+        display: block;
+      }
+      #integrations.has-pin .wrap:not(.pinned):hover .card {
+        display: none;
+      }
+      .card > div {
+        animation: drop 0.14s ease-out;
+        transform-origin: top left;
+      }
+      .wrap:hover .tile,
+      .wrap.pinned .tile {
+        transform: translateY(-2px);
+        border-color: color-mix(in oklab, var(--accent) 60%, transparent);
+      }
+      .wrap.pinned .tile {
+        box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 35%, transparent);
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        padding: 7px 9px;
+        border-radius: 10px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .row:hover {
+        background: color-mix(in oklab, var(--foreground) 7%, transparent);
+      }
+      .ico {
+        object-fit: contain;
+      }
+      .dark .ico.mono {
+        filter: invert(1);
+      }
+      .badge {
+        position: absolute;
+        right: -5px;
+        top: -5px;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        border-radius: 9px;
+        font-size: 10px;
+        font-weight: 600;
+        display: grid;
+        place-items: center;
+        background: var(--foreground);
+        color: var(--background);
+      }
+      .cap {
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 6px;
+        background: color-mix(in oklab, var(--foreground) 7%, transparent);
+        color: var(--muted-foreground);
+      }
+      .logo {
+        filter: drop-shadow(0 6px 14px rgb(0 0 0/0.18));
+      }
+      .hl {
+        letter-spacing: -0.025em;
+      }
+      .num {
+        font-variant-numeric: tabular-nums;
+      }
+      .pill {
+        background: color-mix(in oklab, var(--card) 50%, transparent);
+        -webkit-backdrop-filter: blur(14px);
+        backdrop-filter: blur(14px);
+        border: 1px solid color-mix(in oklab, var(--foreground) 10%, transparent);
+      }
+      .pulse {
+        animation: pulse 2.4s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        50% {
+          opacity: 0.35;
+        }
+      }
+      .field {
+        background: color-mix(in oklab, var(--background) 55%, transparent);
+        border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+      }
+      .field:focus {
+        outline: none;
+        border-color: color-mix(in oklab, var(--accent) 70%, transparent);
+      }
+      .seg {
+        background: color-mix(in oklab, var(--background) 45%, transparent);
+        border: 1px solid color-mix(in oklab, var(--foreground) 9%, transparent);
+      }
+      .seg button.on {
+        background: color-mix(in oklab, var(--card) 90%, transparent);
+        box-shadow: 0 1px 3px rgb(0 0 0/0.15);
+      }
+      .scrim {
+        background: color-mix(in oklab, var(--background) 30%, transparent);
+        -webkit-backdrop-filter: blur(6px);
+        backdrop-filter: blur(6px);
+      }
+      .sheet {
+        animation: pop 0.18s ease-out;
+      }
+      @keyframes pop {
+        from {
+          opacity: 0;
+          transform: translateY(8px) scale(0.98);
+        }
+      }
+      .menu {
+        animation: drop 0.14s ease-out;
+        transform-origin: top right;
+      }
+      @keyframes drop {
+        from {
+          opacity: 0;
+          transform: scale(0.96) translateY(-4px);
+        }
+      }
+      .mi {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        padding: 7px 10px;
+        border-radius: 10px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .mi:hover {
+        background: color-mix(in oklab, var(--foreground) 8%, transparent);
+      }
+      .mi svg {
+        opacity: 0.7;
+      }
+      .mi.danger {
+        color: #e11d48;
+      }
+      .mi.danger:hover {
+        background: color-mix(in oklab, #e11d48 12%, transparent);
+      }
+      .spin {
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .reveal {
+        animation: reveal 0.25s ease-out;
+      }
+      @keyframes reveal {
+        from {
+          opacity: 0;
+          transform: translateY(-4px);
+        }
+      }
+      .shake {
+        animation: shake 0.3s;
+      }
+      @keyframes shake {
+        25% {
+          transform: translateX(-4px);
+        }
+        75% {
+          transform: translateX(4px);
+        }
+      }
+    </style>
+    <div id="root" class="p-3 text-foreground text-sm">
+      <div
+        id="stage"
+        onclick="
+          if (menuOpen && !event.target.closest('.menu-wrap')) {
+            menuOpen = null;
+            render();
+          }
+        "
+      >
+        <span class="tint"></span><span class="bubbles" id="bubbles"></span>
+
+        <div id="corner" class="absolute top-0 inset-x-0 h-14 flex items-center gap-2 px-4 z-10">
+          <span class="ml-auto flex items-center gap-3 px-2 text-muted-foreground text-xs"
+            ><span>●</span><span>◐</span><span>⚙</span><span class="opacity-60">─ ▢ ✕</span></span
+          >
+        </div>
+
+        <main class="relative z-10 px-12 pt-20 pb-14 max-w-[1200px] mx-auto">
+          <section id="hero" class="mb-12 flex items-end gap-12">
+            <div class="flex items-center gap-4">
+              <img
+                id="logo"
+                class="logo h-16 w-16 object-contain"
+                src="../../public/maestro-logo.png"
+                alt="Maestro"
+              />
+              <div>
+                <h1 class="hl text-[28px] leading-none font-semibold">Maestro</h1>
+                <div id="sub" class="text-xs text-muted-foreground mt-1.5">
+                  Conduct your agents in concert
+                </div>
+              </div>
+            </div>
+            <div id="scores" class="ml-auto flex gap-10"></div>
+          </section>
+          <div class="grid grid-cols-2 gap-5 mb-5">
+            <section id="add-connection" class="glass rounded-[22px] p-5">
+              <div class="text-sm font-medium text-foreground">Add a connection</div>
+              <div class="text-xs text-muted-foreground mt-0.5">Where your project lives</div>
+              <div class="flex gap-2 mt-4" id="add-conn-types"></div>
+            </section>
+            <section id="integrations" class="glass rounded-[22px] p-5 relative z-10"></section>
+          </div>
+          <div id="connections" class="grid grid-cols-2 gap-5"></div>
+        </main>
+
+        <div
+          id="proj-scrim"
+          style="display: none"
+          onclick="if (event.target === this) hide('proj-scrim');"
+          class="scrim absolute inset-0 z-30 flex items-start justify-center pt-40"
+        >
+          <div class="sheet glass rounded-[22px] w-[620px] p-6">
+            <div class="flex items-start">
+              <div>
+                <div
+                  class="text-[11px] uppercase tracking-[0.14em] text-muted-foreground"
+                  id="proj-conn"
+                ></div>
+                <div class="hl text-2xl font-semibold mt-0.5">Add a project</div>
+              </div>
+              <button
+                id="proj-close"
+                onclick="hide('proj-scrim')"
+                class="ml-auto h-7 w-7 rounded-full grid place-items-center text-muted-foreground hover:bg-foreground/10 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <div class="grid grid-cols-3 gap-3 mt-5">
+              <button
+                id="opt-open"
+                onclick="pickProj('open')"
+                class="pane rounded-2xl p-4 text-left cursor-pointer"
+              >
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                >
+                  <path
+                    d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+                  />
+                </svg>
+                <div class="font-medium mt-3">Open a folder</div>
+                <div class="text-xs text-muted-foreground mt-0.5">
+                  A repository already on this machine
+                </div>
+              </button>
+              <button
+                id="opt-clone"
+                onclick="pickProj('clone')"
+                class="pane rounded-2xl p-4 text-left cursor-pointer"
+              >
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                >
+                  <circle cx="6" cy="5" r="2" />
+                  <circle cx="18" cy="5" r="2" />
+                  <circle cx="12" cy="19" r="2" />
+                  <path d="M6 7v2a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V7M12 12v5" />
+                </svg>
+                <div class="font-medium mt-3">Clone</div>
+                <div class="text-xs text-muted-foreground mt-0.5">From GitHub or any git URL</div>
+              </button>
+              <button
+                id="opt-create"
+                onclick="pickProj('create')"
+                class="pane rounded-2xl p-4 text-left cursor-pointer"
+              >
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                >
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                <div class="font-medium mt-3">Start fresh</div>
+                <div class="text-xs text-muted-foreground mt-0.5">A new, empty repository</div>
+              </button>
+            </div>
+            <div id="proj-detail" class="mt-4"></div>
+          </div>
+        </div>
+
+        <div
+          id="conn-scrim"
+          style="display: none"
+          onclick="if (event.target === this) hide('conn-scrim');"
+          class="scrim absolute inset-0 z-30 flex items-start justify-center pt-32"
+        >
+          <div class="sheet glass rounded-[22px] w-[560px] p-6">
+            <div class="flex items-start">
+              <div>
+                <div class="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                  Add a connection
+                </div>
+                <div id="conn-title" class="hl text-2xl font-semibold mt-0.5"></div>
+              </div>
+              <button
+                id="conn-close"
+                onclick="hide('conn-scrim')"
+                class="ml-auto h-7 w-7 rounded-full grid place-items-center text-muted-foreground hover:bg-foreground/10 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <div id="conn-body" class="mt-5"></div>
+          </div>
+        </div>
+
+        <!-- confirm: stop server / remove connection -->
+        <div
+          id="confirm-scrim"
+          style="display: none"
+          onclick="if (event.target === this) hide('confirm-scrim');"
+          class="scrim absolute inset-0 z-30 flex items-start justify-center pt-48"
+        >
+          <div class="sheet glass-strong rounded-[22px] w-[480px] p-6">
+            <div id="confirm-title" class="hl text-xl font-semibold"></div>
+            <ul id="confirm-impact" class="mt-3 space-y-2 text-sm"></ul>
+            <div id="confirm-note" class="mt-3 text-xs text-muted-foreground"></div>
+            <div class="flex justify-end gap-2 mt-5">
+              <button
+                id="confirm-cancel"
+                onclick="hide('confirm-scrim')"
+                class="h-9 px-4 rounded-xl text-xs hover:bg-foreground/10 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                id="confirm-go"
+                onclick="confirmGo()"
+                class="h-9 px-4 rounded-xl text-xs bg-rose-600 text-white cursor-pointer"
+              ></button>
+            </div>
+          </div>
+        </div>
+
+        <div
+          id="int-scrim"
+          style="display: none"
+          onclick="if (event.target === this) hide('int-scrim');"
+          class="scrim absolute inset-0 z-30 flex items-start justify-center pt-32"
+        >
+          <div id="int-sheet" class="sheet glass rounded-[22px] w-[520px] p-6"></div>
+        </div>
+
+        <div
+          id="toast"
+          style="display: none"
+          class="absolute z-40 bottom-6 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-lg pill text-xs"
+        ></div>
+        <button
+          id="version"
+          onclick="toast('Update card')"
+          class="absolute z-20 bottom-4 right-4 px-2 py-1 rounded-md text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+        >
+          v0.34.0
+        </button>
+      </div>
+    </div>
+    <script>
+      (function () {
+        var h = "";
+        for (var i = 0; i < 34; i++) {
+          var s = 4 + Math.random() * 14;
+          h +=
+            '<span class="b" style="left:' +
+            Math.random() * 100 +
+            "%;width:" +
+            s +
+            "px;height:" +
+            s +
+            "px;animation-duration:" +
+            (22 + Math.random() * 20) +
+            "s;animation-delay:-" +
+            Math.random() * 40 +
+            's"></span>';
+        }
+        [
+          [170, "6%", 46],
+          [230, "74%", 58],
+          [120, "42%", 38],
+        ].forEach(function (g) {
+          h +=
+            '<span class="b" style="left:' +
+            g[1] +
+            ";width:" +
+            g[0] +
+            "px;height:" +
+            g[0] +
+            "px;opacity:.18;animation-duration:" +
+            g[2] +
+            "s;animation-delay:-" +
+            g[2] / 2 +
+            's"></span>';
+        });
+        document.getElementById("bubbles").innerHTML = h;
+      })();
+      var ICON = {
+        local: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+        ssh: '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
+        wsl: '<path d="m5 17 5-5-5-5M12 19h7"/>',
+        docker:
+          '<path d="M3 12h18c-.5 4.5-4.2 8-9 8s-8.5-3.5-9-8Z"/><path d="M6 12V9h3v3M9 9V6h3v6M12 9h3v3"/>',
+        gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>',
+        pen: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+        key: '<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.8-9.8M17 6l3 3M14 9l2 2"/>',
+        restart: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+        stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+        play: '<path d="m7 4 13 8-13 8Z"/>',
+        trash: '<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>',
+        term: '<path d="m5 17 5-5-5-5M12 19h7"/>',
+      };
+      function svg(k, s) {
+        return (
+          '<svg width="' +
+          (s || 16) +
+          '" height="' +
+          (s || 16) +
+          '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">' +
+          ICON[k] +
+          "</svg>"
+        );
+      }
+      var CONN = [
+        {
+          id: "local",
+          name: "This computer",
+          kind: "local",
+          detail: "LAPTOP-BILLY",
+          home: "C:\\Users\\billy\\src",
+          sep: "\\",
+          state: "up",
+          seen: true,
+          auto: 3,
+          proj: [
+            {
+              n: "maestro",
+              path: "~\\maestro",
+              work: 1,
+              review: 2,
+              queued: 1,
+              wait: 1,
+              here: true,
+            },
+            { n: "docs-site", path: "~\\src\\docs-site", work: 0, review: 0, queued: 2 },
+            { n: "scratch", path: "~\\src\\scratch", work: 0, review: 0, queued: 0 },
+          ],
+        },
+        {
+          id: "devbox",
+          name: "devbox",
+          kind: "ssh",
+          detail: "billy@devbox.internal",
+          home: "/home/billy/src",
+          sep: "/",
+          state: "up",
+          seen: true,
+          auto: 5,
+          running: 1,
+          proj: [
+            {
+              n: "api-gateway",
+              path: "~/src/api-gateway",
+              work: 2,
+              review: 1,
+              queued: 2,
+              auto: "nightly-lint running",
+              wait: 1,
+            },
+            {
+              n: "billing",
+              path: "~/src/billing",
+              work: 1,
+              review: 0,
+              queued: 0,
+              wait: 1,
+              holder: "WS-7F2",
+              needs: "Permission to run a migration",
+            },
+            { n: "auth-service", path: "~/src/auth-service", work: 1, review: 0, queued: 3 },
+            { n: "search-indexer", path: "~/src/search-indexer", work: 0, review: 0, queued: 0 },
+          ],
+        },
+        {
+          id: "gpu",
+          name: "gpu-runner-02",
+          kind: "ssh",
+          detail: "ml@10.0.4.22",
+          home: "/home/ml",
+          sep: "/",
+          state: "idle",
+          pw: true,
+          auto: 1,
+          later: [
+            { n: "model-train", path: "/data/model-train", work: 1, review: 0, queued: 2 },
+            {
+              n: "eval-harness",
+              path: "~/eval-harness",
+              work: 0,
+              review: 1,
+              queued: 0,
+              holder: "WS-7F2",
+            },
+          ],
+        },
+        {
+          id: "wsl",
+          name: "Ubuntu",
+          kind: "wsl",
+          detail: "WSL",
+          state: "idle",
+          auto: 0,
+          later: [{ n: "dotfiles", path: "~/dotfiles", work: 0, review: 0, queued: 1 }],
+        },
+      ];
+      var addingTo = null,
+        connType = null,
+        auth = "agent",
+        menuOpen = null,
+        pending = null;
+      function $(i) {
+        return document.getElementById(i);
+      }
+      function show(i) {
+        $(i).style.display = "";
+      }
+      function hide(i) {
+        $(i).style.display = "none";
+      }
+      function toast(m) {
+        var t = $("toast");
+        t.textContent = m;
+        t.style.display = "";
+        clearTimeout(window._t);
+        window._t = setTimeout(function () {
+          t.style.display = "none";
+        }, 1800);
+      }
+      function conn(id) {
+        return CONN.filter(function (c) {
+          return c.id === id;
+        })[0];
+      }
+      var BTN = "h-9 px-4 rounded-xl text-xs bg-primary text-primary-foreground cursor-pointer";
+      function spinner() {
+        return '<svg class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>';
+      }
+      /* connection menu */
+      function toggleMenu(id) {
+        menuOpen = menuOpen === id ? null : id;
+        render();
+      }
+      function mi(id, icon, label, hint, act, cls) {
+        return (
+          '<button id="' +
+          id +
+          '" onclick="' +
+          act +
+          '" class="mi ' +
+          (cls || "") +
+          '">' +
+          svg(icon, 15) +
+          '<span class="flex-1">' +
+          label +
+          "</span>" +
+          (hint ? '<span class="text-[11px] text-muted-foreground">' + hint + "</span>" : "") +
+          "</button>"
+        );
+      }
+      function menuFor(c) {
+        var it = [],
+          sep = '<div class="my-1 h-px bg-foreground/10"></div>';
+        var head =
+          '<div class="px-2.5 pt-1.5 pb-2"><div class="text-xs font-medium">' +
+          c.name +
+          '</div><div class="text-[11px] text-muted-foreground">' +
+          (c.state === "up"
+            ? "Maestro server 0.34.0 · up 3d 6h"
+            : c.state === "stopped"
+              ? "Server stopped"
+              : c.state === "down"
+                ? "Last seen 2h ago"
+                : "Not connected") +
+          "</div></div>" +
+          sep;
+        if (c.state === "down") {
+          it.push(
+            mi(
+              "m-retry-" + c.id,
+              "restart",
+              "Try again",
+              "",
+              "menuOpen=null;render();toast('Retrying " + c.name + "')",
+            ),
+          );
+        }
+        if (c.state === "stopped") {
+          it.push(mi("m-start-" + c.id, "play", "Start server", "", "startServer('" + c.id + "')"));
+        }
+        it.push(
+          mi(
+            "m-settings-" + c.id,
+            "gear",
+            "Settings",
+            "Agents, capacity, webhooks",
+            "menuOpen=null;render();toast('Connection settings: " + c.name + "')",
+          ),
+        );
+
+        if (c.kind === "ssh" && c.state !== "signin")
+          it.push(
+            mi(
+              "m-auth-" + c.id,
+              "key",
+              "Change sign-in",
+              c.pw ? "Password" : "Agent",
+              "menuOpen=null;render();toast('Sign-in method for " + c.name + "')",
+            ),
+          );
+        if (c.state === "up") {
+          it.push(sep);
+          it.push(
+            mi(
+              "m-restart-" + c.id,
+              "restart",
+              "Restart server",
+              "",
+              "ask('restart','" + c.id + "')",
+            ),
+          );
+          it.push(
+            mi("m-stop-" + c.id, "stop", "Stop server", "", "ask('stop','" + c.id + "')", "danger"),
+          );
+        }
+        if (c.kind !== "local") {
+          it.push(sep);
+          it.push(
+            mi(
+              "m-remove-" + c.id,
+              "trash",
+              "Remove connection",
+              "",
+              "ask('remove','" + c.id + "')",
+              "danger",
+            ),
+          );
+        }
+        return (
+          '<div id="menu-pop-' +
+          c.id +
+          '" class="menu glass pop absolute right-0 top-9 z-20 w-64 rounded-2xl p-1.5 text-sm">' +
+          head +
+          it.join("") +
+          "</div>"
+        );
+      }
+      function ask(kind, id) {
+        var c = conn(id);
+        menuOpen = null;
+        render();
+        pending = { kind: kind, id: id };
+        var s = 0,
+          w = 0;
+        (c.proj || []).forEach(function (p) {
+          s += p.work;
+          w += p.wait || 0;
+        });
+        var holders = (c.proj || [])
+          .filter(function (p) {
+            return p.holder;
+          })
+          .map(function (p) {
+            return p.holder;
+          });
+        var items = [];
+        if (kind !== "remove" || c.state === "up") {
+          if (s)
+            items.push([
+              s + " agent" + (s > 1 ? "s" : "") + " stop mid-task",
+              "Their tasks resume where they were when the server is back.",
+            ]);
+          items.push([
+            "Task pipelines pause on every project here",
+            "Queued tasks wait until the server runs again.",
+          ]);
+          if (c.auto)
+            items.push([
+              c.auto + " scheduled automation" + (c.auto > 1 ? "s" : "") + " skip their runs",
+              "A missed run is dropped, not caught up.",
+            ]);
+          if (holders.length) items.push(["Other windows lose their projects", holders.join(", ")]);
+        }
+        var t = {
+          stop: "Stop the server on " + c.name + "?",
+          restart: "Restart the server on " + c.name + "?",
+          remove: "Remove " + c.name + " from Maestro?",
+        }[kind];
+        var go = { stop: "Stop server", restart: "Restart", remove: "Remove" }[kind];
+        var note = {
+          stop: "It starts again the next time you open a project here.",
+          restart: "Takes a few seconds. Work picks up where it stopped.",
+          remove:
+            "Projects and their boards stay on " +
+            c.detail +
+            ". Adding the connection again brings them back.",
+        }[kind];
+        if (kind === "restart")
+          items = items
+            .slice(0, 1)
+            .concat([["Everything resumes on its own", "Nothing is lost, sessions are reloaded."]]);
+        $("confirm-title").textContent = t;
+        $("confirm-go").textContent = go;
+        $("confirm-note").textContent = note;
+        $("confirm-go").className =
+          "h-9 px-4 rounded-xl text-xs cursor-pointer " +
+          (kind === "restart" ? "bg-primary text-primary-foreground" : "bg-rose-600 text-white");
+        $("confirm-impact").innerHTML = items
+          .map(function (i) {
+            return (
+              '<li class="flex gap-2.5"><span class="mt-1.5 h-1.5 w-1.5 rounded-full bg-foreground/40 shrink-0"></span><span><span class="block">' +
+              i[0] +
+              '</span><span class="block text-xs text-muted-foreground">' +
+              i[1] +
+              "</span></span></li>"
+            );
+          })
+          .join("");
+        show("confirm-scrim");
+      }
+      function confirmGo() {
+        var c = conn(pending.id);
+        hide("confirm-scrim");
+        if (pending.kind === "stop") {
+          c.state = "stopped";
+          c.saved = c.proj;
+          toast("Server on " + c.name + " stopped");
+        } else if (pending.kind === "restart") {
+          toast("Restarting " + c.name + "…");
+        } else {
+          CONN = CONN.filter(function (x) {
+            return x !== c;
+          });
+          toast(c.name + " removed");
+        }
+        render();
+      }
+      function startServer(id) {
+        var c = conn(id);
+        menuOpen = null;
+        c.state = "connecting";
+        c.step = 1;
+        render();
+        setTimeout(function () {
+          c.step = 2;
+          render();
+          setTimeout(function () {
+            c.state = "up";
+            c.proj = c.saved;
+            render();
+          }, 600);
+        }, 600);
+      }
+      /* connect on demand; a password connection asks inline first */
+      function connectTo(id) {
+        var c = conn(id);
+        if (!c.pw) return attach(c);
+        c.state = "signin";
+        c.err = null;
+        render();
+        setTimeout(function () {
+          var f = $("pw-" + id);
+          if (f) f.focus();
+        }, 0);
+      }
+      function cancelSignIn(id) {
+        conn(id).state = "idle";
+        render();
+      }
+      function submitSignIn(id) {
+        var c = conn(id),
+          v = $("pw-" + id).value;
+        if (!v) {
+          c.err = "Enter the password for " + c.detail + ".";
+          render();
+          return;
+        }
+        attach(c);
+      }
+      function attach(c) {
+        c.state = "connecting";
+        c.step = 0;
+        render();
+        var iv = setInterval(function () {
+          c.step++;
+          if (c.step > 2) {
+            clearInterval(iv);
+            c.state = "up";
+            c.seen = true;
+            c.proj = c.later;
+            render();
+          } else render();
+        }, 650);
+      }
+      /* add project */
+      function openAdd(id) {
+        addingTo = conn(id);
+        $("proj-conn").textContent = "On " + addingTo.name;
+        $("proj-detail").innerHTML = "";
+        ["open", "clone", "create"].forEach(function (o) {
+          $("opt-" + o).classList.remove("sel");
+        });
+        show("proj-scrim");
+      }
+      function cloneTab(t) {
+        ["provider", "url"].forEach(function (x) {
+          document.getElementById("clone-tab-" + x).className =
+            "clone-tab flex-1 h-7 rounded-md cursor-pointer " +
+            (x === t ? "bg-card shadow-sm" : "text-muted-foreground");
+        });
+        document.getElementById("clone-provider").style.display =
+          t === "provider" ? "flex" : "none";
+        document.getElementById("clone-url").style.display = t === "url" ? "block" : "none";
+      }
+      function pickProj(o) {
+        ["open", "clone", "create"].forEach(function (x) {
+          $("opt-" + x).classList.toggle("sel", x === o);
+        });
+        var h = addingTo.home,
+          s = addingTo.sep,
+          d;
+        if (o === "open")
+          d =
+            '<div class="flex gap-2"><input id="open-path" name="open-path" class="field flex-1 h-9 px-3 rounded-xl text-xs font-mono" value="' +
+            h +
+            s +
+            '"/><button id="browse" onclick="toast(\'Folder browser on ' +
+            addingTo.name +
+            '\')" class="pill h-9 px-3 rounded-xl text-xs cursor-pointer">Browse…</button><button id="open-go" onclick="projDone()" class="' +
+            BTN +
+            '">Open</button></div>';
+        else if (o === "clone")
+          d =
+            '<div class="space-y-2"><div class="flex gap-1 p-[3px] rounded-lg bg-foreground/5 text-xs"><button id="clone-tab-provider" onclick="cloneTab(\'provider\')" class="clone-tab flex-1 h-7 rounded-md cursor-pointer bg-card shadow-sm">Provider</button><button id="clone-tab-url" onclick="cloneTab(\'url\')" class="clone-tab flex-1 h-7 rounded-md cursor-pointer text-muted-foreground">URL</button></div><div id="clone-provider" class="flex gap-2"><button id="clone-gh" class="pill h-8 px-3 rounded-xl text-xs cursor-pointer">GitHub</button><button id="clone-gl" class="pill h-8 px-3 rounded-xl text-xs cursor-pointer">GitLab</button></div><input id="clone-url" name="clone-url" style="display:none" class="field w-full h-9 px-3 rounded-xl text-xs font-mono" placeholder="github.com/owner/repo or any git URL"/><div class="flex gap-2 items-center"><span class="text-[11px] text-muted-foreground">Into</span><input id="clone-into" name="clone-into" class="field flex-1 h-9 px-3 rounded-xl text-xs font-mono" value="' +
+            h +
+            '"/><button id="clone-go" onclick="projDone()" class="' +
+            BTN +
+            '">Clone</button></div></div>';
+        else
+          d =
+            '<div class="flex gap-2 items-center"><input id="create-name" name="create-name" class="field w-48 h-9 px-3 rounded-xl text-xs" placeholder="Project name"/><span class="text-[11px] text-muted-foreground">in</span><input id="create-into" name="create-into" class="field flex-1 h-9 px-3 rounded-xl text-xs font-mono" value="' +
+            h +
+            '"/><button id="create-go" onclick="projDone()" class="' +
+            BTN +
+            '">Create</button></div>';
+        $("proj-detail").innerHTML = d;
+      }
+      function projDone() {
+        hide("proj-scrim");
+        toast("Project added on " + addingTo.name);
+      }
+      /* add connection */
+      var TYPES = [
+        ["ssh", "SSH host"],
+        ["wsl", "WSL distro"],
+        ["docker", "Container"],
+      ];
+      function openConn(t) {
+        connType = t;
+        auth = "agent";
+        $("conn-title").textContent = TYPES.filter(function (x) {
+          return x[0] === t;
+        })[0][1];
+        renderConn();
+        show("conn-scrim");
+      }
+      function renderConn() {
+        var b;
+        if (connType === "ssh") {
+          b =
+            '<label class="text-[11px] text-muted-foreground">Address</label>' +
+            '<input id="ssh-address" name="ssh-address" class="field w-full h-11 px-3.5 mt-1 rounded-xl text-sm font-mono" placeholder="user@host or user@host:port"/>' +
+            '<label class="block text-[11px] text-muted-foreground mt-4">Name <span class="opacity-60">(optional)</span></label>' +
+            '<input id="ssh-name" name="ssh-name" class="field w-full h-9 px-3 mt-1 rounded-xl text-xs" placeholder="Shown on the home page, defaults to the host"/>' +
+            '<label class="block text-[11px] text-muted-foreground mt-4">Sign in with</label>' +
+            '<div class="seg mt-1 p-1 rounded-xl grid grid-cols-3 gap-1 text-xs">' +
+            [
+              ["agent", "SSH agent"],
+              ["key", "Key file"],
+              ["password", "Password"],
+            ]
+              .map(function (a) {
+                return (
+                  '<button id="auth-' +
+                  a[0] +
+                  '" onclick="auth=\'' +
+                  a[0] +
+                  '\';renderConn()" class="h-8 rounded-lg cursor-pointer ' +
+                  (auth === a[0] ? "on font-medium" : "text-muted-foreground") +
+                  '">' +
+                  a[1] +
+                  "</button>"
+                );
+              })
+              .join("") +
+            "</div>" +
+            '<div class="mt-2 min-h-[44px] text-xs text-muted-foreground">' +
+            (auth === "agent"
+              ? "Uses the keys your SSH agent already holds. Nothing is stored by Maestro."
+              : auth === "key"
+                ? '<div class="flex gap-2"><input id="ssh-key" name="ssh-key" class="field flex-1 h-9 px-3 rounded-xl font-mono" value="~/.ssh/id_ed25519"/><button id="ssh-key-browse" class="pill h-9 px-3 rounded-xl cursor-pointer">Browse…</button></div>'
+                : '<input id="ssh-password" name="ssh-password" type="password" class="field w-full h-9 px-3 rounded-xl" placeholder="Password"/><label class="flex items-center gap-1.5 mt-2"><input id="ssh-remember" name="ssh-remember" type="checkbox"/> Remember in the system keychain</label>') +
+            "</div>" +
+            '<div class="flex items-center mt-4"><span class="text-[11px] text-muted-foreground">Maestro installs its server on the host the first time.</span><button id="conn-go" onclick="connecting()" class="ml-auto ' +
+            BTN +
+            '">Connect</button></div>';
+        } else if (connType === "wsl") {
+          b =
+            '<div class="text-xs text-muted-foreground mb-2">Distributions found on this PC</div><div class="space-y-1.5">' +
+            [
+              ["Ubuntu-22.04", "Running", "already added"],
+              ["Debian", "Stopped", ""],
+              ["Ubuntu-24.04", "Running", ""],
+            ]
+              .map(function (d, i) {
+                var taken = !!d[2];
+                return (
+                  '<button id="wsl-' +
+                  i +
+                  '" ' +
+                  (taken ? "disabled" : "onclick=\"connecting('" + d[0] + "')\"") +
+                  ' class="pane w-full rounded-xl px-3.5 py-2.5 flex items-center gap-3 text-left ' +
+                  (taken ? "opacity-50 cursor-default" : "cursor-pointer") +
+                  '">' +
+                  svg("wsl") +
+                  '<span class="font-medium">' +
+                  d[0] +
+                  '</span><span class="ml-auto text-[11px] text-muted-foreground">' +
+                  (taken ? d[2] : d[1]) +
+                  "</span></button>"
+                );
+              })
+              .join("") +
+            "</div>";
+        } else {
+          b =
+            '<div class="text-xs text-muted-foreground mb-2">Running containers</div><div class="space-y-1.5">' +
+            [
+              ["maestro-node20", "node:20-bookworm", "Up 3 days"],
+              ["py-dev", "python:3.12", "Up 2 hours"],
+            ]
+              .map(function (d, i) {
+                return (
+                  '<button id="docker-' +
+                  i +
+                  '" onclick="connecting(\'' +
+                  d[0] +
+                  '\')" class="pane w-full rounded-xl px-3.5 py-2.5 flex items-center gap-3 text-left cursor-pointer">' +
+                  svg("docker") +
+                  '<span><span class="block font-medium">' +
+                  d[0] +
+                  '</span><span class="block text-[11px] text-muted-foreground font-mono">' +
+                  d[1] +
+                  '</span></span><span class="ml-auto text-[11px] text-muted-foreground">' +
+                  d[2] +
+                  "</span></button>"
+                );
+              })
+              .join("") +
+            "</div>";
+        }
+        $("conn-body").innerHTML = b;
+      }
+      function connecting(name) {
+        var steps = [
+          "Reaching " + (name || "the host"),
+          "Installing the Maestro server",
+          "Starting it",
+          "Ready",
+        ];
+        function draw(k) {
+          $("conn-body").innerHTML =
+            '<div class="space-y-2.5 py-1">' +
+            steps
+              .map(function (s, i) {
+                var st =
+                  i < k
+                    ? '<span class="text-emerald-600">✓</span>'
+                    : i === k
+                      ? spinner()
+                      : '<span class="h-1.5 w-1.5 rounded-full bg-foreground/20 inline-block"></span>';
+                return (
+                  '<div class="flex items-center gap-3 text-sm ' +
+                  (i > k ? "text-muted-foreground" : "") +
+                  '"><span class="w-4 grid place-items-center">' +
+                  st +
+                  "</span>" +
+                  s +
+                  "</div>"
+                );
+              })
+              .join("") +
+            "</div>";
+        }
+        var k = 0;
+        draw(0);
+        var iv = setInterval(function () {
+          k++;
+          draw(k);
+          if (k >= steps.length - 1) {
+            clearInterval(iv);
+            setTimeout(function () {
+              hide("conn-scrim");
+              toast("Connection added");
+            }, 700);
+          }
+        }, 700);
+      }
+      /* board */
+      function stat(n, label, cls) {
+        return (
+          '<span class="flex items-baseline gap-1"><span class="num text-base font-semibold ' +
+          (n ? cls : "text-muted-foreground/50") +
+          '">' +
+          n +
+          '</span><span class="text-[11px] text-muted-foreground">' +
+          label +
+          "</span></span>"
+        );
+      }
+      function projState(p) {
+        return p.needs
+          ? ["Needs you", "text-amber-600 dark:text-amber-400", 0]
+          : p.work
+            ? ["Working", "c-work", 1]
+            : p.queued || p.review
+              ? ["Idle", "text-muted-foreground", 2]
+              : ["Quiet", "text-muted-foreground/60", 3];
+      }
+      /* minimized panel: one line of chips, the ones that need attention first */
+      function chip(p) {
+        var st = projState(p);
+        return (
+          '<a id="chip-' +
+          p.n +
+          '" onclick="toast(\'Open ' +
+          p.n +
+          '\')" class="pane ' +
+          (p.needs ? "attn " : "") +
+          'shrink-0 rounded-full pl-3 pr-2.5 py-1 flex items-center gap-2 text-xs cursor-pointer"><span class="font-medium">' +
+          p.n +
+          '</span><span class="text-[11px] ' +
+          st[1] +
+          '">' +
+          st[0] +
+          "</span></a>"
+        );
+      }
+      function startRename(id) {
+        conn(id).editing = true;
+        render();
+        var f = $("name-" + id);
+        f.focus();
+        f.select();
+      }
+      function saveName(id) {
+        var c = conn(id);
+        if (!c.editing) return;
+        var v = $("name-" + id).value.trim();
+        if (v) c.name = v;
+        c.editing = false;
+        render();
+      }
+      function nameKey(e, id) {
+        if (e.key === "Enter") saveName(id);
+        if (e.key === "Escape") {
+          conn(id).editing = false;
+          render();
+        }
+      }
+      function panelClick(e, id) {
+        var c = conn(id);
+        if (c.state !== "up" || e.target.closest("a,button,input,form,.menu-wrap")) return;
+        c.min = !c.min;
+        render();
+      }
+      function removeTile(id, n) {
+        var c = conn(id);
+        c.proj = c.proj.filter(function (p) {
+          return p.n !== n;
+        });
+        render();
+        toast(n + " removed from Home");
+      }
+      function tile(c, p) {
+        var state = projState(p);
+        return (
+          '<a id="tile-' +
+          p.n +
+          '" onclick="toast(\'Open ' +
+          p.n +
+          '\')" class="pane ' +
+          (p.needs ? "attn " : "") +
+          'group/tile relative rounded-2xl p-4 cursor-pointer flex flex-col min-h-[132px]">' +
+          '<div class="flex items-start gap-2"><div class="min-w-0"><div class="hl text-[17px] font-semibold truncate">' +
+          p.n +
+          '</div><div class="text-[11px] text-muted-foreground font-mono truncate">' +
+          p.path +
+          "</div></div>" +
+          '<button id="remove-' +
+          p.n +
+          '" title="Remove from Home" onclick="event.stopPropagation();removeTile(\'' +
+          c.id +
+          "','" +
+          p.n +
+          '\')" class="invisible group-hover/tile:visible absolute top-3 right-3 h-6 w-6 rounded-full grid place-items-center text-muted-foreground hover:bg-foreground/10 hover:text-foreground cursor-pointer">✕</button>' +
+          '<span class="ml-auto group-hover/tile:invisible text-[11px] font-medium ' +
+          state[1] +
+          " " +
+          (p.work && !p.needs ? "pulse" : "") +
+          '">' +
+          state[0] +
+          "</span></div>" +
+          '<div class="text-xs text-muted-foreground mt-2 h-4 truncate">' +
+          (p.needs
+            ? '<span class="text-amber-600 dark:text-amber-400">' + p.needs + "</span>"
+            : p.auto
+              ? p.auto
+              : p.here
+                ? "Open in this window"
+                : p.holder
+                  ? "Open on " + p.holder
+                  : "") +
+          "</div>" +
+          '<div class="mt-auto pt-3 flex gap-4">' +
+          stat(p.work, "working", "c-work") +
+          stat(p.review, "review", "c-review") +
+          stat(p.queued, "queued", "") +
+          "</div></a>"
+        );
+      }
+      function addProject(c) {
+        return (
+          '<button id="add-project-' +
+          c.id +
+          '" onclick="openAdd(\'' +
+          c.id +
+          '\')" class="ghost rounded-2xl min-h-[132px] flex flex-col items-center justify-center gap-1.5 text-muted-foreground cursor-pointer"><span class="text-2xl leading-none font-light">+</span><span class="text-xs">Add project</span></button>'
+        );
+      }
+      /* right of a connected header: automations running now, nothing otherwise */
+      function upNote(c) {
+        return c.running
+          ? "<span>" + c.running + " automation" + (c.running > 1 ? "s" : "") + " running</span>"
+          : "";
+      }
+      function body(c) {
+        if (c.state === "up" && c.min)
+          return (
+            '<div class="reveal mt-3 flex gap-2 overflow-hidden" style="mask-image:linear-gradient(to right,#000 92%,transparent)">' +
+            c.proj
+              .slice()
+              .sort(function (a, b) {
+                return projState(a)[2] - projState(b)[2];
+              })
+              .map(chip)
+              .join("") +
+            "</div>"
+          );
+        if (c.state === "up")
+          return (
+            '<div class="reveal grid gap-3 mt-4" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr))">' +
+            c.proj
+              .map(function (p) {
+                return tile(c, p);
+              })
+              .join("") +
+            addProject(c) +
+            "</div>"
+          );
+        if (c.state === "idle") return "";
+        if (c.state === "signin")
+          return (
+            '<form id="signin-form-' +
+            c.id +
+            '" onsubmit="event.preventDefault();submitSignIn(\'' +
+            c.id +
+            '\')" class="reveal mt-4 max-w-[520px]">' +
+            '<div class="flex gap-2 ' +
+            (c.err ? "shake" : "") +
+            '"><input id="pw-' +
+            c.id +
+            '" name="pw-' +
+            c.id +
+            '" type="password" placeholder="Password for ' +
+            c.detail +
+            '" class="field flex-1 h-10 px-3.5 rounded-xl text-sm"/>' +
+            '<button id="signin-go-' +
+            c.id +
+            '" class="' +
+            BTN +
+            ' h-10">Sign in</button>' +
+            '<button type="button" id="signin-cancel-' +
+            c.id +
+            '" onclick="cancelSignIn(\'' +
+            c.id +
+            '\')" class="h-10 px-3 rounded-xl text-xs text-muted-foreground hover:bg-foreground/10 cursor-pointer">Cancel</button></div>' +
+            '<div class="flex items-center gap-4 mt-2 text-[11px] text-muted-foreground"><label class="flex items-center gap-1.5"><input id="remember-' +
+            c.id +
+            '" name="remember-' +
+            c.id +
+            '" type="checkbox" checked/> Remember in the system keychain</label>' +
+            (c.err
+              ? '<span class="text-rose-600 dark:text-rose-400">' + c.err + "</span>"
+              : "<span>Or use a key: ⋯ › Change sign-in</span>") +
+            "</div></form>"
+          );
+        if (c.state === "connecting") {
+          var steps = [
+            c.pw ? "Signing in" : "Reaching " + c.name,
+            "Reaching the Maestro server",
+            "Reading projects",
+          ];
+          return (
+            '<div class="mt-4 flex items-center gap-5 text-xs">' +
+            steps
+              .map(function (s, i) {
+                return (
+                  '<span class="flex items-center gap-1.5 ' +
+                  (i > c.step ? "text-muted-foreground" : "") +
+                  '">' +
+                  (i < c.step
+                    ? '<span class="text-emerald-600">✓</span>'
+                    : i === c.step
+                      ? spinner()
+                      : '<span class="h-1.5 w-1.5 rounded-full bg-foreground/20 inline-block"></span>') +
+                  s +
+                  "</span>"
+                );
+              })
+              .join("") +
+            "</div>"
+          );
+        }
+        if (c.state === "stopped")
+          return (
+            '<div class="mt-4 flex items-center gap-3 text-xs text-muted-foreground"><span>The Maestro server is stopped. Nothing runs here until it starts.</span><button id="start-' +
+            c.id +
+            '" onclick="startServer(\'' +
+            c.id +
+            '\')" class="pill rounded-full px-3 py-1.5 text-foreground cursor-pointer hover:bg-foreground/10">Start</button></div>'
+          );
+        return '<div class="mt-4 text-xs text-muted-foreground">Not answering. Its projects keep their state and come back when it does.</div>';
+      }
+      function render() {
+        var up = CONN.filter(function (c) {
+          return c.state === "up";
+        });
+        var working = 0,
+          wait = 0,
+          review = 0;
+        up.forEach(function (c) {
+          c.proj.forEach(function (p) {
+            working += p.work;
+            wait += p.wait || 0;
+            review += p.review;
+          });
+        });
+        $("scores").innerHTML = [
+          [working, "working", "c-work"],
+          [wait, "need you", "text-amber-600 dark:text-amber-400"],
+          [review, "to review", "c-review"],
+        ]
+          .map(function (s) {
+            return (
+              '<div><div class="num hl text-[52px] leading-none font-semibold ' +
+              (s[0] ? s[2] : "text-muted-foreground/40") +
+              '">' +
+              s[0] +
+              '</div><div class="text-xs text-muted-foreground mt-1">' +
+              s[1] +
+              "</div></div>"
+            );
+          })
+          .join("");
+        $("add-conn-types").innerHTML = TYPES.map(function (t) {
+          return (
+            '<button id="add-' +
+            t[0] +
+            '" onclick="openConn(\'' +
+            t[0] +
+            '\')" class="pane rounded-xl px-4 py-2.5 flex items-center gap-2 text-xs cursor-pointer">' +
+            svg(t[0]) +
+            t[1] +
+            "</button>"
+          );
+        }).join("");
+        drawIntegrations();
+        /* attached connections first, then the ones never connected this session, two to a row */
+        var order = CONN.filter(function (c) {
+          return c.seen;
+        }).concat(
+          CONN.filter(function (c) {
+            return !c.seen;
+          }),
+        );
+        $("connections").innerHTML = order
+          .map(function (c) {
+            var status =
+              c.state === "up"
+                ? upNote(c)
+                : c.state === "connecting"
+                  ? "<span>Connecting…</span>"
+                  : c.state === "stopped"
+                    ? "<span>Server stopped</span>"
+                    : c.state === "idle" || c.state === "signin"
+                      ? "<span>Not connected</span>"
+                      : '<span class="text-rose-600 dark:text-rose-400">Unreachable</span>';
+            var head =
+              '<div class="flex items-center gap-3">' +
+              '<span class="h-9 w-9 rounded-xl grid place-items-center pill text-muted-foreground">' +
+              svg(c.kind, 17) +
+              "</span>" +
+              '<div class="min-w-0">' +
+              (c.editing
+                ? '<input id="name-' +
+                  c.id +
+                  '" name="name-' +
+                  c.id +
+                  '" value="' +
+                  c.name +
+                  '" onkeydown="nameKey(event,\'' +
+                  c.id +
+                  "')\" onblur=\"saveName('" +
+                  c.id +
+                  '\')" class="field hl text-lg font-semibold h-7 px-2 -ml-2 rounded-lg w-60"/>'
+                : '<div class="flex items-center gap-1"><div class="hl text-lg font-semibold leading-tight">' +
+                  c.name +
+                  "</div>" +
+                  (c.kind === "local"
+                    ? ""
+                    : '<button id="rename-' +
+                      c.id +
+                      '" onclick="startRename(\'' +
+                      c.id +
+                      '\')" title="Rename" class="h-6 w-6 rounded-md grid place-items-center text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:bg-foreground/10 hover:text-foreground cursor-pointer">' +
+                      svg("pen", 13) +
+                      "</button>") +
+                  "</div>") +
+              '<div class="text-[11px] text-muted-foreground">' +
+              c.detail +
+              "</div></div>" +
+              '<div class="ml-auto flex items-center gap-4 text-xs text-muted-foreground">' +
+              (c.state === "idle"
+                ? '<button id="connect-' +
+                  c.id +
+                  '" onclick="connectTo(\'' +
+                  c.id +
+                  '\')" class="pill rounded-full px-3 py-1.5 text-foreground cursor-pointer hover:bg-foreground/10">Connect</button>'
+                : status +
+                  '<span class="menu-wrap relative"><button id="menu-' +
+                  c.id +
+                  '" onclick="toggleMenu(\'' +
+                  c.id +
+                  '\')" class="h-7 w-7 rounded-full grid place-items-center cursor-pointer ' +
+                  (menuOpen === c.id
+                    ? "bg-foreground/10 text-foreground"
+                    : "hover:bg-foreground/10") +
+                  '">⋯</button>' +
+                  (menuOpen === c.id ? menuFor(c) : "") +
+                  "</span>") +
+              "</div></div>";
+            return (
+              '<section id="conn-' +
+              c.id +
+              '" onclick="panelClick(event,\'' +
+              c.id +
+              '\')" class="group glass rounded-[22px] p-5 relative ' +
+              (c.state === "idle" ? "" : "col-span-2 ") +
+              (c.state === "up" ? "cursor-pointer " : "") +
+              (menuOpen === c.id ? "z-20" : "") +
+              " " +
+              (c.state === "down" || c.state === "stopped" ? "opacity-75" : "") +
+              '">' +
+              head +
+              body(c) +
+              "</section>"
+            );
+          })
+          .join("");
+      }
+      /* integrations: one tile per provider, a count badge when several, a hover card per tile */
+      var PNAME = {
+        github: "GitHub",
+        gitlab: "GitLab",
+        bitbucket: "Bitbucket",
+        azuredevops: "Azure DevOps",
+        gitea: "Gitea",
+        forgejo: "Forgejo",
+        jira: "Jira",
+        linear: "Linear",
+      };
+      var PCAPS = {
+        github: ["issues", "pull requests"],
+        gitlab: ["issues", "merge requests"],
+        bitbucket: ["pull requests"],
+        azuredevops: ["issues", "pull requests"],
+        gitea: ["issues", "pull requests"],
+        forgejo: ["issues", "pull requests"],
+        jira: ["issues"],
+        linear: ["issues"],
+      };
+      var INT = [
+        { p: "github", acc: "billy", host: "github.com", gh: true },
+        { p: "github", acc: "emd-release-bot", host: "github.emd.com" },
+        { p: "gitlab", acc: "b.rothstein", host: "gitlab.internal" },
+        { p: "linear", acc: "acme", host: "linear.app" },
+        { p: "jira", acc: "billy@acme.com", host: "acme.atlassian.net" },
+      ];
+      var intPick = null;
+      function bicon(slug, sm) {
+        var s = sm ? 16 : 20;
+        var fallback =
+          "<span class=&quot;grid place-items-center text-[11px] font-semibold&quot; style=&quot;width:" +
+          s +
+          "px;height:" +
+          s +
+          "px&quot;>" +
+          PNAME[slug][0] +
+          "</span>";
+        return (
+          '<img class="ico' +
+          (slug === "github" ? " mono" : "") +
+          '" style="width:' +
+          s +
+          "px;height:" +
+          s +
+          'px" src="https://cdn.simpleicons.org/' +
+          slug +
+          '" alt="" onerror="this.outerHTML=\'' +
+          fallback +
+          "'\"/>"
+        );
+      }
+      function capTags(p) {
+        return PCAPS[p]
+          .map(function (c) {
+            return '<span class="cap">' + c + "</span>";
+          })
+          .join(" ");
+      }
+      function intGroups() {
+        var g = [],
+          m = {};
+        INT.forEach(function (i, ix) {
+          if (!m[i.p]) {
+            m[i.p] = { p: i.p, items: [] };
+            g.push(m[i.p]);
+          }
+          m[i.p].items.push(ix);
+        });
+        return g;
+      }
+      function unpin() {
+        document.querySelectorAll(".wrap.pinned").forEach(function (w) {
+          w.classList.remove("pinned");
+        });
+        $("integrations").classList.remove("has-pin");
+      }
+      function togglePin(p) {
+        var w = $("wrap-" + p),
+          was = w.classList.contains("pinned");
+        unpin();
+        if (!was) {
+          w.classList.add("pinned");
+          $("integrations").classList.add("has-pin");
+        }
+      }
+      function intCard(g) {
+        var n = g.items.length;
+        return (
+          '<div class="card"><div class="glass pop w-72 rounded-2xl p-1.5 text-sm">' +
+          '<div class="px-2.5 pt-1.5 pb-1 flex items-baseline"><span class="text-xs font-medium">' +
+          PNAME[g.p] +
+          '</span><span class="ml-auto text-[11px] text-muted-foreground">' +
+          n +
+          " account" +
+          (n > 1 ? "s" : "") +
+          '</span></div><div class="mx-2.5 mb-1.5 flex gap-1">' +
+          capTags(g.p) +
+          "</div>" +
+          g.items
+            .map(function (ix) {
+              var i = INT[ix];
+              return (
+                '<button id="int-' +
+                ix +
+                '" onclick="intDetails(' +
+                ix +
+                ')" class="row">' +
+                bicon(i.p, 1) +
+                '<span class="min-w-0 flex-1"><span class="block text-xs font-medium truncate">' +
+                i.acc +
+                (i.gh ? ' <span class="cap">gh cli</span>' : "") +
+                '</span><span class="block text-[11px] text-muted-foreground font-mono truncate">' +
+                i.host +
+                '</span></span><span class="text-muted-foreground text-xs">›</span></button>'
+              );
+            })
+            .join("") +
+          '<div class="my-1 h-px bg-foreground/10"></div><button onclick="intForm(\'' +
+          g.p +
+          '\')" class="row text-xs text-muted-foreground"><span class="w-4 text-center">+</span>Add another ' +
+          PNAME[g.p] +
+          " account</button></div></div>"
+        );
+      }
+      function drawIntegrations() {
+        var g = intGroups();
+        $("integrations").classList.remove("has-pin");
+        $("integrations").innerHTML =
+          '<div class="text-sm font-medium">Integrations</div><div class="text-xs text-muted-foreground mt-0.5">' +
+          "Issues and pull requests, for every connection" +
+          '</div><div class="flex gap-2.5 mt-4">' +
+          g
+            .map(function (x) {
+              return (
+                '<span id="wrap-' +
+                x.p +
+                '" class="wrap relative"><button id="tile-int-' +
+                x.p +
+                '" onclick="togglePin(\'' +
+                x.p +
+                '\')" class="tile pane relative h-[42px] w-[42px] rounded-xl grid place-items-center cursor-pointer">' +
+                bicon(x.p) +
+                (x.items.length > 1
+                  ? '<span class="badge num">' + x.items.length + "</span>"
+                  : "") +
+                "</button>" +
+                intCard(x) +
+                "</span>"
+              );
+            })
+            .join("") +
+          '<button id="add-integration" onclick="intAdd()" title="Add an integration" class="ghost h-[42px] w-[42px] rounded-xl grid place-items-center text-muted-foreground cursor-pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg></button></div>';
+      }
+      function intSheet(eyebrow, title, back, body) {
+        unpin();
+        $("int-sheet").innerHTML =
+          '<div class="flex items-start">' +
+          (back
+            ? '<button onclick="' +
+              back +
+              '" class="mr-2 mt-3 h-7 w-7 rounded-full grid place-items-center text-muted-foreground hover:bg-foreground/10 cursor-pointer">‹</button>'
+            : "") +
+          "<div>" +
+          (eyebrow
+            ? '<div class="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">' +
+              eyebrow +
+              "</div>"
+            : "") +
+          '<div class="hl text-2xl font-semibold mt-0.5">' +
+          title +
+          '</div></div><button onclick="hide(\'int-scrim\')" class="ml-auto h-7 w-7 rounded-full grid place-items-center text-muted-foreground hover:bg-foreground/10 cursor-pointer">✕</button></div>' +
+          body;
+        show("int-scrim");
+      }
+      function intDetails(ix) {
+        var i = INT[ix];
+        /* one header row: icon, provider, capabilities; the account is a field below */
+        intSheet(
+          "",
+          '<span class="flex items-center gap-3">' +
+            bicon(i.p) +
+            PNAME[i.p] +
+            '<span class="flex gap-1 font-normal tracking-normal">' +
+            capTags(i.p) +
+            "</span></span>",
+          "",
+          '<div class="mt-5 space-y-3"><div><div class="text-[11px] text-muted-foreground">Account</div><div class="font-mono text-xs mt-1">' +
+            i.acc +
+            '</div></div><div><div class="text-[11px] text-muted-foreground">Instance</div><div class="font-mono text-xs mt-1">' +
+            i.host +
+            "</div></div></div>" +
+            (i.gh
+              ? '<div class="mt-5 text-xs text-muted-foreground">Managed by the gh CLI. Sign out there to remove it.</div>'
+              : '<div class="flex mt-6"><button onclick="intRemove(' +
+                ix +
+                ')" class="h-9 px-3 rounded-xl text-xs text-rose-600 hover:bg-rose-500/10 cursor-pointer">Disconnect</button><button onclick="toast(\'Edit credentials\')" class="ml-auto ' +
+                BTN +
+                '">Edit credentials</button></div>'),
+        );
+      }
+      function intRemove(ix) {
+        var i = INT[ix];
+        INT.splice(ix, 1);
+        hide("int-scrim");
+        drawIntegrations();
+        toast(PNAME[i.p] + " " + i.acc + " disconnected");
+      }
+      function intAdd() {
+        intSheet(
+          "Add an integration",
+          "Choose a service",
+          "",
+          '<div class="grid grid-cols-2 gap-2 mt-5">' +
+            Object.keys(PNAME)
+              .map(function (x) {
+                return (
+                  '<button id="pick-' +
+                  x +
+                  '" onclick="intForm(\'' +
+                  x +
+                  '\',1)" class="pane rounded-xl p-3 flex items-center gap-3 text-left cursor-pointer">' +
+                  bicon(x) +
+                  '<span><span class="block text-xs font-medium">' +
+                  PNAME[x] +
+                  '</span><span class="flex gap-1 mt-1">' +
+                  capTags(x) +
+                  "</span></span></button>"
+                );
+              })
+              .join("") +
+            "</div>",
+        );
+      }
+      function intForm(p, fromPicker) {
+        intPick = p;
+        var url = p !== "github" && p !== "linear";
+        intSheet(
+          "Add an integration",
+          "Connect " + PNAME[p],
+          fromPicker ? "intAdd()" : "",
+          '<div class="mt-5 space-y-3">' +
+            (url
+              ? '<div><label class="text-[11px] text-muted-foreground">Instance URL</label><input id="int-url" name="int-url" class="field w-full h-9 px-3 mt-1 rounded-xl text-xs font-mono" placeholder="https://' +
+                (p === "jira" ? "yourorg.atlassian.net" : p + ".example.com") +
+                '"/></div>'
+              : "") +
+            '<div><label class="text-[11px] text-muted-foreground">Token</label><input id="int-token" name="int-token" type="password" class="field w-full h-9 px-3 mt-1 rounded-xl text-xs" placeholder="Paste a token"/></div>' +
+            '<div class="text-[11px] text-muted-foreground">How to create one ›</div></div><div class="flex mt-6"><button id="int-go" onclick="intAdded()" class="ml-auto ' +
+            BTN +
+            '">Connect</button></div>',
+        );
+      }
+      function intAdded() {
+        INT.push({ p: intPick, acc: "new-account", host: intPick + ".example.com" });
+        hide("int-scrim");
+        drawIntegrations();
+        toast(PNAME[intPick] + " connected");
+      }
+      document.addEventListener("click", function (e) {
+        if (!e.target.closest(".wrap")) unpin();
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") unpin();
+      });
+      render();
+    </script>
+  </body>
+</html>

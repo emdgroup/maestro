@@ -24,6 +24,7 @@ mod dispatch;
 mod exec_channel;
 mod file_ops;
 mod helpers;
+mod home;
 mod mcp_config;
 mod mcp_gateway;
 mod mcp_stdio;

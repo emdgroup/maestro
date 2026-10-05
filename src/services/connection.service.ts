@@ -1,10 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
-import type { ConnectionKey, SshAuthMethod } from "@/types/bindings";
+import type { ConnectionKey } from "@/types/bindings";
 
 /**
  * Query key factory for SSH connection-related queries
@@ -57,118 +55,6 @@ export function useSshConnections() {
 }
 
 /**
- * Query hook for fetching the connection matching an id
- * Provides automatic caching, refetching, and synchronization
- */
-export function useSshConnectionById(connectionId: number) {
-  return useQuery({
-    queryKey: connectionQueryKeys.details(connectionId),
-    queryFn: () => api.getSshConnection(connectionId),
-  });
-}
-
-/**
- * Mutation hook for creating a new SSH connection
- */
-export function useCreateSshConnection() {
-  return useMutation({
-    mutationFn: ({
-      connectionString,
-      authMethod,
-    }: {
-      connectionString: string;
-      authMethod: SshAuthMethod;
-    }) => api.createSshConnection(connectionString, authMethod),
-    onError: createErrorToastHandler("Failed to create SSH connection"),
-  });
-}
-
-/**
- * Mutation hook for connecting to SSH without credentials
- */
-export function useConnectSsh() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ connectionId }: { connectionId: number }) =>
-      api.connectSshWithoutCredentials(connectionId),
-    onSuccess: () => {
-      // Invalidate the SSH connections list to refetch with new connection
-      void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
-      toast.success("SSH connection successful");
-    },
-  });
-}
-
-/**
- * Mutation hook for connecting to SSH with credentials
- */
-export function useConnectSshWithCreds() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({
-      connectionId,
-      password,
-      savePassword,
-    }: {
-      connectionId: number;
-      password: string;
-      savePassword: boolean;
-    }) => api.connectSshWithPassword(connectionId, password, savePassword),
-    onSuccess: () => {
-      // Invalidate the SSH connections list to refetch with new connection
-      void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
-      toast.success("SSH connection successful");
-    },
-    onError: createErrorToastHandler("Failed to connect"),
-  });
-}
-
-/**
- * Mutation hook for connecting to SSH via SSH agent
- */
-export function useConnectSshWithAgent() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ connectionId }: { connectionId: number }) =>
-      api.connectSshWithAgent(connectionId),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
-      toast.success("SSH connection successful");
-    },
-    onError: createErrorToastHandler("Failed to connect via agent"),
-  });
-}
-
-/**
- * Mutation hook for connecting to SSH with a key file
- */
-export function useConnectSshWithKey() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({
-      connectionId,
-      keyPath,
-      passphrase,
-      savePassphrase,
-    }: {
-      connectionId: number;
-      keyPath: string;
-      passphrase?: string;
-      savePassphrase: boolean;
-    }) => api.connectSshWithKey(connectionId, keyPath, passphrase ?? null, savePassphrase),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
-      toast.success("SSH connection successful");
-    },
-    onError: createErrorToastHandler("Failed to connect"),
-  });
-}
-
-/**
  * Mutation hook for updating SSH connection display name
  * Uses optimistic updates for instant UI feedback
  */
@@ -184,35 +70,6 @@ export function useUpdateSshConnection() {
       toast.success("Connection renamed");
     },
     onError: createErrorToastHandler("Failed to rename connection"),
-  });
-}
-
-/**
- * Mutation hook for deleting an SSH connection
- */
-export function useDeleteSshConnection() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (connectionId: number) => api.deleteSshConnection(connectionId),
-    onSuccess: () => {
-      // Invalidate the SSH connections list to refetch without deleted connection
-      void queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() });
-    },
-    onError: createErrorToastHandler("Failed to delete connection"),
-  });
-}
-
-/**
- * Mutation hook for forgetting saved password for an SSH connection
- */
-export function useForgetSavedPassword() {
-  return useMutation({
-    mutationFn: (connectionId: number) => api.forgetSavedPassword(connectionId),
-    onSuccess: () => {
-      toast.success("Password forgotten successfully");
-    },
-    onError: createErrorToastHandler("Failed to forget password"),
   });
 }
 
@@ -408,40 +265,6 @@ export function useListDrives() {
   });
 }
 
-export function useSshConnectionStatus(connectionId: number) {
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    const key = connectionQueryKeys.status(connectionId);
-    const invalidate = (id: number) => {
-      if (id === connectionId) void queryClient.invalidateQueries({ queryKey: key });
-    };
-    const unsub = Promise.all([
-      listen<number>("ssh-connection-lost", (e) => invalidate(e.payload)),
-      listen<number>("ssh-connection-failed", (e) => invalidate(e.payload)),
-      listen<number>("ssh-reconnected", (e) => invalidate(e.payload)),
-    ]).catch(console.error);
-    return () => {
-      void unsub.then((fns) => {
-        if (fns) for (const fn of fns) fn();
-      });
-    };
-  }, [connectionId, queryClient]);
-
-  const query = useQuery({
-    queryKey: connectionQueryKeys.status(connectionId),
-    queryFn: () => api.getSshConnectionStatus(connectionId),
-    refetchInterval: 15000,
-    staleTime: 0,
-    gcTime: 0,
-  });
-
-  // Pessimistic: treat as unreachable until first fresh probe lands (dataUpdatedAt = 0 on mount)
-  const connected = !!query.dataUpdatedAt && (query.data?.connected ?? false);
-
-  return { ...query, connected };
-}
-
 export const wslQueryKeys = {
   base: ["wsl"] as const,
   distros: () => [...wslQueryKeys.base, "distros"] as const,
@@ -483,28 +306,6 @@ export function useWslHome(distro: string) {
   });
 }
 
-export function useSaveWslConnection() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ distroName, displayName }: { distroName: string; displayName: string | null }) =>
-      api.saveWslConnection(distroName, displayName),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: wslQueryKeys.connections() });
-    },
-  });
-}
-
-export function useDeleteWslConnection() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (connectionId: number) => api.deleteWslConnection(connectionId),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: wslQueryKeys.connections() });
-    },
-    onError: createErrorToastHandler("Failed to remove WSL connection"),
-  });
-}
-
 export const dockerQueryKeys = {
   base: ["docker"] as const,
   containers: () => [...dockerQueryKeys.base, "containers"] as const,
@@ -543,23 +344,5 @@ export function useDockerHome(containerName: string) {
     queryFn: () => api.getDockerHome(containerName),
     enabled: !!containerName,
     staleTime: Infinity,
-  });
-}
-
-export function useSaveDockerConnection() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      containerName,
-      imageName,
-      displayName,
-    }: {
-      containerName: string;
-      imageName: string | null;
-      displayName: string | null;
-    }) => api.saveDockerConnection(containerName, imageName, displayName),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: dockerQueryKeys.connections() });
-    },
   });
 }

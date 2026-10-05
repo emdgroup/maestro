@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
@@ -10,7 +10,7 @@ import type {
   ProjectConfigResponse,
   ProfilesDocument,
 } from "@/types/bindings";
-import { localConnectionId } from "@/contexts/ConnectionContext";
+const localConnectionId = "local";
 
 /**
  * Project service providing type-safe operations for project management.
@@ -32,6 +32,8 @@ export const projectQueryKeys = {
   locks: () => [...projectQueryKeys.base, "locks"] as const,
   locksFor: (connectionId: number | string, ids: number[]) =>
     [...projectQueryKeys.locks(), connectionId, ids] as const,
+  home: () => [...projectQueryKeys.base, "home"] as const,
+  homeFor: (connectionId: number | string) => [...projectQueryKeys.home(), connectionId] as const,
   profiles: (projectId: number) => [...projectQueryKeys.base, "profiles", projectId] as const,
   remotes: (projectId: number) => [...projectQueryKeys.base, "remotes", projectId] as const,
 };
@@ -52,14 +54,6 @@ export function connectionQueryKey(connection: ConnectionKey): number | string {
   if (connection.type === "wsl") return `wsl-${connection.id}`;
   if (connection.type === "ssh") return connection.id;
   return localConnectionId;
-}
-
-export function useRecentProjects(connection: ConnectionKey) {
-  return useQuery({
-    queryKey: projectQueryKeys.listByConnection(connectionQueryKey(connection)),
-    queryFn: () => api.getConnectionProjects(connection),
-    staleTime: Infinity,
-  });
 }
 
 /**
@@ -107,26 +101,31 @@ export function useProjectRemotes(projectId: number | null) {
 }
 
 /**
- * Which of these projects a Maestro window holds, as the connection's server sees it.
+ * What Home shows for each connection: its server's status and every project on it.
  *
- * Refetched whenever that server says a lock changed, which it tells every window it serves.
+ * Refetched every 5 seconds and whenever any server says a task, an automation run or a lock
+ * changed. Only ask for attached connections: the rest fail with "No connection server".
  */
-export function useProjectLocks(connection: ConnectionKey, projectIds: number[]) {
+export function useHomeSummaries(connections: ConnectionKey[]) {
   const queryClient = useQueryClient();
   useEffect(() => {
-    const unlisten = listen("project-locks-changed", () => {
-      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.locks() });
-    });
+    const unlistens = ["tasks-changed", "automation-run-changed", "project-locks-changed"].map(
+      (event) =>
+        listen(event, () => {
+          void queryClient.invalidateQueries({ queryKey: projectQueryKeys.home() });
+        }),
+    );
     return () => {
-      void unlisten.then((stop) => stop());
+      for (const unlisten of unlistens) void unlisten.then((stop) => stop());
     };
   }, [queryClient]);
 
-  return useQuery({
-    queryKey: projectQueryKeys.locksFor(connectionQueryKey(connection), projectIds),
-    queryFn: () => api.listProjectLocks(connection, projectIds),
-    enabled: projectIds.length > 0,
-    staleTime: 5000,
+  return useQueries({
+    queries: connections.map((connection) => ({
+      queryKey: projectQueryKeys.homeFor(connectionQueryKey(connection)),
+      queryFn: () => api.getHomeSummary(connection),
+      refetchInterval: 5000,
+    })),
   });
 }
 
@@ -172,24 +171,6 @@ export function useCreateProject() {
       void queryClient.invalidateQueries({ queryKey: key });
     },
     onError: createErrorToastHandler("Failed to create project"),
-  });
-}
-
-/**
- * Mutation hook for deleting a project
- */
-export function useDeleteProject(connectionId: number | string | null | undefined) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (projectId: number) => api.deleteProject(projectId),
-    onSuccess: (_data, projectId) => {
-      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.details(projectId) });
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.listByConnection(connectionId ?? localConnectionId),
-      });
-    },
-    onError: createErrorToastHandler("Failed to delete project"),
   });
 }
 

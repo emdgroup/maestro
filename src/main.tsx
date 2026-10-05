@@ -23,10 +23,10 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <ThemeProvider>
         <ToasterRoot />
         {/* Mounted here rather than inside App so it also covers the loading and
-            project-picker screens, which App returns early for. */}
+            Home screens, which App returns early for. */}
         <AppContextMenu />
         {/* Mounted alongside AppContextMenu for the same reason: the window must stay
-            resizable on the loading and project-picker screens too. */}
+            resizable on the loading and Home screens too. */}
         <WindowResizeHandles />
         <AppErrorBoundary>
           <App />

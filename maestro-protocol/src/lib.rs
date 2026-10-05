@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 12;
+pub const PROTOCOL_VERSION: u32 = 13;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 ///
@@ -220,6 +220,8 @@ pub enum ServerRequest {
     ReleaseProjectLock,
     /// Who holds each of these projects, for the picker.
     ListProjectLocks(ListProjectLocksRequest),
+    /// This server's status and what each of its projects is doing, for Home.
+    HomeSummary(HomeSummaryRequest),
     /// Ask the holder of a project to hand it over. Answered with `TakeoverResultOk` once the
     /// holder agrees, refuses or fails to answer in time.
     RequestTakeover(AcquireProjectLockRequest),
@@ -2327,6 +2329,7 @@ pub enum ServerResponse {
     HostToolCall(HostToolCall),
     AcquireProjectLockOk(AcquireProjectLockResponse),
     ProjectLocksOk(ListProjectLocksResponse),
+    HomeSummaryOk(HomeSummaryResponse),
     /// The answer to `RequestTakeover`, sent once the holder has been dealt with.
     TakeoverResultOk(TakeoverResult),
     /// Some project was locked or released. Pushed to every client, so pickers can refetch.
@@ -2481,6 +2484,7 @@ impl ServerResponse {
             | Self::DetectProjectAgentsOk(_)
             | Self::AcquireProjectLockOk(_)
             | Self::ProjectLocksOk(_)
+            | Self::HomeSummaryOk(_)
             | Self::TakeoverResultOk(_)
             | Self::ListTasksOk(_)
             | Self::GetTaskOk(_)
@@ -3913,6 +3917,48 @@ mod tests {
     }
 
     #[test]
+    fn roundtrip_home_summary() {
+        let request = AnyMessage::Request(ServerRequest::HomeSummary(HomeSummaryRequest {
+            project_paths: vec!["/srv/shop".to_string()],
+        }));
+        let response = ServerResponse::HomeSummaryOk(HomeSummaryResponse {
+            status: ServerStatus {
+                version: "1.0.0".to_string(),
+                pid: 7,
+                started_at: "2026-10-05T09:00:00Z".to_string(),
+                live_sessions: 2,
+                running_runs: 1,
+                autostart_supported: true,
+                autostart: None,
+            },
+            projects: vec![
+                ProjectSummary {
+                    project_path: "/srv/shop".to_string(),
+                    queued: 1,
+                    in_progress: 2,
+                    review: 3,
+                    working_agents: 1,
+                    needs_you: 2,
+                    blocking_prompt: Some("Run cargo test?".to_string()),
+                    running_automations: vec!["Nightly".to_string()],
+                    lock_holder: Some("laptop".to_string()),
+                    lock_yours: true,
+                },
+                ProjectSummary {
+                    project_path: "/srv/idle".to_string(),
+                    ..ProjectSummary::default()
+                },
+            ],
+        });
+        assert!(response.is_reply());
+        for message in [request, AnyMessage::Response(response)] {
+            let json = serde_json::to_string(&message).unwrap();
+            let back: AnyMessage = serde_json::from_str(&json).unwrap();
+            assert_eq!(message, back);
+        }
+    }
+
+    #[test]
     fn spawn_request_without_project_keys_still_deserializes() {
         let json =
             r#"{"request":{"spawn":{"agent_id":"claude-acp","session_id":"sess-1","cwd":"/tmp"}}}"#;
@@ -4658,4 +4704,44 @@ pub struct ServerStatus {
     pub autostart_supported: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub autostart: Option<AutostartMethod>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HomeSummaryRequest {
+    /// The client's own projects on this connection. Listed even when the server holds nothing
+    /// for them.
+    pub project_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HomeSummaryResponse {
+    pub status: ServerStatus,
+    /// The requested projects and every one the server holds tasks, sessions or automations for,
+    /// once each by canonical path.
+    pub projects: Vec<ProjectSummary>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProjectSummary {
+    /// As the client sent it for a requested project, so it can be matched without knowing how
+    /// the server canonicalizes; canonical for the rest.
+    pub project_path: String,
+    pub queued: u32,
+    pub in_progress: u32,
+    pub review: u32,
+    /// Live sessions mid-turn.
+    pub working_agents: u32,
+    /// Prompts waiting on the user, plus tasks with the ball on the user.
+    pub needs_you: u32,
+    /// What the first prompt waiting on the user asks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocking_prompt: Option<String>,
+    /// Names of the automations running now.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub running_automations: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lock_holder: Option<String>,
+    /// Held by the client that asked.
+    #[serde(default)]
+    pub lock_yours: bool,
 }

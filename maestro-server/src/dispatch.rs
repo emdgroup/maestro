@@ -51,7 +51,9 @@ fn tool_config_error(tool: String, error: String) -> maestro_protocol::ToolCheck
 }
 
 /// The requests a session sent a client and is still waiting on.
-async fn pending_requests(session: &ActiveSession) -> Vec<maestro_protocol::PendingSessionRequest> {
+pub(crate) async fn pending_requests(
+    session: &ActiveSession,
+) -> Vec<maestro_protocol::PendingSessionRequest> {
     let mut pending: Vec<maestro_protocol::PendingSessionRequest> = session
         .pending_permissions
         .lock()
@@ -1484,6 +1486,53 @@ pub(crate) async fn dispatch_message(
                 )
                 .await
             );
+        }
+
+        ServerRequest::HomeSummary(req) => {
+            let read = Box::pin(async {
+                let mut summaries = crate::home::Summaries::default();
+                summaries.requested(&req.project_paths);
+                if let Some(store) = project_store {
+                    summaries.project_store(&*store.lock().await)?;
+                }
+                let running_runs = match automation_store {
+                    Some(store) => {
+                        let conn = store.lock().await;
+                        summaries.automations(&conn)?;
+                        crate::automations::count_running(&conn)
+                    }
+                    None => 0,
+                };
+                summaries.sessions(sessions).await;
+                let locks = stdout
+                    .lock()
+                    .await
+                    .list_projects(summaries.lock_query())
+                    .await;
+                summaries.locks(locks);
+                Ok::<_, String>((summaries.into_vec(), running_runs))
+            })
+            .await;
+            let live_sessions = sessions.len();
+            let stdout = Arc::clone(stdout);
+            // `autostart::current` runs systemctl and crontab, which do not belong on the loop.
+            tokio::spawn(async move {
+                let response = match read {
+                    Ok((projects, running_runs)) => {
+                        let autostart = tokio::task::spawn_blocking(crate::autostart::current)
+                            .await
+                            .unwrap_or(None);
+                        ServerResponse::HomeSummaryOk(maestro_protocol::HomeSummaryResponse {
+                            status: server_status(live_sessions, running_runs, autostart),
+                            projects,
+                        })
+                    }
+                    Err(e) => error_response(e),
+                };
+                if let Err(e) = send_response(&stdout, &response).await {
+                    send_diag("warn", format!("[home] could not answer: {e}"));
+                }
+            });
         }
 
         // Answered through the sink, not here: the answer may be ten seconds away.

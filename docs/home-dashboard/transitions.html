@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Maestro project transitions: approved mock</title>
+    <!-- Standalone copy of the project transitions, as approved. Open it in a browser.
+     Tokens are the app's light theme from src/index.css; add class="dark" on <html> for dark. -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @custom-variant dark (&:where(.dark, .dark *));
+      @theme inline {
+        --color-background: var(--background);
+        --color-foreground: var(--foreground);
+        --color-card: var(--card);
+        --color-muted: var(--muted);
+        --color-muted-foreground: var(--muted-foreground);
+        --color-primary: var(--primary);
+        --color-primary-foreground: var(--primary-foreground);
+        --color-border: var(--border);
+      }
+      :root {
+        --background: oklch(98% 0.015 70);
+        --foreground: oklch(45% 0.01 250);
+        --card: oklch(99.5% 0.01 70);
+        --muted: oklch(94% 0.015 70);
+        --muted-foreground: oklch(45% 0.01 250);
+        --primary: oklch(0% 0 0);
+        --primary-foreground: oklch(100% 0 0);
+        --border: oklch(90% 0.01 70);
+        --accent: oklch(50% 0.15 250);
+      }
+      .dark {
+        --background: oklch(20% 0.01 250);
+        --foreground: oklch(92% 0.01 250);
+        --card: oklch(24% 0.01 250);
+        --muted: oklch(28% 0.01 250);
+        --muted-foreground: oklch(70% 0.01 250);
+        --primary: oklch(96% 0 0);
+        --primary-foreground: oklch(15% 0 0);
+        --border: oklch(32% 0.01 250);
+        --accent: oklch(75% 0.15 250);
+      }
+      body {
+        margin: 0;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: system-ui, sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <style>
+      .win {
+        position: relative;
+        overflow: hidden;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: var(--background);
+        height: 330px;
+        font-size: 11px;
+        color: var(--foreground);
+      }
+      .home {
+        position: absolute;
+        inset: 0;
+        padding: 40px 30px;
+        background: linear-gradient(
+          to bottom,
+          color-mix(in oklab, var(--accent) 14%, transparent),
+          transparent 60%
+        );
+      }
+      .panel {
+        border-radius: 16px;
+        border: 1px solid color-mix(in oklab, var(--foreground) 9%, transparent);
+        background: color-mix(in oklab, var(--card) 50%, transparent);
+        padding: 12px;
+      }
+      .tile {
+        border-radius: 12px;
+        border: 1px solid color-mix(in oklab, var(--foreground) 8%, transparent);
+        background: color-mix(in oklab, var(--background) 40%, transparent);
+        height: 70px;
+        padding: 9px;
+        cursor: pointer;
+      }
+      .proj {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        background: var(--card);
+      }
+      .phdr {
+        position: relative;
+        height: 38px;
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 12px;
+        z-index: 2;
+        background: var(--card);
+      }
+      .phdr .tint {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          to bottom,
+          color-mix(in oklab, var(--a) 30%, transparent),
+          transparent
+        );
+      }
+      .clip {
+        position: relative;
+        flex: 1;
+        overflow: hidden;
+      }
+      .views {
+        position: absolute;
+        inset: 0;
+        transition:
+          transform 0.25s ease-in-out,
+          opacity 0.25s ease-in-out;
+      }
+      .board {
+        position: absolute;
+        inset: 0 8px;
+        border-radius: 12px 12px 0 0;
+        border: 1px solid var(--border);
+        border-bottom: 0;
+        background: var(--background);
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        padding: 10px;
+      }
+      .col {
+        border-radius: 8px;
+        background: color-mix(in oklab, var(--muted) 60%, transparent);
+        padding: 6px;
+      }
+      .card {
+        height: 30px;
+        border-radius: 6px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        margin-top: 6px;
+      }
+      .grow {
+        position: absolute;
+        z-index: 5;
+        border-radius: 12px;
+        background: var(--background);
+        border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+        transition:
+          all 0.38s cubic-bezier(0.2, 0.8, 0.2, 1),
+          opacity 0.22s;
+        pointer-events: none;
+        overflow: hidden;
+      }
+      .grow::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: 38px;
+        background: linear-gradient(
+          to bottom,
+          color-mix(in oklab, var(--accent) 22%, transparent),
+          transparent
+        );
+      }
+      .menu {
+        position: absolute;
+        top: 40px;
+        left: 120px;
+        z-index: 3;
+        width: 200px;
+        border-radius: 12px;
+        padding: 5px;
+        background: color-mix(in oklab, var(--card) 85%, transparent);
+        backdrop-filter: blur(20px);
+        border: 1px solid color-mix(in oklab, var(--foreground) 11%, transparent);
+        box-shadow: 0 20px 40px -18px rgb(0 0 0/0.45);
+      }
+      .mrow {
+        display: flex;
+        gap: 8px;
+        padding: 6px 8px;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .mrow:hover {
+        background: color-mix(in oklab, var(--foreground) 7%, transparent);
+      }
+      .play {
+        font-size: 11px;
+        padding: 4px 12px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: white;
+        cursor: pointer;
+      }
+      .ghostbtn {
+        font-size: 11px;
+        padding: 4px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        cursor: pointer;
+      }
+      .mut {
+        color: var(--muted-foreground);
+      }
+      h2 {
+        font-size: 15px;
+        font-weight: 600;
+      }
+    </style>
+
+    <div class="p-5 space-y-7 text-foreground">
+      <section id="t-open" class="space-y-2">
+        <h2>Opening from Home, and back with the house</h2>
+        <p class="text-sm mut">
+          Once the project is ready, a card grows out of its tile to cover the window, the window
+          switches underneath, and the card fades off the project. The house plays it backwards into
+          the tile. A project with no tile yet grows from the middle of the window.
+        </p>
+        <div class="flex gap-2">
+          <span class="play" onclick="zoomIn()">Play: open</span
+          ><span class="ghostbtn" onclick="zoomOut()">Play: back to Home</span>
+        </div>
+        <div class="win" id="w-zoom"></div>
+      </section>
+
+      <section id="t-switch" class="space-y-2">
+        <h2>Switching from the header's menus</h2>
+        <p class="text-sm mut">
+          The views slide out on the click and the next project slides in once it is open. A project
+          further down the menu comes in from below, one higher up from above. Pick a project in the
+          menu.
+        </p>
+        <div class="win" id="w-slide"></div>
+      </section>
+    </div>
+
+    <script>
+      function H(id, h) {
+        document.getElementById(id).innerHTML = h;
+      }
+      function boardHtml(seed) {
+        return (
+          '<div class="board">' +
+          [3, 2, 2, 1]
+            .map(function (n, i) {
+              n = ((n + seed + i) % 3) + 1;
+              var c = '<div class="col">';
+              for (var k = 0; k < n; k++) c += '<div class="card"></div>';
+              return c + "</div>";
+            })
+            .join("") +
+          "</div>"
+        );
+      }
+      function homeHtml() {
+        return '<div class="home"><div class="font-semibold text-[15px] mb-3">Maestro</div><div class="panel"><div class="font-semibold mb-2">This computer</div><div class="grid grid-cols-3 gap-2"><div class="tile" id="t-maestro"><b>maestro</b><div class="mut">Working</div></div><div class="tile"><b>docs-site</b><div class="mut">Idle</div></div><div class="tile"><b>scratch</b><div class="mut">Quiet</div></div></div></div></div>';
+      }
+      function projHtml(name, a) {
+        return (
+          '<div class="proj" style="--a:' +
+          a +
+          '"><div class="phdr"><span class="tint"></span><span class="relative mut">⌂ / This computer /</span><b class="relative" id="pname">' +
+          name +
+          ' ▾</b><span class="relative ml-auto mut">Tasks · Agents · Collections · Workspaces</span></div><div class="clip"><div class="views" id="views">' +
+          boardHtml(0) +
+          "</div></div></div>"
+        );
+      }
+
+      function zoomIn() {
+        H("w-zoom", homeHtml());
+        var w = document.getElementById("w-zoom"),
+          t = document.getElementById("t-maestro"),
+          wr = w.getBoundingClientRect(),
+          r = t.getBoundingClientRect();
+        var g = document.createElement("div");
+        g.className = "grow";
+        g.style.cssText +=
+          "left:" +
+          (r.left - wr.left) +
+          "px;top:" +
+          (r.top - wr.top) +
+          "px;width:" +
+          r.width +
+          "px;height:" +
+          r.height +
+          "px;";
+        w.appendChild(g);
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            g.style.left = "0px";
+            g.style.top = "0px";
+            g.style.width = wr.width + "px";
+            g.style.height = wr.height + "px";
+            g.style.borderRadius = "0px";
+          });
+        });
+        setTimeout(function () {
+          var p = document.createElement("div");
+          p.innerHTML = projHtml("maestro", "oklch(62% .15 250)");
+          w.insertBefore(p.firstChild, g);
+          w.querySelector(".home").remove();
+          g.style.opacity = 0;
+        }, 400);
+        setTimeout(function () {
+          g.remove();
+        }, 650);
+      }
+      function zoomOut() {
+        var w = document.getElementById("w-zoom");
+        H("w-zoom", homeHtml());
+        var t = document.getElementById("t-maestro"),
+          wr = w.getBoundingClientRect(),
+          r = t.getBoundingClientRect();
+        var g = document.createElement("div");
+        g.className = "grow";
+        g.style.cssText +=
+          "left:0;top:0;width:" + wr.width + "px;height:" + wr.height + "px;border-radius:0";
+        w.appendChild(g);
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            g.style.left = r.left - wr.left + "px";
+            g.style.top = r.top - wr.top + "px";
+            g.style.width = r.width + "px";
+            g.style.height = r.height + "px";
+            g.style.borderRadius = "12px";
+          });
+        });
+        setTimeout(function () {
+          g.style.opacity = 0;
+        }, 400);
+        setTimeout(function () {
+          g.remove();
+        }, 650);
+      }
+      H("w-zoom", homeHtml());
+
+      var LIST = [
+        [
+          "This computer",
+          [
+            ["maestro", "oklch(62% .15 250)"],
+            ["docs-site", "oklch(65% .14 160)"],
+          ],
+        ],
+        [
+          "devbox",
+          [
+            ["billing", "oklch(68% .16 45)"],
+            ["api-gateway", "oklch(60% .18 330)"],
+          ],
+        ],
+      ];
+      var FLAT = [];
+      LIST.forEach(function (c) {
+        c[1].forEach(function (p) {
+          FLAT.push(p);
+        });
+      });
+      var cur = 0,
+        busy = false;
+      function drawSlide() {
+        H(
+          "w-slide",
+          projHtml(FLAT[cur][0], FLAT[cur][1]) +
+            '<div class="menu">' +
+            LIST.map(function (c) {
+              return (
+                '<div class="text-[10px] mut px-2 pt-1.5 pb-1">' +
+                c[0] +
+                "</div>" +
+                c[1]
+                  .map(function (p) {
+                    var i = FLAT.indexOf(p);
+                    return (
+                      '<div class="mrow" onclick="go(' +
+                      i +
+                      ')"><b>' +
+                      p[0] +
+                      '</b><span class="ml-auto mut">' +
+                      (i === cur ? "✓" : i < cur ? "↓ from above" : "↑ from below") +
+                      "</span></div>"
+                    );
+                  })
+                  .join("")
+              );
+            }).join("") +
+            "</div>",
+        );
+      }
+      drawSlide();
+      function go(i) {
+        if (busy || i === cur) return;
+        busy = true;
+        var dir = i > cur ? 1 : -1,
+          v = document.getElementById("views");
+        v.style.transform = "translateY(" + -100 * dir + "%)";
+        v.style.opacity = 0;
+        setTimeout(function () {
+          cur = i;
+          drawSlide();
+          var n = document.getElementById("views");
+          n.style.transition = "none";
+          n.style.transform = "translateY(" + 100 * dir + "%)";
+          n.style.opacity = 0;
+          n.innerHTML = boardHtml(i);
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              n.style.transition = "";
+              n.style.transform = "none";
+              n.style.opacity = 1;
+              setTimeout(function () {
+                busy = false;
+              }, 260);
+            });
+          });
+        }, 330);
+      }
+    </script>
+  </body>
+</html>

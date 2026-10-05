@@ -109,12 +109,12 @@ The same failure takes out `bun run tauri:gen`, which goes through
 
 **Frontend (`src/`):**
 
-- `views/` — top-level route views (KanbanView, AgentsView, WorktreesView, SettingsView, ProjectPickerView)
+- `views/` — top-level route views (KanbanView, AgentsView, WorktreesView, SettingsView, HomeView)
 - `components/` — reusable UI components organized by domain (kanban/, execution/, task/, common/, ui/, views/)
   - `components/views/` — sub-view components rendered inside route views (BoardView, ArchiveView); distinct from top-level `src/views/`
 - `services/` — IPC service layer with co-located TanStack Query hooks (task.service, worktree.service, execution.service, project.service, connection.service, settings.service, integration.service, integration-lookup.service, acp-auth.service, canvas.service)
 - `store/` — Zustand stores (boardStore, configStore, navigationStore, projectStore, reviewStore, sessionActivityStore, shortcutStore)
-- `contexts/` — React contexts (ConnectionContext, KanbanContext)
+- `contexts/` — React contexts (KanbanContext)
 - `providers/` — Provider components (QueryProvider, ThemeProvider)
 - `utils/` — hooks/ (useExecuteTask, useKeyboardNavigation, usePathNavigation, etc.; not TanStack Query — those live in services/), helpers/, constants/
 
@@ -245,7 +245,7 @@ genuinely changed — a diff there means a model changed and should be committed
 
 - SQLite DB location managed by Tauri app data directory, overridable with `MAESTRO_DATA_DIR` (see `src-tauri/AGENTS.md`)
 - Schema version: 32 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
-- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 12.
+- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 13.
   Bumping it redeploys `maestro-server` on every connection at first use, because `deploy.rs`
   compares `--app-version`, which embeds it
 - Two-phase startup: settings load → project selection → main UI

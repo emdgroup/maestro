@@ -87,8 +87,7 @@ fn resolve_data_dir(app: &tauri::App) -> Result<std::path::PathBuf, String> {
 /// What is being dropped is `maestro-server attach`, one process per connection, whose only job is
 /// to carry bytes between this app and the daemon. Without this they are orphaned:
 /// `kill_on_drop(true)` only fires when the `Child` is dropped inside the runtime, and
-/// `handle.exit(0)` drops neither map. Clearing them is exactly what `release_active_project_lock`
-/// does when the user leaves a project.
+/// `handle.exit(0)` drops neither map. Nothing else drops them: going back to Home keeps them.
 ///
 /// The sessions those relays carried keep running, in a daemon this app never owned. Clearing
 /// `acp.sessions` discards the host's bookkeeping for them and nothing else; the next run adopts

@@ -38,6 +38,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::open_project,
         crate::ipc::release_active_project_lock,
         crate::ipc::list_project_locks,
+        crate::ipc::get_home_summary,
         crate::ipc::request_project_takeover,
         crate::ipc::answer_project_takeover,
         crate::ipc::delete_project,
@@ -238,6 +239,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::docker_download_file,
         crate::ipc::save_docker_connection,
         crate::ipc::list_docker_connections,
+        crate::ipc::delete_docker_connection,
         // Integration management (Phase 55)
         crate::ipc::list_integrations,
         crate::ipc::save_integration,

@@ -1,32 +1,22 @@
-import React, { useState, useRef } from "react";
+import React from "react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { motion, LayoutGroup } from "framer-motion";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Bot, FolderGit2, Library, Settings, FolderOpen } from "lucide-react";
+import { LayoutDashboard, Bot, FolderGit2, Library, Settings } from "lucide-react";
 import { ThemeToggle } from "@/components/common/theme-toggle/ThemeToggle";
 import { AccentColorPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
 import { AccentBubbles } from "@/components/common/accent-bubbles/AccentBubbles";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from "@/ui/select";
 import type { Project } from "@/types/bindings";
-import { useRecentProjects } from "@/services/project.service";
 import type { ViewType } from "@/store/navigationStore";
 import { WindowControls } from "@/components/layout/window-chrome/WindowControls";
+import { ProjectPath } from "./ProjectPath";
 
 interface AppHeaderProps {
   currentProject: Project;
   activeView: ViewType;
   onViewChange: (view: ViewType) => void;
-  onProjectChange?: (project: Project) => void;
-  onBackToPicker?: () => void;
   /** Settings is a dialog now, so it sits beside the theme controls rather than in the tab row. */
   onOpenSettings: () => void;
   /**
@@ -53,43 +43,9 @@ export function AppHeader({
   currentProject,
   activeView,
   onViewChange,
-  onProjectChange,
-  onBackToPicker,
   onOpenSettings,
   connectionQuiet = false,
 }: AppHeaderProps) {
-  // Load recent projects on-demand (only when header is rendered)
-  const headerConnection =
-    currentProject?.wsl_connection_id != null
-      ? { type: "wsl" as const, id: currentProject.wsl_connection_id }
-      : currentProject?.connection_id != null
-        ? { type: "ssh" as const, id: currentProject.connection_id }
-        : { type: "local" as const };
-  const { data: recentProjects = [] } = useRecentProjects(headerConnection);
-
-  const [highlightedId, setHighlightedId] = useState<number | string | null>(null);
-  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  const handleItemFocus = (id: number | string) => {
-    clearTimeout(blurTimeoutRef.current);
-    setHighlightedId(id);
-  };
-
-  const handleItemBlur = () => {
-    blurTimeoutRef.current = setTimeout(() => setHighlightedId(null), 0);
-  };
-
-  // Special value for "back to picker" option
-  const BACK_TO_PICKER_VALUE = "__back_to_picker__";
-
-  const handleValueChange = (value: Project | string | null) => {
-    if (value === BACK_TO_PICKER_VALUE && onBackToPicker) {
-      onBackToPicker();
-    } else if (value && typeof value !== "string" && onProjectChange) {
-      onProjectChange(value);
-    }
-  };
-
   return (
     // The header doubles as the window's drag region — Tauri only starts a drag when the event
     // target itself carries the attribute, so the controls nested below still receive their
@@ -102,67 +58,8 @@ export function AppHeader({
           positioned and -z-10, so the grid layout and the content above are untouched. */}
       <AccentBubbles variant="header" className="-z-10" />
       <span aria-hidden className="header-gradient -z-10" />
-      {/* Left section: Logo + divider + Project Dropdown */}
-      <div data-tauri-drag-region className="flex items-center gap-3 min-w-0">
-        <Select value={currentProject} onValueChange={handleValueChange}>
-          <SelectTrigger className="h-7 gap-2 min-w-20 max-w-[20rem] border-none bg-muted/30 text-xs">
-            <FolderOpen className="h-3 w-3 text-muted-foreground shrink-0" />
-            <SelectValue placeholder="Select project">{currentProject.name}</SelectValue>
-          </SelectTrigger>
-          <SelectContent className="min-w-sm max-w-lg">
-            <LayoutGroup id="project-dropdown">
-              {recentProjects
-                .filter((p) => p.id !== currentProject.id)
-                .map((project) => (
-                  <SelectItem
-                    key={project.id}
-                    value={project}
-                    className="cursor-pointer focus:bg-transparent focus:text-foreground not-data-[variant=destructive]:focus:**:text-foreground"
-                    onFocus={() => handleItemFocus(project.id)}
-                    onBlur={handleItemBlur}
-                  >
-                    {highlightedId === project.id && (
-                      <motion.div
-                        layoutId="project-hover-pill"
-                        className="absolute inset-x-1 inset-y-0.5 rounded bg-muted"
-                        transition={{ type: "spring", stiffness: 500, damping: 35 }}
-                      />
-                    )}
-                    <div className="relative z-10 flex items-center gap-2">
-                      <div className="flex flex-col gap-0.5 py-1 flex-1 min-w-0">
-                        <div className="font-medium text-foreground">{project.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">{project.path}</div>
-                      </div>
-                    </div>
-                  </SelectItem>
-                ))}
-              {onBackToPicker && (
-                <>
-                  {recentProjects.length > 1 && <SelectSeparator />}
-                  <SelectItem
-                    value={BACK_TO_PICKER_VALUE}
-                    className="cursor-pointer focus:bg-transparent focus:text-foreground not-data-[variant=destructive]:focus:**:text-foreground"
-                    onFocus={() => handleItemFocus(BACK_TO_PICKER_VALUE)}
-                    onBlur={handleItemBlur}
-                  >
-                    {highlightedId === BACK_TO_PICKER_VALUE && (
-                      <motion.div
-                        layoutId="project-hover-pill"
-                        className="absolute inset-x-1 inset-y-0.5 rounded bg-muted"
-                        transition={{ type: "spring", stiffness: 500, damping: 35 }}
-                      />
-                    )}
-                    <div className="relative z-10 flex items-center gap-2 py-1">
-                      <FolderOpen className="size-3.5" />
-                      <span>Close project</span>
-                    </div>
-                  </SelectItem>
-                </>
-              )}
-            </LayoutGroup>
-          </SelectContent>
-        </Select>
-      </div>
+      {/* Left section: Home / connection / project */}
+      <ProjectPath project={currentProject} />
 
       {/* Center section: Tab Navigation */}
       <nav data-tauri-drag-region className="flex items-center flex-1 justify-center">
