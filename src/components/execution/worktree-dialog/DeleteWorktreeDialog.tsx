@@ -10,7 +10,6 @@ import {
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
 import { Checkbox } from "@/ui/checkbox";
-import { Spinner } from "@/ui/spinner";
 import { useDeleteWorktreeMutation } from "@/services/worktree.service";
 import type { WorktreeWithStatus } from "@/types/bindings";
 
@@ -18,15 +17,9 @@ interface DeleteWorktreeDialogProps {
   worktree: WorktreeWithStatus | null;
   projectId: number;
   onClose: () => void;
-  onSuccess?: () => void;
 }
 
-export function DeleteWorktreeDialog({
-  worktree,
-  projectId,
-  onClose,
-  onSuccess,
-}: DeleteWorktreeDialogProps) {
+export function DeleteWorktreeDialog({ worktree, projectId, onClose }: DeleteWorktreeDialogProps) {
   const [deleteBranch, setDeleteBranch] = useState(true);
   const deleteMutation = useDeleteWorktreeMutation();
 
@@ -36,7 +29,7 @@ export function DeleteWorktreeDialog({
     <AlertDialog
       open={worktree != null}
       onOpenChange={(open) => {
-        if (!open && !deleteMutation.isPending) onClose();
+        if (!open) onClose();
       }}
     >
       <AlertDialogContent>
@@ -65,38 +58,23 @@ export function DeleteWorktreeDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={deleteMutation.isPending} onClick={onClose}>
-            Cancel
-          </AlertDialogCancel>
+          <AlertDialogCancel onClick={onClose}>Cancel</AlertDialogCancel>
+          {/* Fired and closed rather than awaited: removing a checkout can take a while, and the
+              card says it is going until it has gone. */}
           <AlertDialogAction
-            disabled={deleteMutation.isPending}
             onClick={() => {
               if (worktree == null) return;
-              deleteMutation.mutate(
-                {
-                  projectId,
-                  worktreePath: worktree.path,
-                  branchName: worktree.branch_name,
-                  worktreeId: worktree.id ?? null,
-                  deleteBranch: isBranchLocalOnly && deleteBranch,
-                },
-                {
-                  onSuccess: () => {
-                    onClose();
-                    onSuccess?.();
-                  },
-                },
-              );
+              deleteMutation.mutate({
+                projectId,
+                worktreePath: worktree.path,
+                branchName: worktree.branch_name,
+                worktreeId: worktree.id ?? null,
+                deleteBranch: isBranchLocalOnly && deleteBranch,
+              });
+              onClose();
             }}
           >
-            {deleteMutation.isPending ? (
-              <>
-                <Spinner className="size-3.5" />
-                Deleting...
-              </>
-            ) : (
-              "Delete"
-            )}
+            Delete
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

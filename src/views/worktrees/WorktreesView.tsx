@@ -589,7 +589,6 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
         worktree={worktreeToDelete}
         projectId={projectId ?? 0}
         onClose={() => setWorktreeToDelete(null)}
-        onSuccess={() => setSelectedWorktreePath(null)}
       />
       <CreateWorktreeDialog
         open={showCreateDialog}

@@ -5,7 +5,20 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WorktreeCard } from "./WorktreeCard";
 import { defaultScope } from "@/components/execution/diff/WorktreeDiffPanel";
 import { useNavigationStore } from "@/store/navigationStore";
+import { useDeleteWorktreeMutation } from "@/services/worktree.service";
 import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
+
+/** A removal that never finishes, so the card can be looked at while it is still going. */
+vi.mock("@/lib/tauri-utils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/tauri-utils")>();
+  const deleteWorktree = () => new Promise(() => {});
+  return {
+    ...actual,
+    api: new Proxy(actual.api, {
+      get: (target, key) => (key === "deleteWorktree" ? deleteWorktree : Reflect.get(target, key)),
+    }),
+  };
+});
 
 /**
  * A worktree whose agent has finished and committed has a clean working tree, so every field the
@@ -409,5 +422,46 @@ describe("defaultScope", () => {
   // worktree to inherit.
   it("leaves the scope alone when there is no worktree", () => {
     expect(defaultScope(null)).toEqual({ type: "uncommitted" });
+  });
+
+  // Deleting is fired from a dialog that closes at once, so the card is what says it is going.
+  it("shows a worktree being deleted as unavailable", async () => {
+    const wt = worktree();
+    function Deleter() {
+      const { mutate } = useDeleteWorktreeMutation();
+      const vars = {
+        projectId: 1,
+        worktreePath: wt.path,
+        branchName: wt.branch_name,
+        worktreeId: wt.id,
+        deleteBranch: false,
+      };
+      return <button onClick={() => mutate(vars)}>remove</button>;
+    }
+    const onSelect = vi.fn();
+    render(
+      withClient(
+        <>
+          <Deleter />
+          <WorktreeCard
+            worktree={wt}
+            repoPath="/repo"
+            projectId={1}
+            sessions={[]}
+            now={NOW}
+            onSelect={onSelect}
+            onDelete={vi.fn()}
+            onStartSession={vi.fn()}
+          />
+        </>,
+      ),
+    );
+    expect(screen.queryByText("Deleting")).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "remove" }));
+
+    expect(await screen.findByText("Deleting")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete worktree" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Start session" })).toBeNull();
   });
 });

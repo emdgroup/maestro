@@ -23,6 +23,7 @@ import {
 } from "@/services/execution.service";
 import { useProjectSettings } from "@/services/project.service";
 import { useProjectBranchesQuery } from "@/services/task.service";
+import { useDeletingWorktreePaths } from "@/services/worktree.service";
 import { useDefaultBaseBranch } from "@/hooks/useDefaultBaseBranch";
 import { useResolveWorktree, type CreatedWorktree } from "@/hooks/useResolveWorktree";
 import { usePreflightToolChecks } from "@/store/configStore";
@@ -82,10 +83,13 @@ export function SpawnSessionDialog({
   projectId,
   repoPath,
   connection,
-  worktrees,
+  worktrees: allWorktrees,
   onSuccess,
   seed,
 }: SpawnSessionDialogProps) {
+  // A worktree on its way out is not somewhere to start a session.
+  const deletingPaths = useDeletingWorktreePaths();
+  const worktrees = allWorktrees.filter((wt) => !deletingPaths.has(wt.path));
   const [selectedWorktree, setSelectedWorktree] = useState<WorktreeWithStatus | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("NewWorktree");
   const [baseBranch, setBaseBranch] = useState("");
