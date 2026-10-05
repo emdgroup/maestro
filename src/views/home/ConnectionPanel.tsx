@@ -364,6 +364,7 @@ export function ConnectionPanel({
 
   return (
     <section
+      data-home-connection={connection.id}
       id={`connection-${connection.id}`}
       onClick={(event) => {
         // A click on the panel itself, not on anything in it, folds it to one line of chips.

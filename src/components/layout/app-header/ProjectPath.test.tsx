@@ -8,6 +8,12 @@ import { ProjectPath } from "./ProjectPath";
 
 const openProject = vi.hoisted(() => vi.fn());
 const clearSelectedProject = vi.hoisted(() => vi.fn());
+const slideOut = vi.hoisted(() => vi.fn());
+
+vi.mock("@/components/layout/project-transition/projectTransition", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  slideOut,
+}));
 
 vi.mock("@/store/projectStore", () => ({
   useSelectedProjectActions: () => ({ clearSelectedProject }),
@@ -68,6 +74,7 @@ function renderPath() {
 describe("ProjectPath", () => {
   beforeEach(() => {
     openProject.mockReset();
+    slideOut.mockReset();
     clearSelectedProject.mockReset();
     useHomeStore.setState({
       phases: { local: { kind: "up" }, "ssh:4": { kind: "up" } },
@@ -88,6 +95,8 @@ describe("ProjectPath", () => {
     expect(await screen.findByText("Opening one releases maestro")).toBeTruthy();
     fireEvent.click(screen.getByText("billing"));
     expect(openProject).toHaveBeenCalledWith(12);
+    // devbox comes after This computer in the menu, so the view slides up.
+    expect(slideOut).toHaveBeenCalledWith(1);
   });
 
   it("offers Connect for a connection that is not connected", async () => {
@@ -103,5 +112,18 @@ describe("ProjectPath", () => {
     expect(await screen.findByText("Add project")).toBeTruthy();
     expect(screen.queryByText("scratch")).toBeNull();
     expect(screen.getAllByText("maestro")).toHaveLength(2);
+  });
+
+  it("slides down to a project higher in the list", async () => {
+    render(
+      <TooltipProvider>
+        <ProjectPath project={{ ...project, id: 12, name: "billing", connection_id: 4 }} />
+      </TooltipProvider>,
+    );
+    fireEvent.click(screen.getByText("devbox"));
+    fireEvent.click(await screen.findByText("This computer"));
+    fireEvent.click(await screen.findByText("maestro"));
+    expect(slideOut).toHaveBeenCalledWith(-1);
+    expect(openProject).toHaveBeenCalledWith(1);
   });
 });

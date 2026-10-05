@@ -45,6 +45,10 @@ import { useProjectAgentIntro } from "@/hooks/useProjectAgentIntro";
 import { UpdateSplashScreen } from "@/components/execution/UpdateSplashScreen";
 import { ProjectTakeoverDialog } from "@/components/common/ProjectTakeoverDialog";
 import { getFolderName } from "@/lib/path-utils";
+import {
+  registerProjectMain,
+  slideIn,
+} from "@/components/layout/project-transition/projectTransition";
 import "./App.css";
 
 // Lazy load views for code splitting (performance optimization)
@@ -115,6 +119,17 @@ function App() {
   const worktreesControls = useAnimationControls();
   const collectionsControls = useAnimationControls();
   const prevTabRef = useRef<ViewType>(activeTab);
+
+  const projectControls = useAnimationControls();
+  const hasProject = currentProject !== null;
+  useEffect(() => {
+    if (hasProject) return registerProjectMain(projectControls);
+  }, [hasProject, projectControls]);
+  // A switch from the header's menus slid the last project out; this brings the new one in.
+  const shownProjectId = currentProject?.id;
+  useEffect(() => {
+    if (shownProjectId !== undefined) slideIn();
+  }, [shownProjectId]);
 
   const viewControls = useMemo(
     () =>
@@ -306,80 +321,83 @@ function App() {
           {/* A haze of the panes' own colour rising into the header's bottom strip, so the tinted
               header and the card-coloured panes meet without a hard edge. */}
           <main className="relative flex-1 overflow-hidden shadow-[0_-2px_5px_var(--card)]">
-            {/* Agents View — always mounted, imperative animation */}
-            <motion.div
-              initial={{ opacity: activeTab === "agents" ? 1 : 0 }}
-              animate={agentsControls}
-              className={cn(
-                "absolute inset-0 overflow-hidden",
-                activeTab !== "agents" && "pointer-events-none",
-              )}
-            >
-              <Suspense fallback={fallback}>
-                <AgentsView
-                  projectId={currentProject.id}
-                  repoPath={currentProject.path}
-                  connection={connection}
-                />
-              </Suspense>
-            </motion.div>
-            {/* Kanban View — always mounted, imperative animation */}
-            <motion.div
-              initial={{ opacity: activeTab === "kanban" ? 1 : 0 }}
-              animate={kanbanControls}
-              className={cn(
-                "absolute inset-0 overflow-hidden",
-                activeTab !== "kanban" && "pointer-events-none",
-              )}
-            >
-              <Suspense fallback={fallback}>
-                <KanbanProvider
-                  projectId={currentProject.id}
-                  projectPath={currentProject.path}
-                  connection={connection}
-                  onTaskClick={NOOP}
-                >
-                  <BoardActionsProvider>
-                    <KanbanView />
-                  </BoardActionsProvider>
-                </KanbanProvider>
-              </Suspense>
-            </motion.div>
+            {/* Slides up or down when the window switches project; `main` clips it. */}
+            <motion.div animate={projectControls} className="absolute inset-0">
+              {/* Agents View — always mounted, imperative animation */}
+              <motion.div
+                initial={{ opacity: activeTab === "agents" ? 1 : 0 }}
+                animate={agentsControls}
+                className={cn(
+                  "absolute inset-0 overflow-hidden",
+                  activeTab !== "agents" && "pointer-events-none",
+                )}
+              >
+                <Suspense fallback={fallback}>
+                  <AgentsView
+                    projectId={currentProject.id}
+                    repoPath={currentProject.path}
+                    connection={connection}
+                  />
+                </Suspense>
+              </motion.div>
+              {/* Kanban View — always mounted, imperative animation */}
+              <motion.div
+                initial={{ opacity: activeTab === "kanban" ? 1 : 0 }}
+                animate={kanbanControls}
+                className={cn(
+                  "absolute inset-0 overflow-hidden",
+                  activeTab !== "kanban" && "pointer-events-none",
+                )}
+              >
+                <Suspense fallback={fallback}>
+                  <KanbanProvider
+                    projectId={currentProject.id}
+                    projectPath={currentProject.path}
+                    connection={connection}
+                    onTaskClick={NOOP}
+                  >
+                    <BoardActionsProvider>
+                      <KanbanView />
+                    </BoardActionsProvider>
+                  </KanbanProvider>
+                </Suspense>
+              </motion.div>
 
-            {/* Worktrees View — always mounted, imperative animation */}
-            <motion.div
-              initial={{ opacity: activeTab === "worktrees" ? 1 : 0 }}
-              animate={worktreesControls}
-              className={cn(
-                "absolute inset-0 overflow-hidden",
-                activeTab !== "worktrees" && "pointer-events-none",
-              )}
-            >
-              <Suspense fallback={fallback}>
-                <WorktreesView
-                  projectId={currentProject.id}
-                  repoPath={currentProject.path}
-                  connection={connection}
-                />
-              </Suspense>
-            </motion.div>
+              {/* Worktrees View — always mounted, imperative animation */}
+              <motion.div
+                initial={{ opacity: activeTab === "worktrees" ? 1 : 0 }}
+                animate={worktreesControls}
+                className={cn(
+                  "absolute inset-0 overflow-hidden",
+                  activeTab !== "worktrees" && "pointer-events-none",
+                )}
+              >
+                <Suspense fallback={fallback}>
+                  <WorktreesView
+                    projectId={currentProject.id}
+                    repoPath={currentProject.path}
+                    connection={connection}
+                  />
+                </Suspense>
+              </motion.div>
 
-            {/* Collections View — always mounted, imperative animation */}
-            <motion.div
-              initial={{ opacity: activeTab === "collections" ? 1 : 0 }}
-              animate={collectionsControls}
-              className={cn(
-                "absolute inset-0 overflow-hidden",
-                activeTab !== "collections" && "pointer-events-none",
-              )}
-            >
-              <Suspense fallback={fallback}>
-                <CollectionsView
-                  projectId={currentProject.id}
-                  projectPath={currentProject.path}
-                  connection={connection}
-                />
-              </Suspense>
+              {/* Collections View — always mounted, imperative animation */}
+              <motion.div
+                initial={{ opacity: activeTab === "collections" ? 1 : 0 }}
+                animate={collectionsControls}
+                className={cn(
+                  "absolute inset-0 overflow-hidden",
+                  activeTab !== "collections" && "pointer-events-none",
+                )}
+              >
+                <Suspense fallback={fallback}>
+                  <CollectionsView
+                    projectId={currentProject.id}
+                    projectPath={currentProject.path}
+                    connection={connection}
+                  />
+                </Suspense>
+              </motion.div>
             </motion.div>
           </main>
 

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useOpenProject } from "./useOpenProject";
+import type { OpenProjectOptions } from "./useOpenProject";
 
 const requestTakeover = vi.hoisted(() => vi.fn());
 const openProject = vi.hoisted(() => vi.fn());
@@ -148,6 +149,47 @@ describe("useOpenProject", () => {
       );
       expect(openProject).toHaveBeenCalledTimes(1);
       expect(setSelectedProject).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("the transition around an open", () => {
+    function Transitioned({ beforeShow, onAbandon }: OpenProjectOptions) {
+      const { openProject: open, dialogs } = useOpenProject({ beforeShow, onAbandon });
+      return (
+        <>
+          <button onClick={() => void open(7)}>Open maestro</button>
+          {dialogs}
+        </>
+      );
+    }
+
+    function renderTransitioned(options: OpenProjectOptions) {
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={qc}>
+          <Transitioned {...options} />
+        </QueryClientProvider>,
+      );
+      fireEvent.click(screen.getByText("Open maestro"));
+    }
+
+    it("switches only once the transition has played", async () => {
+      openProject.mockResolvedValue({ id: 7, path: "/work/maestro" });
+      let played = () => {};
+      const beforeShow = vi.fn(() => new Promise<void>((resolve) => (played = resolve)));
+      renderTransitioned({ beforeShow });
+      await waitFor(() => expect(beforeShow).toHaveBeenCalled());
+      expect(setSelectedProject).not.toHaveBeenCalled();
+      act(() => played());
+      await waitFor(() => expect(setSelectedProject).toHaveBeenCalled());
+    });
+
+    it("reports an open that stopped at a takeover", async () => {
+      openProject.mockRejectedValueOnce(new Error("PROJECT_LOCKED:desktop"));
+      const onAbandon = vi.fn();
+      renderTransitioned({ onAbandon });
+      await screen.findByText("Open in Maestro on desktop. Request takeover?");
+      expect(onAbandon).toHaveBeenCalledTimes(1);
     });
   });
 });

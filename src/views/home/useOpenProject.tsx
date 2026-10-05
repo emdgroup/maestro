@@ -8,7 +8,7 @@ import {
   useRequestProjectTakeover,
 } from "@/services/project.service";
 import { useSelectedProjectActions, applyProjectStartupTab } from "@/store/projectStore";
-import type { ConnectionKey } from "@/types/bindings";
+import type { ConnectionKey, Project } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
 import {
   getErrorMessage,
@@ -37,6 +37,13 @@ function connectionIds(connection: ConnectionKey) {
   };
 }
 
+export interface OpenProjectOptions {
+  /** Runs once the project is ready, before the window switches to it; the switch waits for it. */
+  beforeShow?: (project: Project) => Promise<unknown> | void;
+  /** An open that ended without switching: it failed, or waits on a takeover or a git init. */
+  onAbandon?: () => void;
+}
+
 /**
  * Opening a project from Home, whichever way it is reached: a tile, a folder, a clone or a new
  * repository. Takes the project's lock, primes its server (the first open after the upgrade moves
@@ -45,7 +52,7 @@ function connectionIds(connection: ConnectionKey) {
  * A project held by another window offers a takeover; a folder that is not a git repository
  * offers to initialise one. `dialogs` renders both prompts and must be mounted by the caller.
  */
-export function useOpenProject() {
+export function useOpenProject(options: OpenProjectOptions = {}) {
   const { setSelectedProject } = useSelectedProjectActions();
   const { mutateAsync: createProject } = useCreateProject();
   const { mutateAsync: checkIsGitRepo } = useCheckIsGitRepo();
@@ -106,8 +113,10 @@ export function useOpenProject() {
         primeProject(projectId),
         applyProjectStartupTab(project.id),
       ]);
+      await options.beforeShow?.(project);
       setSelectedProject(project, isGitRepo);
     } catch (error) {
+      options.onAbandon?.();
       if (isProjectLockedError(error)) {
         setTakeover({ projectId, holder: projectLockHolder(error) });
       } else {
@@ -124,12 +133,14 @@ export function useOpenProject() {
     try {
       const isGitRepo = await checkIsGitRepo({ path, ...connectionIds(connection) });
       if (!isGitRepo) {
+        options.onAbandon?.();
         setGitInit({ path, connection });
         return;
       }
       const created = await createProject({ path, connection });
       await openProject(created.id, true);
     } catch (error) {
+      options.onAbandon?.();
       toast.error(`Failed to open project: ${getErrorMessage(error)}`);
     }
   };

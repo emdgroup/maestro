@@ -75,6 +75,7 @@ export function ProjectTile({ project, opening, onOpen, onRemove }: TileProps) {
     // The pane, and its hover lift, is on the wrapper so the two move together.
     <div
       data-attention={project.needsYou}
+      data-home-project={project.path}
       className="group/tile home-pane relative flex rounded-2xl"
     >
       <button
@@ -139,6 +140,7 @@ export function ProjectChip({ project, onOpen }: { project: ProjectCard; onOpen:
       type="button"
       onClick={onOpen}
       data-attention={project.needsYou}
+      data-home-project={project.path}
       className="home-pane flex shrink-0 cursor-pointer items-center gap-2 rounded-full py-1 pr-2.5 pl-3 text-xs"
     >
       <span className="font-medium">{project.name}</span>

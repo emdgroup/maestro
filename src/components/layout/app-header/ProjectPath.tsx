@@ -21,6 +21,13 @@ import { attach, connect, signInWith } from "@/views/home/useConnectionActions";
 import { useHomeConnections } from "@/views/home/useHomeConnections";
 import { useHomeSummaries } from "@/views/home/useHomeSummaries";
 import { useOpenProject } from "@/views/home/useOpenProject";
+import {
+  shrinkToHome,
+  slideBack,
+  slideOut,
+  tileBox,
+  whenSlidOut,
+} from "@/components/layout/project-transition/projectTransition";
 
 const segment =
   "flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-xs outline-none transition-colors hover:bg-foreground/[0.08] focus-visible:bg-foreground/[0.08] data-popup-open:bg-foreground/[0.08]";
@@ -287,7 +294,10 @@ export function ProjectPath({ project }: { project: Project }) {
   const phases = useHomeStore((s) => s.phases);
   const hidden = useHomeStore((s) => s.hidden);
   const setHidden = useHomeStore((s) => s.setHidden);
-  const { openProject, openPath, opening, dialogs } = useOpenProject();
+  const { openProject, openPath, opening, dialogs } = useOpenProject({
+    beforeShow: whenSlidOut,
+    onAbandon: slideBack,
+  });
   const [addingTo, setAddingTo] = useState<HomeConnection | null>(null);
   const [signInFor, setSignInFor] = useState<HomeConnection | null>(null);
   const [signingIn, setSigningIn] = useState(false);
@@ -314,10 +324,25 @@ export function ProjectPath({ project }: { project: Project }) {
         ? `Home · ${waiting[0].name} needs you`
         : `Home · ${waiting.length} projects need you`;
 
-  const openCard = (connection: HomeConnection, card: ProjectCard) =>
+  // The menus' order, connection by connection: the view slides up to a project further down it.
+  const order = connections.flatMap((connection) =>
+    byStatus(cardsFor(connection) ?? []).map((card) => card.projectId),
+  );
+
+  const openCard = (connection: HomeConnection, card: ProjectCard) => {
+    const from = order.indexOf(project.id);
+    const to = order.indexOf(card.projectId);
+    slideOut(to !== -1 && from !== -1 && to < from ? -1 : 1);
     void (card.projectId !== null
       ? openProject(card.projectId)
       : openPath(card.path, connection.key));
+  };
+
+  // The project shrinks back into its tile on Home.
+  const goHome = () => {
+    shrinkToHome(() => tileBox(project));
+    clearSelectedProject();
+  };
 
   const submitSignIn = async (submission: AuthSubmission) => {
     const connection = signInFor;
@@ -343,7 +368,7 @@ export function ProjectPath({ project }: { project: Project }) {
           render={
             <button
               type="button"
-              onClick={clearSelectedProject}
+              onClick={goHome}
               aria-label={homeLabel}
               className={cn(segment, "relative w-7 shrink-0 justify-center px-0")}
             />
@@ -377,7 +402,7 @@ export function ProjectPath({ project }: { project: Project }) {
               onOpen={(card) => openCard(connection, card)}
               onAdd={() => setAddingTo(connection)}
               onSignIn={() => setSignInFor(connection)}
-              onHome={clearSelectedProject}
+              onHome={goHome}
             />
           ))}
         </Panel>
