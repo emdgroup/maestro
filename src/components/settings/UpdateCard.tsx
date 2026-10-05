@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Progress, ProgressTrack, ProgressIndicator } from "@/ui/progress";
 import { useUpdater } from "@/hooks/useUpdater";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
+import { cn } from "@/lib/utils";
 import appIconUrl from "../../../src-tauri/icons/32x32.png?url";
 
 /** Shared with `UpdateStrip`, which shows the same relative time in its tooltip and popover. */
@@ -64,8 +65,14 @@ export function UpdateCard() {
   const isChecking = status.phase === "checking";
 
   return (
-    // A project tile inside a panel, as on Home; an available update takes the accent.
-    <div data-selected={status.phase === "available"} className="home-pane rounded-2xl p-4">
+    // Shaped like a Home tile but opaque and still, so it reads apart from the glass around it.
+    // An available update takes the accent border.
+    <div
+      className={cn(
+        "rounded-2xl border bg-card p-4",
+        status.phase === "available" ? "border-accent/50" : "border-foreground/[0.07]",
+      )}
+    >
       <div className="flex items-center gap-3">
         {/* App icon */}
         <img src={appIconUrl} alt="Maestro" className="w-9 h-9 rounded-lg shrink-0" />
