@@ -6,6 +6,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "@/store/navigationStore";
 import { useBranchPullRequest } from "@/services/integration.service";
+import { useDeletingWorktreePaths } from "@/services/worktree.service";
+import { Spinner } from "@/ui/spinner";
 import { branchHasLanded } from "@/lib/branch-landed";
 import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
 import { WorktreeMetrics } from "./WorktreeMetrics";
@@ -56,6 +58,7 @@ export function WorktreeCard({
   onStartSession,
 }: WorktreeCardProps) {
   const navigate = useNavigate();
+  const deleting = useDeletingWorktreePaths().has(worktree.path);
   // Asked per branch rather than looked up in the panel's list, because that list is now one page
   // of thirty: a worktree whose pull request sits on page seven would lose its chip, intermittently,
   // as colleagues push. Unpolled, so a grid of these costs one request each when the tab opens and
@@ -84,14 +87,27 @@ export function WorktreeCard({
   const title = worktreeTitle(worktree);
   const location = relativeWorktreePath(worktree.path, repoPath);
 
+  // Inert while it is being removed: its diff, its sessions and its branch are all on their way out.
   const card = (
-    <div className="relative group rounded-lg border bg-card w-72 shrink-0 overflow-hidden transition-colors cursor-pointer hover:border-ring/50">
+    <div
+      aria-busy={deleting || undefined}
+      aria-disabled={deleting || undefined}
+      className={cn(
+        "relative group rounded-lg border bg-card w-72 shrink-0 overflow-hidden transition-colors",
+        deleting ? "opacity-60 pointer-events-none" : "cursor-pointer hover:border-ring/50",
+      )}
+    >
       <div className="p-3" onClick={() => onSelect(worktree.path)}>
         <div className="flex items-start justify-between gap-2">
           <span className="flex items-center gap-1.5 min-w-0">
             <span className="text-sm font-medium truncate">{title}</span>
           </span>
-          {isMain ? (
+          {deleting ? (
+            <span className="flex items-center gap-1 shrink-0 text-xs text-muted-foreground">
+              <Spinner className="size-3" />
+              Deleting
+            </span>
+          ) : isMain ? (
             // Labelled because this icon is the only thing distinguishing the repository checkout
             // from the worktrees it sits beside, and it is the one card with no delete button.
             <FolderRoot
@@ -153,7 +169,7 @@ export function WorktreeCard({
         />
       </div>
 
-      {(inUse || canStart) && (
+      {!deleting && (inUse || canStart) && (
         <div className="flex items-center border-t bg-muted/40">
           {inUse && (
             <Popover>

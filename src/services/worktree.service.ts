@@ -1,5 +1,5 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useQuery, useMutation, useMutationState, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo } from "react";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
@@ -164,14 +164,21 @@ export function useWorktreeDiffStatsQuery(
   });
 }
 
+const deleteWorktreeKey = [...worktreeQueryKeys.base, "delete"] as const;
+
 /**
  * Mutation hook for deleting a worktree.
  * Passes optional worktreeId so DB row is deleted when present (orphans skip DB deletion).
  * Invalidates worktree list on success.
+ *
+ * Removing a large checkout takes a while, so callers fire it and move on. The mutation stays
+ * pending until the refreshed list no longer has the row, which is what lets
+ * `useDeletingWorktreePaths` cover the whole gap without the card flickering back in between.
  */
 export function useDeleteWorktreeMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: deleteWorktreeKey,
     mutationFn: async ({
       projectId,
       worktreePath,
@@ -193,12 +200,25 @@ export function useDeleteWorktreeMutation() {
         deleteBranch,
       );
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
       toast.success("Worktree deleted");
     },
     onError: createErrorToastHandler("Failed to delete worktree"),
   });
+}
+
+/**
+ * Paths of the worktrees being deleted right now, from any caller. Read from the mutation cache
+ * rather than a store, so a deletion started from a dialog that has since closed still counts.
+ */
+export function useDeletingWorktreePaths(): Set<string> {
+  const paths = useMutationState({
+    filters: { mutationKey: deleteWorktreeKey, status: "pending" },
+    select: (mutation) =>
+      (mutation.state.variables as { worktreePath: string } | undefined)?.worktreePath ?? "",
+  });
+  return useMemo(() => new Set(paths), [paths]);
 }
 
 /**
