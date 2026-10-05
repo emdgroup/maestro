@@ -273,6 +273,21 @@ one goes through the same path as a tile: the lock, a takeover when another wind
 first-open import. Switching to a project on another connection releases the lock held on the
 previous one, so a window never holds projects it is not showing.
 
+**Transitions**, drawn in `transitions.html` beside this file:
+
+- **Opening from Home** (a tile, a chip, a folder, a clone): once the project is ready, a card grows
+  out of its tile to cover the window (0.38 s), the window switches underneath it, and the card
+  fades off the project (0.22 s). A project with no tile yet grows from the middle of the window.
+  The tile keeps its spinner while the project is getting ready.
+- **The house** plays it backwards: a card covers the project, the window switches to Home, and the
+  card shrinks into the project's tile (or its chip) and fades.
+- **Switching** from the header's menus: the project's views slide out vertically on the click, and
+  the next project's slide in from the other side once it is open. The direction follows the menus'
+  order, connection by connection: a project further down comes in from below, one higher up from
+  above. An open that does not happen (it fails, or waits on a takeover) slides the current project
+  back.
+- With Reduce motion on, the card only fades and the slide only cross-fades.
+
 ## Open items
 
 None at the moment.
