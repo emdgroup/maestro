@@ -64,11 +64,8 @@ export function UpdateCard() {
   const isChecking = status.phase === "checking";
 
   return (
-    <div
-      className={`bg-card border rounded-lg p-3 ${
-        status.phase === "available" ? "border-accent/25 bg-accent/5" : "border-border"
-      }`}
-    >
+    // A project tile inside a panel, as on Home; an available update takes the accent.
+    <div data-selected={status.phase === "available"} className="home-pane rounded-2xl p-4">
       <div className="flex items-center gap-3">
         {/* App icon */}
         <img src={appIconUrl} alt="Maestro" className="w-9 h-9 rounded-lg shrink-0" />

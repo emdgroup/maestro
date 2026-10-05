@@ -244,46 +244,48 @@ function AddProjectSheet({
             </div>
           )}
           {choice === "create" && (
-            <div className="flex items-center gap-2">
+            <div className="space-y-2">
               <input
                 aria-label="Project name"
                 autoFocus
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Project name"
-                className="home-field h-9 w-48 rounded-xl px-3 text-xs"
+                className="home-field h-9 w-full rounded-xl px-3 text-xs"
               />
-              <span className="text-[11px] text-muted-foreground">in</span>
-              <input
-                aria-label="In folder"
-                value={into}
-                onChange={(event) => setInto(event.target.value)}
-                className={cn(FIELD, "flex-1")}
-              />
-              <button
-                type="button"
-                onClick={() => setBrowsing("into")}
-                className="home-pill h-9 cursor-pointer rounded-xl px-3 text-xs"
-              >
-                Browse…
-              </button>
-              <button
-                type="button"
-                disabled={busy || !name.trim() || !into.trim()}
-                onClick={() =>
-                  void finish(async () => {
-                    const created = await createProject({
-                      parentDir: into.trim(),
-                      folderName: name.trim(),
-                      ...ids,
-                    });
-                    await onOpenProject(created.id);
-                  })
-                }
-                className={BUTTON}
-              >
-                Create
-              </button>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-muted-foreground">In</span>
+                <input
+                  aria-label="In folder"
+                  value={into}
+                  onChange={(event) => setInto(event.target.value)}
+                  className={cn(FIELD, "flex-1")}
+                />
+                <button
+                  type="button"
+                  onClick={() => setBrowsing("into")}
+                  className="home-pill h-9 cursor-pointer rounded-xl px-3 text-xs"
+                >
+                  Browse…
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || !name.trim() || !into.trim()}
+                  onClick={() =>
+                    void finish(async () => {
+                      const created = await createProject({
+                        parentDir: into.trim(),
+                        folderName: name.trim(),
+                        ...ids,
+                      });
+                      await onOpenProject(created.id);
+                    })
+                  }
+                  className={BUTTON}
+                >
+                  Create
+                </button>
+              </div>
             </div>
           )}
         </div>

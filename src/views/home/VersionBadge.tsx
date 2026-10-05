@@ -30,7 +30,11 @@ export function VersionBadge() {
       <PopoverTrigger className="absolute bottom-4 right-4 flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer border border-transparent hover:border-border/50">
         {icon}v{appVersion}
       </PopoverTrigger>
-      <PopoverContent side="top" align="end" className="w-fit p-3">
+      <PopoverContent
+        side="top"
+        align="end"
+        className="home-glass w-fit rounded-[22px] bg-transparent p-5 shadow-none ring-0"
+      >
         <UpdateCard />
       </PopoverContent>
     </Popover>
