@@ -233,10 +233,10 @@ Items depend on state:
 | -------------------------------------------- | -------------------- |
 | Try again                                    | unreachable          |
 | Start server                                 | server stopped       |
-| Settings, hint `Agents, capacity, webhooks`  | always               |
+| Settings                                     | always               |
 | Change sign-in, hint with the current method | SSH, not mid-sign-in |
 | Restart server                               | connected            |
-| Stop server (rose)                           | connected            |
+| Stop server (rose, filled square)            | connected            |
 | Remove connection (rose)                     | not This computer    |
 
 Stop, Restart and Remove confirm in a `glass-strong` dialog listing the consequences, computed from
