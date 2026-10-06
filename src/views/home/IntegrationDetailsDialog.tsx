@@ -110,7 +110,7 @@ export function IntegrationDetailsDialog({
             <div className="mt-6 flex">
               <Button
                 variant="ghost"
-                className="text-rose-600 hover:bg-rose-500/10 hover:text-rose-600"
+                className="text-rose-600 hover:bg-rose-500/10 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-400"
                 onClick={() => onDisconnect(integration)}
               >
                 Disconnect

@@ -55,7 +55,7 @@ function Item({
       className={cn(
         "flex cursor-pointer items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 text-sm outline-none select-none [&_svg]:size-4 [&_svg]:shrink-0",
         danger
-          ? "text-rose-600 data-highlighted:bg-rose-500/10"
+          ? "text-rose-600 data-highlighted:bg-rose-500/10 dark:text-rose-400"
           : "data-highlighted:bg-foreground/[0.07]",
         className,
       )}
