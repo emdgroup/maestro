@@ -144,3 +144,26 @@ describe("usePathNavigation – pathParts", () => {
     expect(result.current.pathParts).toEqual(["home", "user", "projects"]);
   });
 });
+
+describe("usePathNavigation – navigateToPath", () => {
+  const cases: [boolean, string, string][] = [
+    [true, String.raw`"C:\Users\billy\src"`, "C:/Users/billy/src"],
+    [true, String.raw`  C:\Users\  `, "C:/Users"],
+    [true, "c:", "c:/"],
+    [true, "C:\\", "C:/"],
+    [false, "/home/billy//src/", "/home/billy/src"],
+    [false, "/", "/"],
+  ];
+  it.each(cases)("local=%s: %s goes to %s", (isLocal, typed, expected) => {
+    const { result } = setup(isLocal);
+    act(() => result.current.navigateToPath(typed));
+    expect(result.current.currentPath).toBe(expected);
+  });
+
+  it("ignores an empty entry", () => {
+    const { result } = setup();
+    act(() => result.current.setCurrentPath("/srv"));
+    act(() => result.current.navigateToPath("   "));
+    expect(result.current.currentPath).toBe("/srv");
+  });
+});
