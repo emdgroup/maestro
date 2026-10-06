@@ -263,16 +263,17 @@ Clicking a tile opens the project. The left of the in-project header becomes a p
   `Needs a password` or `Could not connect`. An amber dot marks a connection with a project that
   needs the user; this one has a check. Hovering or clicking a connection, or pressing Right,
   opens a side panel flush against the menu:
-  - Connected: its projects as small tiles, needs-you first as the chips sort, each with its name,
-    path, status word, one line of context and the three counts, then `Add project`. On another
-    connection a footnote reads `Opening one releases <project>`.
+  - Connected: its projects as small tiles, needs-you first as the chips sort, then `Add project`.
+    A tile has its name (a lock when another window holds it) and status word, the path under
+    them, a line of context only when there is one, and the three counts. The tiles scroll past
+    five.
   - Not connected, stopped or unreachable: `Not connected. Its projects show here once it is.` and
     a `Connect` pill, Home's own connect. The panel stays open, so the tiles appear in place.
   - Needs a password: a `Sign in…` pill that opens the SSH sign-in dialog.
   - Connecting: a spinner. Could not connect: an `Open Home` pill, since Home shows why.
-- **The project**, in semibold with a chevron, opens a menu of this connection's projects as rows:
-  name, path, one line of context (or the counts) and the status word, the current one checked;
-  then `Add project`, which opens the Add project dialog for this connection.
+- **The project**, in semibold with a chevron, opens a menu of this connection's projects as the
+  same tiles, the current one checked; then `Add project`, which opens the Add project dialog for
+  this connection.
 
 Both menus use the `home-pop-strong` glass. Projects removed from Home stay out of them, and opening
 one goes through the same path as a tile: the lock, a takeover when another window holds it, the

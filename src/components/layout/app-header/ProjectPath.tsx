@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Menu } from "@base-ui/react/menu";
 import { toast } from "sonner";
-import { Check, ChevronDown, ChevronRight, House, Loader2, Lock, Plus } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, House, Loader2, Plus } from "lucide-react";
 import type { Project } from "@/types/bindings";
 import { cn } from "@/lib/utils";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
@@ -255,12 +255,6 @@ function ConnectionEntry({
               <Plus className="size-3.5" />
               Add project
             </Menu.Item>
-            {!isHere && cards && cards.length > 0 && (
-              <div className="flex items-center gap-1.5 px-2.5 pt-1 pb-1.5 text-[11px] text-muted-foreground">
-                <Lock className="size-3" />
-                Opening one releases {current.name}
-              </div>
-            )}
           </>
         ) : phase.kind === "connecting" || phase.kind === "stopping" ? (
           <div className="flex items-center justify-center gap-2 py-5 text-xs text-muted-foreground">

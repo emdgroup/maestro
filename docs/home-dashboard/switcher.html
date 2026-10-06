@@ -238,14 +238,6 @@
         color: white;
         cursor: pointer;
       }
-      .note {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 11px;
-        color: var(--muted-foreground);
-        padding: 4px 9px 6px;
-      }
       h2 {
         font-size: 15px;
         font-weight: 600;
@@ -514,9 +506,7 @@
           sorted(dev.proj).map(tile).join("") +
           '<div class="hr"></div><div class="row mut">' +
           s("plus", 13) +
-          'Add project</div><div class="note">' +
-          s("lock", 11) +
-          "Opening one releases maestro</div></div>",
+          "Add project</div></div>",
       );
       el(
         "s2",

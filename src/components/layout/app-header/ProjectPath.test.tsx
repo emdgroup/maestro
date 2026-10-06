@@ -92,8 +92,7 @@ describe("ProjectPath", () => {
     renderPath();
     fireEvent.click(screen.getByText("This computer"));
     fireEvent.click(await screen.findByText("devbox"));
-    expect(await screen.findByText("Opening one releases maestro")).toBeTruthy();
-    fireEvent.click(screen.getByText("billing"));
+    fireEvent.click(await screen.findByText("billing"));
     expect(openProject).toHaveBeenCalledWith(12);
     // devbox comes after This computer in the menu, so the view slides up.
     expect(slideOut).toHaveBeenCalledWith(1);
