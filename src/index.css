@@ -957,11 +957,11 @@
 /* Panels are clearer than popups, so the bubbles drifting behind them stay distinct. */
 .home-glass::before {
   background: color-mix(in oklab, var(--card) 30%, transparent);
-  -webkit-backdrop-filter: blur(8px) saturate(140%);
-  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(5px) saturate(140%);
+  backdrop-filter: blur(5px) saturate(140%);
 }
 .home-pop {
-  background: color-mix(in oklab, var(--card) 42%, transparent);
+  background: color-mix(in oklab, var(--card) 60%, transparent);
   -webkit-backdrop-filter: blur(20px) saturate(150%);
   backdrop-filter: blur(20px) saturate(150%);
 }
@@ -981,9 +981,9 @@
     0 1px 0 color-mix(in oklab, white 20%, transparent) inset,
     0 20px 50px -18px rgb(0 0 0 / 0.35);
 }
-/* Confirmations: denser, so the consequences stay readable over moving bubbles. */
+/* Confirmations and the header's menus: blurred harder, so text stays readable over moving bubbles. */
 .home-pop-strong {
-  background: color-mix(in oklab, var(--card) 72%, transparent);
+  background: color-mix(in oklab, var(--card) 60%, transparent);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
   backdrop-filter: blur(24px) saturate(160%);
   border: 1px solid color-mix(in oklab, var(--foreground) 11%, transparent);
@@ -992,7 +992,7 @@
     0 20px 50px -18px rgb(0 0 0 / 0.45);
 }
 .home-pane {
-  background: color-mix(in oklab, var(--background) 28%, transparent);
+  background: color-mix(in oklab, var(--background) 50%, transparent);
   border: 1px solid color-mix(in oklab, var(--foreground) 7%, transparent);
   transition:
     background 0.18s,
@@ -1000,7 +1000,7 @@
     border-color 0.18s;
 }
 .home-pane:hover {
-  background: color-mix(in oklab, var(--background) 62%, transparent);
+  background: color-mix(in oklab, var(--background) 84%, transparent);
   transform: translateY(-2px);
   border-color: color-mix(in oklab, var(--foreground) 14%, transparent);
 }
@@ -1081,43 +1081,39 @@
   backdrop-filter: blur(6px);
 }
 /* Home's page stops at the drag strip above and the version line below, and fades out at an edge
-   only while there is more of it that way. The lengths are registered so the fade can transition.
-   A mask stops every backdrop-filter inside it from seeing anything outside, which is why the
-   bubbles the glass panels blur live inside this box too. */
-@property --home-fade-top {
-  syntax: "<length>";
-  initial-value: 0px;
-  inherits: false;
+   only while there is more of it that way. The fade is a strip painted over the edge in the
+   screen's own background, never a mask on the page: a mask stops every backdrop-filter inside it
+   from seeing anything, and the glass panels would turn clear. Each strip repeats the
+   `screen-gradient` over `--background`, shifted to where it sits in the 48px-inset page. */
+.home-edge {
+  position: absolute;
+  inset-inline: 0;
+  z-index: 15;
+  height: 56px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s;
 }
-@property --home-fade-bottom {
-  syntax: "<length>";
-  initial-value: 0px;
-  inherits: false;
+.home-edge-top {
+  top: 0;
+  background:
+    linear-gradient(to bottom, var(--screen-tint), transparent) 0 -48px / 100% 100vh no-repeat,
+    var(--background);
+  -webkit-mask-image: linear-gradient(to bottom, #000, transparent);
+  mask-image: linear-gradient(to bottom, #000, transparent);
 }
-.home-scroll {
-  transition:
-    --home-fade-top 0.25s,
-    --home-fade-bottom 0.25s;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 var(--home-fade-top),
-    #000 calc(100% - var(--home-fade-bottom)),
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 var(--home-fade-top),
-    #000 calc(100% - var(--home-fade-bottom)),
-    transparent 100%
-  );
+.home-edge-bottom {
+  bottom: 0;
+  background:
+    linear-gradient(to bottom, var(--screen-tint), transparent) 0 calc(104px - 100vh) / 100% 100vh
+      no-repeat,
+    var(--background);
+  -webkit-mask-image: linear-gradient(to top, #000, transparent);
+  mask-image: linear-gradient(to top, #000, transparent);
 }
-.home-scroll[data-more-up] {
-  --home-fade-top: 56px;
-}
-.home-scroll[data-more-down] {
-  --home-fade-bottom: 56px;
+.home-scroll[data-more-up] > .home-edge-top,
+.home-scroll[data-more-down] > .home-edge-bottom {
+  opacity: 1;
 }
 /* The field is clipped at the strip now rather than the window's edge, so it fades out there too. */
 .home-bubbles {

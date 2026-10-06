@@ -1,15 +1,17 @@
 import { useState } from "react";
+import type { ComponentProps } from "react";
+import { Menu } from "@base-ui/react/menu";
 import { KeyRound, Play, RotateCcw, Settings, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { Button } from "@/ui/button";
 import { getErrorMessage } from "@/lib/error-utils";
+import { cn } from "@/lib/utils";
 import type { ConnectionPhase } from "@/store/homeStore";
 import type { HomeConnection } from "./ConnectionPanel";
 import type { ProjectCard } from "./ProjectTile";
@@ -39,10 +41,27 @@ interface ConnectionMenuProps {
   onRemove?: () => Promise<void>;
 }
 
-function itemClass(danger?: boolean) {
-  return danger
-    ? "gap-2.5 rounded-[10px] px-2.5 py-1.5 text-rose-600 focus:bg-rose-500/10 focus:text-rose-600"
-    : "gap-2.5 rounded-[10px] px-2.5 py-1.5 focus:bg-foreground/[0.08] focus:text-foreground";
+/**
+ * A row of the menu. Not `DropdownMenuItem`: its hover paints every child in `accent-foreground`,
+ * which turns the icons and any second span white on this glass.
+ */
+function Item({
+  danger,
+  className,
+  ...props
+}: ComponentProps<typeof Menu.Item> & { danger?: boolean }) {
+  return (
+    <Menu.Item
+      className={cn(
+        "flex cursor-pointer items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 text-sm outline-none select-none [&_svg]:size-4 [&_svg]:shrink-0",
+        danger
+          ? "text-rose-600 data-highlighted:bg-rose-500/10 dark:text-rose-400"
+          : "data-highlighted:bg-foreground/[0.07]",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
 /**
@@ -153,22 +172,20 @@ export function ConnectionMenu({
           </div>
           <DropdownMenuSeparator />
           {phase.kind === "unreachable" && (
-            <DropdownMenuItem className={itemClass()} onClick={() => void connect(connection.key)}>
+            <Item onClick={() => void connect(connection.key)}>
               <RotateCcw /> Try again
-            </DropdownMenuItem>
+            </Item>
           )}
           {phase.kind === "stopped" && (
-            <DropdownMenuItem className={itemClass()} onClick={() => void attach(connection.key)}>
+            <Item onClick={() => void attach(connection.key)}>
               <Play /> Start server
-            </DropdownMenuItem>
+            </Item>
           )}
-          <DropdownMenuItem className={itemClass()} onClick={onSettings}>
-            <Settings />
-            <span className="flex-1">Settings</span>
-            <span className="text-[11px] text-muted-foreground">Agents, capacity, webhooks</span>
-          </DropdownMenuItem>
+          <Item onClick={onSettings}>
+            <Settings /> Settings
+          </Item>
           {connection.ssh && phase.kind !== "signin" && (
-            <DropdownMenuItem className={itemClass()} onClick={onChangeSignIn}>
+            <Item onClick={onChangeSignIn}>
               <KeyRound />
               <span className="flex-1">Change sign-in</span>
               <span className="text-[11px] text-muted-foreground">
@@ -178,25 +195,25 @@ export function ConnectionMenu({
                     ? "Password"
                     : "Key file"}
               </span>
-            </DropdownMenuItem>
+            </Item>
           )}
           {up && (
             <>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className={itemClass()} onClick={() => setConfirm("restart")}>
+              <Item onClick={() => setConfirm("restart")}>
                 <RotateCcw /> Restart server
-              </DropdownMenuItem>
-              <DropdownMenuItem className={itemClass(true)} onClick={() => setConfirm("stop")}>
-                <Square /> Stop server
-              </DropdownMenuItem>
+              </Item>
+              <Item danger onClick={() => setConfirm("stop")}>
+                <Square className="fill-current" /> Stop server
+              </Item>
             </>
           )}
           {onRemove && (
             <>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className={itemClass(true)} onClick={() => setConfirm("remove")}>
+              <Item danger onClick={() => setConfirm("remove")}>
                 <Trash2 /> Remove connection
-              </DropdownMenuItem>
+              </Item>
             </>
           )}
         </DropdownMenuContent>

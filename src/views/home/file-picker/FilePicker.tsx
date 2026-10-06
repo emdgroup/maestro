@@ -1,8 +1,9 @@
 import { useEffect, useCallback, useRef, useState } from "react";
 import type { SshConnection, WslConnection, DockerConnection } from "@/types/bindings";
-import { Folder, Home, FolderUp, HardDrive, FolderOpen } from "lucide-react";
+import { Folder, Home, FolderUp, HardDrive, FolderOpen, Pencil } from "lucide-react";
 import { Switch } from "@/ui/switch";
 import { Label } from "@/ui/label";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -97,6 +98,9 @@ export function FilePicker({
     }
   }
 
+  // The breadcrumb bar turns into a text field holding the path, as Explorer's address bar does.
+  const [typedPath, setTypedPath] = useState<string | null>(null);
+
   // Filter directories based on showHidden toggle
   const visibleDirectories = initialization.showHidden
     ? directories
@@ -115,6 +119,7 @@ export function FilePicker({
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       // Only handle navigation keys - don't interfere with other inputs
+      if (e.target instanceof HTMLInputElement) return;
       if (!["ArrowDown", "ArrowUp", "Enter", "Backspace"].includes(e.key)) {
         return;
       }
@@ -158,8 +163,8 @@ export function FilePicker({
 
     const container = containerRef.current;
     if (container) {
-      // Focus container to receive keyboard events
-      container.focus();
+      // Focus container to receive keyboard events, unless the path field already has it
+      if (!container.contains(document.activeElement)) container.focus();
       container.addEventListener("keydown", handleKeyDown);
       return () => container.removeEventListener("keydown", handleKeyDown);
     }
@@ -192,45 +197,89 @@ export function FilePicker({
       className="mt-5 flex h-[420px] flex-col overflow-hidden outline-none"
     >
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-        {/* Breadcrumb Navigation */}
-        <div className="shrink-0 text-xs">
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink
-                  render={(props) => (
-                    <button
-                      {...props}
-                      onClick={() => navigation.navigateToBreadcrumb(-1)}
-                      className="flex cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-xs transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                      <Home className="size-3.5" />
-                      <span>{navigation.isDrivesRoot ? "Drives" : "Root"}</span>
-                    </button>
-                  )}
-                />
-              </BreadcrumbItem>
-              {navigation.pathParts.map((part: string, index: number) => (
-                <div key={index} className="contents">
-                  <BreadcrumbSeparator />
-                  <BreadcrumbItem>
-                    <BreadcrumbLink
-                      render={(props) => (
-                        <button
-                          {...props}
-                          onClick={() => navigation.navigateToBreadcrumb(index)}
-                          className="cursor-pointer rounded-md px-1 py-0.5 font-mono text-xs transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
-                        >
-                          {part}
-                        </button>
-                      )}
-                    />
-                  </BreadcrumbItem>
-                </div>
-              ))}
-            </BreadcrumbList>
-          </Breadcrumb>
-        </div>
+        {/* Breadcrumb Navigation, or the path being typed */}
+        {typedPath !== null ? (
+          <input
+            autoFocus
+            value={typedPath}
+            onFocus={(event) => event.target.select()}
+            onChange={(event) => setTypedPath(event.target.value)}
+            onBlur={() => setTypedPath(null)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                navigation.navigateToPath(typedPath);
+                setTypedPath(null);
+              }
+              if (event.key === "Escape") {
+                // The dialog would close on the same key.
+                event.stopPropagation();
+                setTypedPath(null);
+              }
+            }}
+            aria-label="Path"
+            spellCheck={false}
+            className="home-field h-7 shrink-0 rounded-lg px-2 font-mono text-xs"
+          />
+        ) : (
+          <div className="group/path flex h-7 shrink-0 items-center text-xs">
+            <Breadcrumb>
+              <BreadcrumbList className="gap-0.5 sm:gap-0.5">
+                <BreadcrumbItem>
+                  <BreadcrumbLink
+                    render={(props) => (
+                      <button
+                        {...props}
+                        onClick={() => navigation.navigateToBreadcrumb(-1)}
+                        className="flex cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-xs transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
+                      >
+                        <Home className="size-3.5" />
+                        <span>{navigation.isDrivesRoot ? "Drives" : "Root"}</span>
+                      </button>
+                    )}
+                  />
+                </BreadcrumbItem>
+                {navigation.pathParts.map((part: string, index: number) => (
+                  <div key={index} className="contents">
+                    <BreadcrumbSeparator className="text-muted-foreground/60 [&>svg]:size-3" />
+                    <BreadcrumbItem>
+                      <BreadcrumbLink
+                        render={(props) => (
+                          <button
+                            {...props}
+                            onClick={() => navigation.navigateToBreadcrumb(index)}
+                            className="cursor-pointer rounded-md px-1 py-0.5 font-mono text-xs transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
+                          >
+                            {part}
+                          </button>
+                        )}
+                      />
+                    </BreadcrumbItem>
+                  </div>
+                ))}
+              </BreadcrumbList>
+            </Breadcrumb>
+            {/* The bar's empty end; the pencil shows only while the path is hovered. */}
+            <Tooltip trackCursorAxis="x">
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label="Edit path"
+                    onClick={() =>
+                      setTypedPath(navigation.isDrivesRoot ? "" : navigation.currentPath)
+                    }
+                    className="group/edit flex h-full min-w-8 flex-1 cursor-text items-center justify-end rounded-md pr-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
+                  />
+                }
+              >
+                <Pencil className="size-3.5 opacity-0 transition-opacity group-hover/path:opacity-100 group-focus-visible/edit:opacity-100" />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="text-xs">Edit path</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        )}
 
         {/* Directory List */}
         <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-foreground/[0.07] bg-background/40 p-1.5">

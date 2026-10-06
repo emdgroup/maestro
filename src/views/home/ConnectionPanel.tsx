@@ -302,16 +302,24 @@ export function ConnectionPanel({
       <span className="text-rose-600 dark:text-rose-400">Unreachable</span>
     ) : null;
 
+  // The tiles keep the order Home was drawn in. Opening a project makes it the most recent, and
+  // its tile jumping to the front while it zooms open is jarring; the next visit shows the order.
+  const [order, setOrder] = useState<string[]>([]);
+  const added = (projects ?? []).filter((project) => !order.includes(project.path));
+  if (added.length) setOrder([...order, ...added.map((project) => project.path)]);
+  const tiles =
+    projects && [...projects].sort((a, b) => order.indexOf(a.path) - order.indexOf(b.path));
+
   let body: ReactNode = null;
-  if (up && projects === null) {
+  if (up && tiles === null) {
     body = <ConnectingSteps connection={connection} step={2} />;
-  } else if (up && projects && minimized) {
+  } else if (up && tiles && minimized) {
     body = (
       <div
         className="mt-3 flex animate-in gap-2 overflow-hidden fade-in-0"
         style={{ maskImage: "linear-gradient(to right, #000 92%, transparent)" }}
       >
-        {[...projects]
+        {[...tiles]
           .sort((a, b) => projectStatus(a).rank - projectStatus(b).rank)
           .map((project) => (
             <ProjectChip
@@ -322,13 +330,13 @@ export function ConnectionPanel({
           ))}
       </div>
     );
-  } else if (up && projects) {
+  } else if (up && tiles) {
     body = (
       <div
         className="mt-4 grid animate-in gap-3 fade-in-0 slide-in-from-top-1"
         style={{ gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))" }}
       >
-        {projects.map((project) => (
+        {tiles.map((project) => (
           <ProjectTile
             key={project.path}
             project={project}

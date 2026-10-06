@@ -141,6 +141,23 @@ describe("useOpenProject", () => {
       expect(openProject).toHaveBeenCalledTimes(2);
     });
 
+    it("counts down to the forced takeover while the holder decides", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        requestTakeover.mockReturnValue(new Promise(() => {}));
+        await askForTakeover();
+        const button = await screen.findByText("Waiting for response · 10s");
+        expect(button).toBeDisabled();
+        expect(screen.getByText("Cancel")).toBeDisabled();
+        await act(() => vi.advanceTimersByTimeAsync(3000));
+        expect(screen.getByText("Waiting for response · 7s")).toBeInTheDocument();
+        await act(() => vi.advanceTimersByTimeAsync(7000));
+        expect(screen.getByText("Taking over…")).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("says so when the holder keeps it", async () => {
       requestTakeover.mockResolvedValue(false);
       await askForTakeover();

@@ -78,9 +78,9 @@ All values below are in `mock.html` as CSS classes of the same name.
 
 | Class          | Use                                               | Recipe                                                                                                                                                                                                                                                                            |
 | -------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `glass`        | panels, dialogs, menus, hover cards               | `card` at 42% over transparent, `backdrop-filter: blur(20px) saturate(150%)`, 1px border of `foreground` at 9%, inset top highlight of white at 20%, soft drop shadow. Panels are clearer, `card` at 30% and `blur(8px) saturate(140%)`, so the bubbles behind them stay distinct |
-| `glass-strong` | confirmation dialogs                              | as `glass` with `card` at 72% and `blur(24px)`, so text over moving bubbles stays readable                                                                                                                                                                                        |
-| `pane`         | project tiles, choices inside dialogs             | `background` at 28% inside a glass panel, 1px border at 7%; hover lifts 2px and raises to 62%                                                                                                                                                                                     |
+| `glass`        | panels, dialogs, menus, hover cards               | `card` at 60% over transparent, `backdrop-filter: blur(20px) saturate(150%)`, 1px border of `foreground` at 9%, inset top highlight of white at 20%, soft drop shadow. Panels are clearer, `card` at 30% and `blur(5px) saturate(140%)`, so the bubbles behind them stay distinct |
+| `glass-strong` | confirmation dialogs                              | as `glass` with `blur(24px)`, so text over moving bubbles stays readable                                                                                                                                                                                                          |
+| `pane`         | project tiles, choices inside dialogs             | `background` at 50% inside a glass panel, 1px border at 7%; hover lifts 2px and raises to 84%                                                                                                                                                                                     |
 | `pane.sel`     | the chosen option in a dialog                     | border and fill in `--accent`                                                                                                                                                                                                                                                     |
 | `pane.attn`    | a project tile that needs you                     | amber `#f59e0b` at 13% over `background` at 30%, border amber at 34%; hover raises them to 19% and 48%                                                                                                                                                                            |
 | `ghost`        | "Add project" tile                                | 1.5px dashed border of `foreground` at 18%; hover turns it `--accent` with an 8% fill                                                                                                                                                                                             |
@@ -233,10 +233,10 @@ Items depend on state:
 | -------------------------------------------- | -------------------- |
 | Try again                                    | unreachable          |
 | Start server                                 | server stopped       |
-| Settings, hint `Agents, capacity, webhooks`  | always               |
+| Settings                                     | always               |
 | Change sign-in, hint with the current method | SSH, not mid-sign-in |
 | Restart server                               | connected            |
-| Stop server (rose)                           | connected            |
+| Stop server (rose, filled square)            | connected            |
 | Remove connection (rose)                     | not This computer    |
 
 Stop, Restart and Remove confirm in a `glass-strong` dialog listing the consequences, computed from
@@ -263,16 +263,17 @@ Clicking a tile opens the project. The left of the in-project header becomes a p
   `Needs a password` or `Could not connect`. An amber dot marks a connection with a project that
   needs the user; this one has a check. Hovering or clicking a connection, or pressing Right,
   opens a side panel flush against the menu:
-  - Connected: its projects as small tiles, needs-you first as the chips sort, each with its name,
-    path, status word, one line of context and the three counts, then `Add project`. On another
-    connection a footnote reads `Opening one releases <project>`.
+  - Connected: its projects as small tiles, needs-you first as the chips sort, then `Add project`.
+    A tile has its name (a lock when another window holds it) and status word, the path under
+    them, a line of context only when there is one, and the three counts. The tiles scroll past
+    five.
   - Not connected, stopped or unreachable: `Not connected. Its projects show here once it is.` and
     a `Connect` pill, Home's own connect. The panel stays open, so the tiles appear in place.
   - Needs a password: a `Sign in…` pill that opens the SSH sign-in dialog.
   - Connecting: a spinner. Could not connect: an `Open Home` pill, since Home shows why.
-- **The project**, in semibold with a chevron, opens a menu of this connection's projects as rows:
-  name, path, one line of context (or the counts) and the status word, the current one checked;
-  then `Add project`, which opens the Add project dialog for this connection.
+- **The project**, in semibold with a chevron, opens a menu of this connection's projects as the
+  same tiles, the current one checked; then `Add project`, which opens the Add project dialog for
+  this connection.
 
 Both menus use the `home-pop-strong` glass. Projects removed from Home stay out of them, and opening
 one goes through the same path as a tile: the lock, a takeover when another window holds it, the

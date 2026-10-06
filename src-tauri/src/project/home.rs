@@ -74,7 +74,7 @@ pub async fn get_home_summary(
         "The connection's server did not answer within 15s",
     )
     .await?;
-    let projects = summary
+    let mut projects: Vec<HomeProject> = summary
         .projects
         .into_iter()
         .map(|project| HomeProject {
@@ -100,6 +100,14 @@ pub async fn get_home_summary(
             lock_yours: project.lock_yours,
         })
         .collect();
+    // The server answers by path. Home lists the most recently opened first, as `recent` is
+    // ordered; the stable sort leaves the projects only the server knows last, still by path.
+    projects.sort_by_key(|project| {
+        recent
+            .iter()
+            .position(|(id, _)| Some(*id) == project.project_id)
+            .unwrap_or(usize::MAX)
+    });
     Ok(HomeSummary {
         version: summary.status.version,
         started_at: summary.status.started_at,
