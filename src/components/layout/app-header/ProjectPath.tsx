@@ -13,7 +13,7 @@ import type { ConnectionPhase } from "@/store/homeStore";
 import { AddProjectDialog } from "@/views/home/AddProjectDialog";
 import { CONNECTION_ICONS } from "@/views/home/ConnectionPanel";
 import type { HomeConnection } from "@/views/home/ConnectionPanel";
-import { displayPath, projectStatus } from "@/views/home/ProjectTile";
+import { displayPath, HeldLock, projectStatus } from "@/views/home/ProjectTile";
 import type { ProjectCard } from "@/views/home/ProjectTile";
 import { SshAuthModal } from "@/views/home/ssh-auth-modal/SshAuthModal";
 import type { AuthSubmission } from "@/views/home/ssh-auth-modal/ssh-auth-utils";
@@ -86,15 +86,6 @@ function context(card: ProjectCard): ReactNode {
   return null;
 }
 
-function counts(card: ProjectCard) {
-  const parts = [
-    card.working && `${card.working} working`,
-    card.review && `${card.review} review`,
-    card.queued && `${card.queued} queued`,
-  ].filter(Boolean);
-  return parts.length ? parts.join(" · ") : "Nothing queued";
-}
-
 function StatusWord({
   card,
   opening,
@@ -123,6 +114,50 @@ function Count({ value, label, className }: { value: number; label: string; clas
       <span className="text-muted-foreground">{label}</span>
     </span>
   );
+}
+
+/** One project in either menu: name and status, path, what it is doing, its counts. */
+function ProjectItem({
+  card,
+  current,
+  opening,
+  onOpen,
+}: {
+  card: ProjectCard;
+  current: boolean;
+  opening: boolean;
+  onOpen: () => void;
+}) {
+  const line = context(card);
+  return (
+    <Menu.Item
+      data-attention={card.needsYou}
+      onClick={() => !current && onOpen()}
+      className="block cursor-pointer rounded-xl border border-foreground/[0.08] bg-background/40 p-2.5 text-xs outline-none select-none data-highlighted:bg-foreground/[0.07] data-[attention=true]:border-amber-500/35 data-[attention=true]:bg-amber-500/[0.13] data-[attention=true]:data-highlighted:bg-amber-500/20"
+    >
+      <div className="flex items-center gap-1.5">
+        <span className="truncate text-[13px] font-semibold">{card.name}</span>
+        {card.holder && <HeldLock holder={card.holder} />}
+        <span className="ml-auto flex shrink-0 pl-1">
+          <StatusWord card={card} opening={opening} current={current} />
+        </span>
+      </div>
+      <div className="mt-0.5 truncate font-mono text-[10.5px] text-muted-foreground">
+        {displayPath(card.path)}
+      </div>
+      {line && <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{line}</div>}
+      <div className="mt-1 flex gap-3 text-[11px]">
+        <Count value={card.working} label="working" className="home-working" />
+        <Count value={card.review} label="review" className="home-review" />
+        <Count value={card.queued} label="queued" />
+      </div>
+    </Menu.Item>
+  );
+}
+
+/** Five plain cards and the gaps between them; the list scrolls past that. */
+function ProjectList({ children }: { children: ReactNode }) {
+  return <div className="max-h-[394px] space-y-1.5 overflow-y-auto">{children}</div>;
 }
 
 function phaseLine(phase: ConnectionPhase, cards: ProjectCard[] | null) {
@@ -204,37 +239,17 @@ function ConnectionEntry({
                 No projects yet
               </div>
             )}
-            {byStatus(cards ?? []).map((card) => {
-              const isCurrent = card.projectId === current.id;
-              return (
-                <Menu.Item
+            <ProjectList>
+              {byStatus(cards ?? []).map((card) => (
+                <ProjectItem
                   key={card.path}
-                  data-attention={card.needsYou}
-                  onClick={() => !isCurrent && onOpen(card)}
-                  className="mt-1.5 block cursor-pointer rounded-xl border border-foreground/[0.08] bg-background/40 p-2.5 text-xs outline-none select-none first-of-type:mt-0 data-highlighted:bg-background/75 data-[attention=true]:border-amber-500/35 data-[attention=true]:bg-amber-500/[0.13] data-[attention=true]:data-highlighted:bg-amber-500/20"
-                >
-                  <div className="flex items-baseline gap-2">
-                    <span className="truncate text-[13px] font-semibold">{card.name}</span>
-                    <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-muted-foreground">
-                      {displayPath(card.path)}
-                    </span>
-                    <StatusWord
-                      card={card}
-                      opening={opening !== null && opening === card.projectId}
-                      current={isCurrent}
-                    />
-                  </div>
-                  <div className="mt-0.5 h-4 truncate text-[11px] text-muted-foreground">
-                    {context(card)}
-                  </div>
-                  <div className="mt-1 flex gap-3 text-[11px]">
-                    <Count value={card.working} label="working" className="home-working" />
-                    <Count value={card.review} label="review" className="home-review" />
-                    <Count value={card.queued} label="queued" />
-                  </div>
-                </Menu.Item>
-              );
-            })}
+                  card={card}
+                  current={card.projectId === current.id}
+                  opening={opening !== null && opening === card.projectId}
+                  onOpen={() => onOpen(card)}
+                />
+              ))}
+            </ProjectList>
             <Separator />
             <Menu.Item onClick={onAdd} className={cn(row, "text-muted-foreground")}>
               <Plus className="size-3.5" />
@@ -417,37 +432,17 @@ export function ProjectPath({ project }: { project: Project }) {
           {hereCards === null ? (
             <div className="px-2.5 py-2 text-xs text-muted-foreground">Not connected</div>
           ) : (
-            byStatus(hereCards).map((card) => {
-              const isCurrent = card.projectId === project.id;
-              return (
-                <Menu.Item
+            <ProjectList>
+              {byStatus(hereCards).map((card) => (
+                <ProjectItem
                   key={card.path}
-                  data-attention={card.needsYou}
-                  onClick={() => !isCurrent && openCard(here, card)}
-                  className={cn(
-                    row,
-                    "data-[attention=true]:bg-amber-500/[0.12] data-[attention=true]:data-highlighted:bg-amber-500/20",
-                  )}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-medium">{card.name}</span>
-                      <span className="truncate font-mono text-[10.5px] text-muted-foreground">
-                        {displayPath(card.path)}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                      {context(card) ?? counts(card)}
-                    </div>
-                  </div>
-                  <StatusWord
-                    card={card}
-                    opening={opening !== null && opening === card.projectId}
-                    current={isCurrent}
-                  />
-                </Menu.Item>
-              );
-            })
+                  card={card}
+                  current={card.projectId === project.id}
+                  opening={opening !== null && opening === card.projectId}
+                  onOpen={() => openCard(here, card)}
+                />
+              ))}
+            </ProjectList>
           )}
           <Separator />
           <Menu.Item onClick={() => setAddingTo(here)} className={cn(row, "text-muted-foreground")}>

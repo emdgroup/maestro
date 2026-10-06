@@ -1,4 +1,4 @@
-import { Loader2, Plus, X } from "lucide-react";
+import { Loader2, Lock, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 
@@ -28,6 +28,17 @@ export function projectStatus(project: ProjectCard): Status {
   if (project.queued > 0 || project.review > 0)
     return { label: "Idle", className: "text-muted-foreground", rank: 2 };
   return { label: "Quiet", className: "text-muted-foreground/60", rank: 3 };
+}
+
+/** Marks a project another window or machine holds. */
+export function HeldLock({ holder }: { holder: string }) {
+  return (
+    <Lock
+      role="img"
+      aria-label={`Open on ${holder}`}
+      className="size-3 shrink-0 text-muted-foreground"
+    />
+  );
 }
 
 /** `/home/billy/src/x` as `~/src/x`, `C:\Users\billy\src\x` as `~\src\x`. */
@@ -85,8 +96,9 @@ export function ProjectTile({ project, opening, onOpen, onRemove }: TileProps) {
       >
         <div className="flex w-full items-start gap-2">
           <div className="min-w-0">
-            <div className="truncate text-[17px] font-semibold tracking-[-0.025em]">
-              {project.name}
+            <div className="flex items-center gap-1.5 text-[17px] font-semibold tracking-[-0.025em]">
+              <span className="truncate">{project.name}</span>
+              {project.holder && <HeldLock holder={project.holder} />}
             </div>
             <div className="truncate font-mono text-[11px] text-muted-foreground">
               {displayPath(project.path)}
@@ -144,6 +156,7 @@ export function ProjectChip({ project, onOpen }: { project: ProjectCard; onOpen:
       className="home-pane flex shrink-0 cursor-pointer items-center gap-2 rounded-full py-1 pr-2.5 pl-3 text-xs"
     >
       <span className="font-medium">{project.name}</span>
+      {project.holder && <HeldLock holder={project.holder} />}
       <span className={cn("text-[11px]", status.className)}>{status.label}</span>
     </button>
   );
