@@ -3,6 +3,7 @@ import type { SshConnection, WslConnection, DockerConnection } from "@/types/bin
 import { Folder, Home, FolderUp, HardDrive, FolderOpen, Pencil } from "lucide-react";
 import { Switch } from "@/ui/switch";
 import { Label } from "@/ui/label";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -220,7 +221,7 @@ export function FilePicker({
             className="home-field h-7 shrink-0 rounded-lg px-2 font-mono text-xs"
           />
         ) : (
-          <div className="flex h-7 shrink-0 items-center text-xs">
+          <div className="group/path flex h-7 shrink-0 items-center text-xs">
             <Breadcrumb>
               <BreadcrumbList className="gap-0.5 sm:gap-0.5">
                 <BreadcrumbItem>
@@ -257,15 +258,26 @@ export function FilePicker({
                 ))}
               </BreadcrumbList>
             </Breadcrumb>
-            <button
-              type="button"
-              aria-label="Edit path"
-              title="Edit path"
-              onClick={() => setTypedPath(navigation.isDrivesRoot ? "" : navigation.currentPath)}
-              className="group/edit flex h-full min-w-8 flex-1 cursor-text items-center justify-end rounded-md pr-1 text-muted-foreground focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              <Pencil className="size-3.5 opacity-60 transition-opacity group-hover/edit:opacity-100" />
-            </button>
+            {/* The bar's empty end; the pencil shows only while the path is hovered. */}
+            <Tooltip trackCursorAxis="x">
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label="Edit path"
+                    onClick={() =>
+                      setTypedPath(navigation.isDrivesRoot ? "" : navigation.currentPath)
+                    }
+                    className="group/edit flex h-full min-w-8 flex-1 cursor-text items-center justify-end rounded-md pr-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
+                  />
+                }
+              >
+                <Pencil className="size-3.5 opacity-0 transition-opacity group-hover/path:opacity-100 group-focus-visible/edit:opacity-100" />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="text-xs">Edit path</p>
+              </TooltipContent>
+            </Tooltip>
           </div>
         )}
 
