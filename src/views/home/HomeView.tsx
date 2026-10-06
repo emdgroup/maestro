@@ -207,6 +207,8 @@ export function HomeView() {
         className="home-scroll absolute inset-x-0 top-12 bottom-12"
       >
         <AccentBubbles variant="screen" className="home-bubbles" />
+        <span aria-hidden className="home-edge home-edge-top" />
+        <span aria-hidden className="home-edge home-edge-bottom" />
         <div ref={scrollRef} className="absolute inset-0 scrollbar-none overflow-y-auto">
           <main className="relative z-10 mx-auto max-w-[1200px] px-12 pt-8 pb-4">
             <Hero working={totals.working} needYou={totals.needYou} toReview={totals.toReview} />
