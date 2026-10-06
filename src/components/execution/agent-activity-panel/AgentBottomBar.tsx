@@ -75,7 +75,7 @@ export function AgentBottomBar({
       animate={{ opacity: 1 }}
       transition={{ type: "spring", stiffness: 400, damping: 30 }}
     >
-      {replacement ? (
+      {replacement && (
         // Width tracks the message stream, so the sheet sits inset from the panel borders.
         <div className={cn("w-full px-3", isCompact && "mx-auto max-w-3xl")}>
           {/* Opaque under the gradient — which is only a background-image — because the stream
@@ -84,9 +84,12 @@ export function AgentBottomBar({
             {replacement}
           </div>
         </div>
-      ) : (
+      )}
+      {/* Hidden rather than unmounted under a request: ComposeBar holds the unsent draft in local
+          state, and a request that lands mid-sentence would otherwise throw it away. */}
+      {(showCompose || replacement) && (
         <div
-          className={cn(isCompact && "mx-auto w-full px-12")}
+          className={cn(isCompact && "mx-auto w-full px-12", replacement && "hidden")}
           style={isCompact ? { maxWidth: "min(48rem, calc(100% - 2rem))" } : undefined}
         >
           <ComposeBar
