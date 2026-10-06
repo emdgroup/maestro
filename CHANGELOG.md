@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.1](https://github.com/emdgroup/maestro/compare/v0.35.0...v0.35.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **agents:** keep the composer draft across a permission request ([#483](https://github.com/emdgroup/maestro/issues/483)) ([46a45ae](https://github.com/emdgroup/maestro/commit/46a45ae46bff4a99cb17e342e37904078ac1c25e))
+
 ## [0.35.0](https://github.com/emdgroup/maestro/compare/v0.34.0...v0.35.0) (2026-10-05)
 
 
