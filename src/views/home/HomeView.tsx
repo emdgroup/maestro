@@ -46,7 +46,7 @@ export function HomeView() {
   const toggleMinimized = useHomeStore((s) => s.toggleMinimized);
   const hidden = useHomeStore((s) => s.hidden);
   const setHidden = useHomeStore((s) => s.setHidden);
-  const { openProject, openPath, opening, waitingOn, importing, dialogs } = useOpenProject({
+  const { openProject, openPath, opening, importing, dialogs } = useOpenProject({
     switchTo: zoomIntoProject,
   });
   const [settingsFor, setSettingsFor] = useState<ConnectionKey | "app" | null>(null);
@@ -87,7 +87,6 @@ export function HomeView() {
       behavior: document.documentElement.classList.contains("reduce-motion") ? "auto" : "smooth",
     });
   };
-  const busy = waitingOn || importing;
 
   // Home attaches to This computer on its own, and to nothing else.
   useEffect(() => {
@@ -269,7 +268,7 @@ export function HomeView() {
           <ChevronUp strokeWidth={2.4} />
         </button>
       )}
-      {more.down && !busy && (
+      {more.down && !importing && (
         <button
           type="button"
           data-direction="down"
@@ -283,11 +282,9 @@ export function HomeView() {
 
       <VersionBadge />
 
-      {busy && (
+      {importing && (
         <div className="home-pill absolute bottom-6 left-1/2 z-40 -translate-x-1/2 rounded-lg px-3 py-1.5 text-xs">
-          {waitingOn
-            ? `Waiting for Maestro on ${waitingOn}…`
-            : "Moving this project's board to its server…"}
+          Moving this project's board to its server…
         </div>
       )}
 

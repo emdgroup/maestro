@@ -37,6 +37,9 @@ function connectionIds(connection: ConnectionKey) {
   };
 }
 
+/** The holder's server grants a takeover nobody answers after this long (`TAKEOVER_TIMEOUT`). */
+const TAKEOVER_SECONDS = 10;
+
 export interface OpenProjectOptions {
   /**
    * Switches the window to the project once it is ready, by calling `show`, wrapped in whatever
@@ -66,6 +69,7 @@ export function useOpenProject(options: OpenProjectOptions = {}) {
   const [importing, setImporting] = useState(false);
   const [takeover, setTakeover] = useState<{ projectId: number; holder: string } | null>(null);
   const [waitingOn, setWaitingOn] = useState<string | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState(0);
   const [gitInit, setGitInit] = useState<{ path: string; connection: ConnectionKey } | null>(null);
   const [gitInitLoading, setGitInitLoading] = useState(false);
 
@@ -79,6 +83,13 @@ export function useOpenProject(options: OpenProjectOptions = {}) {
       void unlisten.then((stop) => stop());
     };
   }, []);
+
+  // The countdown to the holder's server taking the project away by itself.
+  useEffect(() => {
+    if (waitingOn === null) return;
+    const timer = setInterval(() => setSecondsLeft((seconds) => Math.max(0, seconds - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [waitingOn]);
 
   // Any other prime failure is benign, but a failed import keeps the project closed.
   const primeProject = (projectId: number) => {
@@ -171,7 +182,7 @@ export function useOpenProject(options: OpenProjectOptions = {}) {
   const confirmTakeover = async () => {
     if (!takeover) return;
     const { projectId, holder } = takeover;
-    setTakeover(null);
+    setSecondsLeft(TAKEOVER_SECONDS);
     setWaitingOn(holder);
     let granted = false;
     try {
@@ -181,6 +192,7 @@ export function useOpenProject(options: OpenProjectOptions = {}) {
       toast.error(`Takeover failed: ${getErrorMessage(error)}`);
     } finally {
       setWaitingOn(null);
+      setTakeover(null);
     }
     if (granted) await openProject(projectId);
   };
@@ -195,7 +207,11 @@ export function useOpenProject(options: OpenProjectOptions = {}) {
         onSkip={() => void finishGitInit(false)}
         loading={gitInitLoading}
       />
-      <AlertDialog open={takeover !== null} onOpenChange={(open) => !open && setTakeover(null)}>
+      {/* The request cannot be withdrawn, so the dialog stays until the holder answers. */}
+      <AlertDialog
+        open={takeover !== null}
+        onOpenChange={(open) => !open && waitingOn === null && setTakeover(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Project is open elsewhere</AlertDialogTitle>
@@ -204,9 +220,17 @@ export function useOpenProject(options: OpenProjectOptions = {}) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void confirmTakeover()}>
-              Request takeover
+            <AlertDialogCancel disabled={waitingOn !== null}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={waitingOn !== null}
+              onClick={() => void confirmTakeover()}
+              className="tabular-nums"
+            >
+              {waitingOn === null
+                ? "Request takeover"
+                : secondsLeft > 0
+                  ? `Waiting for response · ${secondsLeft}s`
+                  : "Taking over…"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -221,8 +245,6 @@ export function useOpenProject(options: OpenProjectOptions = {}) {
     opening,
     /** The project's board is being moved into its server, which takes a moment. */
     importing,
-    /** The machine asked to give the project up, while it decides. */
-    waitingOn,
     dialogs,
   };
 }
