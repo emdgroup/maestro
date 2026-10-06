@@ -133,7 +133,7 @@ function ProjectItem({
     <Menu.Item
       data-attention={card.needsYou}
       onClick={() => !current && onOpen()}
-      className="block cursor-pointer rounded-xl border border-foreground/[0.08] bg-background/40 p-2.5 text-xs outline-none select-none data-highlighted:bg-foreground/[0.07] data-[attention=true]:border-amber-500/35 data-[attention=true]:bg-amber-500/[0.13] data-[attention=true]:data-highlighted:bg-amber-500/20"
+      className="block cursor-pointer rounded-xl border border-foreground/[0.08] bg-background/60 p-2.5 text-xs outline-none select-none data-highlighted:bg-foreground/[0.07] data-[attention=true]:border-amber-500/35 data-[attention=true]:bg-amber-500/[0.13] data-[attention=true]:data-highlighted:bg-amber-500/20"
     >
       <div className="flex items-center gap-1.5">
         <span className="truncate text-[13px] font-semibold">{card.name}</span>

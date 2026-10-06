@@ -957,11 +957,11 @@
 /* Panels are clearer than popups, so the bubbles drifting behind them stay distinct. */
 .home-glass::before {
   background: color-mix(in oklab, var(--card) 30%, transparent);
-  -webkit-backdrop-filter: blur(8px) saturate(140%);
-  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(5px) saturate(140%);
+  backdrop-filter: blur(5px) saturate(140%);
 }
 .home-pop {
-  background: color-mix(in oklab, var(--card) 42%, transparent);
+  background: color-mix(in oklab, var(--card) 60%, transparent);
   -webkit-backdrop-filter: blur(20px) saturate(150%);
   backdrop-filter: blur(20px) saturate(150%);
 }
@@ -981,9 +981,9 @@
     0 1px 0 color-mix(in oklab, white 20%, transparent) inset,
     0 20px 50px -18px rgb(0 0 0 / 0.35);
 }
-/* Confirmations: denser, so the consequences stay readable over moving bubbles. */
+/* Confirmations and the header's menus: blurred harder, so text stays readable over moving bubbles. */
 .home-pop-strong {
-  background: color-mix(in oklab, var(--card) 72%, transparent);
+  background: color-mix(in oklab, var(--card) 60%, transparent);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
   backdrop-filter: blur(24px) saturate(160%);
   border: 1px solid color-mix(in oklab, var(--foreground) 11%, transparent);
@@ -992,7 +992,7 @@
     0 20px 50px -18px rgb(0 0 0 / 0.45);
 }
 .home-pane {
-  background: color-mix(in oklab, var(--background) 28%, transparent);
+  background: color-mix(in oklab, var(--background) 50%, transparent);
   border: 1px solid color-mix(in oklab, var(--foreground) 7%, transparent);
   transition:
     background 0.18s,
@@ -1000,7 +1000,7 @@
     border-color 0.18s;
 }
 .home-pane:hover {
-  background: color-mix(in oklab, var(--background) 62%, transparent);
+  background: color-mix(in oklab, var(--background) 84%, transparent);
   transform: translateY(-2px);
   border-color: color-mix(in oklab, var(--foreground) 14%, transparent);
 }
