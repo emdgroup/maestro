@@ -647,6 +647,8 @@
       var ICON = {
         local: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
         ssh: '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
+        "server-off":
+          '<path d="M7 2h13a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-5"/><path d="M10 10 2.5 2.5C2 2 2 2.5 2 5v3a2 2 0 0 0 2 2h6z"/><path d="M22 17v-1a2 2 0 0 0-2-2h-1"/><path d="M4 14a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h16.5l1-.5.5.5-8-8H4z"/><path d="M6 18h.01"/><path d="m2 2 20 20"/>',
         wsl: '<path d="m5 17 5-5-5-5M12 19h7"/>',
         docker:
           '<path d="M3 12h18c-.5 4.5-4.2 8-9 8s-8.5-3.5-9-8Z"/><path d="M6 12V9h3v3M9 9V6h3v6M12 9h3v3"/>',
@@ -751,6 +753,18 @@
               holder: "WS-7F2",
             },
           ],
+        },
+        {
+          id: "nas",
+          name: "nas",
+          kind: "ssh",
+          detail: "billy@nas.lan",
+          home: "/home/billy",
+          sep: "/",
+          state: "idle",
+          offline: true,
+          auto: 0,
+          later: [{ n: "backups", path: "~/backups", work: 0, review: 0, queued: 0 }],
         },
         {
           id: "wsl",
@@ -1010,6 +1024,13 @@
         }, 600);
       }
       /* connect on demand; a password connection asks inline first */
+      /* the host still does not answer: the panel shakes once and stays */
+      function refreshHost(id) {
+        var el = $("conn-" + id);
+        el.classList.remove("shake");
+        void el.offsetWidth;
+        el.classList.add("shake");
+      }
       function connectTo(id) {
         var c = conn(id);
         if (!c.pw) return attach(c);
@@ -1564,10 +1585,16 @@
                     : c.state === "idle" || c.state === "signin"
                       ? "<span>Not connected</span>"
                       : '<span class="text-rose-600 dark:text-rose-400">Unreachable</span>';
+            var off = c.state === "idle" && c.offline;
             var head =
               '<div class="flex items-center gap-3">' +
-              '<span class="h-9 w-9 rounded-xl grid place-items-center pill text-muted-foreground">' +
-              svg(c.kind, 17) +
+              (off
+                ? '<span role="img" aria-label="Unreachable" title="Unreachable: no answer from ' +
+                  c.detail.split("@").pop() +
+                  ':22" class="h-9 w-9 rounded-xl grid place-items-center pill text-rose-600 dark:text-rose-400">' +
+                  svg("server-off", 17)
+                : '<span class="h-9 w-9 rounded-xl grid place-items-center pill text-muted-foreground">' +
+                  svg(c.kind, 17)) +
               "</span>" +
               '<div class="min-w-0">' +
               (c.editing
@@ -1599,24 +1626,30 @@
               c.detail +
               "</div></div>" +
               '<div class="ml-auto flex items-center gap-4 text-xs text-muted-foreground">' +
-              (c.state === "idle"
-                ? '<button id="connect-' +
+              (off
+                ? '<button id="refresh-' +
                   c.id +
-                  '" onclick="connectTo(\'' +
+                  '" onclick="refreshHost(\'' +
                   c.id +
-                  '\')" class="pill rounded-full px-3 py-1.5 text-foreground cursor-pointer hover:bg-foreground/10">Connect</button>'
-                : status +
-                  '<span class="menu-wrap relative"><button id="menu-' +
-                  c.id +
-                  '" onclick="toggleMenu(\'' +
-                  c.id +
-                  '\')" class="h-7 w-7 rounded-full grid place-items-center cursor-pointer ' +
-                  (menuOpen === c.id
-                    ? "bg-foreground/10 text-foreground"
-                    : "hover:bg-foreground/10") +
-                  '">⋯</button>' +
-                  (menuOpen === c.id ? menuFor(c) : "") +
-                  "</span>") +
+                  '\')" class="pill rounded-full px-3 py-1.5 text-foreground cursor-pointer hover:bg-foreground/10">Refresh</button>'
+                : c.state === "idle"
+                  ? '<button id="connect-' +
+                    c.id +
+                    '" onclick="connectTo(\'' +
+                    c.id +
+                    '\')" class="pill rounded-full px-3 py-1.5 text-foreground cursor-pointer hover:bg-foreground/10">Connect</button>'
+                  : status +
+                    '<span class="menu-wrap relative"><button id="menu-' +
+                    c.id +
+                    '" onclick="toggleMenu(\'' +
+                    c.id +
+                    '\')" class="h-7 w-7 rounded-full grid place-items-center cursor-pointer ' +
+                    (menuOpen === c.id
+                      ? "bg-foreground/10 text-foreground"
+                      : "hover:bg-foreground/10") +
+                    '">⋯</button>' +
+                    (menuOpen === c.id ? menuFor(c) : "") +
+                    "</span>") +
               "</div></div>";
             return (
               '<section id="conn-' +
@@ -1628,7 +1661,7 @@
               (c.state === "up" ? "cursor-pointer " : "") +
               (menuOpen === c.id ? "z-20" : "") +
               " " +
-              (c.state === "down" || c.state === "stopped" ? "opacity-75" : "") +
+              (c.state === "down" || c.state === "stopped" || off ? "opacity-75" : "") +
               '">' +
               head +
               body(c) +

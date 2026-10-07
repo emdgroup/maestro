@@ -1,12 +1,21 @@
-import { useState, type ReactNode } from "react";
-import { Check, Container, Loader2, Monitor, Pencil, Server, SquareTerminal } from "lucide-react";
+import { useRef, useState, type ReactNode } from "react";
+import {
+  Check,
+  Container,
+  Loader2,
+  Monitor,
+  Pencil,
+  Server,
+  ServerOff,
+  SquareTerminal,
+} from "lucide-react";
 import type {
   ConnectionKey,
   DockerConnection,
   SshConnection,
   WslConnection,
 } from "@/types/bindings";
-import { useUpdateSshConnection } from "@/services/connection.service";
+import { useSshReachable, useUpdateSshConnection } from "@/services/connection.service";
 import { useHomeStore } from "@/store/homeStore";
 import type { ConnectionPhase } from "@/store/homeStore";
 import { cn } from "@/lib/utils";
@@ -280,8 +289,26 @@ export function ConnectionPanel({
   onAddProject,
   menu,
 }: ConnectionPanelProps) {
-  const Icon = CONNECTION_ICONS[connection.key.type];
   const up = phase.kind === "up";
+  // Only a not-connected SSH host is probed; once attached, the phase says how it is doing.
+  const probe = useSshReachable(
+    phase.kind === "idle" && connection.key.type === "ssh" ? connection.key.id : null,
+  );
+  const offline = phase.kind === "idle" && probe.data === false;
+  const Icon = offline ? ServerOff : CONNECTION_ICONS[connection.key.type];
+  const [checking, setChecking] = useState(false);
+  const panelRef = useRef<HTMLElement>(null);
+
+  const refresh = async () => {
+    setChecking(true);
+    const { data } = await probe.refetch();
+    setChecking(false);
+    const panel = panelRef.current;
+    if (data !== false || !panel) return;
+    panel.classList.remove("animate-shake");
+    void panel.offsetWidth;
+    panel.classList.add("animate-shake");
+  };
 
   const status =
     phase.kind === "up" ? (
@@ -400,20 +427,55 @@ export function ConnectionPanel({
         "group/panel home-glass rounded-[22px] p-5",
         phase.kind !== "idle" && "col-span-2",
         up && "cursor-pointer",
-        (phase.kind === "stopping" || phase.kind === "stopped" || phase.kind === "unreachable") &&
+        (phase.kind === "stopping" ||
+          phase.kind === "stopped" ||
+          phase.kind === "unreachable" ||
+          offline) &&
           "opacity-75",
       )}
+      ref={panelRef}
     >
       <div className="flex items-center gap-3">
-        <span className="home-pill grid size-9 place-items-center rounded-xl text-muted-foreground">
-          <Icon className="size-[17px]" />
-        </span>
+        {offline ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span
+                  role="img"
+                  aria-label="Unreachable"
+                  className="home-pill grid size-9 place-items-center rounded-xl text-destructive"
+                />
+              }
+            >
+              <Icon className="size-[17px]" />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="text-xs">
+                Unreachable: no answer from {connection.ssh?.host}:{connection.ssh?.port}
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <span className="home-pill grid size-9 place-items-center rounded-xl text-muted-foreground">
+            <Icon className="size-[17px]" />
+          </span>
+        )}
         <div className="min-w-0">
           <ConnectionName connection={connection} />
           <div className="text-[11px] text-muted-foreground">{connection.detail}</div>
         </div>
         <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
-          {phase.kind === "idle" ? (
+          {offline ? (
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              disabled={checking}
+              className="home-pill flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 text-foreground hover:bg-foreground/10"
+            >
+              {checking && <Spinner />}
+              {checking ? "Checking…" : "Refresh"}
+            </button>
+          ) : phase.kind === "idle" ? (
             <button
               type="button"
               onClick={() => void connect(connection.key)}
