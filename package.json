@@ -124,7 +124,7 @@
     "happy-dom": "^20.14.5",
     "husky": "^9.1.7",
     "oxfmt": "0.70.0",
-    "oxlint": "^1.85.0",
+    "oxlint": "^1.86.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
