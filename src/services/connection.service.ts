@@ -55,6 +55,19 @@ export function useSshConnections() {
 }
 
 /**
+ * Whether an SSH host answers: a live session, else a TCP probe of its port with a 3s timeout.
+ * No data until the first probe lands, so a host that is up never flickers. Null stops probing.
+ */
+export function useSshReachable(connectionId: number | null) {
+  return useQuery({
+    queryKey: connectionQueryKeys.status(connectionId ?? 0),
+    queryFn: async () => (await api.getSshConnectionStatus(connectionId!)).connected,
+    enabled: connectionId !== null,
+    refetchInterval: 15_000,
+  });
+}
+
+/**
  * Mutation hook for updating SSH connection display name
  * Uses optimistic updates for instant UI feedback
  */

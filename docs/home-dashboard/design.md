@@ -120,10 +120,21 @@ Status by state:
 | -------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Connected      | muted text, then `⋯` (see "Header note" below) | project tiles, then the "Add project" tile                                             |
 | Not connected  | a `Connect` pill only, no status and no `⋯`    | none: the panel is the header row alone                                                |
+| Host down      | a `Refresh` pill, panel at 75% opacity         | none: SSH only, see "Unreachable host" below                                           |
 | Signing in     | `Not connected`, muted                         | inline password form (below)                                                           |
 | Connecting     | `Connecting…`                                  | three inline steps with spinner and check marks                                        |
 | Server stopped | `Server stopped`, panel at 75% opacity         | `The Maestro server is stopped. Nothing runs here until it starts.` and a `Start` pill |
 | Unreachable    | `Unreachable` in rose, panel at 75% opacity    | `Not answering. Its projects keep their state and come back when it does.`             |
+
+**Unreachable host** (not-connected SSH panels only). Home probes each one every 15 s: a live
+session counts as up, else a TCP connection to the host's port with a 3 s timeout. Nothing shows
+while the first probe runs or while the host answers, so a panel that is up looks exactly as above.
+A host that does not answer swaps its server icon for `ServerOff` in `--destructive`, with the
+tooltip `Unreachable: no answer from <host>:<port>`, dims the panel to 75% and turns `Connect`
+into `Refresh`. Refresh probes again (`Checking…` with a spinner while it runs): still down, the
+panel shakes once; up, the icon and `Connect` come back. Panels never reorder on a change. WSL and
+container connections are not probed: they are on this machine. There is no "online" mark either,
+since green is kept for completed steps.
 
 **Project tile** (`pane`, min height 132px, grid `repeat(auto-fill, minmax(230px, 1fr))`):
 
