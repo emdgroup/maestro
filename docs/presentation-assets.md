@@ -111,8 +111,8 @@ Edit out waiting time before export. Keep the final animation under 3 MB, target
 | `side-panel-canvas.webp` | A session whose Canvas tab shows a dashboard the agent rendered                                    | Agents can answer with live UI                                                            |
 | `rendering.webp`         | One reply with a Mermaid diagram, an SVG, an image, KaTeX and a SMILES fence, cropped to the reply | The stream renders rich output inline                                                     |
 | `workspaces.webp`        | The Workspaces view with a handful of worktrees and the prune action visible                       | Worktrees are first-class and cleaned up from the app                                     |
-| `connections.webp`       | The start screen with Local plus one remote connection                                             | Agents can run somewhere other than the laptop                                            |
-| `integrations.webp`      | The Add integration panel                                                                          | Which trackers and forges Maestro talks to                                                |
+| `connections.webp`       | Home with project tiles on This computer and two connections not connected yet                     | Agents can run somewhere other than the laptop                                            |
+| `integrations.webp`      | Home's Integrations panel with a provider's account card pinned open                               | Which trackers and forges Maestro talks to                                                |
 | `settings-agents.webp`   | Settings → Agents with the four pipeline roles                                                     | Each stage of a task can run on its own agent                                             |
 | `issue-import.webp`      | A populated GitHub Issues or Jira import view with one issue selected                              | Existing tracker work can become a Maestro task                                           |
 

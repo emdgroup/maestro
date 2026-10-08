@@ -8,7 +8,7 @@ An automation is a prompt, an agent and a workspace that run without you startin
 
 ### The dashboard
 
-Each automation is a row with a switch that pauses or resumes its trigger. **Run now** always works, paused or not. The row shows the schedule and the next run, the agent, the model and the workspace, and while a run is going, **Join** to watch it, **Answer** when it is waiting on you, and **Stop**. Click the name to see its last runs. The **⋯** menu holds **Edit**, **Save as template** and **Delete**.
+Each automation is a row with a switch that pauses or resumes its trigger. **Run now** always works, paused or not. The row shows the schedule and the next run, the agent, the model and the workspace, and while a run is going, **Join** to watch it, **Answer** when it is waiting on you, and **Stop**. Click the row to see its last runs; the count beside the chevron says how many there are. The **⋯** menu holds **Edit**, **Save as template** and **Delete**.
 
 <img src="../../docs/assets/automations.webp" alt="The automations dashboard with a webhook automation, a scheduled one and a paused one, and a run in Recent runs" width="960" />
 

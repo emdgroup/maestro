@@ -4,7 +4,7 @@ Settings open as a dialog over any tab, from the cog in the header or with **Ctr
 
 The top strip shows the version, **Check for updates**, and **Install** when an update is ready (installing stops running agent sessions). Its menu turns **Auto-update** on or off.
 
-Pages come in three groups. **Project** and **Connection** pages appear only with a project open; the **Application** pages are also reachable from the start screen.
+Pages come in three groups. **Project** pages appear only with a project open. On [Home](./home), the cog opens the **Application** pages, and **Settings** in a connection's **⋯** menu opens that connection's pages too.
 
 <img src="../../docs/assets/settings-agents.webp" alt="The Agents settings page: installed agents with the default marked, and one profile slot per pipeline role" width="960" />
 
@@ -20,7 +20,7 @@ Pages come in three groups. **Project** and **Connection** pages appear only wit
 
 - **Default workspace**: where new tasks and new sessions start out.
 - **Default base branch**: **Auto** uses the branch the repository is on.
-- **Git remote**: the remote Maestro pushes to and lists branches from, with the code host's status and **Connect** when an [integration](./start-screen#integrations) is missing.
+- **Git remote**: the remote Maestro pushes to and lists branches from, with the code host's status and **Connect** when an [integration](./home#integrations) is missing.
 - **When a task is approved**: the default choice in the Approve dialog, one of **Merge locally**, **Open a pull request** or **Push only**.
 
 <img src="../../docs/assets/settings-git.webp" alt="The Git settings page with the default workspace, base branch, git remote and approve action" width="960" />
@@ -47,7 +47,7 @@ How many agents Auto mode runs at once on this machine: estimated **From free me
 
 ### Background server
 
-The server that runs agent sessions and automations, and keeps running after Maestro closes. **Start automatically** starts it at login (on a Linux host, at boot through systemd or cron), so schedules keep firing after a restart without opening Maestro. The page counts live sessions and automation runs. **Stop server** ends them all and closes the project.
+The server that runs agent sessions and automations, and keeps running after Maestro closes. **Start automatically** starts it at login (on a Linux host, at boot through systemd or cron), so schedules keep firing after a restart without opening Maestro. The page counts live sessions and automation runs. **Stop server** ends them all and takes you back to [Home](./home) at once, where the connection reads **Server stopped** when the stop is done. Home's connection menu can also start, stop and restart the server.
 
 <img src="../../docs/assets/settings-background-server.webp" alt="The Background server page with Start automatically, its uptime and Stop server" width="960" />
 

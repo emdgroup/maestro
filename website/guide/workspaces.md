@@ -13,7 +13,7 @@ Each card shows the branch, time since the last activity, lines added and remove
 - **Push** (↑N) and **Pull** (↓N) sync the branch with the remote in one click. Push publishes a branch the remote does not have yet. Pull asks first if a session is working in the worktree.
 - **Used by** lists the task, agent sessions and shells using the worktree. Click one to jump to it.
 - **Start session** opens a new session in the worktree, when no agent is already there.
-- The trash button deletes the worktree, and optionally its branch when that branch exists only locally.
+- The trash button deletes the worktree, and optionally its branch when that branch exists only locally. The deletion runs in the background: the card dims and reads **Deleting** until it is gone.
 - Clicking the card opens its diff.
 
 **Search branches...** (**Ctrl+F**) filters the cards, and **Refresh** (**Ctrl+R**) fetches from the remote before updating them. **New Worktree** (**Ctrl+N**) creates one on a new or an existing branch.
