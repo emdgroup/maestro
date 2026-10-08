@@ -79,6 +79,7 @@ Older versions are on the [releases page](https://github.com/emdgroup/maestro/re
 }
 .vp-doc a.download-button:hover {
   background: var(--vp-c-brand-2);
+  color: var(--vp-c-white);
 }
 .download-hint {
   color: var(--vp-c-text-2);
