@@ -43,7 +43,7 @@ export default defineConfig({
         text: "Guide",
         items: [
           { text: "Getting started", link: "/guide/getting-started" },
-          { text: "Start screen", link: "/guide/start-screen" },
+          { text: "Home", link: "/guide/home" },
         ],
       },
       {

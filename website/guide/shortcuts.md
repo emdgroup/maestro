@@ -18,5 +18,3 @@ Hold **Ctrl** for about a second to see the shortcuts drawn over the buttons the
 | Agents                    | Ctrl+H          | Session history                        |
 | Workspaces                | Ctrl+N          | New worktree                           |
 | Workspaces                | Ctrl+R          | Refresh                                |
-| Start screen projects     | Esc             | Back to connections                    |
-| Start screen projects     | Del             | Remove the focused recent project      |

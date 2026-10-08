@@ -118,7 +118,9 @@ A canvas runs in a sandbox: it cannot reach Maestro, your files, or the rest of 
 
 ## Sessions outlive the window
 
-Agents run in a background Maestro server on each connection, not inside the window. Close Maestro and a running session finishes its turn; reopen it and you pick the session up where it is, including any question the agent was waiting on. A session nobody is watching is closed a minute or two after its turn ends, and reopened from history when you need it.
+Agents run in a background Maestro server on each connection, not inside the window. Close Maestro, or go back to [Home](./home), and a running session finishes its turn; come back and you pick the session up where it is, including any question the agent was waiting on. A session nobody is watching is closed a minute or two after its turn ends, and reopened from history when you need it.
+
+Tasks live in the same server, so the [task pipeline](./tasks#how-a-task-moves) keeps going with every window closed: queued tasks start, plans and reviews run, and Home shows what is waiting on you when you return. Only a task waiting on its pull request needs a window open, since checking the forge uses your keychain token.
 
 ## Agents that talk back
 

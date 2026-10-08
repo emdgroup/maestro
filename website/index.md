@@ -43,8 +43,8 @@ features:
     link: /guide/custom-agents
   - title: Remote connections
     details: Run agents locally, over SSH, in WSL or in a container.
-    link: /guide/start-screen#connections
+    link: /guide/home#connections
   - title: Integrations
     details: Import issues from GitHub, GitLab, Jira, Linear and others. Open pull requests on your forge.
-    link: /guide/start-screen#integrations
+    link: /guide/home#integrations
 ---
