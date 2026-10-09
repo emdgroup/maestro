@@ -387,6 +387,23 @@ describe("agent message images", () => {
     );
   });
 
+  it.each([
+    ["file:///C:/Users/me/Temp/slide%204.png", "/repo", "C:/Users/me/Temp/slide 4.png"],
+    ["file:///home/me/shots/a.png", undefined, "/home/me/shots/a.png"],
+  ])("proxies the absolute path of a file URI %s", (uri, baseDir, path) => {
+    proxy.calls.length = 0;
+    const { container } = render(
+      <ImageProxyContext.Provider value={{ projectId: 7, baseDir }}>
+        <ActivityMessageItem message={makeMessage(`![slide](${uri})`)} />
+      </ImageProxyContext.Provider>,
+    );
+
+    expect(proxy.calls).toEqual([[7, path]]);
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(
+      "data:image/png;base64,UFJPWFk=",
+    );
+  });
+
   it("leaves the image unproxied with no context", () => {
     proxy.calls.length = 0;
     const { container } = render(

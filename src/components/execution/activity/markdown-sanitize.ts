@@ -109,7 +109,9 @@ export const sanitizeSchema = {
   tagNames: [...(defaultSchema.tagNames ?? []), "mark", ...SVG_SCHEMA_TAGS],
   protocols: {
     ...defaultSchema.protocols,
-    src: [...(defaultSchema.protocols?.src ?? []), "data"],
+    // `file` survives only to reach ProxiedImage, which reads the path through the backend:
+    // the webview itself cannot load a file: URL.
+    src: [...(defaultSchema.protocols?.src ?? []), "data", "file"],
     href: [...(defaultSchema.protocols?.href ?? []), "file"],
   },
   attributes: {

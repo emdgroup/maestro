@@ -378,8 +378,13 @@ function ProxiedImage({
   // no-context case all resolve here. The proxy result is a query rather than a bespoke
   // Map plus loading state — `useProxyImageQuery` already caches it for the whole app.
   const needsProxy = !!src && !!ctx && !src.startsWith("blob:") && !src.startsWith("data:");
-  const absolutePath =
-    needsProxy && ctx.baseDir && _isLocalSrc(src) ? _resolveFilePath(src, ctx.baseDir) : src;
+  const absolutePath = !needsProxy
+    ? src
+    : src.startsWith("file://")
+      ? _fileUriToPath(src)
+      : ctx.baseDir && _isLocalSrc(src)
+        ? _resolveFilePath(src, ctx.baseDir)
+        : src;
   const isHttp =
     absolutePath?.startsWith("http://") === true || absolutePath?.startsWith("https://") === true;
 
@@ -562,6 +567,16 @@ function _isLocalSrc(src: string) {
     !src.startsWith("data:") &&
     !src.startsWith("blob:")
   );
+}
+
+// `file:///C:/a%20b.png` is `C:/a b.png` to the backend, which reads paths, not URIs.
+function _fileUriToPath(uri: string): string {
+  try {
+    const path = decodeURIComponent(new URL(uri).pathname);
+    return /^\/[a-zA-Z]:/.test(path) ? path.slice(1) : path;
+  } catch {
+    return uri;
+  }
 }
 
 function _resolveFilePath(src: string, baseDir: string): string {
