@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.36.0](https://github.com/emdgroup/maestro/compare/v0.35.1...v0.36.0) (2026-10-09)
+
+
+### Features
+
+* **home:** mark SSH hosts that do not answer ([#485](https://github.com/emdgroup/maestro/issues/485)) ([4a1e036](https://github.com/emdgroup/maestro/commit/4a1e036b7ae042b8eb0ce1c9d3b59039ceb5e5fd))
+
+
+### Bug Fixes
+
+* **markdown:** show file:// images in agent messages ([#498](https://github.com/emdgroup/maestro/issues/498)) ([fea4472](https://github.com/emdgroup/maestro/commit/fea4472ecf5ea1d1daa3326bfc2433116afee85a))
+
 ## [0.35.1](https://github.com/emdgroup/maestro/compare/v0.35.0...v0.35.1) (2026-10-06)
 
 
