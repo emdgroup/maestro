@@ -25,7 +25,7 @@ import { humanizeTokenCount } from "@/lib/format-utils";
 import { basename } from "@/lib/path-utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { CommandLabel } from "./CommandLabel";
-import { OpenFileContext } from "./MarkdownBlock";
+import { MarkdownBlock, OpenFileContext } from "./MarkdownBlock";
 import { ContentErrorBoundary, ToolCallContentBlock } from "./ToolCallContentBlock";
 import { isGitCommand, isMcpToolName, isTerminalKind, rowLabel } from "./tool-call-labels";
 import type { ToolCallItem } from "./types";
@@ -375,10 +375,20 @@ export function RowBody({ tc }: { tc: ToolCallItem }) {
   // one sentence in `errorText`. Show the sentence.
   const reason = blocked ? meta?.errorText : undefined;
 
+  // A compaction summary is the agent's own prose, not machine output, so it reads as markdown.
+  const summary =
+    tc.kind === "compact"
+      ? tc.content.flatMap((c) => (c.type === "content" ? [c.content.text] : [])).join("")
+      : "";
+
   const body = reason ? (
     <pre className="font-mono text-[11px] break-words whitespace-pre-wrap text-warning/80">
       {reason}
     </pre>
+  ) : summary ? (
+    <div className="max-h-64 overflow-y-auto text-xs">
+      <MarkdownBlock text={summary} />
+    </div>
   ) : (
     <div className="space-y-1.5">
       {tc.content.map((c, i) => (
