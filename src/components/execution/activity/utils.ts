@@ -169,6 +169,11 @@ export function subagentName(tc: ToolCallItem): string {
   return tc.title;
 }
 
+/** Rows never folded into a run of tool calls: each is an event the user should see on its own. */
+function standsAlone(tc: ToolCallItem): boolean {
+  return isSubagentToolCall(tc) || tc.kind === "switch_mode" || tc.kind === "compact";
+}
+
 export function groupToolCalls(items: ActivityItem[]): GroupedDisplayItem[] {
   const result: GroupedDisplayItem[] = [];
   let i = 0;
@@ -180,7 +185,7 @@ export function groupToolCalls(items: ActivityItem[]): GroupedDisplayItem[] {
         i++;
         continue;
       }
-      if (isSubagentToolCall(item.item) || item.item.kind === "switch_mode") {
+      if (standsAlone(item.item)) {
         result.push(toolGroup([item.item]));
       } else {
         const group: ToolCallItem[] = [item.item];
@@ -188,9 +193,8 @@ export function groupToolCalls(items: ActivityItem[]): GroupedDisplayItem[] {
           const lookahead = items[i + 1];
           if (
             lookahead.type !== "toolCall" ||
-            isSubagentToolCall(lookahead.item) ||
-            lookahead.item.parentToolCallId ||
-            lookahead.item.kind === "switch_mode"
+            standsAlone(lookahead.item) ||
+            lookahead.item.parentToolCallId
           )
             break;
           i++;

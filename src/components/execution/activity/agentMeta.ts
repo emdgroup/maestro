@@ -47,6 +47,15 @@ export type AgentMeta = {
   cachedTokens?: number;
   toolStats?: ToolStats;
   git?: GitOperation;
+  /** Set on the row the reducer builds for a context compaction, never by an agent. */
+  compaction?: CompactionFacts;
+};
+
+export type CompactionFacts = {
+  /** `manual` when the turn was the user's own `/compact`. */
+  trigger: "auto" | "manual";
+  tokensBefore?: number;
+  tokensAfter?: number;
 };
 
 type AgentMetaExtractor = (raw: Record<string, unknown>) => AgentMeta;

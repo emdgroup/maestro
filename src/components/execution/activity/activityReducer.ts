@@ -7,6 +7,7 @@ import type {
   ThinkingItem,
   UserMessageItem,
   CanvasSurface,
+  CompactionSummaryBlock,
   ErrorItem,
 } from "./types";
 import { extractAgentMeta, mergeAgentMeta } from "./agentMeta";
@@ -573,9 +574,139 @@ function processEvent(
       return { ...newState, canvasMap: newCanvasMap };
     }
 
+    case "compaction_update":
+      return upsertCompaction(newState, payload.compactionId, (tc) => {
+        const updated = { ...tc, status: compactionStatus(payload.status) ?? tc.status };
+        if (payload.summary !== undefined) updated.content = summaryContent([], payload.summary);
+        if (payload.error !== undefined) {
+          updated.meta = { ...updated.meta, errorText: payload.error ?? undefined };
+        }
+        return updated;
+      });
+
+    case "compaction_summary_chunk":
+      return upsertCompaction(newState, payload.compactionId, (tc) => ({
+        ...tc,
+        content: summaryContent(tc.content, [payload.content]),
+      }));
+
+    case "usage_update": {
+      const awaiting = newState.compactionAwaitingUsage;
+      if (
+        typeof payload.used !== "number" ||
+        (!awaiting && newState.contextUsed === payload.used)
+      ) {
+        return newState;
+      }
+      const next = { ...newState, contextUsed: payload.used, compactionAwaitingUsage: null };
+      const tc = awaiting ? next.toolCallMap.get(awaiting) : undefined;
+      if (!tc?.meta?.compaction) return next;
+      return replaceToolCall(next, {
+        ...tc,
+        meta: { ...tc.meta, compaction: { ...tc.meta.compaction, tokensAfter: payload.used } },
+      });
+    }
+
     default:
       return newState;
   }
+}
+
+/** ACP's compaction lifecycle, in the statuses a tool-call row already knows how to draw. */
+function compactionStatus(status: string): ToolCallItem["status"] | null {
+  switch (status) {
+    case "in_progress":
+      return "in_progress";
+    case "completed":
+      return "completed";
+    case "failed":
+      return "error";
+    case "cancelled":
+      return "interrupted";
+    default:
+      return null;
+  }
+}
+
+/**
+ * A summary is markdown streamed in pieces, so a chunk extends the text before it rather than
+ * starting a block of its own: split blocks would each render as separate, half-formed markdown.
+ */
+function summaryContent(
+  existing: ToolCallItem["content"],
+  blocks: CompactionSummaryBlock[] | null,
+): ToolCallItem["content"] {
+  const content = [...existing];
+  for (const block of blocks ?? []) {
+    if (block.type !== "text" || typeof block.text !== "string") continue;
+    const last = content[content.length - 1];
+    if (last?.type === "content") {
+      content[content.length - 1] = {
+        type: "content",
+        content: { type: "text", text: last.content.text + block.text },
+      };
+    } else {
+      content.push({ type: "content", content: { type: "text", text: block.text } });
+    }
+  }
+  return content;
+}
+
+/** Whether the turn this compaction runs in was the user's own `/compact`. */
+function requestedByUser(items: ActivityItem[]): boolean {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item.type === "userMessage") return /^\/compact\b/.test(item.item.content.trim());
+  }
+  return false;
+}
+
+/**
+ * A compaction is drawn as a tool call, so the rail, the expand toggle and the body come for free.
+ * ACP gives it no token counts or trigger; both are filled in here from what the stream shows.
+ */
+function upsertCompaction(
+  state: ActivityState,
+  compactionId: string,
+  patch: (tc: ToolCallItem) => ToolCallItem,
+): ActivityState {
+  const id = `compaction:${compactionId}`;
+  const existing = state.toolCallMap.get(id);
+  const updated = patch(
+    existing ?? {
+      toolCallId: id,
+      title: "Compact context",
+      kind: "compact",
+      status: "in_progress",
+      content: [],
+      locations: [],
+      meta: {
+        compaction: {
+          trigger: requestedByUser(state.items) ? "manual" : "auto",
+          tokensBefore: state.contextUsed ?? undefined,
+        },
+      },
+    },
+  );
+  const settled = updated.status === "completed" && existing?.status !== "completed";
+  const next = settled ? { ...state, compactionAwaitingUsage: id } : state;
+  if (existing) return replaceToolCall(next, updated);
+  const toolCallMap = new Map(next.toolCallMap);
+  toolCallMap.set(id, updated);
+  return {
+    ...next,
+    items: [...finalizeStreaming(next.items), { type: "toolCall", item: updated }],
+    toolCallMap,
+  };
+}
+
+function replaceToolCall(state: ActivityState, updated: ToolCallItem): ActivityState {
+  const toolCallMap = new Map(state.toolCallMap);
+  toolCallMap.set(updated.toolCallId, updated);
+  const items = state.items.map((i) =>
+    i.type === "toolCall" && i.item.toolCallId === updated.toolCallId ? { ...i, item: updated } : i,
+  );
+  return { ...state, items, toolCallMap };
 }
 
 function extractPlanTitle(payload: {

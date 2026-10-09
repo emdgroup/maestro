@@ -12,7 +12,8 @@ use acp::schema::v1::{
 use acp::schema::ProtocolVersion;
 use agent_client_protocol as acp;
 use agent_client_protocol_schema::v1::{
-    AuthCapabilities, AuthMethod, ElicitationCapabilities, ElicitationFormCapabilities,
+    AuthCapabilities, AuthMethod, ClientSessionCapabilities, CompactionCapabilities,
+    ElicitationCapabilities, ElicitationFormCapabilities,
 };
 use maestro_protocol::{
     AuthMethodInfo, ErrorResponse, PromptCapabilitiesInfo, ServerResponse, SessionListEntry,
@@ -662,6 +663,13 @@ pub(crate) async fn pre_initialize_agent(
                                     .elicitation(
                                         ElicitationCapabilities::new()
                                             .form(ElicitationFormCapabilities::new()),
+                                    )
+                                    // Without it agents report a compaction as transcript text,
+                                    // or not at all; with it they send `compaction_update`, which
+                                    // the activity panel draws as a row of its own.
+                                    .session(
+                                        ClientSessionCapabilities::new()
+                                            .compaction(CompactionCapabilities::new()),
                                     ),
                             ),
                     )

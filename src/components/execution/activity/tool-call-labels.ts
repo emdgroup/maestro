@@ -74,7 +74,17 @@ export function formatMcpToolName(name: string): string | null {
  * the adapter *invented* — `grep -n | head -80 "pat" C:\long\absolute\path`,
  * flags and all. Its inputs say the same thing without the theatre.
  */
+/** A compaction row is labelled by where it got to; its title never changes. */
+const COMPACTION_LABEL: Record<ToolCallItem["status"], string> = {
+  pending: "Compacting context",
+  in_progress: "Compacting context",
+  completed: "Compacted context",
+  error: "Compaction failed",
+  interrupted: "Compaction stopped",
+};
+
 export function rowLabel(tc: ToolCallItem): string {
+  if (tc.kind === "compact") return COMPACTION_LABEL[tc.status];
   const meta = tc.meta;
   if (isTerminalKind(tc.kind) && meta?.description) return meta.description;
   if (meta?.searchPattern) {

@@ -9,6 +9,7 @@ import {
   FileText,
   FilePlus,
   GitBranch,
+  Layers,
   Globe,
   Pencil,
   Search,
@@ -20,6 +21,7 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { McpIcon } from "@/components/common/icons/McpIcon";
 import { cn } from "@/lib/utils";
+import { humanizeTokenCount } from "@/lib/format-utils";
 import { basename } from "@/lib/path-utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { CommandLabel } from "./CommandLabel";
@@ -39,6 +41,8 @@ export const KIND_ICON: Record<string, React.ElementType> = {
   think: Brain,
   fetch: Globe,
   switch_mode: Settings2,
+  // Maestro's own: a context compaction, drawn as a row (see `upsertCompaction`)
+  compact: Layers,
   // legacy/custom kinds
   read_file: FileText,
   write_file: Pencil,
@@ -257,6 +261,21 @@ export function RowMeta({ tc, prefix }: { tc: ToolCallItem; prefix?: string | nu
           {meta.matchFileCount} {meta.matchFileCount === 1 ? "file" : "files"}
         </span>,
       );
+    }
+  }
+
+  const compaction = meta?.compaction;
+  if (compaction) {
+    const { tokensBefore: before, tokensAfter: after } = compaction;
+    parts.push(<span key="trigger">{compaction.trigger === "manual" ? "by you" : "auto"}</span>);
+    if (before != null && after != null) {
+      parts.push(
+        <span key="tokens">
+          {humanizeTokenCount(before)} → {humanizeTokenCount(after)} tokens
+        </span>,
+      );
+    } else if (before != null) {
+      parts.push(<span key="tokens">{humanizeTokenCount(before)} tokens</span>);
     }
   }
 

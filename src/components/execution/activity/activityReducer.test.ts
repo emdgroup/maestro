@@ -900,3 +900,83 @@ describe("activityReducer — invariants", () => {
     );
   });
 });
+
+describe("activityReducer — context compaction", () => {
+  const update = (status: string, over: Record<string, unknown> = {}) =>
+    event({ sessionUpdate: "compaction_update", compactionId: "c1", status, ...over });
+  const chunk = (text: string) =>
+    event({
+      sessionUpdate: "compaction_summary_chunk",
+      compactionId: "c1",
+      content: { type: "text", text },
+    });
+  const usage = (used: number) => event({ sessionUpdate: "usage_update", used, size: 200_000 });
+  const run = (...actions: ActivityAction[]) => actions.reduce(activityReducer, makeState());
+  const row = (state: ActivityState) => state.toolCallMap.get("compaction:c1")!;
+
+  it("adds one row in the stream and updates it in place", () => {
+    const state = run(update("in_progress"), update("completed"));
+    expect(toolCallItems(state)).toHaveLength(1);
+    expect(row(state)).toMatchObject({ kind: "compact", status: "completed" });
+    expect(rowLabel(row(state))).toBe("Compacted context");
+  });
+
+  it("creates the row from a first summary chunk and joins later chunks into one text", () => {
+    const state = run(chunk("**Goal:** retries"), chunk(" with backoff"));
+    expect(row(state).status).toBe("in_progress");
+    expect(row(state).content).toEqual([
+      { type: "content", content: { type: "text", text: "**Goal:** retries with backoff" } },
+    ]);
+  });
+
+  it("treats summary and error as patches", () => {
+    let state = run(chunk("kept"), update("in_progress"));
+    expect(row(state).content).toHaveLength(1);
+    state = activityReducer(state, update("in_progress", { summary: null }));
+    expect(row(state).content).toEqual([]);
+    state = activityReducer(state, update("failed", { error: "timed out" }));
+    expect(row(state)).toMatchObject({ status: "error", meta: { errorText: "timed out" } });
+    expect(rowLabel(row(state))).toBe("Compaction failed");
+  });
+
+  it("shows a cancelled compaction as stopped", () => {
+    const state = run(update("in_progress"), update("cancelled"));
+    expect(row(state).status).toBe("interrupted");
+    expect(rowLabel(row(state))).toBe("Compaction stopped");
+  });
+
+  it("keeps the last status for one it does not know", () => {
+    expect(
+      run(update("completed"), update("_vendor_status")).toolCallMap.get("compaction:c1")!.status,
+    ).toBe("completed");
+  });
+
+  it("reads tokens before from the last usage and after from the next one", () => {
+    const state = run(
+      usage(182_000),
+      update("in_progress"),
+      update("completed"),
+      usage(41_000),
+      usage(45_000),
+    );
+    expect(row(state).meta?.compaction).toEqual({
+      trigger: "auto",
+      tokensBefore: 182_000,
+      tokensAfter: 41_000,
+    });
+    expect(state.compactionAwaitingUsage).toBeNull();
+  });
+
+  it("is manual when the turn was the user's /compact", () => {
+    const state = run(
+      event({ sessionUpdate: "user_message", content: "/compact", sentAt: 1 }),
+      update("in_progress"),
+    );
+    expect(row(state).meta?.compaction?.trigger).toBe("manual");
+  });
+
+  it("leaves the state untouched for a usage it already has", () => {
+    const state = run(usage(10));
+    expect(activityReducer(state, usage(10))).toBe(state);
+  });
+});

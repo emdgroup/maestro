@@ -138,6 +138,28 @@ export type CanvasDataPayload = {
   value: unknown;
 };
 
+/** A content block as ACP sends it inside a compaction summary. Only text is drawn. */
+export type CompactionSummaryBlock = { type: string; text?: string };
+
+/**
+ * An upsert keyed by `compactionId`. `summary` and `error` are patches: absent leaves the
+ * stored value, `null` clears it, and `summary: []` clears it too.
+ */
+export type CompactionUpdatePayload = {
+  sessionUpdate: "compaction_update";
+  compactionId: string;
+  status: "in_progress" | "completed" | "failed" | "cancelled" | (string & {});
+  summary?: CompactionSummaryBlock[] | null;
+  error?: string | null;
+};
+
+/** One block appended to a compaction's summary. A first-seen id creates the compaction. */
+export type CompactionSummaryChunkPayload = {
+  sessionUpdate: "compaction_summary_chunk";
+  compactionId: string;
+  content: CompactionSummaryBlock;
+};
+
 export type SessionUpdatePayload =
   | AgentMessageChunk
   | AgentThoughtChunk
@@ -150,7 +172,9 @@ export type SessionUpdatePayload =
   | ConfigOptionUpdatePayload
   | CanvasCreatePayload
   | CanvasUpdatePayload
-  | CanvasDataPayload;
+  | CanvasDataPayload
+  | CompactionUpdatePayload
+  | CompactionSummaryChunkPayload;
 
 // Accumulated state for rendering
 
@@ -260,6 +284,13 @@ export type ActivityState = {
   suppressUserChunks: boolean;
   canvasMap: Map<string, CanvasSurface>;
   terminalBuffers: Map<string, string>;
+  /**
+   * The context size from the last `usage_update`. ACP's compaction carries no token counts, so
+   * a compaction row reads its "before" from here and its "after" from the next update.
+   */
+  contextUsed: number | null;
+  /** The compaction row that has finished and still waits for that next `usage_update`. */
+  compactionAwaitingUsage: string | null;
 };
 
 export type AvailableCommand = {
@@ -281,4 +312,6 @@ export const INITIAL_ACTIVITY_STATE: ActivityState = {
   suppressUserChunks: false,
   canvasMap: new Map(),
   terminalBuffers: new Map(),
+  contextUsed: null,
+  compactionAwaitingUsage: null,
 };
