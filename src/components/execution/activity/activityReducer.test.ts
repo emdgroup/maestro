@@ -953,6 +953,7 @@ describe("activityReducer — context compaction", () => {
 
   it("reads tokens before from the last usage and after from the next one", () => {
     const state = run(
+      event({ sessionUpdate: "user_message", content: "Add retries", sentAt: 1 }),
       usage(182_000),
       update("in_progress"),
       update("completed"),
@@ -973,6 +974,10 @@ describe("activityReducer — context compaction", () => {
       update("in_progress"),
     );
     expect(row(state).meta?.compaction?.trigger).toBe("manual");
+  });
+
+  it("names no trigger in a reopened session, whose history starts at the compaction", () => {
+    expect(row(run(update("completed"))).meta?.compaction?.trigger).toBeUndefined();
   });
 
   it("leaves the state untouched for a usage it already has", () => {

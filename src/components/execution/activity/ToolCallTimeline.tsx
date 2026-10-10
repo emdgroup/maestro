@@ -267,7 +267,9 @@ export function RowMeta({ tc, prefix }: { tc: ToolCallItem; prefix?: string | nu
   const compaction = meta?.compaction;
   if (compaction) {
     const { tokensBefore: before, tokensAfter: after } = compaction;
-    parts.push(<span key="trigger">{compaction.trigger === "manual" ? "by you" : "auto"}</span>);
+    if (compaction.trigger) {
+      parts.push(<span key="trigger">{compaction.trigger === "manual" ? "by you" : "auto"}</span>);
+    }
     if (before != null && after != null) {
       parts.push(
         <span key="tokens">
@@ -386,7 +388,8 @@ export function RowBody({ tc }: { tc: ToolCallItem }) {
       {reason}
     </pre>
   ) : summary ? (
-    <div className="max-h-64 overflow-y-auto text-xs">
+    // Muted like the row's own label: it is a record of the agent's memory, not a reply.
+    <div className="max-h-64 overflow-y-auto text-xs text-muted-foreground">
       <MarkdownBlock text={summary} />
     </div>
   ) : (

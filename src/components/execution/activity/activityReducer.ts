@@ -10,7 +10,7 @@ import type {
   CompactionSummaryBlock,
   ErrorItem,
 } from "./types";
-import { extractAgentMeta, mergeAgentMeta } from "./agentMeta";
+import { extractAgentMeta, mergeAgentMeta, type CompactionFacts } from "./agentMeta";
 import { isMaestroHostTool } from "./utils";
 
 export type ActivityAction =
@@ -652,13 +652,18 @@ function summaryContent(
   return content;
 }
 
-/** Whether the turn this compaction runs in was the user's own `/compact`. */
-function requestedByUser(items: ActivityItem[]): boolean {
+/**
+ * Whether the turn this compaction runs in was the user's own `/compact`. Unknown with no user
+ * message to go by: a reopened session's history starts at its last compaction.
+ */
+function compactionTrigger(items: ActivityItem[]): CompactionFacts["trigger"] {
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
-    if (item.type === "userMessage") return /^\/compact\b/.test(item.item.content.trim());
+    if (item.type === "userMessage") {
+      return /^\/compact\b/.test(item.item.content.trim()) ? "manual" : "auto";
+    }
   }
-  return false;
+  return undefined;
 }
 
 /**
@@ -682,7 +687,7 @@ function upsertCompaction(
       locations: [],
       meta: {
         compaction: {
-          trigger: requestedByUser(state.items) ? "manual" : "auto",
+          trigger: compactionTrigger(state.items),
           tokensBefore: state.contextUsed ?? undefined,
         },
       },

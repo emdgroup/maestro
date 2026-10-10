@@ -52,8 +52,8 @@ export type AgentMeta = {
 };
 
 export type CompactionFacts = {
-  /** `manual` when the turn was the user's own `/compact`. */
-  trigger: "auto" | "manual";
+  /** `manual` when the turn was the user's own `/compact`; absent when there is no telling. */
+  trigger?: "auto" | "manual";
   tokensBefore?: number;
   tokensAfter?: number;
 };
