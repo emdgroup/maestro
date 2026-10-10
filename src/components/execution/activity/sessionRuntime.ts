@@ -2,6 +2,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { drainAcpReplay } from "@/services/execution.service";
 import { loadSavedCanvases, saveCanvasSurface } from "@/services/canvas.service";
+import { useNavigationStore } from "@/store/navigationStore";
 import { useSessionActivityStore } from "@/store/sessionActivityStore";
 import { activityReducer, type ActivityAction } from "./activityReducer";
 import { INITIAL_ACTIVITY_STATE } from "./types";
@@ -152,7 +153,7 @@ function applyActivity(sessionId: string, rt: Runtime, action: ActivityAction) {
 }
 
 /** The usage, command and config parts of a session update, which the reducer does not track. */
-function applySessionUpdate(rt: Runtime, raw: Record<string, unknown>) {
+function applySessionUpdate(sessionId: string, rt: Runtime, raw: Record<string, unknown>) {
   const p = raw as {
     sessionUpdate?: string;
     used?: number;
@@ -164,8 +165,27 @@ function applySessionUpdate(rt: Runtime, raw: Record<string, unknown>) {
     currentModelId?: string;
     modeId?: string;
     currentModeId?: string;
+    severity?: string;
+    title?: string;
+    description?: string | null;
   };
   const l = rt.lifecycle;
+  // The stream shows every notice. Only one the spec does not call routine (`error`, or a severity
+  // newer than this build) also reaches the user outside the session.
+  if (
+    p.sessionUpdate === "notice" &&
+    p.title &&
+    p.severity !== "info" &&
+    p.severity !== "warning"
+  ) {
+    toast.error(p.title, {
+      description: p.description || undefined,
+      action: {
+        label: "Open",
+        onClick: () => useNavigationStore.getState().navigate({ sessionId }),
+      },
+    });
+  }
   if (p.sessionUpdate === "usage_update") {
     if (typeof p.used === "number" && typeof p.size === "number") {
       const usageState: UsageState = {
@@ -244,7 +264,7 @@ function create(sessionId: string): Runtime {
       rt.pending = [];
       for (const { action: a, raw: r } of batch) {
         applyActivity(sessionId, rt, a);
-        if (r) applySessionUpdate(rt, r);
+        if (r) applySessionUpdate(sessionId, rt, r);
       }
       notify(rt);
       maybeDispose(sessionId, rt);

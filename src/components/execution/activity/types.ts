@@ -160,6 +160,17 @@ export type CompactionSummaryChunkPayload = {
   content: CompactionSummaryBlock;
 };
 
+/**
+ * Fire-and-forget information for the user. Severity is the only structured field: `info`,
+ * `warning`, `error`, or a future or `_`-prefixed value. Agents never replay these.
+ */
+export type NoticePayload = {
+  sessionUpdate: "notice";
+  severity: string;
+  title: string;
+  description?: string | null;
+};
+
 export type SessionUpdatePayload =
   | AgentMessageChunk
   | AgentThoughtChunk
@@ -174,7 +185,8 @@ export type SessionUpdatePayload =
   | CanvasUpdatePayload
   | CanvasDataPayload
   | CompactionUpdatePayload
-  | CompactionSummaryChunkPayload;
+  | CompactionSummaryChunkPayload
+  | NoticePayload;
 
 // Accumulated state for rendering
 
@@ -260,6 +272,18 @@ export type ErrorItem = {
   message: string;
 };
 
+export type NoticeItem = {
+  id: string;
+  /** Title and description: a repeat of the same notice bumps `count` instead of adding a row. */
+  key: string;
+  severity: string;
+  title: string;
+  description: string | null;
+  count: number;
+  /** When the latest repeat arrived. */
+  at: number;
+};
+
 export type ActivityItem =
   | { type: "message"; item: MessageItem }
   | { type: "thinking"; item: ThinkingItem }
@@ -268,7 +292,8 @@ export type ActivityItem =
   | { type: "permissionResponse"; item: PermissionResponseItem }
   | { type: "elicitationSummary"; item: ElicitationSummaryItem }
   | { type: "canvas"; item: CanvasItem }
-  | { type: "error"; item: ErrorItem };
+  | { type: "error"; item: ErrorItem }
+  | { type: "notice"; item: NoticeItem };
 
 export type ActivityState = {
   items: ActivityItem[];

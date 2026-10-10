@@ -458,10 +458,11 @@ impl ConnectionHandlers {
 mod tests {
     use super::*;
 
-    /// `handle_notification` parses each update and writes it back out, and a compaction's
-    /// `summary` and `error` are patches: dropping a `null` would leave a cleared summary on screen.
+    /// `handle_notification` parses each update and writes it back out. A compaction's `summary`
+    /// and `error` are patches, so dropping a `null` would leave a cleared summary on screen; a
+    /// notice's severity may be a value this build has no variant for.
     #[test]
-    fn compaction_update_patch_fields_survive_the_round_trip() {
+    fn compaction_and_notice_updates_survive_the_round_trip() {
         for update in [
             serde_json::json!({
                 "sessionUpdate": "compaction_update",
@@ -471,6 +472,13 @@ mod tests {
                 "error": "timed out",
             }),
             serde_json::json!({ "sessionUpdate": "compaction_update", "compactionId": "c1", "status": "in_progress" }),
+            serde_json::json!({
+                "sessionUpdate": "notice",
+                "severity": "warning",
+                "title": "Fast mode turned off",
+                "description": "Not available for the selected model.",
+            }),
+            serde_json::json!({ "sessionUpdate": "notice", "severity": "_vendor", "title": "Custom" }),
             serde_json::json!({
                 "sessionUpdate": "compaction_summary_chunk",
                 "compactionId": "c1",

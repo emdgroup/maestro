@@ -985,3 +985,49 @@ describe("activityReducer — context compaction", () => {
     expect(activityReducer(state, usage(10))).toBe(state);
   });
 });
+
+describe("activityReducer — notices", () => {
+  const notice = (title: string, severity = "warning", description?: string) =>
+    event({ sessionUpdate: "notice", severity, title, description });
+  const notices = (state: ActivityState) =>
+    state.items.flatMap((i) => (i.type === "notice" ? [i.item] : []));
+
+  it("adds a row where the notice arrived", () => {
+    const state = [
+      event({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Working" } }),
+      notice("Fast mode turned off", "warning", "Not available for the selected model."),
+    ].reduce(activityReducer, makeState());
+    expect(lastItem(state)).toMatchObject({
+      type: "notice",
+      item: {
+        title: "Fast mode turned off",
+        description: "Not available for the selected model.",
+        count: 1,
+      },
+    });
+    expect(state.items[0]).toMatchObject({ type: "message", item: { isStreaming: false } });
+  });
+
+  it("counts a repeat on one row and moves it to the bottom", () => {
+    const state = [
+      notice("Auto mode unavailable"),
+      event({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Next" } }),
+      notice("Auto mode unavailable"),
+    ].reduce(activityReducer, makeState());
+    expect(notices(state)).toHaveLength(1);
+    expect(lastItem(state)).toMatchObject({ type: "notice", item: { count: 2 } });
+  });
+
+  it("keeps notices with a different description apart", () => {
+    const state = [
+      notice("Codex warning", "warning", "a"),
+      notice("Codex warning", "warning", "b"),
+    ].reduce(activityReducer, makeState());
+    expect(notices(state)).toHaveLength(2);
+  });
+
+  it("ignores a notice without a title", () => {
+    const state = makeState();
+    expect(activityReducer(state, notice(""))).toBe(state);
+  });
+});

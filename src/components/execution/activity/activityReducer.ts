@@ -9,6 +9,7 @@ import type {
   CanvasSurface,
   CompactionSummaryBlock,
   ErrorItem,
+  NoticeItem,
 } from "./types";
 import { extractAgentMeta, mergeAgentMeta, type CompactionFacts } from "./agentMeta";
 import { isMaestroHostTool } from "./utils";
@@ -589,6 +590,30 @@ function processEvent(
         ...tc,
         content: summaryContent(tc.content, [payload.content]),
       }));
+
+    case "notice": {
+      if (typeof payload.title !== "string" || !payload.title) return newState;
+      const description = payload.description || null;
+      const key = `${payload.title}\n${description ?? ""}`;
+      const at = newState.items.findIndex((i) => i.type === "notice" && i.item.key === key);
+      const previous = at < 0 ? null : (newState.items[at] as { item: NoticeItem }).item;
+      // A repeat moves to the bottom, where the user is reading, rather than bumping a row
+      // scrolled out of sight.
+      const items = at < 0 ? newState.items : newState.items.filter((_, i) => i !== at);
+      const notice: NoticeItem = {
+        id: previous?.id ?? `notice-${crypto.randomUUID()}`,
+        key,
+        severity: payload.severity,
+        title: payload.title,
+        description,
+        count: (previous?.count ?? 0) + 1,
+        at: Date.now(),
+      };
+      return {
+        ...newState,
+        items: [...finalizeStreaming(items), { type: "notice", item: notice }],
+      };
+    }
 
     case "usage_update": {
       const awaiting = newState.compactionAwaitingUsage;
