@@ -37,6 +37,10 @@ export type AgentMeta = {
    * runs on until it hands its report back. Live only, as no replay carries the tool response.
    */
   background?: boolean;
+  /** The id the agent gave a subagent it launched, which is how its other tools refer to it. */
+  agentId?: string;
+  /** The task a `TaskStop` call stopped: a background subagent's `agentId`, or a shell's id. */
+  taskId?: string;
   linesAdded?: number;
   linesRemoved?: number;
   fileTotalLines?: number;
@@ -119,6 +123,8 @@ function extractClaudeCodeMeta(raw: Record<string, unknown>): AgentMeta {
   if (str(tr.decisionReason)) result.blocked = true;
 
   if (tr.isAsync === true) result.background = true;
+  result.agentId = str(tr.agentId);
+  result.taskId = str(tr.task_id);
   result.totalDurationMs = num(tr.totalDurationMs);
   result.totalTokens = num(tr.totalTokens);
   result.totalToolUseCount = num(tr.totalToolUseCount);

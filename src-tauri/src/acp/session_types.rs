@@ -296,6 +296,9 @@ pub struct AcpProcess {
     /// Set while a `RequestPermission` is outstanding on this session's shared Claude Code
     /// connection. Prevents new sessions from joining the same connection until resolved.
     pub has_pending_permission: Arc<AtomicBool>,
+    /// Whether a prompt is outstanding, as the server's `TurnStarted` and `TurnEnded` say. A view
+    /// that opens on the session mid-turn has missed the `TurnStarted`, so it reads this instead.
+    pub turn_active: Arc<AtomicBool>,
 }
 
 /// A session's task as the daemon keys it: task ids are per project, so the number alone does not
@@ -471,6 +474,7 @@ impl AcpProcess {
             config_options: Vec::new(),
             prompt_capabilities: None,
             has_pending_permission: Arc::new(AtomicBool::new(false)),
+            turn_active: Arc::new(AtomicBool::new(false)),
         };
         (process, ctx)
     }

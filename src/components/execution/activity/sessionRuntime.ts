@@ -315,14 +315,18 @@ function create(sessionId: string): Runtime {
               : "Agent encountered an error and could not respond.",
         });
       }
-      enqueue({ type: "turn_ended" });
+      enqueue({ type: "turn_ended", stopReason });
       setStatus(sessionId, "idle");
     }),
-    listen<null>(`acp://replay-drained/${sessionId}`, () => {
-      enqueue({ type: "turn_ended" });
+    listen<null>(`acp://turn-started/${sessionId}`, () => {
+      enqueue({ type: "turn_started" });
+    }),
+    // Says whether a prompt is outstanding, for a view that opened after the turn started.
+    listen<boolean | null>(`acp://replay-drained/${sessionId}`, (e) => {
+      enqueue({ type: e.payload ? "turn_started" : "turn_ended" });
       enqueue({ type: "set_initialized" });
       tryRestoreCanvases();
-      setStatus(sessionId, "idle");
+      if (!e.payload) setStatus(sessionId, "idle");
     }),
     listen<null>(`acp://spawn-ok/${sessionId}`, () => {
       enqueue({ type: "turn_ended" });

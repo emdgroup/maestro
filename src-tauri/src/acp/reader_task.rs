@@ -479,6 +479,11 @@ fn handle_server_message(
                 log::error!("[acp] emit session-error/{session_id} failed: {e}");
             }
         }
+        ServerResponse::TurnStarted(_) => {
+            if let Err(e) = app_handle.emit(&format!("acp://turn-started/{}", session_id), ()) {
+                log::warn!("[acp] emit turn-started/{session_id} failed: {e}");
+            }
+        }
         ServerResponse::TurnEnded(turn_ended) => {
             log::debug!(
                 "[acp] turn-ended session_id={session_id} stop={}",
@@ -792,6 +797,11 @@ pub(crate) async fn handle_shared_server_message(
             }
 
             let is_permission_request = matches!(msg, ServerResponse::PermissionRequest(_));
+            let turn_active = match msg {
+                ServerResponse::TurnStarted(_) => Some(true),
+                ServerResponse::TurnEnded(_) => Some(false),
+                _ => None,
+            };
             let is_session_load_error = is_fatal_session_error(&msg);
             let is_gone = is_gone_session_error(&msg);
             handle_server_message(
@@ -807,6 +817,12 @@ pub(crate) async fn handle_shared_server_message(
                 &initialized,
                 &completion_filter,
             );
+            if let Some(turn_active) = turn_active {
+                let sessions = app_state.acp.sessions.lock().await;
+                if let Some(session) = sessions.get(&session_id) {
+                    session.turn_active.store(turn_active, Ordering::Release);
+                }
+            }
             if is_permission_request {
                 let sessions = app_state.acp.sessions.lock().await;
                 if let Some(session) = sessions.get(&session_id) {

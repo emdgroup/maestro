@@ -76,6 +76,11 @@ interface ComposeBarProps {
   onSend: (content: string, contentBlocks?: JsonValue) => void;
   onCancel: () => void;
   isProcessing: boolean;
+  /**
+   * The agent takes a prompt while busy: a turn held open for background subagents ends when the
+   * next prompt arrives. Typing turns the stop button into send; an empty composer still stops.
+   */
+  canQueue?: boolean;
   commands: AvailableCommand[];
   embeddedContext?: boolean;
   sessionId?: string | null;
@@ -94,6 +99,7 @@ export function ComposeBar({
   onSend,
   onCancel,
   isProcessing,
+  canQueue = false,
   commands,
   embeddedContext = false,
   sessionId,
@@ -107,6 +113,7 @@ export function ComposeBar({
   onContentChange,
   ref,
 }: ComposeBarProps) {
+  const blocked = isProcessing && !canQueue;
   const [value, setValue] = useState("");
   const [isFocused, setIsFocused] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -358,12 +365,12 @@ export function ComposeBar({
     if (enterKeyBehavior === "new_line") {
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        if (!isProcessing && !isSending && value.trim()) void handleSend();
+        if (!blocked && !isSending && value.trim()) void handleSend();
       }
     } else {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        if (!isProcessing && !isSending && value.trim()) void handleSend();
+        if (!blocked && !isSending && value.trim()) void handleSend();
       }
     }
   };
@@ -381,7 +388,8 @@ export function ComposeBar({
   };
 
   const hasAttachmentErrors = attach.attachments.some((a) => !!a.error);
-  const sendDisabled = isProcessing || isSending || !value.trim() || hasAttachmentErrors;
+  const sendDisabled = blocked || isSending || !value.trim() || hasAttachmentErrors;
+  const showStop = isProcessing && (!canQueue || !value.trim());
 
   return (
     <>
@@ -439,7 +447,7 @@ export function ComposeBar({
             {sessionId && (
               <Tooltip>
                 <TooltipTrigger
-                  render={<button type="button" disabled={isProcessing || isSending} />}
+                  render={<button type="button" disabled={blocked || isSending} />}
                   onClick={() => void attach.handleAttach()}
                   className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-muted-foreground border border-transparent hover:border-border/40 hover:text-accent hover:bg-accent/8 disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-150"
                 >
@@ -480,7 +488,7 @@ export function ComposeBar({
               />
             ))}
             <div className="ml-auto">
-              {isProcessing ? (
+              {showStop ? (
                 <Tooltip>
                   <TooltipTrigger
                     type="button"

@@ -380,26 +380,35 @@ describe("activityReducer — streaming text", () => {
     expect(contents).toEqual(["one two", "separate"]);
   });
 
-  it("marks the turn active on a turn-progress event", () => {
-    const state = activityReducer(
-      makeState({ isTurnActive: false }),
-      event({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "x" } }),
-    );
-    expect(state.isTurnActive).toBe(true);
+  it("runs a turn from turn_started to turn_ended", () => {
+    const started = activityReducer(makeState({ isTurnActive: false }), { type: "turn_started" });
+    expect(started.isTurnActive).toBe(true);
+    expect(activityReducer(started, { type: "turn_ended" }).isTurnActive).toBe(false);
   });
 
-  // Agents emit these after session/load and after a turn ends. No turn_ended follows,
-  // so arming isTurnActive here strands the session as "thinking" forever.
+  // Claude reports a background subagent's end, and its own summary of it, with no prompt
+  // outstanding. No turn_ended follows, so arming isTurnActive here strands the session as
+  // "thinking" forever. The same goes for what agents emit after session/load.
   it.each([
+    "agent_message_chunk",
+    "agent_thought_chunk",
+    "tool_call",
     "usage_update",
     "available_commands_update",
     "config_option_update",
     "current_model_update",
     "current_mode_update",
-  ])("leaves the turn inactive on the out-of-turn %s event", (sessionUpdate) => {
+  ])("leaves the turn inactive on an unprompted %s event", (sessionUpdate) => {
     const state = activityReducer(
       makeState({ isTurnActive: false }),
-      event({ sessionUpdate } as unknown as SessionUpdatePayload),
+      event({
+        sessionUpdate,
+        content: { type: "text", text: "x" },
+        toolCallId: "t1",
+        title: "Read",
+        kind: "read",
+        status: "pending",
+      } as unknown as SessionUpdatePayload),
     );
     expect(state.isTurnActive).toBe(false);
   });
@@ -1060,7 +1069,9 @@ describe("activityReducer — background subagents", () => {
       ],
       [
         { sessionUpdate: "tool_call_update", toolCallId: "agent" },
-        agentMeta({ toolResponse: { isAsync: true, status: "async_launched" } }),
+        agentMeta({
+          toolResponse: { isAsync: true, status: "async_launched", agentId: "a4e26c83" },
+        }),
       ],
       [
         {
@@ -1132,6 +1143,51 @@ describe("activityReducer — background subagents", () => {
   it("is interrupted when the session ends before it hands back", () => {
     const state = activityReducer(launched(), { type: "session_ended" });
     expect(state.toolCallMap.get("agent")?.status).toBe("interrupted");
+  });
+
+  it("is interrupted when the user stops the turn, which takes it down too", () => {
+    const state = activityReducer(launched(), { type: "turn_ended", stopReason: "cancelled" });
+    expect(state.toolCallMap.get("agent")?.status).toBe("interrupted");
+    expect(state.toolCallMap.get("bash")?.status).toBe("interrupted");
+  });
+
+  it("is stopped by a TaskStop naming its agent id, and only that one", () => {
+    let state = launched();
+    const stop = (taskId: string) => {
+      state = activityReducer(
+        state,
+        event(
+          {
+            sessionUpdate: "tool_call",
+            toolCallId: `stop-${taskId}`,
+            title: "TaskStop",
+            kind: "other",
+          },
+          { _meta: { claudeCode: { toolName: "TaskStop" } } },
+        ),
+      );
+      state = activityReducer(
+        state,
+        event(
+          { sessionUpdate: "tool_call_update", toolCallId: `stop-${taskId}` },
+          { _meta: { claudeCode: { toolName: "TaskStop", toolResponse: { task_id: taskId } } } },
+        ),
+      );
+      state = activityReducer(
+        state,
+        event(
+          { sessionUpdate: "tool_call_update", toolCallId: `stop-${taskId}`, status: "completed" },
+          { _meta: { claudeCode: { toolName: "TaskStop" } } },
+        ),
+      );
+    };
+    stop("some-shell");
+    expect(state.toolCallMap.get("agent")?.status).toBe("in_progress");
+    stop("a4e26c83");
+    expect(state.toolCallMap.get("agent")?.status).toBe("interrupted");
+    expect(toolCallItems(state).find((i) => i.item.toolCallId === "agent")?.item.status).toBe(
+      "interrupted",
+    );
   });
 
   it("leaves a foreground subagent finishing at its own completion", () => {

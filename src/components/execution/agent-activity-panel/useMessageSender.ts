@@ -49,6 +49,7 @@ export function useMessageSender({
   onCenteredTransition,
   pendingSendRef,
   isTurnActiveRef,
+  canQueue = false,
   pendingCanvasAwaitsRef,
 }: {
   sessionId: string;
@@ -66,6 +67,8 @@ export function useMessageSender({
   pendingSendRef: MutableRefObject<boolean>;
   /** Mirrors `liveState.isTurnActive`, so a send can wait for a cancelled turn to finish. */
   isTurnActiveRef: React.RefObject<boolean>;
+  /** The agent takes a prompt mid-turn, which ends a turn it holds for background subagents. */
+  canQueue?: boolean;
   /** Open `canvas_await` calls, so a send can end them rather than be refused as "busy". */
   pendingCanvasAwaitsRef: React.RefObject<PendingCanvasAwait[]>;
 }): {
@@ -84,7 +87,7 @@ export function useMessageSender({
 
   const handleSend = useCallback(
     async (content: string, contentBlocks?: JsonValue) => {
-      if (isProcessing) {
+      if (isProcessing && !canQueue) {
         // An agent holding `canvas_await` open is "busy" for as long as the user leaves the
         // surface alone, which without this would mean never being able to type again. Ending
         // the wait is the price of speaking: the turn stops, and the surface goes quiet until
@@ -130,6 +133,7 @@ export function useMessageSender({
     },
     [
       isProcessing,
+      canQueue,
       sessionId,
       liveDispatch,
       setActivity,
@@ -152,10 +156,10 @@ export function useMessageSender({
       if (cancelTimerRef.current != null) clearTimeout(cancelTimerRef.current);
       cancelTimerRef.current = setTimeout(() => {
         cancelTimerRef.current = null;
-        liveDispatch({ type: "turn_ended" });
+        liveDispatch({ type: "turn_ended", stopReason: "cancelled" });
       }, 3000);
     } catch {
-      liveDispatch({ type: "turn_ended" });
+      liveDispatch({ type: "turn_ended", stopReason: "cancelled" });
       setActivity(sessionId, "idle");
     }
   }, [sessionId, setActivity, liveDispatch]);

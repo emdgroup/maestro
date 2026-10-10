@@ -1,11 +1,12 @@
-import { useState, useMemo } from "react";
-import { Bot, ChevronRight } from "lucide-react";
+import { useContext, useState, useMemo } from "react";
+import { Bot, ChevronRight, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatElapsed, humanizeTokenCount } from "@/lib/format-utils";
 import { MarkdownBlock } from "./MarkdownBlock";
 import { TypingDots } from "./ActivityMessageItem";
 import { ToolCallTimeline } from "./ToolCallTimeline";
 import { subagentName } from "./utils";
+import { StopSubagentContext, stopSubagentPrompt } from "./subagent-stop";
 import { useSettings } from "@/services/settings.service";
 import type { ToolCallItem } from "./types";
 
@@ -28,6 +29,10 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
 
   const isStreaming = item.status === "in_progress" || item.status === "pending";
   const isInterrupted = item.status === "interrupted";
+  const isBackground = !!item.meta?.background;
+  const stopSubagent = useContext(StopSubagentContext);
+  const [stopAsked, setStopAsked] = useState(false);
+  const canStop = !!stopSubagent && isBackground && isStreaming;
 
   const prompt = typeof item.rawInput?.prompt === "string" ? item.rawInput.prompt : null;
 
@@ -115,60 +120,80 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
         "shadow-[0_2px_8px_oklch(0%_0_0/0.08)]",
       )}
     >
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="flex items-start gap-2.5 w-full px-3.5 py-2.5 text-left hover:brightness-110 transition-[filter]"
-      >
-        <div className="w-7 h-7 rounded-[7px] bg-accent/10 border border-accent/30 flex items-center justify-center shrink-0 mt-0.5">
-          <Bot className="w-3.5 h-3.5 text-accent" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="truncate text-xs font-medium text-foreground/85">{name}</span>
-            {item.meta?.model && (
-              <span className="shrink-0 rounded-full border border-accent/30 px-1.5 text-[9px] text-muted-foreground">
-                {item.meta.model}
-              </span>
-            )}
-          </div>
-          <div className="mt-0.5 text-[10px] text-muted-foreground">
-            {isStreaming ? (
-              <TypingDots />
-            ) : isInterrupted ? (
-              <span className="text-warning/70">Session interrupted</span>
-            ) : (
-              usage
-            )}
-          </div>
-          {!isStreaming && toolBreakdown && (
-            <div className="text-[10px] text-muted-foreground/70">{toolBreakdown}</div>
-          )}
-        </div>
-        <span
-          className={cn(
-            "text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 mt-0.5",
-            isStreaming && "bg-accent/15 text-accent",
-            isInterrupted && "bg-warning/15 text-warning",
-            item.status === "completed" && "bg-success/15 text-success",
-            item.status === "error" && "bg-destructive/15 text-destructive",
-          )}
+      <div className="flex items-start">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex items-start gap-2.5 flex-1 min-w-0 px-3.5 py-2.5 text-left hover:brightness-110 transition-[filter]"
         >
-          {isStreaming
-            ? "Running"
-            : isInterrupted
-              ? "Interrupted"
-              : item.status === "completed"
-                ? "Done"
-                : "Failed"}
-        </span>
-        <ChevronRight
-          className={cn(
-            "w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5 opacity-50 transition-transform duration-150",
-            expanded && "rotate-90",
-          )}
-        />
-      </button>
+          <div className="w-7 h-7 rounded-[7px] bg-accent/10 border border-accent/30 flex items-center justify-center shrink-0 mt-0.5">
+            <Bot className="w-3.5 h-3.5 text-accent" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="truncate text-xs font-medium text-foreground/85">{name}</span>
+              {item.meta?.model && (
+                <span className="shrink-0 rounded-full border border-accent/30 px-1.5 text-[9px] text-muted-foreground">
+                  {item.meta.model}
+                </span>
+              )}
+            </div>
+            <div className="mt-0.5 text-[10px] text-muted-foreground">
+              {isStreaming ? (
+                <TypingDots />
+              ) : isInterrupted ? (
+                <span className="text-warning/70">
+                  {isBackground ? "Stopped" : "Session interrupted"}
+                </span>
+              ) : (
+                usage
+              )}
+            </div>
+            {!isStreaming && toolBreakdown && (
+              <div className="text-[10px] text-muted-foreground/70">{toolBreakdown}</div>
+            )}
+          </div>
+          <span
+            className={cn(
+              "text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 mt-0.5",
+              isStreaming && "bg-accent/15 text-accent",
+              isInterrupted && "bg-warning/15 text-warning",
+              item.status === "completed" && "bg-success/15 text-success",
+              item.status === "error" && "bg-destructive/15 text-destructive",
+            )}
+          >
+            {isStreaming
+              ? "Running"
+              : isInterrupted
+                ? isBackground
+                  ? "Stopped"
+                  : "Interrupted"
+                : item.status === "completed"
+                  ? "Done"
+                  : "Failed"}
+          </span>
+          <ChevronRight
+            className={cn(
+              "w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5 opacity-50 transition-transform duration-150",
+              expanded && "rotate-90",
+            )}
+          />
+        </button>
+        {canStop && (
+          <button
+            type="button"
+            disabled={stopAsked}
+            onClick={() => {
+              setStopAsked(true);
+              stopSubagent(stopSubagentPrompt(item));
+            }}
+            className="mt-2.5 mr-3 flex shrink-0 items-center gap-1 rounded border border-destructive/30 px-1.5 py-0.5 text-[10px] text-destructive/80 transition-colors hover:bg-destructive/10 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
+          >
+            <Square className="size-2.5" />
+            {stopAsked ? "Stopping…" : "Stop"}
+          </button>
+        )}
+      </div>
 
       {expanded && (
         <div className="border-t border-accent/20">

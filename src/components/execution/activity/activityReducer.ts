@@ -17,7 +17,9 @@ import { isMaestroHostTool } from "./utils";
 export type ActivityAction =
   | { type: "event"; payload: SessionUpdatePayload; raw: Record<string, unknown> }
   | { type: "session_ended" }
-  | { type: "turn_ended" }
+  /** `stopReason` as the agent answered the prompt; absent when no prompt ended. */
+  | { type: "turn_started" }
+  | { type: "turn_ended"; stopReason?: string }
   | { type: "finalize_streaming" }
   | { type: "set_initialized" }
   | { type: "append_error"; stopReason: "error" | "auth_required"; message: string }
@@ -64,8 +66,12 @@ function trimCatchUpBuffer(buffer: string): string {
  */
 export function activityReducer(state: ActivityState, action: ActivityAction): ActivityState {
   switch (action.type) {
-    case "event":
-      return processEvent(state, action.payload, action.raw);
+    case "event": {
+      const next = processEvent(state, action.payload, action.raw);
+      return action.payload.sessionUpdate === "tool_call_update"
+        ? settleStoppedSubagent(next, action.payload.toolCallId)
+        : next;
+    }
     case "session_ended": {
       const flushed = flushOrphans(state);
       const interrupted = interruptStalledToolCalls(flushed);
@@ -77,9 +83,12 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
         endReason: "completed",
       };
     }
+    case "turn_started":
+      return state.isTurnActive ? state : { ...state, isTurnActive: true };
     case "turn_ended": {
       const flushed = flushOrphans(state);
-      const interrupted = interruptStalledToolCalls(flushed, true);
+      // A stop takes the background subagents with it, and the agent reports none of them after.
+      const interrupted = interruptStalledToolCalls(flushed, action.stopReason !== "cancelled");
       return {
         ...interrupted,
         items: finalizeStreaming(interrupted.items),
@@ -187,6 +196,34 @@ function isBackground(map: Map<string, ToolCallItem>, tc: ToolCallItem): boolean
  */
 const HANDBACK_TOOL = "SubagentHandback";
 
+/**
+ * A background subagent stopped by `TaskStop` never hands back, and the agent reports nothing
+ * more of it. The stop names it by the `agentId` its launch was given.
+ */
+function settleStoppedSubagent(state: ActivityState, toolCallId: string): ActivityState {
+  const stop = state.toolCallMap.get(toolCallId);
+  const taskId = stop?.meta?.taskId;
+  if (stop?.meta?.toolName !== "TaskStop" || stop.status !== "completed" || !taskId) return state;
+  const target = [...state.toolCallMap.values()].find(
+    (tc) => tc.meta?.background && tc.meta.agentId === taskId && tc.status === "in_progress",
+  );
+  if (!target) return state;
+  const stopped: ToolCallItem = { ...target, status: "interrupted" };
+  const toolCallMap = new Map(state.toolCallMap).set(target.toolCallId, stopped);
+  const at = state.items.findIndex(
+    (i) => i.type === "toolCall" && i.item.toolCallId === target.toolCallId,
+  );
+  const items =
+    at < 0
+      ? state.items
+      : [
+          ...state.items.slice(0, at),
+          { type: "toolCall" as const, item: stopped },
+          ...state.items.slice(at + 1),
+        ];
+  return { ...state, items, toolCallMap };
+}
+
 function flushOrphans(state: ActivityState): ActivityState {
   if (state.pendingOrphans.size === 0) return state;
   const newMap = new Map(state.toolCallMap);
@@ -204,31 +241,16 @@ function flushOrphans(state: ActivityState): ActivityState {
   return { ...state, items, toolCallMap: newMap, pendingOrphans: new Map() };
 }
 
-/**
- * Updates that mean the agent is mid-turn. Everything else — usage, available commands,
- * model/mode/config echoes — arrives *outside* a turn: agents emit them right after
- * `session/load` and after a turn ends. No `turn_ended` follows them, so arming
- * `isTurnActive` there leaves it stuck true for the rest of the session, which reads as
- * "thinking" and keeps the compose bar disabled.
- */
-const TURN_PROGRESS_UPDATES = new Set([
-  "agent_message_chunk",
-  "agent_thought_chunk",
-  "tool_call",
-  "tool_call_update",
-  "plan",
-  "user_message",
-  "user_message_chunk",
-]);
-
 function processEvent(
   state: ActivityState,
   payload: SessionUpdatePayload,
   raw: Record<string, unknown>,
 ): ActivityState {
-  const newState = TURN_PROGRESS_UPDATES.has(payload.sessionUpdate)
-    ? { ...state, isTurnActive: true }
-    : state;
+  // Copied, because the chunk cases assign to it; a case that changes nothing returns `state`.
+  // No update arms `isTurnActive`: a turn runs from the server's `turn_started` to its
+  // `turn_ended`, and an agent can talk with no prompt outstanding, as Claude does when a
+  // background subagent finishes. No `turn_ended` follows that.
+  const newState = { ...state };
 
   switch (payload.sessionUpdate) {
     case "agent_thought_chunk": {
@@ -461,7 +483,7 @@ function processEvent(
           if (parent) {
             let refreshedParent = { ...parent };
             // Handing the report back is how a background subagent ends.
-            // ponytail: one that fails without handing back stays running until the session ends.
+            // ponytail: one that fails on its own stays running until the session ends or is stopped.
             if (
               updated.meta.toolName === HANDBACK_TOOL &&
               updated.status === "completed" &&
@@ -539,7 +561,7 @@ function processEvent(
       // Suppress agent echo during live sessions — user_message already captured it.
       // Only process during resume/replay where no user_message fires.
       if (state.suppressUserChunks) {
-        return newState;
+        return state;
       }
       const items = finalizeStreaming(newState.items);
       const lastItem = items[items.length - 1];
@@ -641,7 +663,7 @@ function processEvent(
       }));
 
     case "notice": {
-      if (typeof payload.title !== "string" || !payload.title) return newState;
+      if (typeof payload.title !== "string" || !payload.title) return state;
       const description = payload.description || null;
       const key = `${payload.title}\n${description ?? ""}`;
       const at = newState.items.findIndex((i) => i.type === "notice" && i.item.key === key);
@@ -670,7 +692,7 @@ function processEvent(
         typeof payload.used !== "number" ||
         (!awaiting && newState.contextUsed === payload.used)
       ) {
-        return newState;
+        return state;
       }
       const next = { ...newState, contextUsed: payload.used, compactionAwaitingUsage: null };
       const tc = awaiting ? next.toolCallMap.get(awaiting) : undefined;
@@ -682,7 +704,7 @@ function processEvent(
     }
 
     default:
-      return newState;
+      return state;
   }
 }
 

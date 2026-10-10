@@ -455,12 +455,17 @@ pub async fn drain_acp_replay(
             .map_err(|e| format!("Lock poisoned: {}", e))?;
         buf.take()
     };
-    let is_initialized = {
+    let (is_initialized, turn_active) = {
         let sessions = app_state.acp.sessions.lock().await;
         sessions
             .get(session_id)
-            .and_then(|s| s.initialized.lock().ok().map(|g| *g))
-            .unwrap_or(false)
+            .map(|s| {
+                (
+                    s.initialized.lock().ok().is_some_and(|g| *g),
+                    s.turn_active.load(std::sync::atomic::Ordering::Acquire),
+                )
+            })
+            .unwrap_or((false, false))
     };
     if let Some(events) = buffered {
         for payload in events {
@@ -472,7 +477,7 @@ pub async fn drain_acp_replay(
             emit_init_events_from_session(session_id, &app_state).await;
             let _ = app_state
                 .app_handle
-                .emit(&format!("acp://replay-drained/{}", session_id), ());
+                .emit(&format!("acp://replay-drained/{}", session_id), turn_active);
         }
     } else if is_initialized {
         // Buffer already consumed (no replay buffer for new sessions, or drained before
@@ -481,7 +486,7 @@ pub async fn drain_acp_replay(
         emit_init_events_from_session(session_id, &app_state).await;
         let _ = app_state
             .app_handle
-            .emit(&format!("acp://replay-drained/{}", session_id), ());
+            .emit(&format!("acp://replay-drained/{}", session_id), turn_active);
     }
     Ok(())
 }

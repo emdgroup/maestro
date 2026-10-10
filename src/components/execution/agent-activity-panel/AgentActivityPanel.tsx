@@ -23,6 +23,7 @@ import {
 } from "../activity/permission-prompt-utils";
 import { ElicitationPrompt, parseElicitationFields } from "../activity/ElicitationPrompt";
 import { deriveTaskDraft } from "../activity/task-draft";
+import { StopSubagentContext } from "../activity/subagent-stop";
 import type { TaskDraft } from "../activity/task-draft";
 import { CreateTaskModal } from "@/components/kanban/create-task-modal/CreateTaskModal";
 import { useNavigationStore } from "@/store/navigationStore";
@@ -342,6 +343,15 @@ export function AgentActivityPanel({
     activityInfo?.status === "acting" ||
     activityInfo?.status === "stale";
   const [hasSentFirstMessage, setHasSentFirstMessage] = useState(false);
+  // Claude holds the turn open until its background subagents finish, but takes the next prompt
+  // meanwhile and ends the held turn with it, so the user need not wait them out.
+  const backgroundRunning = useMemo(
+    () =>
+      [...liveState.toolCallMap.values()].some(
+        (tc) => tc.meta?.background && tc.status === "in_progress",
+      ),
+    [liveState.toolCallMap],
+  );
 
   // Mirrored from an effect rather than assigned during render — `usePermissionHandlers`
   // reads it only from the respond/submit callbacks, which run after commit.
@@ -418,8 +428,11 @@ export function AgentActivityPanel({
     onCenteredTransition: () => setHasSentFirstMessage(true),
     pendingSendRef,
     isTurnActiveRef,
+    canQueue: backgroundRunning,
     pendingCanvasAwaitsRef,
   });
+
+  const handleStopSubagent = useCallback((prompt: string) => void handleSend(prompt), [handleSend]);
 
   // The Overview's "asks the agent" actions write into the composer instead of prompting, so the
   // user reads and sends what was suggested. Withheld once the session has ended: there would be
@@ -754,6 +767,7 @@ export function AgentActivityPanel({
     onSend: handleSendWithTransition as (content: string, contentBlocks?: JsonValue) => void,
     onCancel: handleCancel,
     isProcessing: isProcessing && pendingCanvasAwaits.length === 0,
+    canQueue: backgroundRunning,
     commands: availableCommands,
     embeddedContext: promptCapabilities?.embedded_context ?? false,
     sessionId: sessionId,
@@ -840,69 +854,70 @@ export function AgentActivityPanel({
   );
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
-      <CanvasImportDialog request={canvasImport.request} onChoice={canvasImport.resolve} />
-      {selectedProject && (
-        <CreateTaskModal
-          isOpen={!!taskDraft}
-          onClose={() => setTaskDraft(null)}
-          projectId={selectedProject.id}
-          initial={taskDraft ?? undefined}
-          onCreated={(task) => {
-            toast.success(`Task created: ${task.title}`, {
-              action: {
-                label: "Open",
-                onClick: () => {
-                  useNavigationStore.getState().setActiveTab("kanban");
-                  useNavigationStore.getState().setActiveTaskId(task.id);
+    <StopSubagentContext.Provider value={isSessionDead ? undefined : handleStopSubagent}>
+      <div className="flex-1 flex flex-col min-h-0">
+        <CanvasImportDialog request={canvasImport.request} onChoice={canvasImport.resolve} />
+        {selectedProject && (
+          <CreateTaskModal
+            isOpen={!!taskDraft}
+            onClose={() => setTaskDraft(null)}
+            projectId={selectedProject.id}
+            initial={taskDraft ?? undefined}
+            onCreated={(task) => {
+              toast.success(`Task created: ${task.title}`, {
+                action: {
+                  label: "Open",
+                  onClick: () => {
+                    useNavigationStore.getState().setActiveTab("kanban");
+                    useNavigationStore.getState().setActiveTaskId(task.id);
+                  },
                 },
-              },
-            });
-          }}
-        />
-      )}
-      {agentId && (
-        <AgentAuthModal
-          agentId={agentId}
-          agentName={agentId}
-          connection={connection}
-          authKey={effectiveAuthKey}
-          sessionId={sessionId}
-          terminalState={authRequiredTasks[effectiveAuthKey]?.terminalState ?? "idle"}
-          open={isAuthModalOpen}
-          onAuthSuccess={() => {
-            setIsAuthModalOpen(false);
-            setHasPreSpawnAuthError(false);
-            clearAuthRequired(effectiveAuthKey);
-            if (lastUserMessage) {
-              void handleSend(lastUserMessage.content);
-            } else if (taskId === null) {
-              setPendingSessionRetry({ sessionId, lastPrompt: null });
-            }
-          }}
-          onRetry={() => {
-            const entry = authRequiredTasks[effectiveAuthKey];
-            if (entry?.terminalId) void commands.acpAbortAuthTerminal(connection);
-            setAuthTerminalIdle(effectiveAuthKey);
-          }}
-          onClose={() => setIsAuthModalOpen(false)}
-        />
-      )}
-      <ResizablePanelGroup
-        orientation="horizontal"
-        elementRef={groupElementRef}
-        disabled={maximized}
-        className="relative flex-1 min-h-0 overflow-hidden"
-      >
-        <ResizablePanel minSize="42rem" className="flex flex-col min-h-0 overflow-hidden bg-card">
-          <div className="flex flex-col flex-1 min-h-0">
-            <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border bg-background overflow-hidden">
-              {headerSlot}
-              {streamContent}
+              });
+            }}
+          />
+        )}
+        {agentId && (
+          <AgentAuthModal
+            agentId={agentId}
+            agentName={agentId}
+            connection={connection}
+            authKey={effectiveAuthKey}
+            sessionId={sessionId}
+            terminalState={authRequiredTasks[effectiveAuthKey]?.terminalState ?? "idle"}
+            open={isAuthModalOpen}
+            onAuthSuccess={() => {
+              setIsAuthModalOpen(false);
+              setHasPreSpawnAuthError(false);
+              clearAuthRequired(effectiveAuthKey);
+              if (lastUserMessage) {
+                void handleSend(lastUserMessage.content);
+              } else if (taskId === null) {
+                setPendingSessionRetry({ sessionId, lastPrompt: null });
+              }
+            }}
+            onRetry={() => {
+              const entry = authRequiredTasks[effectiveAuthKey];
+              if (entry?.terminalId) void commands.acpAbortAuthTerminal(connection);
+              setAuthTerminalIdle(effectiveAuthKey);
+            }}
+            onClose={() => setIsAuthModalOpen(false)}
+          />
+        )}
+        <ResizablePanelGroup
+          orientation="horizontal"
+          elementRef={groupElementRef}
+          disabled={maximized}
+          className="relative flex-1 min-h-0 overflow-hidden"
+        >
+          <ResizablePanel minSize="42rem" className="flex flex-col min-h-0 overflow-hidden bg-card">
+            <div className="flex flex-col flex-1 min-h-0">
+              <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border bg-background overflow-hidden">
+                {headerSlot}
+                {streamContent}
+              </div>
             </div>
-          </div>
-        </ResizablePanel>
-        {/*
+          </ResizablePanel>
+          {/*
           Draggable but not drawn. It takes the panels' own background rather than
           `bg-transparent`, which would leave a 1px slot showing the view behind the
           group — a thin dark line, and a hook where the stream card's rounded corner
@@ -911,65 +926,66 @@ export function AgentActivityPanel({
           target, since the library falls back to the panel edge when a separator is
           missing.
         */}
-        <ResizableHandle
-          disabled={sidePanelCollapsed || maximized}
-          className={cn("bg-card hover:bg-card", (sidePanelCollapsed || maximized) && "hidden")}
-        />
-        <ResizablePanel
-          elementRef={sidePanelElementRef}
-          panelRef={sidePanelRef}
-          defaultSize={"40%"}
-          minSize={"22rem"}
-          collapsible
-          collapsedSize={"2.75rem"}
-          onResize={syncCollapsedFromPanel}
-          className={cn(
-            "flex flex-col min-h-0 overflow-hidden",
-            // Maximized floats the panel over the group; the group keeps the dragged
-            // layout underneath for when the panel comes back.
-            maximized && "absolute inset-0 z-20",
-          )}
-        >
-          <ExecutionSidePanel
-            fill
-            sessionId={sessionId}
-            tabs={tabs}
-            activeTabId={activeTabId}
-            onTabChange={setActiveTabId}
-            onTabClose={closeTab}
-            onAddTab={addDynamicTab}
-            onOpenTabKind={openTabKind}
-            onOpenFile={handleOpenFile}
-            workingFiles={localWorkingFiles}
-            taskId={taskId}
-            workspacePath={workspacePath}
-            connection={connection}
-            canvasMap={liveState.canvasMap}
-            latestCanvasSurfaceId={latestCanvasSurfaceId}
-            pendingCanvasAwaits={pendingCanvasAwaits}
-            onCanvasEvent={handleCanvasEvent}
-            onCloseCanvas={(surfaceId) => liveDispatch({ type: "close_canvas", surfaceId })}
-            onImportCanvas={canvasImport.importFile}
-            subagentItems={subagentItems}
-            toolCallMap={liveState.toolCallMap}
-            sidePanelPlan={sidePanelPlan}
-            planEntries={liveState.plan}
-            planTitle={liveState.planTitle}
-            collapsed={sidePanelCollapsed}
-            onCollapsedChange={(v) => setSidePanelCollapsed(v)}
-            unseenTabIds={unseenTabIds}
-            maximized={maximized}
-            onMaximizedChange={handleMaximizedChange}
-            onSpawnShell={onSpawnShell}
-            isSessionActive={isSessionActive}
-            terminalBuffers={liveState.terminalBuffers}
-            onSendAnnotations={handleSendAnnotations}
-            isProcessing={isProcessing}
-            canSendImages={promptCapabilities?.image ?? false}
-            onSeedPrompt={isSessionDead ? undefined : handleSeedPrompt}
+          <ResizableHandle
+            disabled={sidePanelCollapsed || maximized}
+            className={cn("bg-card hover:bg-card", (sidePanelCollapsed || maximized) && "hidden")}
           />
-        </ResizablePanel>
-      </ResizablePanelGroup>
-    </div>
+          <ResizablePanel
+            elementRef={sidePanelElementRef}
+            panelRef={sidePanelRef}
+            defaultSize={"40%"}
+            minSize={"22rem"}
+            collapsible
+            collapsedSize={"2.75rem"}
+            onResize={syncCollapsedFromPanel}
+            className={cn(
+              "flex flex-col min-h-0 overflow-hidden",
+              // Maximized floats the panel over the group; the group keeps the dragged
+              // layout underneath for when the panel comes back.
+              maximized && "absolute inset-0 z-20",
+            )}
+          >
+            <ExecutionSidePanel
+              fill
+              sessionId={sessionId}
+              tabs={tabs}
+              activeTabId={activeTabId}
+              onTabChange={setActiveTabId}
+              onTabClose={closeTab}
+              onAddTab={addDynamicTab}
+              onOpenTabKind={openTabKind}
+              onOpenFile={handleOpenFile}
+              workingFiles={localWorkingFiles}
+              taskId={taskId}
+              workspacePath={workspacePath}
+              connection={connection}
+              canvasMap={liveState.canvasMap}
+              latestCanvasSurfaceId={latestCanvasSurfaceId}
+              pendingCanvasAwaits={pendingCanvasAwaits}
+              onCanvasEvent={handleCanvasEvent}
+              onCloseCanvas={(surfaceId) => liveDispatch({ type: "close_canvas", surfaceId })}
+              onImportCanvas={canvasImport.importFile}
+              subagentItems={subagentItems}
+              toolCallMap={liveState.toolCallMap}
+              sidePanelPlan={sidePanelPlan}
+              planEntries={liveState.plan}
+              planTitle={liveState.planTitle}
+              collapsed={sidePanelCollapsed}
+              onCollapsedChange={(v) => setSidePanelCollapsed(v)}
+              unseenTabIds={unseenTabIds}
+              maximized={maximized}
+              onMaximizedChange={handleMaximizedChange}
+              onSpawnShell={onSpawnShell}
+              isSessionActive={isSessionActive}
+              terminalBuffers={liveState.terminalBuffers}
+              onSendAnnotations={handleSendAnnotations}
+              isProcessing={isProcessing}
+              canSendImages={promptCapabilities?.image ?? false}
+              onSeedPrompt={isSessionDead ? undefined : handleSeedPrompt}
+            />
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      </div>
+    </StopSubagentContext.Provider>
   );
 }

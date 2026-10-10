@@ -417,6 +417,10 @@ pub async fn attach_project_sessions(
             Ok(mut initialized) => *initialized = true,
             Err(e) => log::warn!("session {} lock poisoned: {e}", live.session_id),
         }
+        // Its `TurnStarted`, if it is mid-turn, went to whichever client was attached then.
+        acp_process
+            .turn_active
+            .store(live.turn_active, std::sync::atomic::Ordering::Release);
         app_state
             .acp
             .sessions
