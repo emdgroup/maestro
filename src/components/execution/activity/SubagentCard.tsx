@@ -118,7 +118,7 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
   return (
     <div
       className={cn(
-        "rounded-[10px] overflow-hidden",
+        "group/card rounded-[10px] overflow-hidden",
         "border border-accent/30 bg-gradient-to-br from-accent/10 to-transparent",
         "shadow-[0_2px_8px_oklch(0%_0_0/0.08)]",
       )}
@@ -177,13 +177,14 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
               pillClass,
               // Both labels share one cell, so the pill keeps its width when it turns into Stop.
               "group/pill relative grid bg-accent/15 text-accent transition-colors",
-              "hover:bg-destructive/15 hover:text-destructive focus-visible:bg-destructive/15 focus-visible:text-destructive",
+              // Hovering anywhere on the card offers the stop; hovering the pill itself is the one that takes it.
+              "group-hover/card:bg-destructive/10 group-hover/card:text-destructive hover:bg-destructive/20 focus-visible:bg-destructive/15 focus-visible:text-destructive",
             )}
           >
-            <span className="col-start-1 row-start-1 group-hover/pill:invisible group-focus-visible/pill:invisible">
+            <span className="col-start-1 row-start-1 group-hover/card:invisible group-focus-visible/pill:invisible">
               Running
             </span>
-            <span className="invisible col-start-1 row-start-1 inline-flex items-center justify-center gap-1 group-hover/pill:visible group-focus-visible/pill:visible">
+            <span className="invisible col-start-1 row-start-1 inline-flex items-center justify-center gap-1 group-hover/card:visible group-focus-visible/pill:visible">
               <Square className="size-2 fill-current" />
               Stop
             </span>
