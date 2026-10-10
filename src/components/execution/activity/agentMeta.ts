@@ -32,6 +32,11 @@ export type AgentMeta = {
   errorText?: string;
   /** Refused by policy rather than crashed — a different thing to tell the user. */
   blocked?: boolean;
+  /**
+   * A subagent launched in the background: its tool call completes at launch and the subagent
+   * runs on until it hands its report back. Live only, as no replay carries the tool response.
+   */
+  background?: boolean;
   linesAdded?: number;
   linesRemoved?: number;
   fileTotalLines?: number;
@@ -113,6 +118,7 @@ function extractClaudeCodeMeta(raw: Record<string, unknown>): AgentMeta {
   // A refusal reaches us two ways — the marker above, or a reason with no marker.
   if (str(tr.decisionReason)) result.blocked = true;
 
+  if (tr.isAsync === true) result.background = true;
   result.totalDurationMs = num(tr.totalDurationMs);
   result.totalTokens = num(tr.totalTokens);
   result.totalToolUseCount = num(tr.totalToolUseCount);

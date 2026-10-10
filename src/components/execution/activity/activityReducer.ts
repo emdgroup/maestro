@@ -79,7 +79,7 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
     }
     case "turn_ended": {
       const flushed = flushOrphans(state);
-      const interrupted = interruptStalledToolCalls(flushed);
+      const interrupted = interruptStalledToolCalls(flushed, true);
       return {
         ...interrupted,
         items: finalizeStreaming(interrupted.items),
@@ -149,9 +149,14 @@ function continuesMessage(existing: string | undefined, incoming: string | undef
   return existing === undefined || incoming === undefined || existing === incoming;
 }
 
-function interruptStalledToolCalls(state: ActivityState): ActivityState {
+/**
+ * `keepBackground` spares background subagents and their tool calls: they outlive the turn that
+ * launched them, and the agent keeps reporting them after it ends.
+ */
+function interruptStalledToolCalls(state: ActivityState, keepBackground = false): ActivityState {
   const stalledIds = new Set<string>();
   for (const [id, tc] of state.toolCallMap) {
+    if (keepBackground && isBackground(state.toolCallMap, tc)) continue;
     if (tc.status === "in_progress" || tc.status === "pending") {
       stalledIds.add(id);
     }
@@ -170,6 +175,17 @@ function interruptStalledToolCalls(state: ActivityState): ActivityState {
   });
   return { ...state, items, toolCallMap: newMap };
 }
+
+function isBackground(map: Map<string, ToolCallItem>, tc: ToolCallItem): boolean {
+  if (tc.meta?.background) return true;
+  return !!tc.parentToolCallId && !!map.get(tc.parentToolCallId)?.meta?.background;
+}
+
+/**
+ * The tool a background subagent ends with: its input is the report it hands back to the main
+ * agent. It is the subagent's output, not one of its tool calls.
+ */
+const HANDBACK_TOOL = "SubagentHandback";
 
 function flushOrphans(state: ActivityState): ActivityState {
   if (state.pendingOrphans.size === 0) return state;
@@ -358,6 +374,9 @@ function processEvent(
 
       if (parentToolCallId) {
         const parent = newMap.get(parentToolCallId);
+        if (parent && meta.toolName === HANDBACK_TOOL) {
+          return { ...newState, items, toolCallMap: newMap };
+        }
         if (parent) {
           const updatedParent = {
             ...parent,
@@ -423,6 +442,16 @@ function processEvent(
         if (payload.rawInput) updated.rawInput = payload.rawInput;
         // This frame's view of the call wins; earlier frames fill what it omitted.
         updated.meta = mergeAgentMeta(extractAgentMeta(raw), existing.meta ?? {});
+        // The launch of a background subagent completes at once, with a receipt meant for the
+        // model as its content. The subagent is still running, and has said nothing yet.
+        if (
+          updated.meta.background &&
+          updated.status === "completed" &&
+          existing.status !== "completed"
+        ) {
+          updated.status = "in_progress";
+          updated.content = existing.content;
+        }
         newMap.set(payload.toolCallId, updated);
         const extractedTitle = extractPlanTitle(payload);
 
@@ -430,7 +459,27 @@ function processEvent(
           // Refresh parent reference in items to trigger re-render of SubagentCard
           const parent = newMap.get(existing.parentToolCallId);
           if (parent) {
-            const refreshedParent = { ...parent };
+            let refreshedParent = { ...parent };
+            // Handing the report back is how a background subagent ends.
+            // ponytail: one that fails without handing back stays running until the session ends.
+            if (
+              updated.meta.toolName === HANDBACK_TOOL &&
+              updated.status === "completed" &&
+              parent.meta?.background
+            ) {
+              const report = updated.rawInput?.message;
+              refreshedParent = {
+                ...parent,
+                status: "completed",
+                content:
+                  typeof report === "string" && report
+                    ? [
+                        ...parent.content,
+                        { type: "content", content: { type: "text", text: report } },
+                      ]
+                    : parent.content,
+              };
+            }
             newMap.set(existing.parentToolCallId, refreshedParent);
             const updatedItems = items.map((i) =>
               i.type === "toolCall" && i.item.toolCallId === existing.parentToolCallId

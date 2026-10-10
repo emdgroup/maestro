@@ -1031,3 +1031,125 @@ describe("activityReducer — notices", () => {
     expect(activityReducer(state, notice(""))).toBe(state);
   });
 });
+
+describe("activityReducer — background subagents", () => {
+  const PROMPT = "Run `sleep 6` with Bash, then reply with its output.";
+  const agentMeta = (extra: Record<string, unknown> = {}) => ({
+    _meta: { claudeCode: { toolName: "Agent", ...extra } },
+  });
+  const childMeta = (toolName: string) => ({
+    _meta: { claudeCode: { toolName, parentToolUseId: "agent" } },
+  });
+
+  /** The frames claude-agent-acp 0.86 sends for an Agent call with `run_in_background`. */
+  function launched(): ActivityState {
+    let state = makeState({ isTurnActive: true });
+    for (const [payload, raw] of [
+      [
+        { sessionUpdate: "tool_call", toolCallId: "agent", title: "Task", kind: "think" },
+        agentMeta(),
+      ],
+      [
+        {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "agent",
+          rawInput: { run_in_background: true, description: "Probe worker", prompt: PROMPT },
+          content: [{ type: "content", content: { type: "text", text: PROMPT } }],
+        },
+        agentMeta(),
+      ],
+      [
+        { sessionUpdate: "tool_call_update", toolCallId: "agent" },
+        agentMeta({ toolResponse: { isAsync: true, status: "async_launched" } }),
+      ],
+      [
+        {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "agent",
+          status: "completed",
+          content: [{ type: "content", content: { type: "text", text: "Async agent launched" } }],
+        },
+        agentMeta(),
+      ],
+      [
+        { sessionUpdate: "tool_call", toolCallId: "bash", title: "sleep 6", kind: "execute" },
+        childMeta("Bash"),
+      ],
+    ] as const) {
+      state = activityReducer(state, event(payload as SessionUpdatePayload, raw));
+    }
+    return state;
+  }
+
+  function handBack(state: ActivityState): ActivityState {
+    state = activityReducer(
+      state,
+      event(
+        {
+          sessionUpdate: "tool_call",
+          toolCallId: "handback",
+          title: "SubagentHandback",
+          kind: "other",
+          rawInput: { message: "It printed probe-ok." },
+        } as SessionUpdatePayload,
+        childMeta("SubagentHandback"),
+      ),
+    );
+    return activityReducer(
+      state,
+      event(
+        { sessionUpdate: "tool_call_update", toolCallId: "handback", status: "completed" },
+        childMeta("SubagentHandback"),
+      ),
+    );
+  }
+
+  it("keeps running past its launch, without the launch receipt as output", () => {
+    const agent = launched().toolCallMap.get("agent")!;
+    expect(agent.status).toBe("in_progress");
+    expect(agent.childToolCallIds).toEqual(["bash"]);
+    expect(JSON.stringify(agent.content)).not.toContain("Async agent launched");
+  });
+
+  it("survives the end of the turn that launched it", () => {
+    const state = activityReducer(launched(), { type: "turn_ended" });
+    expect(state.toolCallMap.get("agent")?.status).toBe("in_progress");
+    expect(state.toolCallMap.get("bash")?.status).toBe("pending");
+  });
+
+  it("ends when it hands its report back, which becomes its output", () => {
+    const state = handBack(launched());
+    const agent = state.toolCallMap.get("agent")!;
+    expect(agent.status).toBe("completed");
+    expect(agent.childToolCallIds).toEqual(["bash"]);
+    expect(agent.content[agent.content.length - 1]).toEqual({
+      type: "content",
+      content: { type: "text", text: "It printed probe-ok." },
+    });
+    expect(toolCallItems(state)[0].item).toBe(agent);
+  });
+
+  it("is interrupted when the session ends before it hands back", () => {
+    const state = activityReducer(launched(), { type: "session_ended" });
+    expect(state.toolCallMap.get("agent")?.status).toBe("interrupted");
+  });
+
+  it("leaves a foreground subagent finishing at its own completion", () => {
+    let state = makeState();
+    state = activityReducer(
+      state,
+      event(
+        { sessionUpdate: "tool_call", toolCallId: "agent", title: "Task", kind: "think" },
+        agentMeta(),
+      ),
+    );
+    state = activityReducer(
+      state,
+      event(
+        { sessionUpdate: "tool_call_update", toolCallId: "agent", status: "completed" },
+        agentMeta(),
+      ),
+    );
+    expect(state.toolCallMap.get("agent")?.status).toBe("completed");
+  });
+});
