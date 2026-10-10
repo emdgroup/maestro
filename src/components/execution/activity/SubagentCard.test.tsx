@@ -33,25 +33,26 @@ describe("SubagentCard", () => {
   it("asks the main agent to stop a running background subagent, naming it by id", () => {
     const stop = vi.fn();
     renderCard(subagent(), stop);
-    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    fireEvent.click(screen.getByRole("button", { name: "Stop Worker B" }));
     expect(stop).toHaveBeenCalledWith(
       "Stop the background subagent 'Worker B' (task id ad28291f) now. Leave any other subagents running.",
     );
-    expect(screen.getByRole("button", { name: "Stopping…" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Stop Worker B" })).toBeNull();
+    expect(screen.getByText("Stopping…")).toBeInTheDocument();
   });
 
   it("offers no stop for a foreground subagent, a finished one, or outside a live session", () => {
     const stop = vi.fn();
     const { rerender } = renderCard(subagent({ meta: {} }), stop);
-    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Stop Worker B" })).toBeNull();
     rerender(
       <StopSubagentContext.Provider value={stop}>
         <SubagentCard item={subagent({ status: "completed" })} toolCallMap={new Map()} />
       </StopSubagentContext.Provider>,
     );
-    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Stop Worker B" })).toBeNull();
     rerender(<SubagentCard item={subagent()} toolCallMap={new Map()} />);
-    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Stop Worker B" })).toBeNull();
   });
 
   it("reads Stopped once a background subagent is interrupted", () => {

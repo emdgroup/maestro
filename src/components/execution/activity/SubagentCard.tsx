@@ -14,6 +14,9 @@ function stripUsage(text: string): string {
   return text.replace(/<usage>[\s\S]*?<\/usage>/g, "").trim();
 }
 
+const pillClass =
+  "text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 mt-0.5";
+
 interface SubagentCardProps {
   item: ToolCallItem;
   toolCallMap: Map<string, ToolCallItem>;
@@ -120,42 +123,75 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
         "shadow-[0_2px_8px_oklch(0%_0_0/0.08)]",
       )}
     >
-      <div className="flex items-start">
+      {/* The expand button covers the header, so the status pill can be a control of its own
+          on top of it without nesting one button in another. */}
+      <div className="relative flex items-start gap-2.5 px-3.5 py-2.5 hover:brightness-110 transition-[filter]">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="flex items-start gap-2.5 flex-1 min-w-0 px-3.5 py-2.5 text-left hover:brightness-110 transition-[filter]"
-        >
-          <div className="w-7 h-7 rounded-[7px] bg-accent/10 border border-accent/30 flex items-center justify-center shrink-0 mt-0.5">
-            <Bot className="w-3.5 h-3.5 text-accent" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span className="truncate text-xs font-medium text-foreground/85">{name}</span>
-              {item.meta?.model && (
-                <span className="shrink-0 rounded-full border border-accent/30 px-1.5 text-[9px] text-muted-foreground">
-                  {item.meta.model}
-                </span>
-              )}
-            </div>
-            <div className="mt-0.5 text-[10px] text-muted-foreground">
-              {isStreaming ? (
-                <TypingDots />
-              ) : isInterrupted ? (
-                <span className="text-warning/70">
-                  {isBackground ? "Stopped" : "Session interrupted"}
-                </span>
-              ) : (
-                usage
-              )}
-            </div>
-            {!isStreaming && toolBreakdown && (
-              <div className="text-[10px] text-muted-foreground/70">{toolBreakdown}</div>
+          aria-expanded={expanded}
+          aria-label={name}
+          className="absolute inset-0"
+        />
+        <div className="w-7 h-7 rounded-[7px] bg-accent/10 border border-accent/30 flex items-center justify-center shrink-0 mt-0.5">
+          <Bot className="w-3.5 h-3.5 text-accent" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-xs font-medium text-foreground/85">{name}</span>
+            {item.meta?.model && (
+              <span className="shrink-0 rounded-full border border-accent/30 px-1.5 text-[9px] text-muted-foreground">
+                {item.meta.model}
+              </span>
             )}
           </div>
+          <div className="mt-0.5 text-[10px] text-muted-foreground">
+            {isStreaming ? (
+              stopAsked ? (
+                "Stopping…"
+              ) : (
+                <TypingDots />
+              )
+            ) : isInterrupted ? (
+              <span className="text-warning/70">
+                {isBackground ? "Stopped" : "Session interrupted"}
+              </span>
+            ) : (
+              usage
+            )}
+          </div>
+          {!isStreaming && toolBreakdown && (
+            <div className="text-[10px] text-muted-foreground/70">{toolBreakdown}</div>
+          )}
+        </div>
+        {canStop && !stopAsked ? (
+          <button
+            type="button"
+            title="Stop this subagent"
+            aria-label={`Stop ${name}`}
+            onClick={() => {
+              setStopAsked(true);
+              stopSubagent(stopSubagentPrompt(item));
+            }}
+            className={cn(
+              pillClass,
+              // Both labels share one cell, so the pill keeps its width when it turns into Stop.
+              "group/pill relative grid bg-accent/15 text-accent transition-colors",
+              "hover:bg-destructive/15 hover:text-destructive focus-visible:bg-destructive/15 focus-visible:text-destructive",
+            )}
+          >
+            <span className="col-start-1 row-start-1 group-hover/pill:invisible group-focus-visible/pill:invisible">
+              Running
+            </span>
+            <span className="invisible col-start-1 row-start-1 inline-flex items-center justify-center gap-1 group-hover/pill:visible group-focus-visible/pill:visible">
+              <Square className="size-2 fill-current" />
+              Stop
+            </span>
+          </button>
+        ) : (
           <span
             className={cn(
-              "text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 mt-0.5",
+              pillClass,
               isStreaming && "bg-accent/15 text-accent",
               isInterrupted && "bg-warning/15 text-warning",
               item.status === "completed" && "bg-success/15 text-success",
@@ -172,27 +208,13 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
                   ? "Done"
                   : "Failed"}
           </span>
-          <ChevronRight
-            className={cn(
-              "w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5 opacity-50 transition-transform duration-150",
-              expanded && "rotate-90",
-            )}
-          />
-        </button>
-        {canStop && (
-          <button
-            type="button"
-            disabled={stopAsked}
-            onClick={() => {
-              setStopAsked(true);
-              stopSubagent(stopSubagentPrompt(item));
-            }}
-            className="mt-2.5 mr-3 flex shrink-0 items-center gap-1 rounded border border-destructive/30 px-1.5 py-0.5 text-[10px] text-destructive/80 transition-colors hover:bg-destructive/10 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
-          >
-            <Square className="size-2.5" />
-            {stopAsked ? "Stopping…" : "Stop"}
-          </button>
         )}
+        <ChevronRight
+          className={cn(
+            "w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5 opacity-50 transition-transform duration-150",
+            expanded && "rotate-90",
+          )}
+        />
       </div>
 
       {expanded && (
