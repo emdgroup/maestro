@@ -464,6 +464,22 @@ expression beside `webhook_enabled`, and the editor offers None, Schedule or Web
 choice. `enabled` is the row switch and pauses whichever it is, so the editor never writes it; with
 None there is nothing to pause, and the switch stays off.
 
+## Usage is recorded per turn
+
+`usage_store.rs` writes one `usage_turns` row per prompt turn into `projects.db`, with the models
+the agent says it used in `usage_turn_models`. The row is written where the main loop receives a
+`TurnEnd`, so automation and task turns are recorded with no app attached. Tokens are
+`PromptResponse.usage` as the agent sent it, which every agent checked reports per turn. Cost is
+different: `usage_update.cost` is a running total, so a turn records what it added since the last
+turn ended. A loaded session's first turn records no cost, because Claude never reports its cost on
+a load and its first total may include what was spent before it. The model is the one selected in
+the session, followed through `config_option_update`, `SetModel` and `SetConfigOption`.
+
+Rows carry the session's identity instead of referencing `sessions`, which drops closed rows after
+90 days. Turns older than 90 days are merged into `usage_hourly` and `usage_hourly_models`, keyed
+by UTC hour, then deleted. The merge runs from `record` at most once a day, not at startup, because
+a daemon on a server may never restart.
+
 ## The Maestro MCP server
 
 Agents get a channel back into Maestro that returns a value: `maestro-server` registers **itself**

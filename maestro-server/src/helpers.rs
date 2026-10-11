@@ -29,11 +29,10 @@ pub(crate) struct TurnEnd {
     /// end, so the per-session state never outlives a turn.
     pub facts: crate::turn::TurnFacts,
     /// Token counts the agent reported for the turn, if it reported any.
-    // ponytail: no reader until the usage recorder lands.
-    #[allow(dead_code)]
     pub usage: Option<maestro_protocol::TurnUsage>,
-    #[allow(dead_code)]
     pub model_usage: Option<serde_json::Value>,
+    /// The model, timing and cost the daemon followed through the turn, for its usage row.
+    pub meter: crate::usage_store::TurnMeter,
 }
 
 pub(crate) type TurnSender = tokio::sync::mpsc::UnboundedSender<TurnEnd>;
@@ -103,6 +102,7 @@ fn take_final_message(session_id: &str) -> Option<String> {
 pub(crate) fn forget_session(session_id: &str) {
     let _ = take_final_message(session_id);
     let _ = crate::turn::take_turn_facts(session_id);
+    crate::usage_store::forget(session_id);
 }
 
 /// Note that a turn has ended. No-op until the main loop is running.
@@ -122,6 +122,7 @@ pub(crate) fn note_turn_ended(
             facts,
             usage,
             model_usage,
+            meter: crate::usage_store::take_turn(session_id),
         }) {
             send_diag("warn", format!("[prompt] turn end went unheard: {e}"));
         }

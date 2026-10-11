@@ -89,6 +89,7 @@ fn turn_usage(resp: &PromptResponse) -> (Option<TurnUsage>, Option<serde_json::V
 
 /// Sent ahead of the prompt, so it reaches the host before anything the agent says in answer.
 async fn announce_turn(stdout: &crate::ClientOut, session_id: &str) {
+    crate::usage_store::note_turn_started(session_id);
     let msg = ServerResponse::TurnStarted(TurnStarted {
         session_id: session_id.to_string(),
     });
@@ -392,6 +393,7 @@ pub(crate) async fn run_command_loop(
                     .await;
                 let msg = match result {
                     Ok(response) => {
+                        crate::usage_store::note_model(&maestro_sid, &model_id);
                         ServerResponse::ConfigOptionUpdated(ConfigOptionUpdatedResponse {
                             session_id: maestro_sid.clone(),
                             config_id: "model".to_string(),
@@ -461,6 +463,9 @@ pub(crate) async fn run_command_loop(
                     .await;
                 let msg = match result {
                     Ok(response) => {
+                        if config_id == "model" {
+                            crate::usage_store::note_model(&maestro_sid, &value);
+                        }
                         ServerResponse::ConfigOptionUpdated(ConfigOptionUpdatedResponse {
                             session_id: maestro_sid.clone(),
                             config_id,
