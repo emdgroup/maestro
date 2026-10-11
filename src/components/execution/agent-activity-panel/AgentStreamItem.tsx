@@ -5,6 +5,7 @@ import { PlanReviewCard } from "../activity/PlanReviewCard";
 import { SubagentCard } from "../activity/SubagentCard";
 import { PermissionResponseCard } from "../activity/PermissionResponseCard";
 import { ActivityElicitationCard } from "../activity/ActivityElicitationCard";
+import { ActivityNotice } from "../activity/ActivityNotice";
 import { isSubagentToolCall } from "../activity/utils";
 import type { GroupedDisplayItem } from "../activity/utils";
 import type { ToolCallItem } from "../activity/types";
@@ -65,6 +66,9 @@ export function AgentStreamItem({
   }
   if (item.type === "canvas") {
     return null;
+  }
+  if (item.type === "notice") {
+    return <ActivityNotice key={item.item.id} notice={item.item} />;
   }
   if (item.type === "error") {
     const isAuth = item.item.stopReason === "auth_required";

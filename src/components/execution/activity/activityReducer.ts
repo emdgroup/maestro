@@ -7,15 +7,20 @@ import type {
   ThinkingItem,
   UserMessageItem,
   CanvasSurface,
+  CompactionSummaryBlock,
   ErrorItem,
+  NoticeItem,
 } from "./types";
-import { extractAgentMeta, mergeAgentMeta } from "./agentMeta";
+import { extractAgentMeta, mergeAgentMeta, type CompactionFacts } from "./agentMeta";
 import { isMaestroHostTool } from "./utils";
+import { limitReachedNotice, parsePlanLimits } from "./planLimits";
 
 export type ActivityAction =
   | { type: "event"; payload: SessionUpdatePayload; raw: Record<string, unknown> }
   | { type: "session_ended" }
-  | { type: "turn_ended" }
+  /** `stopReason` as the agent answered the prompt; absent when no prompt ended. */
+  | { type: "turn_started" }
+  | { type: "turn_ended"; stopReason?: string }
   | { type: "finalize_streaming" }
   | { type: "set_initialized" }
   | { type: "append_error"; stopReason: "error" | "auth_required"; message: string }
@@ -62,8 +67,12 @@ function trimCatchUpBuffer(buffer: string): string {
  */
 export function activityReducer(state: ActivityState, action: ActivityAction): ActivityState {
   switch (action.type) {
-    case "event":
-      return processEvent(state, action.payload, action.raw);
+    case "event": {
+      const next = processEvent(state, action.payload, action.raw);
+      return action.payload.sessionUpdate === "tool_call_update"
+        ? settleStoppedSubagent(next, action.payload.toolCallId)
+        : next;
+    }
     case "session_ended": {
       const flushed = flushOrphans(state);
       const interrupted = interruptStalledToolCalls(flushed);
@@ -75,9 +84,12 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
         endReason: "completed",
       };
     }
+    case "turn_started":
+      return state.isTurnActive ? state : { ...state, isTurnActive: true };
     case "turn_ended": {
       const flushed = flushOrphans(state);
-      const interrupted = interruptStalledToolCalls(flushed);
+      // A stop takes the background subagents with it, and the agent reports none of them after.
+      const interrupted = interruptStalledToolCalls(flushed, action.stopReason !== "cancelled");
       return {
         ...interrupted,
         items: finalizeStreaming(interrupted.items),
@@ -147,9 +159,14 @@ function continuesMessage(existing: string | undefined, incoming: string | undef
   return existing === undefined || incoming === undefined || existing === incoming;
 }
 
-function interruptStalledToolCalls(state: ActivityState): ActivityState {
+/**
+ * `keepBackground` spares background subagents and their tool calls: they outlive the turn that
+ * launched them, and the agent keeps reporting them after it ends.
+ */
+function interruptStalledToolCalls(state: ActivityState, keepBackground = false): ActivityState {
   const stalledIds = new Set<string>();
   for (const [id, tc] of state.toolCallMap) {
+    if (keepBackground && isBackground(state.toolCallMap, tc)) continue;
     if (tc.status === "in_progress" || tc.status === "pending") {
       stalledIds.add(id);
     }
@@ -169,6 +186,45 @@ function interruptStalledToolCalls(state: ActivityState): ActivityState {
   return { ...state, items, toolCallMap: newMap };
 }
 
+function isBackground(map: Map<string, ToolCallItem>, tc: ToolCallItem): boolean {
+  if (tc.meta?.background) return true;
+  return !!tc.parentToolCallId && !!map.get(tc.parentToolCallId)?.meta?.background;
+}
+
+/**
+ * The tool a background subagent ends with: its input is the report it hands back to the main
+ * agent. It is the subagent's output, not one of its tool calls.
+ */
+const HANDBACK_TOOL = "SubagentHandback";
+
+/**
+ * A background subagent stopped by `TaskStop` never hands back, and the agent reports nothing
+ * more of it. The stop names it by the `agentId` its launch was given.
+ */
+function settleStoppedSubagent(state: ActivityState, toolCallId: string): ActivityState {
+  const stop = state.toolCallMap.get(toolCallId);
+  const taskId = stop?.meta?.taskId;
+  if (stop?.meta?.toolName !== "TaskStop" || stop.status !== "completed" || !taskId) return state;
+  const target = [...state.toolCallMap.values()].find(
+    (tc) => tc.meta?.background && tc.meta.agentId === taskId && tc.status === "in_progress",
+  );
+  if (!target) return state;
+  const stopped: ToolCallItem = { ...target, status: "interrupted" };
+  const toolCallMap = new Map(state.toolCallMap).set(target.toolCallId, stopped);
+  const at = state.items.findIndex(
+    (i) => i.type === "toolCall" && i.item.toolCallId === target.toolCallId,
+  );
+  const items =
+    at < 0
+      ? state.items
+      : [
+          ...state.items.slice(0, at),
+          { type: "toolCall" as const, item: stopped },
+          ...state.items.slice(at + 1),
+        ];
+  return { ...state, items, toolCallMap };
+}
+
 function flushOrphans(state: ActivityState): ActivityState {
   if (state.pendingOrphans.size === 0) return state;
   const newMap = new Map(state.toolCallMap);
@@ -186,31 +242,16 @@ function flushOrphans(state: ActivityState): ActivityState {
   return { ...state, items, toolCallMap: newMap, pendingOrphans: new Map() };
 }
 
-/**
- * Updates that mean the agent is mid-turn. Everything else — usage, available commands,
- * model/mode/config echoes — arrives *outside* a turn: agents emit them right after
- * `session/load` and after a turn ends. No `turn_ended` follows them, so arming
- * `isTurnActive` there leaves it stuck true for the rest of the session, which reads as
- * "thinking" and keeps the compose bar disabled.
- */
-const TURN_PROGRESS_UPDATES = new Set([
-  "agent_message_chunk",
-  "agent_thought_chunk",
-  "tool_call",
-  "tool_call_update",
-  "plan",
-  "user_message",
-  "user_message_chunk",
-]);
-
 function processEvent(
   state: ActivityState,
   payload: SessionUpdatePayload,
   raw: Record<string, unknown>,
 ): ActivityState {
-  const newState = TURN_PROGRESS_UPDATES.has(payload.sessionUpdate)
-    ? { ...state, isTurnActive: true }
-    : state;
+  // Copied, because the chunk cases assign to it; a case that changes nothing returns `state`.
+  // No update arms `isTurnActive`: a turn runs from the server's `turn_started` to its
+  // `turn_ended`, and an agent can talk with no prompt outstanding, as Claude does when a
+  // background subagent finishes. No `turn_ended` follows that.
+  const newState = { ...state };
 
   switch (payload.sessionUpdate) {
     case "agent_thought_chunk": {
@@ -356,6 +397,9 @@ function processEvent(
 
       if (parentToolCallId) {
         const parent = newMap.get(parentToolCallId);
+        if (parent && meta.toolName === HANDBACK_TOOL) {
+          return { ...newState, items, toolCallMap: newMap };
+        }
         if (parent) {
           const updatedParent = {
             ...parent,
@@ -421,6 +465,16 @@ function processEvent(
         if (payload.rawInput) updated.rawInput = payload.rawInput;
         // This frame's view of the call wins; earlier frames fill what it omitted.
         updated.meta = mergeAgentMeta(extractAgentMeta(raw), existing.meta ?? {});
+        // The launch of a background subagent completes at once, with a receipt meant for the
+        // model as its content. The subagent is still running, and has said nothing yet.
+        if (
+          updated.meta.background &&
+          updated.status === "completed" &&
+          existing.status !== "completed"
+        ) {
+          updated.status = "in_progress";
+          updated.content = existing.content;
+        }
         newMap.set(payload.toolCallId, updated);
         const extractedTitle = extractPlanTitle(payload);
 
@@ -428,7 +482,27 @@ function processEvent(
           // Refresh parent reference in items to trigger re-render of SubagentCard
           const parent = newMap.get(existing.parentToolCallId);
           if (parent) {
-            const refreshedParent = { ...parent };
+            let refreshedParent = { ...parent };
+            // Handing the report back is how a background subagent ends.
+            // ponytail: one that fails on its own stays running until the session ends or is stopped.
+            if (
+              updated.meta.toolName === HANDBACK_TOOL &&
+              updated.status === "completed" &&
+              parent.meta?.background
+            ) {
+              const report = updated.rawInput?.message;
+              refreshedParent = {
+                ...parent,
+                status: "completed",
+                content:
+                  typeof report === "string" && report
+                    ? [
+                        ...parent.content,
+                        { type: "content", content: { type: "text", text: report } },
+                      ]
+                    : parent.content,
+              };
+            }
             newMap.set(existing.parentToolCallId, refreshedParent);
             const updatedItems = items.map((i) =>
               i.type === "toolCall" && i.item.toolCallId === existing.parentToolCallId
@@ -488,7 +562,7 @@ function processEvent(
       // Suppress agent echo during live sessions — user_message already captured it.
       // Only process during resume/replay where no user_message fires.
       if (state.suppressUserChunks) {
-        return newState;
+        return state;
       }
       const items = finalizeStreaming(newState.items);
       const lastItem = items[items.length - 1];
@@ -573,9 +647,181 @@ function processEvent(
       return { ...newState, canvasMap: newCanvasMap };
     }
 
+    case "compaction_update":
+      return upsertCompaction(newState, payload.compactionId, (tc) => {
+        const updated = { ...tc, status: compactionStatus(payload.status) ?? tc.status };
+        if (payload.summary !== undefined) updated.content = summaryContent([], payload.summary);
+        if (payload.error !== undefined) {
+          updated.meta = { ...updated.meta, errorText: payload.error ?? undefined };
+        }
+        return updated;
+      });
+
+    case "compaction_summary_chunk":
+      return upsertCompaction(newState, payload.compactionId, (tc) => ({
+        ...tc,
+        content: summaryContent(tc.content, [payload.content]),
+      }));
+
+    case "notice": {
+      if (typeof payload.title !== "string" || !payload.title) return state;
+      return addNotice(newState, payload.severity, payload.title, payload.description || null);
+    }
+
+    case "usage_update": {
+      // A refused reply is said where the user is reading, once per limit hit.
+      const limits = parsePlanLimits(raw);
+      const reached = limits && limitReachedNotice(limits);
+      const base = reached
+        ? addNotice(newState, "warning", reached.title, reached.description, false)
+        : newState;
+      const awaiting = base.compactionAwaitingUsage;
+      if (typeof payload.used !== "number" || (!awaiting && base.contextUsed === payload.used)) {
+        return reached ? base : state;
+      }
+      const next = { ...base, contextUsed: payload.used, compactionAwaitingUsage: null };
+      const tc = awaiting ? next.toolCallMap.get(awaiting) : undefined;
+      if (!tc?.meta?.compaction) return next;
+      return replaceToolCall(next, {
+        ...tc,
+        meta: { ...tc.meta, compaction: { ...tc.meta.compaction, tokensAfter: payload.used } },
+      });
+    }
+
     default:
-      return newState;
+      return state;
   }
+}
+
+/**
+ * One notice row per title and description. A repeat moves to the bottom, where the user is
+ * reading, rather than bumping a row scrolled out of sight; `bump` says whether it also counts.
+ */
+function addNotice(
+  state: ActivityState,
+  severity: string,
+  title: string,
+  description: string | null,
+  bump = true,
+): ActivityState {
+  const key = `${title}
+${description ?? ""}`;
+  const at = state.items.findIndex((i) => i.type === "notice" && i.item.key === key);
+  const previous = at < 0 ? null : (state.items[at] as { item: NoticeItem }).item;
+  if (previous && !bump) return state;
+  const items = at < 0 ? state.items : state.items.filter((_, i) => i !== at);
+  const notice: NoticeItem = {
+    id: previous?.id ?? `notice-${crypto.randomUUID()}`,
+    key,
+    severity,
+    title,
+    description,
+    count: (previous?.count ?? 0) + 1,
+    at: Date.now(),
+  };
+  return { ...state, items: [...finalizeStreaming(items), { type: "notice", item: notice }] };
+}
+
+/** ACP's compaction lifecycle, in the statuses a tool-call row already knows how to draw. */
+function compactionStatus(status: string): ToolCallItem["status"] | null {
+  switch (status) {
+    case "in_progress":
+      return "in_progress";
+    case "completed":
+      return "completed";
+    case "failed":
+      return "error";
+    case "cancelled":
+      return "interrupted";
+    default:
+      return null;
+  }
+}
+
+/**
+ * A summary is markdown streamed in pieces, so a chunk extends the text before it rather than
+ * starting a block of its own: split blocks would each render as separate, half-formed markdown.
+ */
+function summaryContent(
+  existing: ToolCallItem["content"],
+  blocks: CompactionSummaryBlock[] | null,
+): ToolCallItem["content"] {
+  const content = [...existing];
+  for (const block of blocks ?? []) {
+    if (block.type !== "text" || typeof block.text !== "string") continue;
+    const last = content[content.length - 1];
+    if (last?.type === "content") {
+      content[content.length - 1] = {
+        type: "content",
+        content: { type: "text", text: last.content.text + block.text },
+      };
+    } else {
+      content.push({ type: "content", content: { type: "text", text: block.text } });
+    }
+  }
+  return content;
+}
+
+/**
+ * Whether the turn this compaction runs in was the user's own `/compact`. Unknown with no user
+ * message to go by: a reopened session's history starts at its last compaction.
+ */
+function compactionTrigger(items: ActivityItem[]): CompactionFacts["trigger"] {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item.type === "userMessage") {
+      return /^\/compact\b/.test(item.item.content.trim()) ? "manual" : "auto";
+    }
+  }
+  return undefined;
+}
+
+/**
+ * A compaction is drawn as a tool call, so the rail, the expand toggle and the body come for free.
+ * ACP gives it no token counts or trigger; both are filled in here from what the stream shows.
+ */
+function upsertCompaction(
+  state: ActivityState,
+  compactionId: string,
+  patch: (tc: ToolCallItem) => ToolCallItem,
+): ActivityState {
+  const id = `compaction:${compactionId}`;
+  const existing = state.toolCallMap.get(id);
+  const updated = patch(
+    existing ?? {
+      toolCallId: id,
+      title: "Compact context",
+      kind: "compact",
+      status: "in_progress",
+      content: [],
+      locations: [],
+      meta: {
+        compaction: {
+          trigger: compactionTrigger(state.items),
+          tokensBefore: state.contextUsed ?? undefined,
+        },
+      },
+    },
+  );
+  const settled = updated.status === "completed" && existing?.status !== "completed";
+  const next = settled ? { ...state, compactionAwaitingUsage: id } : state;
+  if (existing) return replaceToolCall(next, updated);
+  const toolCallMap = new Map(next.toolCallMap);
+  toolCallMap.set(id, updated);
+  return {
+    ...next,
+    items: [...finalizeStreaming(next.items), { type: "toolCall", item: updated }],
+    toolCallMap,
+  };
+}
+
+function replaceToolCall(state: ActivityState, updated: ToolCallItem): ActivityState {
+  const toolCallMap = new Map(state.toolCallMap);
+  toolCallMap.set(updated.toolCallId, updated);
+  const items = state.items.map((i) =>
+    i.type === "toolCall" && i.item.toolCallId === updated.toolCallId ? { ...i, item: updated } : i,
+  );
+  return { ...state, items, toolCallMap };
 }
 
 function extractPlanTitle(payload: {

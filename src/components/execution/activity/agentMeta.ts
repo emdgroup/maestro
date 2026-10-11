@@ -32,6 +32,15 @@ export type AgentMeta = {
   errorText?: string;
   /** Refused by policy rather than crashed — a different thing to tell the user. */
   blocked?: boolean;
+  /**
+   * A subagent launched in the background: its tool call completes at launch and the subagent
+   * runs on until it hands its report back. Live only, as no replay carries the tool response.
+   */
+  background?: boolean;
+  /** The id the agent gave a subagent it launched, which is how its other tools refer to it. */
+  agentId?: string;
+  /** The task a `TaskStop` call stopped: a background subagent's `agentId`, or a shell's id. */
+  taskId?: string;
   linesAdded?: number;
   linesRemoved?: number;
   fileTotalLines?: number;
@@ -47,6 +56,15 @@ export type AgentMeta = {
   cachedTokens?: number;
   toolStats?: ToolStats;
   git?: GitOperation;
+  /** Set on the row the reducer builds for a context compaction, never by an agent. */
+  compaction?: CompactionFacts;
+};
+
+export type CompactionFacts = {
+  /** `manual` when the turn was the user's own `/compact`; absent when there is no telling. */
+  trigger?: "auto" | "manual";
+  tokensBefore?: number;
+  tokensAfter?: number;
 };
 
 type AgentMetaExtractor = (raw: Record<string, unknown>) => AgentMeta;
@@ -104,6 +122,9 @@ function extractClaudeCodeMeta(raw: Record<string, unknown>): AgentMeta {
   // A refusal reaches us two ways — the marker above, or a reason with no marker.
   if (str(tr.decisionReason)) result.blocked = true;
 
+  if (tr.isAsync === true) result.background = true;
+  result.agentId = str(tr.agentId);
+  result.taskId = str(tr.task_id);
   result.totalDurationMs = num(tr.totalDurationMs);
   result.totalTokens = num(tr.totalTokens);
   result.totalToolUseCount = num(tr.totalToolUseCount);

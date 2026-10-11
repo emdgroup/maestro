@@ -252,4 +252,26 @@ describe("ActivityToolCallGroup", () => {
     expect(screen.getByText(/Plan/)).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
   });
+
+  it("draws a compaction as one row with its trigger and token change", () => {
+    const compaction: ToolCallItem = {
+      ...makeCall("compaction:c1", "Compact context", "completed", "compact"),
+      meta: { compaction: { trigger: "auto", tokensBefore: 182_000, tokensAfter: 41_000 } },
+    };
+    render(<ActivityToolCallGroup items={[compaction]} />);
+    expect(screen.getByText("Compacted")).toBeTruthy();
+    expect(screen.getByText("auto")).toBeTruthy();
+    expect(screen.getByText("182k → 41k tokens")).toBeTruthy();
+  });
+
+  it("renders a compaction summary as markdown, not as raw output", () => {
+    const compaction: ToolCallItem = {
+      ...makeCall("compaction:c1", "Compact context", "completed", "compact"),
+      content: [{ type: "content", content: { type: "text", text: "**Goal:** retries" } }],
+      meta: { compaction: { trigger: "auto" } },
+    };
+    render(<ActivityToolCallGroup items={[compaction]} />);
+    fireEvent.click(groupLine());
+    expect(screen.getByText("Goal:").tagName).toBe("STRONG");
+  });
 });

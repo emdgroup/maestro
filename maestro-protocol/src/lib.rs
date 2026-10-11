@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 13;
+pub const PROTOCOL_VERSION: u32 = 14;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 ///
@@ -82,6 +82,7 @@ impl ServerResponse {
             Self::PermissionRequest(r) => &r.session_id,
             Self::ElicitationRequest(r) => &r.session_id,
             Self::TerminalOutput(r) => &r.session_id,
+            Self::TurnStarted(r) => &r.session_id,
             Self::TurnEnded(r) => &r.session_id,
             Self::HostToolCall(r) => &r.session_id,
             Self::SetModelOk(r) => &r.session_id,
@@ -2301,6 +2302,7 @@ pub enum ServerResponse {
     ConfigOptionUpdated(ConfigOptionUpdatedResponse),
     FileSearchOk(FileSearchResponse),
     FileReadOk(FileReadResponse),
+    TurnStarted(TurnStarted),
     TurnEnded(TurnEnded),
     SessionListOk(SessionListOkResponse),
     SessionLoadOk(SessionLoadOkResponse),
@@ -2424,6 +2426,7 @@ impl ServerResponse {
             | Self::TerminalOutput(_)
             | Self::AutomationRunChanged(_)
             | Self::ConfigOptionUpdated(_)
+            | Self::TurnStarted(_)
             | Self::TurnEnded(_)
             | Self::AuthTerminalExit(_)
             | Self::AgentConnectionLost(_)
@@ -2537,6 +2540,14 @@ impl ServerResponse {
             | Self::StartTaskOk(_) => true,
         }
     }
+}
+
+/// A prompt went to the agent. Every prompt sends one, whoever sent it, so a session is mid-turn
+/// from this until the [`TurnEnded`] that answers the last prompt outstanding. Output the agent
+/// sends with no prompt outstanding is not a turn.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TurnStarted {
+    pub session_id: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -4287,6 +4298,16 @@ mod tests {
     fn roundtrip_file_read_ok() {
         let msg = AnyMessage::Response(ServerResponse::FileReadOk(FileReadResponse {
             content: "fn main() {}".to_string(),
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_turn_started() {
+        let msg = AnyMessage::Response(ServerResponse::TurnStarted(TurnStarted {
+            session_id: "sess-1".to_string(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: AnyMessage = serde_json::from_str(&json).unwrap();

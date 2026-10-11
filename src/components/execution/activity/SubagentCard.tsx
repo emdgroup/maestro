@@ -1,17 +1,21 @@
-import { useState, useMemo } from "react";
-import { Bot, ChevronRight } from "lucide-react";
+import { useContext, useState, useMemo } from "react";
+import { Bot, ChevronRight, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatElapsed, humanizeTokenCount } from "@/lib/format-utils";
 import { MarkdownBlock } from "./MarkdownBlock";
 import { TypingDots } from "./ActivityMessageItem";
 import { ToolCallTimeline } from "./ToolCallTimeline";
 import { subagentName } from "./utils";
+import { StopSubagentContext, stopSubagentPrompt } from "./subagent-stop";
 import { useSettings } from "@/services/settings.service";
 import type { ToolCallItem } from "./types";
 
 function stripUsage(text: string): string {
   return text.replace(/<usage>[\s\S]*?<\/usage>/g, "").trim();
 }
+
+const pillClass =
+  "text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 mt-0.5";
 
 interface SubagentCardProps {
   item: ToolCallItem;
@@ -28,6 +32,10 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
 
   const isStreaming = item.status === "in_progress" || item.status === "pending";
   const isInterrupted = item.status === "interrupted";
+  const isBackground = !!item.meta?.background;
+  const stopSubagent = useContext(StopSubagentContext);
+  const [stopAsked, setStopAsked] = useState(false);
+  const canStop = !!stopSubagent && isBackground && isStreaming;
 
   const prompt = typeof item.rawInput?.prompt === "string" ? item.rawInput.prompt : null;
 
@@ -110,16 +118,21 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
   return (
     <div
       className={cn(
-        "rounded-[10px] overflow-hidden",
+        "group/card rounded-[10px] overflow-hidden",
         "border border-accent/30 bg-gradient-to-br from-accent/10 to-transparent",
         "shadow-[0_2px_8px_oklch(0%_0_0/0.08)]",
       )}
     >
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="flex items-start gap-2.5 w-full px-3.5 py-2.5 text-left hover:brightness-110 transition-[filter]"
-      >
+      {/* The expand button covers the header, so the status pill can be a control of its own
+          on top of it without nesting one button in another. */}
+      <div className="relative flex items-start gap-2.5 px-3.5 py-2.5 hover:brightness-110 transition-[filter]">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          aria-label={name}
+          className="absolute inset-0"
+        />
         <div className="w-7 h-7 rounded-[7px] bg-accent/10 border border-accent/30 flex items-center justify-center shrink-0 mt-0.5">
           <Bot className="w-3.5 h-3.5 text-accent" />
         </div>
@@ -134,9 +147,15 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
           </div>
           <div className="mt-0.5 text-[10px] text-muted-foreground">
             {isStreaming ? (
-              <TypingDots />
+              stopAsked ? (
+                "Stopping…"
+              ) : (
+                <TypingDots />
+              )
             ) : isInterrupted ? (
-              <span className="text-warning/70">Session interrupted</span>
+              <span className="text-warning/70">
+                {isBackground ? "Stopped" : "Session interrupted"}
+              </span>
             ) : (
               usage
             )}
@@ -145,30 +164,59 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
             <div className="text-[10px] text-muted-foreground/70">{toolBreakdown}</div>
           )}
         </div>
-        <span
-          className={cn(
-            "text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 mt-0.5",
-            isStreaming && "bg-accent/15 text-accent",
-            isInterrupted && "bg-warning/15 text-warning",
-            item.status === "completed" && "bg-success/15 text-success",
-            item.status === "error" && "bg-destructive/15 text-destructive",
-          )}
-        >
-          {isStreaming
-            ? "Running"
-            : isInterrupted
-              ? "Interrupted"
-              : item.status === "completed"
-                ? "Done"
-                : "Failed"}
-        </span>
+        {canStop && !stopAsked ? (
+          <button
+            type="button"
+            title="Stop this subagent"
+            aria-label={`Stop ${name}`}
+            onClick={() => {
+              setStopAsked(true);
+              stopSubagent(stopSubagentPrompt(item));
+            }}
+            className={cn(
+              pillClass,
+              // Both labels share one cell, so the pill keeps its width when it turns into Stop.
+              "group/pill relative grid bg-accent/15 text-accent transition-colors",
+              // Hovering anywhere on the card offers the stop; hovering the pill itself is the one that takes it.
+              "group-hover/card:bg-destructive/10 group-hover/card:text-destructive hover:bg-destructive/20 focus-visible:bg-destructive/15 focus-visible:text-destructive",
+            )}
+          >
+            <span className="col-start-1 row-start-1 group-hover/card:invisible group-focus-visible/pill:invisible">
+              Running
+            </span>
+            <span className="invisible col-start-1 row-start-1 inline-flex items-center justify-center gap-1 group-hover/card:visible group-focus-visible/pill:visible">
+              <Square className="size-2 fill-current" />
+              Stop
+            </span>
+          </button>
+        ) : (
+          <span
+            className={cn(
+              pillClass,
+              isStreaming && "bg-accent/15 text-accent",
+              isInterrupted && "bg-warning/15 text-warning",
+              item.status === "completed" && "bg-success/15 text-success",
+              item.status === "error" && "bg-destructive/15 text-destructive",
+            )}
+          >
+            {isStreaming
+              ? "Running"
+              : isInterrupted
+                ? isBackground
+                  ? "Stopped"
+                  : "Interrupted"
+                : item.status === "completed"
+                  ? "Done"
+                  : "Failed"}
+          </span>
+        )}
         <ChevronRight
           className={cn(
             "w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5 opacity-50 transition-transform duration-150",
             expanded && "rotate-90",
           )}
         />
-      </button>
+      </div>
 
       {expanded && (
         <div className="border-t border-accent/20">

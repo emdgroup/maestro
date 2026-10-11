@@ -8,6 +8,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
 import { SidebarContent, SidebarMenu, SidebarMenuItem, useSidebar } from "@/ui/sidebar";
 import { TerminalComponent } from "@/components/execution/terminal/Terminal";
 import { AgentActivityPanel } from "@/components/execution/agent-activity-panel/AgentActivityPanel";
+import { connectionKeyId } from "@/store/homeStore";
+import { SessionUsageMeters } from "./SessionUsageMeters";
 import type { ActiveSessionInfo, ConnectionKey } from "@/types/bindings";
 import {
   useSessionActivity,
@@ -496,7 +498,7 @@ export function AgentMonitor({
                         getStatusDot(session, selectedActivityInfo),
                       )}
                     />
-                    <span className="text-xs text-muted-foreground truncate">
+                    <span className="text-xs text-muted-foreground shrink-0">
                       {selectedActivityInfo ? getStatusLabel(selectedActivityInfo) : "Starting…"}
                     </span>
                     {selectedActivityInfo && (
@@ -518,6 +520,13 @@ export function AgentMonitor({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {session.execution_mode === "acp" && (
+            <SessionUsageMeters
+              sessionId={session.session_id}
+              agentId={session.agent_id ?? null}
+              connectionId={connectionKeyId(connection)}
+            />
+          )}
           {onClose && (
             <Button
               variant="ghost"

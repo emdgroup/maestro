@@ -2,9 +2,11 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { drainAcpReplay } from "@/services/execution.service";
 import { loadSavedCanvases, saveCanvasSurface } from "@/services/canvas.service";
+import { useNavigationStore } from "@/store/navigationStore";
 import { useSessionActivityStore } from "@/store/sessionActivityStore";
 import { activityReducer, type ActivityAction } from "./activityReducer";
 import { INITIAL_ACTIVITY_STATE } from "./types";
+import { parsePlanLimits, type PlanLimits } from "./planLimits";
 import type {
   ActivityState,
   AvailableCommand,
@@ -45,6 +47,8 @@ export type SessionLifecycle = {
   configOptions: ConfigOption[];
   configValues: Record<string, string>;
   usageState: UsageState | null;
+  /** The latest plan limits this session's agent reported, which are its account's, not its own. */
+  planLimits: PlanLimits | null;
   availableCommands: AvailableCommand[];
   promptCapabilities: AcpPromptCapabilities | null;
   pendingPermission: PendingPermission | null;
@@ -60,6 +64,7 @@ export const INITIAL_LIFECYCLE: SessionLifecycle = {
   configOptions: [],
   configValues: {},
   usageState: null,
+  planLimits: null,
   availableCommands: [],
   promptCapabilities: null,
   pendingPermission: null,
@@ -152,7 +157,7 @@ function applyActivity(sessionId: string, rt: Runtime, action: ActivityAction) {
 }
 
 /** The usage, command and config parts of a session update, which the reducer does not track. */
-function applySessionUpdate(rt: Runtime, raw: Record<string, unknown>) {
+function applySessionUpdate(sessionId: string, rt: Runtime, raw: Record<string, unknown>) {
   const p = raw as {
     sessionUpdate?: string;
     used?: number;
@@ -164,9 +169,31 @@ function applySessionUpdate(rt: Runtime, raw: Record<string, unknown>) {
     currentModelId?: string;
     modeId?: string;
     currentModeId?: string;
+    severity?: string;
+    title?: string;
+    description?: string | null;
   };
   const l = rt.lifecycle;
+  // The stream shows every notice. Only one the spec does not call routine (`error`, or a severity
+  // newer than this build) also reaches the user outside the session.
+  if (
+    p.sessionUpdate === "notice" &&
+    p.title &&
+    p.severity !== "info" &&
+    p.severity !== "warning"
+  ) {
+    toast.error(p.title, {
+      description: p.description || undefined,
+      action: {
+        label: "Open",
+        onClick: () => useNavigationStore.getState().navigate({ sessionId }),
+      },
+    });
+  }
   if (p.sessionUpdate === "usage_update") {
+    const planLimits = parsePlanLimits(raw);
+    if (planLimits) rt.lifecycle = { ...rt.lifecycle, planLimits };
+    const l = rt.lifecycle;
     if (typeof p.used === "number" && typeof p.size === "number") {
       const usageState: UsageState = {
         used: p.used,
@@ -244,7 +271,7 @@ function create(sessionId: string): Runtime {
       rt.pending = [];
       for (const { action: a, raw: r } of batch) {
         applyActivity(sessionId, rt, a);
-        if (r) applySessionUpdate(rt, r);
+        if (r) applySessionUpdate(sessionId, rt, r);
       }
       notify(rt);
       maybeDispose(sessionId, rt);
@@ -295,14 +322,18 @@ function create(sessionId: string): Runtime {
               : "Agent encountered an error and could not respond.",
         });
       }
-      enqueue({ type: "turn_ended" });
+      enqueue({ type: "turn_ended", stopReason });
       setStatus(sessionId, "idle");
     }),
-    listen<null>(`acp://replay-drained/${sessionId}`, () => {
-      enqueue({ type: "turn_ended" });
+    listen<null>(`acp://turn-started/${sessionId}`, () => {
+      enqueue({ type: "turn_started" });
+    }),
+    // Says whether a prompt is outstanding, for a view that opened after the turn started.
+    listen<boolean | null>(`acp://replay-drained/${sessionId}`, (e) => {
+      enqueue({ type: e.payload ? "turn_started" : "turn_ended" });
       enqueue({ type: "set_initialized" });
       tryRestoreCanvases();
-      setStatus(sessionId, "idle");
+      if (!e.payload) setStatus(sessionId, "idle");
     }),
     listen<null>(`acp://spawn-ok/${sessionId}`, () => {
       enqueue({ type: "turn_ended" });

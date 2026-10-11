@@ -1,0 +1,245 @@
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { cn } from "@/lib/utils";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/ui/hover-card";
+import {
+  DOT_COLOR,
+  PCT_COLOR,
+  PROGRESS_COLOR,
+} from "@/components/execution/activity/liquid-indicator-data";
+import { getLifecycle, subscribeSession } from "@/components/execution/activity/sessionRuntime";
+import {
+  PLAN_WINDOWS,
+  elapsedShare,
+  formatCountdown,
+  liveWindows,
+  planLimitsKey,
+  usePlanLimitsStore,
+  windowTone,
+  type PlanLimits,
+  type PlanWindowId,
+  type WindowTone,
+} from "@/components/execution/activity/planLimits";
+
+/** The context window popover's colours, so both popups speak one language. */
+const STATE = { ok: "normal", ahead: "amber", reached: "critical" } as const;
+const TEXT: Record<WindowTone, string> = {
+  ok: "text-foreground",
+  ahead: "text-warning",
+  reached: "text-destructive",
+};
+/** What is left of the window: it shrinks toward the reset, and a fill running into it is ahead of pace. */
+const HATCH = {
+  backgroundImage:
+    "repeating-linear-gradient(135deg, rgb(255 255 255 / 0.16) 0 2px, transparent 2px 4px)",
+};
+const OVERAGE_REASON: Record<string, string> = {
+  org_level_disabled: "disabled by your organisation",
+  org_level_disabled_until: "disabled by your organisation",
+  out_of_credits: "out of credits",
+  overage_not_provisioned: "not set up on this plan",
+};
+
+function Track({
+  usage,
+  elapsed,
+  tone,
+  className,
+}: {
+  usage: number;
+  elapsed: number;
+  tone: WindowTone;
+  className: string;
+}) {
+  return (
+    <div className={cn("relative overflow-hidden rounded-full bg-foreground/[0.07]", className)}>
+      <div
+        className="absolute inset-y-0 right-0"
+        style={{ ...HATCH, width: `${(1 - elapsed) * 100}%` }}
+      />
+      <div
+        className={cn("absolute inset-y-0 left-0 rounded-full", PROGRESS_COLOR[STATE[tone]])}
+        style={{ width: `${Math.min(usage, 1) * 100}%` }}
+      />
+    </div>
+  );
+}
+
+function money({ amount, currency }: { amount: number; currency: string }) {
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`;
+  }
+}
+
+/**
+ * The session's cost and its agent's 5-hour window, on the right of the session header, with every
+ * window in the hover card. A window is labelled with the time left before it resets, and its track
+ * hatches what is left of it.
+ */
+export function SessionUsageMeters({
+  sessionId,
+  agentId,
+  connectionId,
+}: {
+  sessionId: string;
+  agentId: string | null;
+  connectionId: string;
+}) {
+  const subscribe = useCallback((fn: () => void) => subscribeSession(sessionId, fn), [sessionId]);
+  const cost = useSyncExternalStore(subscribe, () => getLifecycle(sessionId).usageState?.cost);
+  const limits = usePlanLimitsStore((s) =>
+    agentId ? s.byAgent[planLimitsKey(connectionId, agentId)] : undefined,
+  );
+
+  // Ticks whether or not a reading has arrived, so the first one is never drawn against a stale
+  // clock. One header is mounted at a time.
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now() / 1000), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const windows = liveWindows(limits, now);
+  if (!cost && windows.length === 0) return null;
+
+  return (
+    <HoverCard>
+      <HoverCardTrigger
+        render={
+          <div
+            className="flex items-center gap-3 rounded-md px-2 py-1 transition-colors hover:bg-muted/50"
+            aria-label="Session cost and plan limits"
+          />
+        }
+      >
+        {cost && (
+          <span className="rounded-md bg-accent/15 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-accent">
+            {money(cost)}
+          </span>
+        )}
+        {/* The weekly window is in the hover card only. */}
+        {limits && windows.includes("fiveHour") && (
+          <WindowMeter limits={limits} id="fiveHour" now={now} />
+        )}
+      </HoverCardTrigger>
+      <HoverCardContent
+        align="end"
+        className={cn(
+          "flex w-64 flex-col gap-3 rounded-md p-3.5 text-[11px]",
+          "backdrop-blur-[4px] bg-popover/60 border-border/30",
+          "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)]",
+        )}
+      >
+        {cost && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold">Session cost</span>
+              <span className="text-lg font-bold tabular-nums tracking-tight text-accent">
+                {money(cost)}
+              </span>
+            </div>
+            <div className="text-muted-foreground">
+              As the agent reports it. On a subscription this is the API-price equivalent, not a
+              charge.
+            </div>
+          </div>
+        )}
+        {limits && windows.length > 0 && (
+          <PlanDetails limits={limits} windows={windows} now={now} divided={!!cost} />
+        )}
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
+
+function WindowMeter({ limits, id, now }: { limits: PlanLimits; id: PlanWindowId; now: number }) {
+  const w = limits.windows[id]!;
+  const tone = windowTone(limits, id, now);
+  return (
+    <div className="w-20 text-[10px]">
+      <div className="flex justify-between">
+        <span className={cn("font-medium tabular-nums", TEXT[tone])}>
+          {tone === "reached" ? "Limit" : `${Math.round(w.utilization * 100)}%`}
+        </span>
+        <span className="tabular-nums text-muted-foreground">
+          {formatCountdown(w.resetsAt - now)}
+        </span>
+      </div>
+      <Track
+        usage={w.utilization}
+        elapsed={elapsedShare(w, id, now)}
+        tone={tone}
+        className="mt-1.5 h-1"
+      />
+    </div>
+  );
+}
+
+function PlanDetails({
+  limits,
+  windows,
+  now,
+  divided,
+}: {
+  limits: PlanLimits;
+  windows: PlanWindowId[];
+  now: number;
+  divided: boolean;
+}) {
+  const overage =
+    limits.overageStatus === "rejected"
+      ? `Extra usage off${limits.overageDisabledReason && OVERAGE_REASON[limits.overageDisabledReason] ? ` (${OVERAGE_REASON[limits.overageDisabledReason]})` : ""}. `
+      : "";
+  return (
+    <>
+      {windows.map((id, i) => {
+        const w = limits.windows[id]!;
+        const tone = windowTone(limits, id, now);
+        const at = new Date(w.resetsAt * 1000).toLocaleString(undefined, {
+          weekday: w.resetsAt - now > 86400 ? "short" : undefined,
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        return (
+          <div key={id} className="contents">
+            {(divided || i > 0) && <div className="h-px bg-border/50" />}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-xs font-semibold">
+                  <span
+                    className={cn("inline-block h-1.5 w-1.5 rounded-full", DOT_COLOR[STATE[tone]])}
+                  />
+                  {PLAN_WINDOWS[id].label}
+                </span>
+                <span
+                  className={cn(
+                    "text-lg font-bold tabular-nums tracking-tight",
+                    PCT_COLOR[STATE[tone]],
+                  )}
+                >
+                  {Math.round(w.utilization * 100)}%
+                </span>
+              </div>
+              <Track
+                usage={w.utilization}
+                elapsed={elapsedShare(w, id, now)}
+                tone={tone}
+                className="h-1"
+              />
+              <div className="text-muted-foreground">
+                {tone === "reached" ? "Reached. " : ""}Resets {at}, in{" "}
+                {formatCountdown(w.resetsAt - now)}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      <div className="h-px bg-border/50" />
+      <div className="text-[10px] text-muted-foreground">
+        {overage}Shared by every Claude session on this connection. Updated{" "}
+        {formatCountdown(now - limits.receivedAt / 1000)} ago.
+      </div>
+    </>
+  );
+}

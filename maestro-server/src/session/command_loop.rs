@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use acp::schema::v1::{
@@ -11,7 +11,7 @@ use maestro_protocol::{
     ConfigOptionUpdatedResponse, ErrorResponse, ModeInfo as ProtocolModeInfo,
     ModelInfo as ProtocolModelInfo, PromptCapabilitiesInfo, ServerResponse,
     SessionModeState as ProtocolSessionModeState, SessionModelState as ProtocolSessionModelState,
-    SetModeOkResponse, TurnEnded,
+    SetModeOkResponse, TurnEnded, TurnStarted,
 };
 use tokio::sync::mpsc;
 
@@ -50,6 +50,14 @@ pub(crate) async fn handle_prompt_result(
     let msg = ServerResponse::TurnEnded(TurnEnded {
         session_id,
         stop_reason,
+    });
+    let _ = send_response(stdout, &msg).await;
+}
+
+/// Sent ahead of the prompt, so it reaches the host before anything the agent says in answer.
+async fn announce_turn(stdout: &crate::ClientOut, session_id: &str) {
+    let msg = ServerResponse::TurnStarted(TurnStarted {
+        session_id: session_id.to_string(),
     });
     let _ = send_response(stdout, &msg).await;
 }
@@ -161,6 +169,26 @@ pub(crate) fn extract_prompt_capabilities(
     }
 }
 
+/// The prompts sent and not yet answered.
+///
+/// Usually one. An agent that queues prompts (claude-agent-acp advertises `promptQueueing`) takes
+/// a second while the first is still open, for example a turn it holds for background subagents,
+/// and answers the first as the second starts. The turn the user sees runs on into the second,
+/// so only the last answer ends it.
+#[derive(Default)]
+struct PromptsInFlight(AtomicUsize);
+
+impl PromptsInFlight {
+    fn start(&self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// Whether this answer was the last outstanding one.
+    fn finish(&self) -> bool {
+        self.0.fetch_sub(1, Ordering::SeqCst) == 1
+    }
+}
+
 pub(crate) async fn run_command_loop(
     mut cmd_rx: mpsc::Receiver<SessionCommand>,
     cx: acp::ConnectionTo<acp::Agent>,
@@ -177,6 +205,7 @@ pub(crate) async fn run_command_loop(
     // can safely do to them.
     turn_active: Arc<AtomicBool>,
 ) {
+    let in_flight = Arc::new(PromptsInFlight::default());
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
             SessionCommand::CloseSession => {
@@ -199,17 +228,28 @@ pub(crate) async fn run_command_loop(
                 let sid = maestro_sid.clone();
                 turn_active.store(true, Ordering::SeqCst);
                 let turn_flag = Arc::clone(&turn_active);
+                in_flight.start();
+                announce_turn(&so, &maestro_sid).await;
+                let answered = Arc::clone(&in_flight);
                 let result = cx
                     .send_request_to(
                         acp::Agent,
                         PromptRequest::new(session_id.clone(), vec![content.into()]),
                     )
                     .on_receiving_result(async move |result| {
+                        if !answered.finish() {
+                            crate::send_diag(
+                                "info",
+                                format!("[prompt] superseded by a queued prompt session={sid}"),
+                            );
+                            return Ok(());
+                        }
                         turn_flag.store(false, Ordering::SeqCst);
                         handle_prompt_result(result, sid, &so).await;
                         Ok(())
                     });
                 if result.is_err() {
+                    in_flight.finish();
                     turn_active.store(false, Ordering::SeqCst);
                     crate::helpers::note_turn_ended(&maestro_sid, "error");
                     let _ = send_response(
@@ -238,17 +278,28 @@ pub(crate) async fn run_command_loop(
                     .collect();
                 turn_active.store(true, Ordering::SeqCst);
                 let turn_flag = Arc::clone(&turn_active);
+                in_flight.start();
+                announce_turn(&so, &maestro_sid).await;
+                let answered = Arc::clone(&in_flight);
                 let result = cx
                     .send_request_to(
                         acp::Agent,
                         PromptRequest::new(session_id.clone(), content_blocks),
                     )
                     .on_receiving_result(async move |result| {
+                        if !answered.finish() {
+                            crate::send_diag(
+                                "info",
+                                format!("[prompt] superseded by a queued prompt session={sid}"),
+                            );
+                            return Ok(());
+                        }
                         turn_flag.store(false, Ordering::SeqCst);
                         handle_prompt_result(result, sid, &so).await;
                         Ok(())
                     });
                 if result.is_err() {
+                    in_flight.finish();
                     turn_active.store(false, Ordering::SeqCst);
                     crate::helpers::note_turn_ended(&maestro_sid, "error");
                     let _ = send_response(
@@ -393,4 +444,23 @@ pub(crate) async fn run_command_loop(
         router.unregister(&session_id.to_string()).await;
     }
     crate::helpers::forget_session(&maestro_sid);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PromptsInFlight;
+
+    #[test]
+    fn only_the_last_outstanding_answer_ends_the_turn() {
+        let in_flight = PromptsInFlight::default();
+        in_flight.start();
+        in_flight.start();
+        assert!(
+            !in_flight.finish(),
+            "the held prompt, answered as the queued one starts"
+        );
+        assert!(in_flight.finish(), "the queued prompt");
+        in_flight.start();
+        assert!(in_flight.finish(), "a lone prompt ends its turn");
+    }
 }

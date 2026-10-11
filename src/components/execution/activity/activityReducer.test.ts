@@ -380,26 +380,35 @@ describe("activityReducer — streaming text", () => {
     expect(contents).toEqual(["one two", "separate"]);
   });
 
-  it("marks the turn active on a turn-progress event", () => {
-    const state = activityReducer(
-      makeState({ isTurnActive: false }),
-      event({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "x" } }),
-    );
-    expect(state.isTurnActive).toBe(true);
+  it("runs a turn from turn_started to turn_ended", () => {
+    const started = activityReducer(makeState({ isTurnActive: false }), { type: "turn_started" });
+    expect(started.isTurnActive).toBe(true);
+    expect(activityReducer(started, { type: "turn_ended" }).isTurnActive).toBe(false);
   });
 
-  // Agents emit these after session/load and after a turn ends. No turn_ended follows,
-  // so arming isTurnActive here strands the session as "thinking" forever.
+  // Claude reports a background subagent's end, and its own summary of it, with no prompt
+  // outstanding. No turn_ended follows, so arming isTurnActive here strands the session as
+  // "thinking" forever. The same goes for what agents emit after session/load.
   it.each([
+    "agent_message_chunk",
+    "agent_thought_chunk",
+    "tool_call",
     "usage_update",
     "available_commands_update",
     "config_option_update",
     "current_model_update",
     "current_mode_update",
-  ])("leaves the turn inactive on the out-of-turn %s event", (sessionUpdate) => {
+  ])("leaves the turn inactive on an unprompted %s event", (sessionUpdate) => {
     const state = activityReducer(
       makeState({ isTurnActive: false }),
-      event({ sessionUpdate } as unknown as SessionUpdatePayload),
+      event({
+        sessionUpdate,
+        content: { type: "text", text: "x" },
+        toolCallId: "t1",
+        title: "Read",
+        kind: "read",
+        status: "pending",
+      } as unknown as SessionUpdatePayload),
     );
     expect(state.isTurnActive).toBe(false);
   });
@@ -898,5 +907,331 @@ describe("activityReducer — invariants", () => {
     expect(activityReducer(state, { type: "not_a_real_action" } as unknown as ActivityAction)).toBe(
       state,
     );
+  });
+});
+
+describe("activityReducer — context compaction", () => {
+  const update = (status: string, over: Record<string, unknown> = {}) =>
+    event({ sessionUpdate: "compaction_update", compactionId: "c1", status, ...over });
+  const chunk = (text: string) =>
+    event({
+      sessionUpdate: "compaction_summary_chunk",
+      compactionId: "c1",
+      content: { type: "text", text },
+    });
+  const usage = (used: number) => event({ sessionUpdate: "usage_update", used, size: 200_000 });
+  const run = (...actions: ActivityAction[]) => actions.reduce(activityReducer, makeState());
+  const row = (state: ActivityState) => state.toolCallMap.get("compaction:c1")!;
+
+  it("adds one row in the stream and updates it in place", () => {
+    const state = run(update("in_progress"), update("completed"));
+    expect(toolCallItems(state)).toHaveLength(1);
+    expect(row(state)).toMatchObject({ kind: "compact", status: "completed" });
+    expect(rowLabel(row(state))).toBe("Compacted context");
+  });
+
+  it("creates the row from a first summary chunk and joins later chunks into one text", () => {
+    const state = run(chunk("**Goal:** retries"), chunk(" with backoff"));
+    expect(row(state).status).toBe("in_progress");
+    expect(row(state).content).toEqual([
+      { type: "content", content: { type: "text", text: "**Goal:** retries with backoff" } },
+    ]);
+  });
+
+  it("treats summary and error as patches", () => {
+    let state = run(chunk("kept"), update("in_progress"));
+    expect(row(state).content).toHaveLength(1);
+    state = activityReducer(state, update("in_progress", { summary: null }));
+    expect(row(state).content).toEqual([]);
+    state = activityReducer(state, update("failed", { error: "timed out" }));
+    expect(row(state)).toMatchObject({ status: "error", meta: { errorText: "timed out" } });
+    expect(rowLabel(row(state))).toBe("Compaction failed");
+  });
+
+  it("shows a cancelled compaction as stopped", () => {
+    const state = run(update("in_progress"), update("cancelled"));
+    expect(row(state).status).toBe("interrupted");
+    expect(rowLabel(row(state))).toBe("Compaction stopped");
+  });
+
+  it("keeps the last status for one it does not know", () => {
+    expect(
+      run(update("completed"), update("_vendor_status")).toolCallMap.get("compaction:c1")!.status,
+    ).toBe("completed");
+  });
+
+  it("reads tokens before from the last usage and after from the next one", () => {
+    const state = run(
+      event({ sessionUpdate: "user_message", content: "Add retries", sentAt: 1 }),
+      usage(182_000),
+      update("in_progress"),
+      update("completed"),
+      usage(41_000),
+      usage(45_000),
+    );
+    expect(row(state).meta?.compaction).toEqual({
+      trigger: "auto",
+      tokensBefore: 182_000,
+      tokensAfter: 41_000,
+    });
+    expect(state.compactionAwaitingUsage).toBeNull();
+  });
+
+  it("is manual when the turn was the user's /compact", () => {
+    const state = run(
+      event({ sessionUpdate: "user_message", content: "/compact", sentAt: 1 }),
+      update("in_progress"),
+    );
+    expect(row(state).meta?.compaction?.trigger).toBe("manual");
+  });
+
+  it("names no trigger in a reopened session, whose history starts at the compaction", () => {
+    expect(row(run(update("completed"))).meta?.compaction?.trigger).toBeUndefined();
+  });
+
+  it("leaves the state untouched for a usage it already has", () => {
+    const state = run(usage(10));
+    expect(activityReducer(state, usage(10))).toBe(state);
+  });
+});
+
+describe("activityReducer — notices", () => {
+  const notice = (title: string, severity = "warning", description?: string) =>
+    event({ sessionUpdate: "notice", severity, title, description });
+  const notices = (state: ActivityState) =>
+    state.items.flatMap((i) => (i.type === "notice" ? [i.item] : []));
+
+  it("adds a row where the notice arrived", () => {
+    const state = [
+      event({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Working" } }),
+      notice("Fast mode turned off", "warning", "Not available for the selected model."),
+    ].reduce(activityReducer, makeState());
+    expect(lastItem(state)).toMatchObject({
+      type: "notice",
+      item: {
+        title: "Fast mode turned off",
+        description: "Not available for the selected model.",
+        count: 1,
+      },
+    });
+    expect(state.items[0]).toMatchObject({ type: "message", item: { isStreaming: false } });
+  });
+
+  it("says once in the session that Claude refused for a plan limit", () => {
+    const usage = (status: string) => {
+      const raw = {
+        sessionUpdate: "usage_update",
+        used: 10,
+        size: 100,
+        _meta: {
+          "_claude/rateLimit": {
+            status,
+            rateLimitType: "five_hour",
+            resetsAt: 1_791_677_400,
+            unifiedWindows: { five_hour: { utilization: 1, resetsAt: 1_791_677_400 } },
+          },
+        },
+      };
+      return event(raw as unknown as SessionUpdatePayload, raw);
+    };
+    const allowed = [usage("allowed")].reduce(activityReducer, makeState());
+    expect(notices(allowed)).toHaveLength(0);
+    const refused = [usage("rejected"), usage("rejected")].reduce(activityReducer, makeState());
+    expect(notices(refused)).toMatchObject([
+      { title: "Claude 5-hour limit reached", severity: "warning", count: 1 },
+    ]);
+    expect(refused.contextUsed).toBe(10);
+  });
+
+  it("counts a repeat on one row and moves it to the bottom", () => {
+    const state = [
+      notice("Auto mode unavailable"),
+      event({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Next" } }),
+      notice("Auto mode unavailable"),
+    ].reduce(activityReducer, makeState());
+    expect(notices(state)).toHaveLength(1);
+    expect(lastItem(state)).toMatchObject({ type: "notice", item: { count: 2 } });
+  });
+
+  it("keeps notices with a different description apart", () => {
+    const state = [
+      notice("Codex warning", "warning", "a"),
+      notice("Codex warning", "warning", "b"),
+    ].reduce(activityReducer, makeState());
+    expect(notices(state)).toHaveLength(2);
+  });
+
+  it("ignores a notice without a title", () => {
+    const state = makeState();
+    expect(activityReducer(state, notice(""))).toBe(state);
+  });
+});
+
+describe("activityReducer — background subagents", () => {
+  const PROMPT = "Run `sleep 6` with Bash, then reply with its output.";
+  const agentMeta = (extra: Record<string, unknown> = {}) => ({
+    _meta: { claudeCode: { toolName: "Agent", ...extra } },
+  });
+  const childMeta = (toolName: string) => ({
+    _meta: { claudeCode: { toolName, parentToolUseId: "agent" } },
+  });
+
+  /** The frames claude-agent-acp 0.86 sends for an Agent call with `run_in_background`. */
+  function launched(): ActivityState {
+    let state = makeState({ isTurnActive: true });
+    for (const [payload, raw] of [
+      [
+        { sessionUpdate: "tool_call", toolCallId: "agent", title: "Task", kind: "think" },
+        agentMeta(),
+      ],
+      [
+        {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "agent",
+          rawInput: { run_in_background: true, description: "Probe worker", prompt: PROMPT },
+          content: [{ type: "content", content: { type: "text", text: PROMPT } }],
+        },
+        agentMeta(),
+      ],
+      [
+        { sessionUpdate: "tool_call_update", toolCallId: "agent" },
+        agentMeta({
+          toolResponse: { isAsync: true, status: "async_launched", agentId: "a4e26c83" },
+        }),
+      ],
+      [
+        {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "agent",
+          status: "completed",
+          content: [{ type: "content", content: { type: "text", text: "Async agent launched" } }],
+        },
+        agentMeta(),
+      ],
+      [
+        { sessionUpdate: "tool_call", toolCallId: "bash", title: "sleep 6", kind: "execute" },
+        childMeta("Bash"),
+      ],
+    ] as const) {
+      state = activityReducer(state, event(payload as SessionUpdatePayload, raw));
+    }
+    return state;
+  }
+
+  function handBack(state: ActivityState): ActivityState {
+    state = activityReducer(
+      state,
+      event(
+        {
+          sessionUpdate: "tool_call",
+          toolCallId: "handback",
+          title: "SubagentHandback",
+          kind: "other",
+          rawInput: { message: "It printed probe-ok." },
+        } as SessionUpdatePayload,
+        childMeta("SubagentHandback"),
+      ),
+    );
+    return activityReducer(
+      state,
+      event(
+        { sessionUpdate: "tool_call_update", toolCallId: "handback", status: "completed" },
+        childMeta("SubagentHandback"),
+      ),
+    );
+  }
+
+  it("keeps running past its launch, without the launch receipt as output", () => {
+    const agent = launched().toolCallMap.get("agent")!;
+    expect(agent.status).toBe("in_progress");
+    expect(agent.childToolCallIds).toEqual(["bash"]);
+    expect(JSON.stringify(agent.content)).not.toContain("Async agent launched");
+  });
+
+  it("survives the end of the turn that launched it", () => {
+    const state = activityReducer(launched(), { type: "turn_ended" });
+    expect(state.toolCallMap.get("agent")?.status).toBe("in_progress");
+    expect(state.toolCallMap.get("bash")?.status).toBe("pending");
+  });
+
+  it("ends when it hands its report back, which becomes its output", () => {
+    const state = handBack(launched());
+    const agent = state.toolCallMap.get("agent")!;
+    expect(agent.status).toBe("completed");
+    expect(agent.childToolCallIds).toEqual(["bash"]);
+    expect(agent.content[agent.content.length - 1]).toEqual({
+      type: "content",
+      content: { type: "text", text: "It printed probe-ok." },
+    });
+    expect(toolCallItems(state)[0].item).toBe(agent);
+  });
+
+  it("is interrupted when the session ends before it hands back", () => {
+    const state = activityReducer(launched(), { type: "session_ended" });
+    expect(state.toolCallMap.get("agent")?.status).toBe("interrupted");
+  });
+
+  it("is interrupted when the user stops the turn, which takes it down too", () => {
+    const state = activityReducer(launched(), { type: "turn_ended", stopReason: "cancelled" });
+    expect(state.toolCallMap.get("agent")?.status).toBe("interrupted");
+    expect(state.toolCallMap.get("bash")?.status).toBe("interrupted");
+  });
+
+  it("is stopped by a TaskStop naming its agent id, and only that one", () => {
+    let state = launched();
+    const stop = (taskId: string) => {
+      state = activityReducer(
+        state,
+        event(
+          {
+            sessionUpdate: "tool_call",
+            toolCallId: `stop-${taskId}`,
+            title: "TaskStop",
+            kind: "other",
+          },
+          { _meta: { claudeCode: { toolName: "TaskStop" } } },
+        ),
+      );
+      state = activityReducer(
+        state,
+        event(
+          { sessionUpdate: "tool_call_update", toolCallId: `stop-${taskId}` },
+          { _meta: { claudeCode: { toolName: "TaskStop", toolResponse: { task_id: taskId } } } },
+        ),
+      );
+      state = activityReducer(
+        state,
+        event(
+          { sessionUpdate: "tool_call_update", toolCallId: `stop-${taskId}`, status: "completed" },
+          { _meta: { claudeCode: { toolName: "TaskStop" } } },
+        ),
+      );
+    };
+    stop("some-shell");
+    expect(state.toolCallMap.get("agent")?.status).toBe("in_progress");
+    stop("a4e26c83");
+    expect(state.toolCallMap.get("agent")?.status).toBe("interrupted");
+    expect(toolCallItems(state).find((i) => i.item.toolCallId === "agent")?.item.status).toBe(
+      "interrupted",
+    );
+  });
+
+  it("leaves a foreground subagent finishing at its own completion", () => {
+    let state = makeState();
+    state = activityReducer(
+      state,
+      event(
+        { sessionUpdate: "tool_call", toolCallId: "agent", title: "Task", kind: "think" },
+        agentMeta(),
+      ),
+    );
+    state = activityReducer(
+      state,
+      event(
+        { sessionUpdate: "tool_call_update", toolCallId: "agent", status: "completed" },
+        agentMeta(),
+      ),
+    );
+    expect(state.toolCallMap.get("agent")?.status).toBe("completed");
   });
 });
