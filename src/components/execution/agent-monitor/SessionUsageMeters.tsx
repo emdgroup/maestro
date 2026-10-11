@@ -159,11 +159,11 @@ function WindowMeter({ limits, id, now }: { limits: PlanLimits; id: PlanWindowId
   return (
     <div className="w-20 text-[10px]">
       <div className="flex justify-between">
-        <span className="tabular-nums text-muted-foreground">
-          {formatCountdown(w.resetsAt - now)}
-        </span>
         <span className={cn("font-medium tabular-nums", TEXT[tone])}>
           {tone === "reached" ? "Limit" : `${Math.round(w.utilization * 100)}%`}
+        </span>
+        <span className="tabular-nums text-muted-foreground">
+          {formatCountdown(w.resetsAt - now)}
         </span>
       </div>
       <Track
