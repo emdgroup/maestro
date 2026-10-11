@@ -369,6 +369,11 @@ pub(crate) async fn create_session_on_connection(
             session_state,
         )
         .await;
+    crate::usage_store::note_session(
+        &maestro_session_id,
+        false,
+        models.as_ref().map(|m| m.current_model_id.clone()),
+    );
 
     let so = Arc::clone(&stdout);
     let sid = maestro_session_id.clone();
@@ -559,6 +564,12 @@ pub(crate) async fn load_session_on_connection(
                 image: false,
                 audio: false,
             });
+
+    crate::usage_store::note_session(
+        &maestro_session_id,
+        true,
+        models.as_ref().map(|m| m.current_model_id.clone()),
+    );
 
     let so = Arc::clone(&stdout);
     let sid = maestro_session_id;

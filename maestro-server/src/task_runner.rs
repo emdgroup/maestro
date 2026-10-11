@@ -1089,6 +1089,7 @@ mod tests {
             facts: Default::default(),
             usage: None,
             model_usage: None,
+            meter: Default::default(),
         }
     }
 

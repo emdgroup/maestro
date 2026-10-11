@@ -47,6 +47,7 @@ mod terminal;
 mod tool_check;
 mod tool_config;
 mod turn;
+mod usage_store;
 mod webhook;
 mod workspace_roots;
 mod worktree;
@@ -822,6 +823,13 @@ async fn run_server(
                 };
                 // A task's session: resolve the turn and start the next stage, off the loop.
                 let ending = sessions.get(&ended.session_id);
+                if let (Some(store), Some(session)) = (project_store.as_ref(), ending) {
+                    project_store::report(usage_store::record(
+                        &*store.lock().await,
+                        &usage_store::Turn::of(&ended.session_id, session, &ended),
+                        chrono::Utc::now(),
+                    ));
+                }
                 let task_binding = ending.and_then(task_turn::task_of);
                 let role = ending.and_then(task_turn::role_of);
                 if let (Some(store), Some((project_path, task_id))) =
