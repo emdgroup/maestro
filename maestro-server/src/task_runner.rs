@@ -1087,6 +1087,8 @@ mod tests {
             stop_reason: "refusal".to_string(),
             final_message: None,
             facts: Default::default(),
+            usage: None,
+            model_usage: None,
         }
     }
 

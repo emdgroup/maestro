@@ -63,6 +63,8 @@ pub(crate) async fn handle_agent_restart(
                 &ServerResponse::TurnEnded(TurnEnded {
                     session_id: maestro_sid.clone(),
                     stop_reason: "error".to_string(),
+                    usage: None,
+                    model_usage: None,
                 }),
             )
             .await;
@@ -84,6 +86,8 @@ pub(crate) async fn handle_agent_restart(
                 &ServerResponse::TurnEnded(TurnEnded {
                     session_id: maestro_sid.clone(),
                     stop_reason: "error".to_string(),
+                    usage: None,
+                    model_usage: None,
                 }),
             )
             .await;
