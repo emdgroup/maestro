@@ -13,6 +13,7 @@ import type {
 } from "./types";
 import { extractAgentMeta, mergeAgentMeta, type CompactionFacts } from "./agentMeta";
 import { isMaestroHostTool } from "./utils";
+import { limitReachedNotice, parsePlanLimits } from "./planLimits";
 
 export type ActivityAction =
   | { type: "event"; payload: SessionUpdatePayload; raw: Record<string, unknown> }
@@ -664,37 +665,21 @@ function processEvent(
 
     case "notice": {
       if (typeof payload.title !== "string" || !payload.title) return state;
-      const description = payload.description || null;
-      const key = `${payload.title}\n${description ?? ""}`;
-      const at = newState.items.findIndex((i) => i.type === "notice" && i.item.key === key);
-      const previous = at < 0 ? null : (newState.items[at] as { item: NoticeItem }).item;
-      // A repeat moves to the bottom, where the user is reading, rather than bumping a row
-      // scrolled out of sight.
-      const items = at < 0 ? newState.items : newState.items.filter((_, i) => i !== at);
-      const notice: NoticeItem = {
-        id: previous?.id ?? `notice-${crypto.randomUUID()}`,
-        key,
-        severity: payload.severity,
-        title: payload.title,
-        description,
-        count: (previous?.count ?? 0) + 1,
-        at: Date.now(),
-      };
-      return {
-        ...newState,
-        items: [...finalizeStreaming(items), { type: "notice", item: notice }],
-      };
+      return addNotice(newState, payload.severity, payload.title, payload.description || null);
     }
 
     case "usage_update": {
-      const awaiting = newState.compactionAwaitingUsage;
-      if (
-        typeof payload.used !== "number" ||
-        (!awaiting && newState.contextUsed === payload.used)
-      ) {
-        return state;
+      // A refused reply is said where the user is reading, once per limit hit.
+      const limits = parsePlanLimits(raw);
+      const reached = limits && limitReachedNotice(limits);
+      const base = reached
+        ? addNotice(newState, "warning", reached.title, reached.description, false)
+        : newState;
+      const awaiting = base.compactionAwaitingUsage;
+      if (typeof payload.used !== "number" || (!awaiting && base.contextUsed === payload.used)) {
+        return reached ? base : state;
       }
-      const next = { ...newState, contextUsed: payload.used, compactionAwaitingUsage: null };
+      const next = { ...base, contextUsed: payload.used, compactionAwaitingUsage: null };
       const tc = awaiting ? next.toolCallMap.get(awaiting) : undefined;
       if (!tc?.meta?.compaction) return next;
       return replaceToolCall(next, {
@@ -706,6 +691,35 @@ function processEvent(
     default:
       return state;
   }
+}
+
+/**
+ * One notice row per title and description. A repeat moves to the bottom, where the user is
+ * reading, rather than bumping a row scrolled out of sight; `bump` says whether it also counts.
+ */
+function addNotice(
+  state: ActivityState,
+  severity: string,
+  title: string,
+  description: string | null,
+  bump = true,
+): ActivityState {
+  const key = `${title}
+${description ?? ""}`;
+  const at = state.items.findIndex((i) => i.type === "notice" && i.item.key === key);
+  const previous = at < 0 ? null : (state.items[at] as { item: NoticeItem }).item;
+  if (previous && !bump) return state;
+  const items = at < 0 ? state.items : state.items.filter((_, i) => i !== at);
+  const notice: NoticeItem = {
+    id: previous?.id ?? `notice-${crypto.randomUUID()}`,
+    key,
+    severity,
+    title,
+    description,
+    count: (previous?.count ?? 0) + 1,
+    at: Date.now(),
+  };
+  return { ...state, items: [...finalizeStreaming(items), { type: "notice", item: notice }] };
 }
 
 /** ACP's compaction lifecycle, in the statuses a tool-call row already knows how to draw. */

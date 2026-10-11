@@ -239,11 +239,9 @@ export function LiquidContextIndicator({
         </Progress>
 
         {/* Token info */}
-        <div className="flex justify-between text-[11px] text-muted-foreground">
-          <span>
-            {humanizeTokenCount(usage.used)} / {humanizeTokenCount(usage.size)} tokens
-          </span>
-          {usage.cost && <span>${usage.cost.amount.toFixed(2)}</span>}
+        {/* The session's cost lives in the session header, beside its plan limits. */}
+        <div className="text-[11px] text-muted-foreground">
+          {humanizeTokenCount(usage.used)} / {humanizeTokenCount(usage.size)} tokens
         </div>
 
         {/* Contextual tip */}

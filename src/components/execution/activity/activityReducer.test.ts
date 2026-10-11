@@ -1017,6 +1017,32 @@ describe("activityReducer — notices", () => {
     expect(state.items[0]).toMatchObject({ type: "message", item: { isStreaming: false } });
   });
 
+  it("says once in the session that Claude refused for a plan limit", () => {
+    const usage = (status: string) => {
+      const raw = {
+        sessionUpdate: "usage_update",
+        used: 10,
+        size: 100,
+        _meta: {
+          "_claude/rateLimit": {
+            status,
+            rateLimitType: "five_hour",
+            resetsAt: 1_791_677_400,
+            unifiedWindows: { five_hour: { utilization: 1, resetsAt: 1_791_677_400 } },
+          },
+        },
+      };
+      return event(raw as unknown as SessionUpdatePayload, raw);
+    };
+    const allowed = [usage("allowed")].reduce(activityReducer, makeState());
+    expect(notices(allowed)).toHaveLength(0);
+    const refused = [usage("rejected"), usage("rejected")].reduce(activityReducer, makeState());
+    expect(notices(refused)).toMatchObject([
+      { title: "Claude 5-hour limit reached", severity: "warning", count: 1 },
+    ]);
+    expect(refused.contextUsed).toBe(10);
+  });
+
   it("counts a repeat on one row and moves it to the bottom", () => {
     const state = [
       notice("Auto mode unavailable"),

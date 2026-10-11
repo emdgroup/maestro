@@ -6,6 +6,7 @@ import { useNavigationStore } from "@/store/navigationStore";
 import { useSessionActivityStore } from "@/store/sessionActivityStore";
 import { activityReducer, type ActivityAction } from "./activityReducer";
 import { INITIAL_ACTIVITY_STATE } from "./types";
+import { parsePlanLimits, type PlanLimits } from "./planLimits";
 import type {
   ActivityState,
   AvailableCommand,
@@ -46,6 +47,8 @@ export type SessionLifecycle = {
   configOptions: ConfigOption[];
   configValues: Record<string, string>;
   usageState: UsageState | null;
+  /** The latest plan limits this session's agent reported, which are its account's, not its own. */
+  planLimits: PlanLimits | null;
   availableCommands: AvailableCommand[];
   promptCapabilities: AcpPromptCapabilities | null;
   pendingPermission: PendingPermission | null;
@@ -61,6 +64,7 @@ export const INITIAL_LIFECYCLE: SessionLifecycle = {
   configOptions: [],
   configValues: {},
   usageState: null,
+  planLimits: null,
   availableCommands: [],
   promptCapabilities: null,
   pendingPermission: null,
@@ -187,6 +191,9 @@ function applySessionUpdate(sessionId: string, rt: Runtime, raw: Record<string, 
     });
   }
   if (p.sessionUpdate === "usage_update") {
+    const planLimits = parsePlanLimits(raw);
+    if (planLimits) rt.lifecycle = { ...rt.lifecycle, planLimits };
+    const l = rt.lifecycle;
     if (typeof p.used === "number" && typeof p.size === "number") {
       const usageState: UsageState = {
         used: p.used,
