@@ -73,8 +73,9 @@ function money({ amount, currency }: { amount: number; currency: string }) {
 }
 
 /**
- * The session's cost and its agent's plan limits, on the right of the session header. Each window
- * is labelled with the time left before it resets, and its track hatches what is left of it.
+ * The session's cost and its agent's 5-hour window, on the right of the session header, with every
+ * window in the hover card. A window is labelled with the time left before it resets, and its track
+ * hatches what is left of it.
  */
 export function SessionUsageMeters({
   sessionId,
@@ -117,7 +118,10 @@ export function SessionUsageMeters({
             {money(cost)}
           </span>
         )}
-        {limits && windows.map((id) => <WindowMeter key={id} limits={limits} id={id} now={now} />)}
+        {/* The weekly window is in the hover card only. */}
+        {limits && windows.includes("fiveHour") && (
+          <WindowMeter limits={limits} id="fiveHour" now={now} />
+        )}
       </HoverCardTrigger>
       <HoverCardContent
         align="end"
