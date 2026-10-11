@@ -25,7 +25,7 @@ const TEXT: Record<WindowTone, string> = {
   ahead: "text-warning",
   reached: "text-destructive",
 };
-/** What has already passed of the window, so the fill reads against the time it was spent in. */
+/** What is left of the window: it shrinks toward the reset, and a fill running into it is ahead of pace. */
 const HATCH = {
   backgroundImage:
     "repeating-linear-gradient(135deg, rgb(255 255 255 / 0.16) 0 2px, transparent 2px 4px)",
@@ -50,7 +50,10 @@ function Track({
 }) {
   return (
     <div className={cn("relative overflow-hidden rounded-full bg-foreground/[0.07]", className)}>
-      <div className="absolute inset-y-0 left-0" style={{ ...HATCH, width: `${elapsed * 100}%` }} />
+      <div
+        className="absolute inset-y-0 right-0"
+        style={{ ...HATCH, width: `${(1 - elapsed) * 100}%` }}
+      />
       <div
         className={cn("absolute inset-y-0 left-0 rounded-full", FILL[tone])}
         style={{ width: `${Math.min(usage, 1) * 100}%` }}
@@ -69,7 +72,7 @@ function money({ amount, currency }: { amount: number; currency: string }) {
 
 /**
  * The session's cost and its agent's plan limits, on the right of the session header. Each window
- * is labelled with the time left before it resets, and its track hatches what has passed of it.
+ * is labelled with the time left before it resets, and its track hatches what is left of it.
  */
 export function SessionUsageMeters({
   sessionId,
@@ -108,9 +111,10 @@ export function SessionUsageMeters({
         }
       >
         {cost && (
-          <span className="text-[11px] tabular-nums text-muted-foreground">{money(cost)}</span>
+          <span className="rounded-md bg-accent/15 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-accent">
+            {money(cost)}
+          </span>
         )}
-        {cost && windows.length > 0 && <span className="h-5 w-px bg-border" />}
         {limits && windows.map((id) => <WindowMeter key={id} limits={limits} id={id} now={now} />)}
       </HoverCardTrigger>
       <HoverCardContent align="end" className="w-72 space-y-3 p-3.5 text-[11px]">
@@ -138,7 +142,7 @@ function WindowMeter({ limits, id, now }: { limits: PlanLimits; id: PlanWindowId
   const w = limits.windows[id]!;
   const tone = windowTone(limits, id, now);
   return (
-    <div className="w-20 text-[10px]" title={`${PLAN_WINDOWS[id].label}, time to reset`}>
+    <div className="w-20 text-[10px]">
       <div className="flex justify-between">
         <span className="tabular-nums text-muted-foreground">
           {formatCountdown(w.resetsAt - now)}
