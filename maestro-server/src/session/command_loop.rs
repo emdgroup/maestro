@@ -11,7 +11,7 @@ use maestro_protocol::{
     ConfigOptionUpdatedResponse, ErrorResponse, ModeInfo as ProtocolModeInfo,
     ModelInfo as ProtocolModelInfo, PromptCapabilitiesInfo, ServerResponse,
     SessionModeState as ProtocolSessionModeState, SessionModelState as ProtocolSessionModelState,
-    SetModeOkResponse, TurnEnded, TurnStarted,
+    SetModeOkResponse, TurnEnded, TurnStarted, TurnUsage,
 };
 use tokio::sync::mpsc;
 
@@ -23,35 +23,68 @@ pub(crate) async fn handle_prompt_result(
     session_id: String,
     stdout: &crate::ClientOut,
 ) {
-    let stop_reason = match result {
-        Ok(resp) => match resp.stop_reason {
-            StopReason::EndTurn => "end_turn",
-            StopReason::MaxTokens => "max_tokens",
-            StopReason::MaxTurnRequests => "max_turn_requests",
-            StopReason::Refusal => "refusal",
-            StopReason::Cancelled => "cancelled",
-            _ => "unknown",
-        }
-        .to_string(),
+    let ended = turn_ended(result, session_id);
+    crate::helpers::note_turn_ended(
+        &ended.session_id,
+        &ended.stop_reason,
+        ended.usage.clone(),
+        ended.model_usage.clone(),
+    );
+    let _ = send_response(stdout, &ServerResponse::TurnEnded(ended)).await;
+}
+
+fn turn_ended(result: Result<PromptResponse, acp::Error>, session_id: String) -> TurnEnded {
+    let (stop_reason, (usage, model_usage)) = match result {
+        Ok(resp) => (
+            match resp.stop_reason {
+                StopReason::EndTurn => "end_turn",
+                StopReason::MaxTokens => "max_tokens",
+                StopReason::MaxTurnRequests => "max_turn_requests",
+                StopReason::Refusal => "refusal",
+                StopReason::Cancelled => "cancelled",
+                _ => "unknown",
+            }
+            .to_string(),
+            turn_usage(&resp),
+        ),
         Err(e) => {
             crate::send_diag(
                 "error",
                 format!("[prompt] ACP error for session {session_id}: {e}"),
             );
-            if e.code == acp::schema::v1::ErrorCode::AuthRequired {
+            let stop_reason = if e.code == acp::schema::v1::ErrorCode::AuthRequired {
                 "auth_required"
             } else {
                 "error"
-            }
-            .to_string()
+            };
+            (stop_reason.to_string(), (None, None))
         }
     };
-    crate::helpers::note_turn_ended(&session_id, &stop_reason);
-    let msg = ServerResponse::TurnEnded(TurnEnded {
+    TurnEnded {
         session_id,
         stop_reason,
+        usage,
+        model_usage,
+    }
+}
+
+/// The agent's token counts for the turn, and its raw `_meta.quota.model_usage`.
+fn turn_usage(resp: &PromptResponse) -> (Option<TurnUsage>, Option<serde_json::Value>) {
+    let usage = resp.usage.as_ref().map(|u| TurnUsage {
+        total_tokens: u.total_tokens,
+        input_tokens: u.input_tokens,
+        output_tokens: u.output_tokens,
+        thought_tokens: u.thought_tokens,
+        cached_read_tokens: u.cached_read_tokens,
+        cached_write_tokens: u.cached_write_tokens,
     });
-    let _ = send_response(stdout, &msg).await;
+    let model_usage = resp
+        .meta
+        .as_ref()
+        .and_then(|m| m.get("quota"))
+        .and_then(|q| q.get("model_usage"))
+        .cloned();
+    (usage, model_usage)
 }
 
 /// Sent ahead of the prompt, so it reaches the host before anything the agent says in answer.
@@ -251,12 +284,14 @@ pub(crate) async fn run_command_loop(
                 if result.is_err() {
                     in_flight.finish();
                     turn_active.store(false, Ordering::SeqCst);
-                    crate::helpers::note_turn_ended(&maestro_sid, "error");
+                    crate::helpers::note_turn_ended(&maestro_sid, "error", None, None);
                     let _ = send_response(
                         &so_err,
                         &ServerResponse::TurnEnded(TurnEnded {
                             session_id: maestro_sid.clone(),
                             stop_reason: "error".to_string(),
+                            usage: None,
+                            model_usage: None,
                         }),
                     )
                     .await;
@@ -301,12 +336,14 @@ pub(crate) async fn run_command_loop(
                 if result.is_err() {
                     in_flight.finish();
                     turn_active.store(false, Ordering::SeqCst);
-                    crate::helpers::note_turn_ended(&maestro_sid, "error");
+                    crate::helpers::note_turn_ended(&maestro_sid, "error", None, None);
                     let _ = send_response(
                         &so_err,
                         &ServerResponse::TurnEnded(TurnEnded {
                             session_id: maestro_sid.clone(),
                             stop_reason: "error".to_string(),
+                            usage: None,
+                            model_usage: None,
                         }),
                     )
                     .await;
@@ -331,6 +368,8 @@ pub(crate) async fn run_command_loop(
                         &ServerResponse::TurnEnded(TurnEnded {
                             session_id: maestro_sid.clone(),
                             stop_reason: "cancelled".to_string(),
+                            usage: None,
+                            model_usage: None,
                         }),
                     )
                     .await
@@ -448,7 +487,73 @@ pub(crate) async fn run_command_loop(
 
 #[cfg(test)]
 mod tests {
-    use super::PromptsInFlight;
+    use super::{turn_ended, PromptsInFlight};
+    use acp::schema::v1::PromptResponse;
+    use agent_client_protocol as acp;
+    use maestro_protocol::TurnUsage;
+
+    fn response(json: serde_json::Value) -> PromptResponse {
+        serde_json::from_value(json).unwrap()
+    }
+
+    #[test]
+    fn a_turn_carries_the_usage_the_agent_reported() {
+        let model_usage = serde_json::json!([{ "model": "opus", "token_count": { "input": 7 } }]);
+        let ended = turn_ended(
+            Ok(response(serde_json::json!({
+                "stopReason": "end_turn",
+                "usage": {
+                    "totalTokens": 30,
+                    "inputTokens": 10,
+                    "outputTokens": 15,
+                    "cachedReadTokens": 5
+                },
+                "_meta": { "quota": { "model_usage": model_usage.clone() } }
+            }))),
+            "s".to_string(),
+        );
+        assert_eq!(ended.stop_reason, "end_turn");
+        assert_eq!(
+            ended.usage,
+            Some(TurnUsage {
+                total_tokens: 30,
+                input_tokens: 10,
+                output_tokens: 15,
+                thought_tokens: None,
+                cached_read_tokens: Some(5),
+                cached_write_tokens: None,
+            })
+        );
+        assert_eq!(ended.model_usage, Some(model_usage));
+    }
+
+    #[test]
+    fn a_turn_without_usage_still_ends() {
+        let ended = turn_ended(
+            Ok(response(serde_json::json!({ "stopReason": "end_turn" }))),
+            "s".to_string(),
+        );
+        assert_eq!(ended.stop_reason, "end_turn");
+        assert_eq!(ended.usage, None);
+        assert_eq!(ended.model_usage, None);
+    }
+
+    #[test]
+    fn malformed_usage_is_dropped_and_the_turn_still_ends() {
+        for usage in [
+            serde_json::json!("oops"),
+            serde_json::json!({ "inputTokens": 1, "outputTokens": 2 }),
+        ] {
+            let ended = turn_ended(
+                Ok(response(
+                    serde_json::json!({ "stopReason": "end_turn", "usage": usage }),
+                )),
+                "s".to_string(),
+            );
+            assert_eq!(ended.stop_reason, "end_turn");
+            assert_eq!(ended.usage, None);
+        }
+    }
 
     #[test]
     fn only_the_last_outstanding_answer_ends_the_turn() {

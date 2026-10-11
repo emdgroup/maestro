@@ -2554,6 +2554,28 @@ pub struct TurnStarted {
 pub struct TurnEnded {
     pub session_id: String,
     pub stop_reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<TurnUsage>,
+    /// The agent's `_meta.quota.model_usage`, kept raw: its field names differ by agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_usage: Option<serde_json::Value>,
+}
+
+/// Token counts an agent reported on `PromptResponse.usage`, forwarded exactly as received.
+///
+/// Per turn in practice, whatever the draft spec says, and `input_tokens` does not mean the same
+/// thing across agents (some count cache tokens in it, some do not).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TurnUsage {
+    pub total_tokens: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thought_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_read_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_write_tokens: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -4319,10 +4341,28 @@ mod tests {
         let msg = AnyMessage::Response(ServerResponse::TurnEnded(TurnEnded {
             session_id: "sess-1".to_string(),
             stop_reason: "end_turn".to_string(),
+            usage: Some(TurnUsage {
+                total_tokens: 30,
+                input_tokens: 10,
+                output_tokens: 20,
+                thought_tokens: None,
+                cached_read_tokens: Some(5),
+                cached_write_tokens: None,
+            }),
+            model_usage: Some(serde_json::json!([{ "model": "m", "token_count": { "x": 1 } }])),
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: AnyMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn turn_ended_without_usage_still_decodes() {
+        // What a daemon from before token usage sends.
+        let ended: TurnEnded =
+            serde_json::from_str(r#"{"session_id":"sess-1","stop_reason":"end_turn"}"#).unwrap();
+        assert_eq!(ended.usage, None);
+        assert_eq!(ended.model_usage, None);
     }
 
     #[test]
