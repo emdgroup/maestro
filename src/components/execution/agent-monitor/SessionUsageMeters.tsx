@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { cn } from "@/lib/utils";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/ui/hover-card";
+import {
+  DOT_COLOR,
+  PCT_COLOR,
+  PROGRESS_COLOR,
+} from "@/components/execution/activity/liquid-indicator-data";
 import { getLifecycle, subscribeSession } from "@/components/execution/activity/sessionRuntime";
 import {
   PLAN_WINDOWS,
@@ -15,11 +20,8 @@ import {
   type WindowTone,
 } from "@/components/execution/activity/planLimits";
 
-const FILL: Record<WindowTone, string> = {
-  ok: "bg-success",
-  ahead: "bg-warning",
-  reached: "bg-destructive",
-};
+/** The context window popover's colours, so both popups speak one language. */
+const STATE = { ok: "normal", ahead: "amber", reached: "critical" } as const;
 const TEXT: Record<WindowTone, string> = {
   ok: "text-foreground",
   ahead: "text-warning",
@@ -55,7 +57,7 @@ function Track({
         style={{ ...HATCH, width: `${(1 - elapsed) * 100}%` }}
       />
       <div
-        className={cn("absolute inset-y-0 left-0 rounded-full", FILL[tone])}
+        className={cn("absolute inset-y-0 left-0 rounded-full", PROGRESS_COLOR[STATE[tone]])}
         style={{ width: `${Math.min(usage, 1) * 100}%` }}
       />
     </div>
@@ -117,14 +119,23 @@ export function SessionUsageMeters({
         )}
         {limits && windows.map((id) => <WindowMeter key={id} limits={limits} id={id} now={now} />)}
       </HoverCardTrigger>
-      <HoverCardContent align="end" className="w-72 space-y-3 p-3.5 text-[11px]">
+      <HoverCardContent
+        align="end"
+        className={cn(
+          "flex w-64 flex-col gap-3 rounded-md p-3.5 text-[11px]",
+          "backdrop-blur-[4px] bg-popover/60 border-border/30",
+          "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)]",
+        )}
+      >
         {cost && (
-          <div>
-            <div className="flex justify-between">
-              <span className="text-xs font-semibold">This session</span>
-              <span className="font-semibold tabular-nums">{money(cost)}</span>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold">Session cost</span>
+              <span className="text-lg font-bold tabular-nums tracking-tight text-accent">
+                {money(cost)}
+              </span>
             </div>
-            <div className="text-[10px] text-muted-foreground">
+            <div className="text-muted-foreground">
               As the agent reports it. On a subscription this is the API-price equivalent, not a
               charge.
             </div>
@@ -177,9 +188,8 @@ function PlanDetails({
       ? `Extra usage off${limits.overageDisabledReason && OVERAGE_REASON[limits.overageDisabledReason] ? ` (${OVERAGE_REASON[limits.overageDisabledReason]})` : ""}. `
       : "";
   return (
-    <div className={cn("space-y-3", divided && "border-t pt-2.5")}>
-      <div className="text-xs font-semibold">Claude plan limits</div>
-      {windows.map((id) => {
+    <>
+      {windows.map((id, i) => {
         const w = limits.windows[id]!;
         const tone = windowTone(limits, id, now);
         const at = new Date(w.resetsAt * 1000).toLocaleString(undefined, {
@@ -188,30 +198,44 @@ function PlanDetails({
           minute: "2-digit",
         });
         return (
-          <div key={id} className="space-y-1.5">
-            <div className="flex justify-between">
-              <span>{PLAN_WINDOWS[id].label}</span>
-              <span className={cn("font-medium tabular-nums", tone !== "ok" && TEXT[tone])}>
-                {Math.round(w.utilization * 100)}%
-              </span>
-            </div>
-            <Track
-              usage={w.utilization}
-              elapsed={elapsedShare(w, id, now)}
-              tone={tone}
-              className="h-1.5"
-            />
-            <div className="text-[10px] text-muted-foreground">
-              {tone === "reached" ? "Reached. " : ""}Resets {at}, in{" "}
-              {formatCountdown(w.resetsAt - now)}
+          <div key={id} className="contents">
+            {(divided || i > 0) && <div className="h-px bg-border/50" />}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-xs font-semibold">
+                  <span
+                    className={cn("inline-block h-1.5 w-1.5 rounded-full", DOT_COLOR[STATE[tone]])}
+                  />
+                  {PLAN_WINDOWS[id].label}
+                </span>
+                <span
+                  className={cn(
+                    "text-lg font-bold tabular-nums tracking-tight",
+                    PCT_COLOR[STATE[tone]],
+                  )}
+                >
+                  {Math.round(w.utilization * 100)}%
+                </span>
+              </div>
+              <Track
+                usage={w.utilization}
+                elapsed={elapsedShare(w, id, now)}
+                tone={tone}
+                className="h-1"
+              />
+              <div className="text-muted-foreground">
+                {tone === "reached" ? "Reached. " : ""}Resets {at}, in{" "}
+                {formatCountdown(w.resetsAt - now)}
+              </div>
             </div>
           </div>
         );
       })}
-      <div className="border-t pt-2 text-[10px] text-muted-foreground">
+      <div className="h-px bg-border/50" />
+      <div className="text-[10px] text-muted-foreground">
         {overage}Shared by every Claude session on this connection. Updated{" "}
         {formatCountdown(now - limits.receivedAt / 1000)} ago.
       </div>
-    </div>
+    </>
   );
 }
