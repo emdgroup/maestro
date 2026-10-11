@@ -2,7 +2,7 @@
   <img src="public/maestro-logo.png" alt="Maestro" width="180" />
 </p>
 
-<h3 align="center">Run multiple AI coding agents in parallel — without losing control.</h3>
+<h3 align="center">Conduct your coding agents. All of them, in concert.</h3>
 
 <p align="center">
   <a href="https://github.com/emdgroup/maestro/releases/latest"><img src="https://img.shields.io/github/v/release/emdgroup/maestro?label=latest" alt="Latest release" /></a>
