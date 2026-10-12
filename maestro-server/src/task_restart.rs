@@ -233,8 +233,13 @@ pub(crate) fn spawn(driver: Driver, planned: Vec<(String, i32, Action)>) {
                 // The drain starts hand-offs, whoever left them.
                 Action::StartNext(_) => crate::scheduler::request_drain(&path),
                 Action::Recheck => {
-                    Box::pin(crate::loop_engine::recheck(&driver.store, &everyone, &path, task_id))
-                        .await
+                    Box::pin(crate::loop_engine::recheck(
+                        &driver.store,
+                        &everyone,
+                        &path,
+                        task_id,
+                    ))
+                    .await
                 }
                 Action::FinishIteration => {
                     Box::pin(crate::loop_engine::finish_orphan(
@@ -510,7 +515,9 @@ mod tests {
         );
         let rows = [row(1, true, false)];
         assert_eq!(
-            decide(1, Some(TaskPhase::Iterating), running, None, &rows, |_| false),
+            decide(1, Some(TaskPhase::Iterating), running, None, &rows, |_| {
+                false
+            }),
             Some(Action::Resume {
                 row: Box::new(rows[0].clone()),
                 role: AgentRole::Coder,

@@ -439,7 +439,11 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
         let next_iterations = iterations
             .into_iter()
             .map(|(task_id, role, _)| (task_id, role))
-            .chain(candidates.into_iter().map(|task_id| (task_id, AgentRole::Coder)));
+            .chain(
+                candidates
+                    .into_iter()
+                    .map(|task_id| (task_id, AgentRole::Coder)),
+            );
         for (task_id, role) in next_iterations {
             if free == 0 {
                 break;

@@ -1142,56 +1142,14 @@ pub(crate) async fn dispatch_message(
             }
         }
 
-        // A loop's checks run again off the loop; the reply only says they started.
-        ServerRequest::RerunLoopChecks(request) => {
-            let Some(store) = project_store else {
-                let error = error_response(crate::project_store::UNAVAILABLE.to_string());
-                send_or_return!(send_response(stdout, &error).await);
-                return true;
-            };
-            let path = crate::automations::canonical_project_path(&request.project_path);
-            let claimed =
-                crate::task_store::loops::claim_recheck(&mut *store.lock().await, &path, request.task_id);
-            match claimed {
-                Ok(_) => {
-                    send_or_return!(send_response(stdout, &ServerResponse::RerunLoopChecksOk).await);
-                    let changed = ServerResponse::TasksChanged(maestro_protocol::ProjectRef {
-                        project_path: path.clone(),
-                    });
-                    crate::helpers::broadcast(stdout, changed).await;
-                    crate::loop_engine::rerun(Arc::clone(store), Arc::clone(stdout), path, request.task_id);
-                }
-                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
-            }
-        }
-
-        ServerRequest::ReadLoopNotes(request) => {
-            let Some(store) = project_store else {
-                let error = error_response(crate::project_store::UNAVAILABLE.to_string());
-                send_or_return!(send_response(stdout, &error).await);
-                return true;
-            };
-            let path = crate::automations::canonical_project_path(&request.project_path);
-            let worktree = crate::task_store::worktrees::list(&*store.lock().await, &path, Some(request.task_id))
-                .map(|rows| rows.into_iter().next());
-            let reply = match worktree {
-                Ok(worktree) => {
-                    let content = match worktree {
-                        Some(row) => {
-                            let dir = crate::worktree::absolute(&path, &row.path);
-                            tokio::fs::read_to_string(
-                                std::path::Path::new(&dir).join(".maestro/loop/PROGRESS.md"),
-                            )
-                            .await
-                            .ok()
-                        }
-                        None => None,
-                    };
-                    ServerResponse::ReadLoopNotesOk(maestro_protocol::LoopNotes { content })
-                }
-                Err(e) => error_response(e),
-            };
+        // Boxed and out of line: this function's frame is already most of the main thread's stack.
+        request @ (ServerRequest::RerunLoopChecks(_) | ServerRequest::ReadLoopNotes(_)) => {
+            let (reply, pushes) =
+                Box::pin(crate::loop_engine::answer(request, project_store, stdout)).await;
             send_or_return!(send_response(stdout, &reply).await);
+            for push in pushes {
+                crate::helpers::broadcast(stdout, push).await;
+            }
         }
 
         ServerRequest::HostToolResult(result) => {

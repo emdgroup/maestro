@@ -242,7 +242,11 @@ fn loop_context(conn: &Connection, project_path: &str, task: &Task) -> Result<St
     }
 
     // The previous iteration's commit, when a hook refused it.
-    if let Some(last) = iterations.iter().rev().find(|i| i.outcome != LoopIterationOutcome::Running) {
+    if let Some(last) = iterations
+        .iter()
+        .rev()
+        .find(|i| i.outcome != LoopIterationOutcome::Running)
+    {
         if let (LoopIterationOutcome::Failed, Some(output)) = (last.outcome, &last.check_output) {
             out.push_str(&format!(
                 "\n\n## The last iteration ended with an error\n\n```\n{}\n```",

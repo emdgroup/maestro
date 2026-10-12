@@ -112,9 +112,11 @@ pub fn normalize_config(config: &LoopConfig) -> Result<LoopConfig, String> {
 /// do without hiding them from everyone else too.
 pub(crate) fn check_workspace(mode: RunMode, workspace: WorkspaceMode) -> Result<(), String> {
     if mode == RunMode::Loop && workspace != WorkspaceMode::NewWorktree {
-        return Err("A loop runs in a new worktree of its own, so its checks can be sealed \
+        return Err(
+            "A loop runs in a new worktree of its own, so its checks can be sealed \
                     from the agent"
-            .to_string());
+                .to_string(),
+        );
     }
     Ok(())
 }
@@ -1110,10 +1112,16 @@ mod tests {
         assert!(err.contains("No iteration"), "got: {err}");
 
         start_iteration(&conn, PROJECT, task, 1, "acp", "claude").unwrap();
-        conn.execute("UPDATE loop_iterations SET commit_sha = 'abc', outcome = 'Checked'", [])
-            .unwrap();
+        conn.execute(
+            "UPDATE loop_iterations SET commit_sha = 'abc', outcome = 'Checked'",
+            [],
+        )
+        .unwrap();
         set_state(&conn, "Iterating", "Running");
-        assert!(claim_recheck(&mut conn, PROJECT, task).is_err(), "a live iteration");
+        assert!(
+            claim_recheck(&mut conn, PROJECT, task).is_err(),
+            "a live iteration"
+        );
         set_state(&conn, "Checking", "Failed");
         let claimed = claim_recheck(&mut conn, PROJECT, task).unwrap();
         assert_eq!(

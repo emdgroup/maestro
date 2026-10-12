@@ -233,13 +233,19 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
         }
 
         // Nothing is live, but the daemon is at work on the agent's behalf.
-        TaskTransition::LoopChecking => TaskState::active(InProgress, Checking, Running, Ball::Agent),
+        TaskTransition::LoopChecking => {
+            TaskState::active(InProgress, Checking, Running, Ball::Agent)
+        }
 
-        TaskTransition::LoopIterate => TaskState::active(InProgress, Iterating, Waiting, Ball::Agent),
+        TaskTransition::LoopIterate => {
+            TaskState::active(InProgress, Iterating, Waiting, Ball::Agent)
+        }
 
         TaskTransition::LoopHalted => TaskState::active(InProgress, Iterating, Waiting, Ball::User),
 
-        TaskTransition::LoopChecksPassed => TaskState::active(Review, Approval, Waiting, Ball::User),
+        TaskTransition::LoopChecksPassed => {
+            TaskState::active(Review, Approval, Waiting, Ball::User)
+        }
     }
 }
 
@@ -551,8 +557,12 @@ mod tests {
     fn a_loop_iterates_checks_and_stops_for_the_user() {
         use PhaseStatus::*;
         use TaskPhase::*;
-        let at = |phase, status, ball| TaskState::active(TaskStatus::InProgress, phase, status, ball);
-        let iterating = resolve(TaskTransition::LoopIterationStarted, TaskState::parked(TaskStatus::Queue));
+        let at =
+            |phase, status, ball| TaskState::active(TaskStatus::InProgress, phase, status, ball);
+        let iterating = resolve(
+            TaskTransition::LoopIterationStarted,
+            TaskState::parked(TaskStatus::Queue),
+        );
         assert_eq!(iterating, at(Iterating, Running, TaskBall::Agent));
         let checking = resolve(TaskTransition::LoopChecking, iterating);
         assert_eq!(checking, at(Checking, Running, TaskBall::Agent));
@@ -581,7 +591,8 @@ mod tests {
         use PhaseStatus::*;
         use TaskPhase::*;
         let claim = TransitionGuard::Claim(vec![TaskStatus::Queue]);
-        let at = |phase, status, ball| TaskState::active(TaskStatus::InProgress, phase, status, ball);
+        let at =
+            |phase, status, ball| TaskState::active(TaskStatus::InProgress, phase, status, ball);
         for (state, claimable) in [
             (at(Iterating, Waiting, TaskBall::Agent), true),
             (at(Iterating, Waiting, TaskBall::User), true),
@@ -596,7 +607,10 @@ mod tests {
             );
         }
         // A start of the next iteration that never came up waits on the drain again.
-        let claimed = resolve(TaskTransition::ExecutionStarted, at(Iterating, Waiting, TaskBall::Agent));
+        let claimed = resolve(
+            TaskTransition::ExecutionStarted,
+            at(Iterating, Waiting, TaskBall::Agent),
+        );
         assert_eq!(
             resolve(TaskTransition::SpawnInterrupted, claimed),
             at(Iterating, Waiting, TaskBall::Agent)

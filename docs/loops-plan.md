@@ -203,7 +203,7 @@ Gaps the survey found, which the phases below close:
 | Phase | What                                                       | State       |
 | ----- | ---------------------------------------------------------- | ----------- |
 | 0     | Data model and protocol                                    | Done        |
-| 1     | The iteration engine and sealed checks                     | Not started |
+| 1     | The iteration engine and sealed checks                     | Done        |
 | 2     | Judge, digest, proposals, steering, sign-off, pull request | Not started |
 | 3     | Usage-limit gate, for every task                           | Not started |
 | 4     | The board: create, card, loop view                         | Not started |
@@ -384,6 +384,24 @@ since no session is live.
 - Until phase 2, a loop whose command checks all pass goes straight to the `Approval` gate, with any
   `judge` check still pending. Phase 2 puts the judge in between.
 - The prompt names no Maestro tool until phase 5 adds them.
+
+**As built** (`maestro-server/src/loop_engine.rs`, `task_store/loops.rs`):
+
+- The states: `Iterating` Running is a live iteration; `Iterating` Waiting with ball Agent is the next
+  one, waiting on the drain; with ball User it stalled or spent its budget, and Execute starts it
+  again; `Iterating` Failed is three failed iterations, and Retry starts the next. `Checking`
+  Running is the checks; `Checking` Failed is a flaky check or checks that could not run.
+- At an iteration's end the sealed paths are removed **before** the sparse checkout is set again,
+  then committed. Set first, a sealed file the worker changed after turning the sparse checkout off
+  would stay, and its removal be staged.
+- Re-run checks is offered on any stopped loop with a commit: paused, stalled, failed or at sign-off.
+- "The same output" ignores digits, so timings and counters do not read as progress.
+- A timeout is not re-run. A check that fails and then passes on its re-run is flaky; one that
+  passes and then fails cannot happen, since only failures are re-run.
+- **The daemon's main thread has almost no stack to spare.** `dispatch_message` sits near the 1 MB a
+  Windows debug build gives it, and two more inline arms froze the daemon (a hang, not a crash).
+  The loop requests are answered out of line in `loop_engine::answer`; do the same for anything
+  new there.
 
 ## Phase 2: judge, digest, proposals, steering, sign-off, pull request
 

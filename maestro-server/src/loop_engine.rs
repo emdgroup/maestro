@@ -12,8 +12,8 @@ use std::time::Duration;
 
 use maestro_protocol::{
     ApplyTaskTransitionRequest, LoopCheck, LoopCheckState, LoopConfig, LoopHiddenFile,
-    LoopIteration, LoopIterationOutcome, NewTaskComment, PhaseStatus, ServerRequest, Task,
-    TaskPhase, TaskTransition, TransitionGuard,
+    LoopIteration, LoopIterationOutcome, NewTaskComment, PhaseStatus, ServerRequest,
+    ServerResponse, Task, TaskPhase, TaskTransition, TransitionGuard,
 };
 
 use crate::command_ext::NoConsoleWindow;
@@ -70,7 +70,8 @@ async fn iteration_ended(
     end: IterationEnd,
 ) {
     // The pipeline's rule: a turn the user stopped, or one cut short, ends nothing.
-    if end.facts.user_interrupted || matches!(end.stop_reason.as_str(), "cancelled" | "auth_required")
+    if end.facts.user_interrupted
+        || matches!(end.stop_reason.as_str(), "cancelled" | "auth_required")
     {
         return;
     }
@@ -143,12 +144,16 @@ async fn close(stdout: &crate::ClientOut, session_id: &str) {
 }
 
 /// After a restart: an iteration whose session closed before its work was committed.
-pub(crate) async fn finish_orphan(store: &Store, everyone: &crate::ClientOut, path: &str, task_id: i32) {
+pub(crate) async fn finish_orphan(
+    store: &Store,
+    everyone: &crate::ClientOut,
+    path: &str,
+    task_id: i32,
+) {
     let read = {
         let conn = store.lock().await;
-        crate::task_store::get(&conn, path, task_id).and_then(|task| {
-            Ok(task.zip(running(&loops::list_iterations(&conn, path, task_id)?)))
-        })
+        crate::task_store::get(&conn, path, task_id)
+            .and_then(|task| Ok(task.zip(running(&loops::list_iterations(&conn, path, task_id)?))))
     };
     match read {
         Ok(Some((task, iteration))) => {
@@ -171,8 +176,15 @@ async fn finish(
 ) {
     let task_id = task.id;
     let Some(dir) = worktree_dir(store, path, task_id).await else {
-        stop(store, everyone, path, task_id, TaskPhase::Iterating, "The loop's worktree is gone.")
-            .await;
+        stop(
+            store,
+            everyone,
+            path,
+            task_id,
+            TaskPhase::Iterating,
+            "The loop's worktree is gone.",
+        )
+        .await;
         return;
     };
     let config = task.loop_config.clone().unwrap_or_default();
@@ -181,20 +193,37 @@ async fn finish(
     let touched_sealed = remove_sealed(&dir, &config.sealed_paths).await;
     let resealed = crate::worktree::seal(&dir, task).await;
     let committed = match resealed {
-        Ok(()) => commit(&dir, iteration.n, Duration::from_secs(config.check_timeout_secs.into())).await,
+        Ok(()) => {
+            commit(
+                &dir,
+                iteration.n,
+                Duration::from_secs(config.check_timeout_secs.into()),
+            )
+            .await
+        }
         Err(e) => Err(e),
     };
     let row = Committed {
         touched_sealed,
         ..committed.clone().ok().flatten().unwrap_or_default()
     };
-    if let Err(e) = loops::record_commit(&*store.lock().await, path, task_id, iteration, summary, &row) {
+    if let Err(e) = loops::record_commit(
+        &*store.lock().await,
+        path,
+        task_id,
+        iteration,
+        summary,
+        &row,
+    ) {
         send_diag("warn", format!("[loop] task {task_id}: {e}"));
     }
     if touched_sealed {
         send_diag(
             "info",
-            format!("[loop] iteration {} of task {task_id} wrote at a sealed path", iteration.n),
+            format!(
+                "[loop] iteration {} of task {task_id} wrote at a sealed path",
+                iteration.n
+            ),
         );
     }
 
@@ -202,7 +231,10 @@ async fn finish(
         _ if agent_failed => (LoopIterationOutcome::Failed, None),
         Err(e) => (
             LoopIterationOutcome::Failed,
-            Some(format!("The iteration's commit failed:\n{}", tail_chars(&e, OUTPUT_CHARS))),
+            Some(format!(
+                "The iteration's commit failed:\n{}",
+                tail_chars(&e, OUTPUT_CHARS)
+            )),
         ),
         Ok(None) => (LoopIterationOutcome::Empty, None),
         Ok(Some(_)) => {
@@ -222,12 +254,66 @@ async fn finish(
             return;
         }
     };
-    if let Err(e) =
-        loops::record_outcome(&*store.lock().await, path, task_id, iteration, outcome, output.as_deref())
-    {
+    if let Err(e) = loops::record_outcome(
+        &*store.lock().await,
+        path,
+        task_id,
+        iteration,
+        outcome,
+        output.as_deref(),
+    ) {
         send_diag("warn", format!("[loop] task {task_id}: {e}"));
     }
     conclude(store, everyone, path, task_id, TaskPhase::Iterating, None).await;
+}
+
+/// `RerunLoopChecks` and `ReadLoopNotes`: the reply, and the pushes owed after it.
+pub(crate) async fn answer(
+    request: ServerRequest,
+    store: Option<&Store>,
+    stdout: &crate::ClientOut,
+) -> (ServerResponse, Vec<ServerResponse>) {
+    let Some(store) = store else {
+        let error = crate::helpers::error_response(crate::project_store::UNAVAILABLE.to_string());
+        return (error, Vec::new());
+    };
+    let (task, rerun) = match request {
+        ServerRequest::RerunLoopChecks(task) => (task, true),
+        ServerRequest::ReadLoopNotes(task) => (task, false),
+        _ => {
+            return (
+                crate::helpers::error_response("not a loop request".to_string()),
+                Vec::new(),
+            )
+        }
+    };
+    let path = crate::automations::canonical_project_path(&task.project_path);
+    if rerun {
+        // The answer says the checks started; how they went arrives as the task changes.
+        return match loops::claim_recheck(&mut *store.lock().await, &path, task.task_id) {
+            Ok(_) => {
+                self::rerun(
+                    Arc::clone(store),
+                    Arc::clone(stdout),
+                    path.clone(),
+                    task.task_id,
+                );
+                let changed = ServerResponse::TasksChanged(maestro_protocol::ProjectRef {
+                    project_path: path,
+                });
+                (ServerResponse::RerunLoopChecksOk, vec![changed])
+            }
+            Err(e) => (crate::helpers::error_response(e), Vec::new()),
+        };
+    }
+    let content = match worktree_dir(store, &path, task.task_id).await {
+        Some(dir) => tokio::fs::read_to_string(Path::new(&dir).join(".maestro/loop/PROGRESS.md"))
+            .await
+            .ok(),
+        None => None,
+    };
+    let notes = maestro_protocol::LoopNotes { content };
+    (ServerResponse::ReadLoopNotesOk(notes), Vec::new())
 }
 
 /// After a restart: checks that died with the daemon run again.
@@ -255,8 +341,17 @@ pub(crate) fn rerun(store: Store, stdout: crate::ClientOut, path: String, task_i
                     }
                 }
                 Err(e) => {
-                    let note = format!("The checks could not run: the base branch is unreadable. {e}");
-                    stop(&store, &everyone, &path, task_id, TaskPhase::Checking, &note).await;
+                    let note =
+                        format!("The checks could not run: the base branch is unreadable. {e}");
+                    stop(
+                        &store,
+                        &everyone,
+                        &path,
+                        task_id,
+                        TaskPhase::Checking,
+                        &note,
+                    )
+                    .await;
                     return;
                 }
             }
@@ -292,8 +387,15 @@ async fn check(store: &Store, everyone: &crate::ClientOut, path: &str, task_id: 
         return;
     }
     let Some(dir) = worktree_dir(store, path, task_id).await else {
-        stop(store, everyone, path, task_id, TaskPhase::Checking, "The loop's worktree is gone.")
-            .await;
+        stop(
+            store,
+            everyone,
+            path,
+            task_id,
+            TaskPhase::Checking,
+            "The loop's worktree is gone.",
+        )
+        .await;
         return;
     };
     let run = match run_checks(&dir, &task, &checks, &hidden).await {
@@ -306,24 +408,34 @@ async fn check(store: &Store, everyone: &crate::ClientOut, path: &str, task_id: 
     };
     {
         let mut conn = store.lock().await;
-        let recorded = loops::record_results(&mut conn, path, task_id, &run.results).and_then(|()| {
-            match &last {
+        let recorded = loops::record_results(&mut conn, path, task_id, &run.results).and_then(
+            |()| match &last {
                 Some(last) => loops::record_outcome(
                     &conn,
                     path,
                     task_id,
                     last,
                     LoopIterationOutcome::Checked,
-                    Some(&run.output).filter(|o| !o.is_empty()).map(String::as_str),
+                    Some(&run.output)
+                        .filter(|o| !o.is_empty())
+                        .map(String::as_str),
                 ),
                 None => Ok(()),
-            }
-        });
+            },
+        );
         if let Err(e) = recorded {
             send_diag("warn", format!("[loop] task {task_id}: {e}"));
         }
     }
-    conclude(store, everyone, path, task_id, TaskPhase::Checking, Some(&run)).await;
+    conclude(
+        store,
+        everyone,
+        path,
+        task_id,
+        TaskPhase::Checking,
+        Some(&run),
+    )
+    .await;
 }
 
 /// Where the loop stands once an iteration is recorded, and the transition that says so.
@@ -337,9 +449,8 @@ async fn conclude(
 ) {
     let read = {
         let conn = store.lock().await;
-        crate::task_store::get(&conn, path, task_id).and_then(|task| {
-            Ok(task.map(|t| (t, loops::list_iterations(&conn, path, task_id))))
-        })
+        crate::task_store::get(&conn, path, task_id)
+            .and_then(|task| Ok(task.map(|t| (t, loops::list_iterations(&conn, path, task_id)))))
     };
     let (task, iterations) = match read {
         Ok(Some((task, Ok(iterations)))) => (task, iterations),
@@ -378,7 +489,10 @@ async fn conclude(
         ),
         Verdict::OutOfIterations => (
             TaskTransition::LoopHalted,
-            format!("Stopped: the loop used its {} iterations.", config.max_iterations),
+            format!(
+                "Stopped: the loop used its {} iterations.",
+                config.max_iterations
+            ),
         ),
         Verdict::OutOfTime => (
             TaskTransition::LoopHalted,
@@ -387,7 +501,10 @@ async fn conclude(
                 duration_words(config.max_agent_secs)
             ),
         ),
-        Verdict::Iterate => (TaskTransition::LoopIterate, progress_note(n, &iterations, run)),
+        Verdict::Iterate => (
+            TaskTransition::LoopIterate,
+            progress_note(n, &iterations, run),
+        ),
     };
     apply(
         store,
@@ -501,7 +618,11 @@ fn no_progress(checked: Option<&LoopIteration>, iteration: &LoopIteration) -> bo
 // ponytail: digits dropped so timings and counters do not read as progress; a check printing
 // random words would still look like change. Compare per-check pass/fail sets if that matters.
 fn same_output(a: Option<&str>, b: Option<&str>) -> bool {
-    let strip = |s: &str| s.chars().filter(|c| !c.is_ascii_digit()).collect::<String>();
+    let strip = |s: &str| {
+        s.chars()
+            .filter(|c| !c.is_ascii_digit())
+            .collect::<String>()
+    };
     match (a, b) {
         (Some(a), Some(b)) => strip(a) == strip(b),
         _ => false,
@@ -510,7 +631,10 @@ fn same_output(a: Option<&str>, b: Option<&str>) -> bool {
 
 fn agent_seconds(iteration: &LoopIteration) -> i64 {
     let at = |s: &str| chrono::DateTime::parse_from_rfc3339(s).ok();
-    match (at(&iteration.started_at), iteration.ended_at.as_deref().and_then(at)) {
+    match (
+        at(&iteration.started_at),
+        iteration.ended_at.as_deref().and_then(at),
+    ) {
         (Some(start), Some(end)) => (end - start).num_seconds().max(0),
         _ => 0,
     }
@@ -577,7 +701,16 @@ async fn stop(
 ) {
     let guard = TransitionGuard::Phase(phase);
     let note = Some(why.to_string());
-    apply(store, everyone, path, task_id, TaskTransition::PhaseFailed, guard, note).await;
+    apply(
+        store,
+        everyone,
+        path,
+        task_id,
+        TaskTransition::PhaseFailed,
+        guard,
+        note,
+    )
+    .await;
 }
 
 async fn worktree_dir(store: &Store, path: &str, task_id: i32) -> Option<String> {
@@ -608,7 +741,10 @@ async fn remove_sealed(dir: &str, sealed: &[String]) -> bool {
             tokio::fs::remove_file(&target).await
         };
         if let Err(e) = removed {
-            send_diag("warn", format!("[loop] cannot remove {}: {e}", target.display()));
+            send_diag(
+                "warn",
+                format!("[loop] cannot remove {}: {e}", target.display()),
+            );
         }
     }
     found
@@ -618,15 +754,26 @@ async fn remove_sealed(dir: &str, sealed: &[String]) -> bool {
 /// commit; the error is git's output, a failing hook's included.
 async fn commit(dir: &str, n: i32, limit: Duration) -> Result<Option<Committed>, String> {
     git(dir, &["add", "-A"]).await?;
-    if git(dir, &["diff", "--cached", "--name-only"]).await?.trim().is_empty() {
+    if git(dir, &["diff", "--cached", "--name-only"])
+        .await?
+        .trim()
+        .is_empty()
+    {
         return Ok(None);
     }
     let message = format!("loop: iteration {n}");
     let mut command = crate::worktree::git_command(dir, &["commit", "-m", &message]);
-    command.kill_on_drop(true).stdin(std::process::Stdio::null());
+    command
+        .kill_on_drop(true)
+        .stdin(std::process::Stdio::null());
     let output = tokio::time::timeout(limit, command.output())
         .await
-        .map_err(|_| format!("git commit timed out after {}", duration_words(limit.as_secs() as u32)))?
+        .map_err(|_| {
+            format!(
+                "git commit timed out after {}",
+                duration_words(limit.as_secs() as u32)
+            )
+        })?
         .map_err(|e| format!("cannot run git commit: {e}"))?;
     if !output.status.success() {
         return Err(format!(
@@ -650,7 +797,12 @@ fn numstat(output: &str) -> Committed {
     let mut committed = Committed::default();
     for line in output.lines().filter(|l| !l.trim().is_empty()) {
         let mut columns = line.split('\t');
-        let mut count = || columns.next().and_then(|c| c.parse::<i32>().ok()).unwrap_or(0);
+        let mut count = || {
+            columns
+                .next()
+                .and_then(|c| c.parse::<i32>().ok())
+                .unwrap_or(0)
+        };
         committed.added += count();
         committed.removed += count();
         committed.files += 1;
@@ -741,7 +893,10 @@ async fn run_commands(dir: &str, config: &LoopConfig, checks: &[LoopCheck]) -> C
     if let Some(setup) = config.setup_command.as_deref() {
         let ran = run_shell(dir, setup, limit).await;
         if !ran.passed {
-            let detail = format!("The setup command failed, so no check ran.\n{}", ran.describe(limit));
+            let detail = format!(
+                "The setup command failed, so no check ran.\n{}",
+                ran.describe(limit)
+            );
             run.results = runnable
                 .iter()
                 .map(|c| (c.id, LoopCheckState::Fail, Some(detail.clone())))
@@ -844,7 +999,10 @@ async fn run_shell(dir: &str, command: &str, limit: Duration) -> Ran {
     let (passed, timed_out) = match tokio::time::timeout(limit, child.wait()).await {
         Ok(Ok(status)) => (status.success(), false),
         Ok(Err(e)) => {
-            lines.lock().unwrap().push_back(format!("cannot wait for the command: {e}"));
+            lines
+                .lock()
+                .unwrap()
+                .push_back(format!("cannot wait for the command: {e}"));
             (false, false)
         }
         Err(_) => {
@@ -861,7 +1019,13 @@ async fn run_shell(dir: &str, command: &str, limit: Duration) -> Ran {
             abort.abort();
         }
     }
-    let tail = lines.lock().unwrap().iter().cloned().collect::<Vec<_>>().join("\n");
+    let tail = lines
+        .lock()
+        .unwrap()
+        .iter()
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n");
     Ran {
         passed,
         timed_out,
@@ -874,7 +1038,9 @@ fn shell(command: &str) -> tokio::process::Command {
     // `/S` strips the outer quotes and keeps the rest as typed, which the usual argument quoting
     // would mangle for cmd.
     let mut shell = tokio::process::Command::new("cmd");
-    shell.args(["/D", "/S", "/C"]).raw_arg(format!("\"{command}\""));
+    shell
+        .args(["/D", "/S", "/C"])
+        .raw_arg(format!("\"{command}\""));
     shell
 }
 
@@ -909,10 +1075,7 @@ async fn kill_tree(pid: u32) {
 }
 
 /// Read `pipe` line by line into `lines`, keeping the last [`TAIL_LINES`].
-async fn collect(
-    pipe: impl tokio::io::AsyncRead + Unpin,
-    lines: Arc<Mutex<VecDeque<String>>>,
-) {
+async fn collect(pipe: impl tokio::io::AsyncRead + Unpin, lines: Arc<Mutex<VecDeque<String>>>) {
     use tokio::io::AsyncBufReadExt;
     let mut reader = tokio::io::BufReader::new(pipe);
     let mut buffer = Vec::new();
@@ -1307,7 +1470,10 @@ mod tests {
         let text = prompt.blocks[1]["text"].as_str().unwrap();
         assert!(text.contains("## Iteration 2"), "{text}");
         assert!(text.contains("Sees the sealed files (failing)"), "{text}");
-        assert!(text.contains("src/missing.txt"), "the output reaches it: {text}");
+        assert!(
+            text.contains("src/missing.txt"),
+            "the output reaches it: {text}"
+        );
     }
 
     #[tokio::test]
@@ -1330,7 +1496,10 @@ mod tests {
         let row = &loops::list_iterations(&conn, &path, task.id).unwrap()[0];
         assert_eq!(row.outcome, LoopIterationOutcome::Failed);
         assert!(
-            row.check_output.as_deref().unwrap_or_default().contains("lint says no"),
+            row.check_output
+                .as_deref()
+                .unwrap_or_default()
+                .contains("lint says no"),
             "{row:?}"
         );
         let task = crate::task_store::get(&conn, &path, task.id)

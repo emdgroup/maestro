@@ -4341,7 +4341,15 @@ export type TaskInstruction = { id: number; task_id: number; content: string; so
  * A phase says nothing about which column the task is in. `Spawning` sits in Queue, which is what
  * lets a failed spawn be an ordinary active row rather than an exception to the phase invariant.
  */
-export type TaskPhase = "Spawning" | "Refining" | "Drafting" | "PlanReview" | "Implementing" | "Rework" | "SelfReview" | "Approval" | "AwaitingMerge"
+export type TaskPhase = "Spawning" | "Refining" | "Drafting" | "PlanReview" | "Implementing" | "Rework" | "SelfReview" | "Approval" | "AwaitingMerge" | 
+/**
+ * A loop's coder, one fresh session per iteration.
+ */
+"Iterating" | 
+/**
+ * A loop's checks running, with no session live.
+ */
+"Checking"
 export type TaskPriority = "Urgent" | "High" | "Medium" | "Low" | "None"
 export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
 export type TaskStatus = "Planning" | "Queue" | "InProgress" | "Review" | "Done" | "Cancelled"
