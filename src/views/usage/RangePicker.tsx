@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { subMonths } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import { Calendar } from "@/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
@@ -70,6 +71,8 @@ export function RangePicker({ choice, onChange }: RangePickerProps) {
             selected={days}
             onSelect={setDays}
             disabled={{ after: new Date() }}
+            defaultMonth={subMonths(new Date(), 1)}
+            endMonth={new Date()}
             className="bg-transparent p-0"
           />
           <div className="mt-3 flex justify-end gap-2 text-xs">

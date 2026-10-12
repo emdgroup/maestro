@@ -142,7 +142,7 @@ export function UsageChart({ buckets, bucket, series, cumulative, format }: Usag
       </div>
       <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
         {buckets
-          .filter((_, i) => i % step === 0)
+          .filter((_, i) => i % step === 0 || i === n - 1)
           .map((key) => (
             <span key={key}>{bucketLabel(key, bucket)}</span>
           ))}
