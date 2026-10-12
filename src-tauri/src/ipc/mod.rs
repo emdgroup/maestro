@@ -25,6 +25,7 @@ pub use crate::acp::file_handlers::*;
 pub use crate::acp::meta_handlers::*;
 pub use crate::acp::prompt_handlers::*;
 pub use crate::acp::session_handlers::*;
+pub use crate::acp::usage_handlers::*;
 pub use crate::execution::handlers::*;
 pub use crate::git::remote::*;
 pub use crate::integration::code_hosting_handlers::*;

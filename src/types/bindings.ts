@@ -103,6 +103,17 @@ async getHomeSummary(connection: ConnectionKey) : Promise<Result<HomeSummary, st
 }
 },
 /**
+ * A conversation's recorded turns, oldest first, across every load of it.
+ */
+async getSessionUsage(connection: ConnectionKey, agentId: string, acpSessionId: string) : Promise<Result<UsageTurn[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_session_usage", { connection, agentId, acpSessionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Ask whoever holds a project to give it up. `true` once it is this window's; the caller opens
  * it as usual after that.
  */
@@ -4303,6 +4314,14 @@ workspace_mode: WorkspaceMode | null; workspace_worktree_id: number | null;
  * `Checkout` must not leave the name of a branch nobody is going to create.
  */
 workspace_branch_mode: BranchMode | null; workspace_branch: string | null }
+/**
+ * One recorded turn. The token counts are `None` when the agent reported none for it.
+ */
+export type UsageTurn = { model_id: string | null; 
+/**
+ * RFC 3339.
+ */
+started_at: string; ended_at: string; total_tokens: number | null; input_tokens: number | null; output_tokens: number | null; thought_tokens: number | null; cached_read_tokens: number | null; cached_write_tokens: number | null }
 export type WebhookDelivery = { id: string; received_at: string; status: number; outcome: DeliveryOutcome; detail?: string | null; run_id?: string | null }
 /**
  * What a webhook delivery does while a run of the same automation is already going.

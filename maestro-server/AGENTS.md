@@ -480,6 +480,10 @@ Rows carry the session's identity instead of referencing `sessions`, which drops
 by UTC hour, then deleted. The merge runs from `record` at most once a day, not at startup, because
 a daemon on a server may never restart.
 
+The session header reads a conversation's turns back with `SessionUsage`, keyed by `agent_id` and
+`acp_session_id` so every load of it is found, and adds them up itself. Merged hours do not name a
+session, so a conversation older than 90 days shows only its recent turns.
+
 ## The Maestro MCP server
 
 Agents get a channel back into Maestro that returns a value: `maestro-server` registers **itself**

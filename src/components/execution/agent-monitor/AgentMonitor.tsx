@@ -8,7 +8,6 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
 import { SidebarContent, SidebarMenu, SidebarMenuItem, useSidebar } from "@/ui/sidebar";
 import { TerminalComponent } from "@/components/execution/terminal/Terminal";
 import { AgentActivityPanel } from "@/components/execution/agent-activity-panel/AgentActivityPanel";
-import { connectionKeyId } from "@/store/homeStore";
 import { SessionUsageMeters } from "./SessionUsageMeters";
 import type { ActiveSessionInfo, ConnectionKey } from "@/types/bindings";
 import {
@@ -524,7 +523,8 @@ export function AgentMonitor({
             <SessionUsageMeters
               sessionId={session.session_id}
               agentId={session.agent_id ?? null}
-              connectionId={connectionKeyId(connection)}
+              acpSessionId={session.acp_session_id ?? null}
+              connection={connection}
             />
           )}
           {onClose && (

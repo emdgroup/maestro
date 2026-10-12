@@ -4,8 +4,8 @@ import { create } from "zustand";
 export type PlanWindow = { utilization: number; resetsAt: number };
 
 export const PLAN_WINDOWS = {
-  fiveHour: { label: "5-hour window", seconds: 5 * 3600 },
-  sevenDay: { label: "Weekly, all models", seconds: 7 * 86400 },
+  fiveHour: { label: "Session limit", seconds: 5 * 3600 },
+  sevenDay: { label: "Weekly limit", seconds: 7 * 86400 },
 } as const;
 export type PlanWindowId = keyof typeof PLAN_WINDOWS;
 

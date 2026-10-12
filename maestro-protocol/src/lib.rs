@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 14;
+pub const PROTOCOL_VERSION: u32 = 15;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 ///
@@ -167,6 +167,8 @@ pub enum ServerRequest {
     RollWebhookSecret(AutomationIdRequest),
     /// An automation's last deliveries, newest first.
     ListWebhookDeliveries(AutomationIdRequest),
+    /// What a conversation's recorded turns used, oldest first.
+    SessionUsage(SessionUsageRequest),
     /// What this server is: since when, which version, and how busy.
     GetServerStatus,
     /// Start this server with the machine, or stop doing so. Linux only: on the machines the app
@@ -2291,6 +2293,7 @@ pub enum ServerResponse {
     WebhookSettingsOk(WebhookStatus),
     RollWebhookSecretOk(Automation),
     ListWebhookDeliveriesOk(ListWebhookDeliveriesResponse),
+    SessionUsageOk(SessionUsageResponse),
     ServerStatusOk(ServerStatus),
     PreviewScheduleOk(PreviewScheduleResponse),
     /// A run started or finished. Pushed unasked to whoever is attached, because the client that
@@ -2458,6 +2461,7 @@ impl ServerResponse {
             | Self::WebhookSettingsOk(_)
             | Self::RollWebhookSecretOk(_)
             | Self::ListWebhookDeliveriesOk(_)
+            | Self::SessionUsageOk(_)
             | Self::ServerStatusOk(_)
             | Self::PreviewScheduleOk(_)
             | Self::SetModelOk(_)
@@ -4735,6 +4739,29 @@ pub struct AutomationIdRequest {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct ListWebhookDeliveriesResponse {
     pub deliveries: Vec<WebhookDelivery>,
+}
+
+/// Keyed like [`ProjectSession`], so the turns of every load of a conversation are found.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SessionUsageRequest {
+    pub agent_id: String,
+    pub acp_session_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SessionUsageResponse {
+    pub turns: Vec<UsageTurn>,
+}
+
+/// One recorded turn. Token counts are [`TurnUsage`] as the agent reported it, `None` when it did
+/// not report any.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UsageTurn {
+    pub model_id: Option<String>,
+    /// RFC 3339.
+    pub started_at: String,
+    pub ended_at: String,
+    pub usage: Option<TurnUsage>,
 }
 
 /// How a server was set to start with its machine.
