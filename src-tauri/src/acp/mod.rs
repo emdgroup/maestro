@@ -23,6 +23,7 @@ pub mod skills;
 pub mod transport;
 pub mod transport_setup;
 pub mod transport_types;
+pub mod usage_handlers;
 
 /// Compile-time Rust target triple for the currently running platform.
 /// Used to select and cache the correct maestro-server binary.

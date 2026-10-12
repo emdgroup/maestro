@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
@@ -17,6 +18,8 @@ export const executionQueryKeys = {
   projectAgents: (connection: ConnectionKey, cwd: string) =>
     ["projectAgents", connection, cwd] as const,
   sessionMeta: (sessionId: string | null) => ["acpSessionMeta", sessionId] as const,
+  sessionUsage: (connection: ConnectionKey, agentId: string | null, acpSessionId: string | null) =>
+    ["sessionUsage", connection, agentId, acpSessionId] as const,
   sessionFile: (sessionId: string, relativePath: string, binary: boolean) =>
     ["sessionFile", sessionId, relativePath, binary] as const,
   // `modelId` is part of the key because the effort list is a property of the model, not the
@@ -25,6 +28,34 @@ export const executionQueryKeys = {
   agentConfig: (agentId: string, cwd: string, connection: ConnectionKey, modelId: string) =>
     ["agentConfig", agentId, cwd, connection, modelId] as const,
 };
+
+/**
+ * What a conversation's recorded turns used, oldest first. Read again as each turn ends: the server
+ * records a turn before it announces the end, so the new row is there to be read.
+ */
+export function useSessionUsageQuery(
+  connection: ConnectionKey,
+  agentId: string | null,
+  acpSessionId: string | null,
+  sessionId: string,
+) {
+  const queryClient = useQueryClient();
+  const queryKey = executionQueryKeys.sessionUsage(connection, agentId, acpSessionId);
+  const keyString = JSON.stringify(queryKey);
+  useEffect(() => {
+    const unlisten = listen(`acp://turn-ended/${sessionId}`, () => {
+      void queryClient.invalidateQueries({ queryKey: JSON.parse(keyString) });
+    });
+    return () => {
+      void unlisten.then((stop) => stop());
+    };
+  }, [sessionId, keyString, queryClient]);
+  return useQuery({
+    queryKey,
+    queryFn: () => api.getSessionUsage(connection, agentId!, acpSessionId!),
+    enabled: agentId != null && acpSessionId != null,
+  });
+}
 
 export interface AgentModel {
   model_id: string;

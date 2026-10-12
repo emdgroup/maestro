@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { cn } from "@/lib/utils";
+import { humanizeTokenCount } from "@/lib/format-utils";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/ui/hover-card";
 import {
   DOT_COLOR,
@@ -19,6 +20,9 @@ import {
   type PlanWindowId,
   type WindowTone,
 } from "@/components/execution/activity/planLimits";
+import { useSessionUsageQuery } from "@/services/execution.service";
+import { connectionKeyId } from "@/store/homeStore";
+import type { ConnectionKey, UsageTurn } from "@/types/bindings";
 
 /** The context window popover's colours, so both popups speak one language. */
 const STATE = { ok: "normal", ahead: "amber", reached: "critical" } as const;
@@ -38,6 +42,30 @@ const OVERAGE_REASON: Record<string, string> = {
   out_of_credits: "out of credits",
   overage_not_provisioned: "not set up on this plan",
 };
+const CARD = cn(
+  "flex w-64 flex-col gap-3 rounded-md p-3.5 text-[11px]",
+  "backdrop-blur-[4px] bg-popover/60 border-border/30",
+  "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)]",
+);
+
+type TokenKind = "cacheRead" | "cacheWrite" | "input" | "thought" | "output";
+const TOKEN_KINDS: { kind: TokenKind; label: string; color: string; field: keyof UsageTurn }[] = [
+  { kind: "cacheRead", label: "Cache read", color: "bg-chart-2", field: "cached_read_tokens" },
+  { kind: "cacheWrite", label: "Cache write", color: "bg-chart-4", field: "cached_write_tokens" },
+  { kind: "input", label: "Input", color: "bg-chart-1", field: "input_tokens" },
+  { kind: "thought", label: "Thinking", color: "bg-chart-5", field: "thought_tokens" },
+  { kind: "output", label: "Output", color: "bg-chart-3", field: "output_tokens" },
+];
+/** One neutral hue told apart by pattern, so a model never reads as one of the token kinds. */
+const MODEL_FILL = [
+  "var(--muted-foreground)",
+  "repeating-linear-gradient(135deg, var(--muted-foreground) 0 2px, color-mix(in oklab, var(--muted-foreground) 30%, transparent) 2px 4px)",
+  "color-mix(in oklab, var(--muted-foreground) 40%, transparent)",
+  "repeating-linear-gradient(90deg, var(--muted-foreground) 0 1px, color-mix(in oklab, var(--muted-foreground) 25%, transparent) 1px 3px)",
+];
+// ponytail: only the latest turns get a bar; past this they would be thinner than their gaps.
+const MAX_BARS = 60;
+const UNKNOWN_MODEL = "Unknown model";
 
 function Track({
   usage,
@@ -73,24 +101,52 @@ function money({ amount, currency }: { amount: number; currency: string }) {
 }
 
 /**
- * The session's cost and its agent's 5-hour window, on the right of the session header, with every
- * window in the hover card. A window is labelled with the time left before it resets, and its track
- * hatches what is left of it.
+ * A turn's tokens by kind. Some agents count cache reads inside `input_tokens` and some do not: a
+ * total smaller than every count added up says this one does, and its input is what is left.
+ */
+export function tokensOf(t: UsageTurn): Record<TokenKind, number> {
+  const read = t.cached_read_tokens ?? 0;
+  const write = t.cached_write_tokens ?? 0;
+  const input = t.input_tokens ?? 0;
+  const output = t.output_tokens ?? 0;
+  const thought = t.thought_tokens ?? 0;
+  const inclusive =
+    read > 0 && input >= read && input + output + thought + read + write > (t.total_tokens ?? 0);
+  return {
+    cacheRead: read,
+    cacheWrite: write,
+    input: inclusive ? input - read : input,
+    thought,
+    output,
+  };
+}
+
+/**
+ * The session's cost and tokens, then its agent's 5-hour window, on the right of the session
+ * header, each with its own hover card. A window is labelled with the time left before it resets,
+ * and its track hatches what is left of it.
  */
 export function SessionUsageMeters({
   sessionId,
+  acpSessionId,
   agentId,
-  connectionId,
+  connection,
 }: {
   sessionId: string;
+  acpSessionId: string | null;
   agentId: string | null;
-  connectionId: string;
+  connection: ConnectionKey;
 }) {
+  const connectionId = connectionKeyId(connection);
   const subscribe = useCallback((fn: () => void) => subscribeSession(sessionId, fn), [sessionId]);
   const cost = useSyncExternalStore(subscribe, () => getLifecycle(sessionId).usageState?.cost);
   const limits = usePlanLimitsStore((s) =>
     agentId ? s.byAgent[planLimitsKey(connectionId, agentId)] : undefined,
   );
+  const { data: turns } = useSessionUsageQuery(connection, agentId, acpSessionId, sessionId);
+  // A turn the agent reported no tokens for still happened, but has nothing to add up.
+  const measured = (turns ?? []).filter((t) => t.total_tokens != null);
+  const total = measured.reduce((sum, t) => sum + (t.total_tokens ?? 0), 0);
 
   // Ticks whether or not a reading has arrived, so the first one is never drawn against a stale
   // clock. One header is mounted at a time.
@@ -101,55 +157,192 @@ export function SessionUsageMeters({
   }, []);
 
   const windows = liveWindows(limits, now);
-  if (!cost && windows.length === 0) return null;
 
   return (
-    <HoverCard>
-      <HoverCardTrigger
-        render={
-          <div
-            className="flex items-center gap-3 rounded-md px-2 py-1 transition-colors hover:bg-muted/50"
-            aria-label="Session cost and plan limits"
-          />
-        }
-      >
-        {cost && (
-          <span className="rounded-md bg-accent/15 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-accent">
-            {money(cost)}
-          </span>
-        )}
-        {/* The weekly window is in the hover card only. */}
-        {limits && windows.includes("fiveHour") && (
-          <WindowMeter limits={limits} id="fiveHour" now={now} />
-        )}
-      </HoverCardTrigger>
-      <HoverCardContent
-        align="end"
-        className={cn(
-          "flex w-64 flex-col gap-3 rounded-md p-3.5 text-[11px]",
-          "backdrop-blur-[4px] bg-popover/60 border-border/30",
-          "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)]",
-        )}
-      >
-        {cost && (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold">Session cost</span>
-              <span className="text-lg font-bold tabular-nums tracking-tight text-accent">
-                {money(cost)}
-              </span>
-            </div>
-            <div className="text-muted-foreground">
-              As the agent reports it. On a subscription this is the API-price equivalent, not a
-              charge.
-            </div>
+    <div className="flex items-center gap-1">
+      {(cost || measured.length > 0) && (
+        <HoverCard>
+          <HoverCardTrigger
+            render={
+              <div
+                className="rounded-md px-2 py-1 transition-colors hover:bg-muted/50"
+                aria-label="Session cost and tokens"
+              />
+            }
+          >
+            {/* One pill, cost and tokens as its two halves, since they open one card. */}
+            <span className="flex overflow-hidden rounded-md border border-border/60 text-[11px] font-medium tabular-nums">
+              {cost && (
+                <span className="bg-accent/15 px-1.5 py-0.5 text-accent">{money(cost)}</span>
+              )}
+              {measured.length > 0 && (
+                <span
+                  className={cn(
+                    "bg-foreground/[0.06] px-1.5 py-0.5 text-foreground",
+                    cost && "border-l border-border/60",
+                  )}
+                  title={`${total.toLocaleString()} tokens`}
+                >
+                  {humanizeTokenCount(total)}
+                </span>
+              )}
+            </span>
+          </HoverCardTrigger>
+          <HoverCardContent align="end" className={CARD}>
+            {cost && (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold">Session cost</span>
+                  <span className="text-lg font-bold tabular-nums tracking-tight text-accent">
+                    {money(cost)}
+                  </span>
+                </div>
+                <div className="text-muted-foreground">
+                  As the agent reports it. On a subscription this is the API-price equivalent, not a
+                  charge.
+                </div>
+              </div>
+            )}
+            {cost && measured.length > 0 && <div className="h-px bg-border/50" />}
+            {measured.length > 0 && <TokenDetails turns={measured} total={total} />}
+          </HoverCardContent>
+        </HoverCard>
+      )}
+      {/* The weekly window is in the hover card only. */}
+      {limits && windows.includes("fiveHour") && (
+        <HoverCard>
+          <HoverCardTrigger
+            render={
+              <div
+                className="rounded-md px-2 py-1 transition-colors hover:bg-muted/50"
+                aria-label="Usage limits"
+              />
+            }
+          >
+            <WindowMeter limits={limits} id="fiveHour" now={now} />
+          </HoverCardTrigger>
+          <HoverCardContent align="end" className={CARD}>
+            <span className="text-xs font-semibold">Usage limits</span>
+            <PlanDetails limits={limits} windows={windows} now={now} />
+          </HoverCardContent>
+        </HoverCard>
+      )}
+    </div>
+  );
+}
+
+function TokenDetails({ turns, total }: { turns: UsageTurn[]; total: number }) {
+  const byKind = turns.map(tokensOf);
+  const sums = Object.fromEntries(
+    TOKEN_KINDS.map(({ kind }) => [kind, byKind.reduce((sum, t) => sum + t[kind], 0)]),
+  ) as Record<TokenKind, number>;
+  // A kind no turn reported is left out, rather than shown as a zero the agent never said.
+  const kinds = TOKEN_KINDS.filter(({ field }) => turns.some((t) => t[field] != null));
+  const shown = kinds.reduce((sum, { kind }) => sum + sums[kind], 0);
+
+  const models = new Map<string, number>();
+  for (const t of turns) {
+    const model = t.model_id ?? UNKNOWN_MODEL;
+    models.set(model, (models.get(model) ?? 0) + (t.total_tokens ?? 0));
+  }
+  const fill = new Map([...models.keys()].map((m, i) => [m, MODEL_FILL[i % MODEL_FILL.length]]));
+
+  const active = turns.reduce(
+    (sum, t) => sum + Math.max(0, Date.parse(t.ended_at) - Date.parse(t.started_at)) / 1000,
+    0,
+  );
+  const bars = turns.slice(-MAX_BARS);
+  const tallest = Math.max(...bars.map((t) => t.total_tokens ?? 0), 1);
+  const last = turns[turns.length - 1];
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-baseline justify-between">
+        <span className="text-xs font-semibold">Tokens</span>
+        <span
+          className="text-lg font-bold tabular-nums tracking-tight"
+          title={total.toLocaleString()}
+        >
+          {humanizeTokenCount(total)}
+        </span>
+      </div>
+      <div className="-mt-1.5 text-muted-foreground">
+        {turns.length} {turns.length === 1 ? "turn" : "turns"} · {formatCountdown(active)} active ·
+        last turn {humanizeTokenCount(last.total_tokens ?? 0)}
+      </div>
+      <div>
+        <div className="flex h-7 items-end gap-px">
+          {bars.map((t, i) => (
+            <div
+              key={i}
+              className="max-w-1.5 flex-1 rounded-[1px]"
+              title={`${t.model_id ?? UNKNOWN_MODEL} · ${(t.total_tokens ?? 0).toLocaleString()} tokens`}
+              style={{
+                height: `${Math.max(((t.total_tokens ?? 0) / tallest) * 100, 6)}%`,
+                background: fill.get(t.model_id ?? UNKNOWN_MODEL),
+              }}
+            />
+          ))}
+        </div>
+        {/* Marks the latest turn. */}
+        <div className="mt-0.5 flex gap-px">
+          {bars.map((_, i) => (
+            <div
+              key={i}
+              className={cn(
+                "h-0.5 max-w-1.5 flex-1 rounded-full",
+                i === bars.length - 1 && "bg-foreground",
+              )}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="flex flex-col gap-1">
+        {[...models].map(([model, tokens]) => (
+          <div key={model} className="flex items-center gap-2">
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+              style={{ background: fill.get(model) }}
+            />
+            <span className="flex-1 truncate font-mono text-[10px] text-muted-foreground">
+              {model}
+            </span>
+            {models.size > 1 && (
+              <>
+                <span className="tabular-nums">{humanizeTokenCount(tokens)}</span>
+                <span className="w-8 text-right tabular-nums text-muted-foreground">
+                  {Math.round((tokens / Math.max(total, 1)) * 100)}%
+                </span>
+              </>
+            )}
           </div>
-        )}
-        {limits && windows.length > 0 && (
-          <PlanDetails limits={limits} windows={windows} now={now} divided={!!cost} />
-        )}
-      </HoverCardContent>
-    </HoverCard>
+        ))}
+      </div>
+      {shown > 0 && (
+        <div className="mt-1 flex h-1.5 gap-px overflow-hidden rounded-full bg-foreground/[0.07]">
+          {kinds
+            .filter(({ kind }) => sums[kind] > 0)
+            .map(({ kind, color }) => (
+              <div
+                key={kind}
+                className={color}
+                style={{ width: `${Math.max((sums[kind] / shown) * 100, 1.5)}%` }}
+              />
+            ))}
+        </div>
+      )}
+      <div className="grid grid-cols-[auto_1fr_auto] gap-x-2 gap-y-1">
+        {kinds.map(({ kind, label, color }) => (
+          <div key={kind} className="contents">
+            <span className={cn("h-1.5 w-1.5 self-center rounded-full", color)} />
+            <span className="text-muted-foreground">{label}</span>
+            <span className="text-right tabular-nums" title={sums[kind].toLocaleString()}>
+              {humanizeTokenCount(sums[kind])}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -180,12 +373,10 @@ function PlanDetails({
   limits,
   windows,
   now,
-  divided,
 }: {
   limits: PlanLimits;
   windows: PlanWindowId[];
   now: number;
-  divided: boolean;
 }) {
   const overage =
     limits.overageStatus === "rejected"
@@ -203,10 +394,10 @@ function PlanDetails({
         });
         return (
           <div key={id} className="contents">
-            {(divided || i > 0) && <div className="h-px bg-border/50" />}
+            {i > 0 && <div className="h-px bg-border/50" />}
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-xs font-semibold">
+                <span className="flex items-center gap-1.5 font-medium">
                   <span
                     className={cn("inline-block h-1.5 w-1.5 rounded-full", DOT_COLOR[STATE[tone]])}
                   />

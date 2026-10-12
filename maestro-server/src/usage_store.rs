@@ -443,6 +443,48 @@ pub(crate) fn merge_old(conn: &Connection, now: DateTime<Utc>) -> Result<(), Str
     tx.commit().map_err(fail)
 }
 
+/// A conversation's recorded turns, oldest first, across every load of it. Turns merged into their
+/// hour no longer name their session, so a conversation older than [`TURN_RETENTION_DAYS`] shows
+/// only its recent turns.
+pub(crate) fn session_turns(
+    conn: &Connection,
+    agent_id: &str,
+    acp_session_id: &str,
+) -> Result<Vec<maestro_protocol::UsageTurn>, String> {
+    let fail = |e: rusqlite::Error| format!("cannot read a session's usage: {e}");
+    let mut stmt = conn
+        .prepare(
+            "SELECT model_id, started_at, ended_at, total_tokens, input_tokens, output_tokens,
+                    thought_tokens, cached_read_tokens, cached_write_tokens
+             FROM usage_turns WHERE agent_id = ?1 AND acp_session_id = ?2
+             ORDER BY started_at, id",
+        )
+        .map_err(fail)?;
+    let count = |r: &rusqlite::Row, i| r.get::<_, Option<i64>>(i).map(|n| n.map(|n| n as u64));
+    stmt.query_map(params![agent_id, acp_session_id], |r| {
+        // A turn with no total is one the agent reported nothing for.
+        let usage = match (count(r, 3)?, count(r, 4)?, count(r, 5)?) {
+            (Some(total_tokens), input, output) => Some(TurnUsage {
+                total_tokens,
+                input_tokens: input.unwrap_or(0),
+                output_tokens: output.unwrap_or(0),
+                thought_tokens: count(r, 6)?,
+                cached_read_tokens: count(r, 7)?,
+                cached_write_tokens: count(r, 8)?,
+            }),
+            _ => None,
+        };
+        Ok(maestro_protocol::UsageTurn {
+            model_id: r.get(0)?,
+            started_at: r.get(1)?,
+            ended_at: r.get(2)?,
+            usage,
+        })
+    })
+    .and_then(|rows| rows.collect())
+    .map_err(fail)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -599,6 +641,25 @@ mod tests {
         note_model(sid, "haiku");
         assert_eq!(take_turn(sid).model_id.as_deref(), Some("haiku"));
         forget(sid);
+    }
+
+    #[test]
+    fn a_sessions_turns_are_read_back_in_order_and_alone() {
+        let conn = crate::project_store::open_in_memory();
+        let now = Utc::now();
+        turn_at(&conn, "a", now - Duration::minutes(5), 200, 0.2);
+        turn_at(&conn, "b", now - Duration::minutes(4), 999, 0.9);
+        turn_at(&conn, "a", now - Duration::minutes(10), 100, 0.1);
+
+        let turns = session_turns(&conn, "claude-acp", "a").expect("read");
+        let totals: Vec<_> = turns
+            .iter()
+            .map(|t| t.usage.as_ref().map(|u| u.total_tokens))
+            .collect();
+        assert_eq!(totals, [Some(100), Some(200)]);
+        assert_eq!(turns[0].model_id.as_deref(), Some("opus"));
+        assert_eq!(turns[0].usage, Some(usage(100)));
+        assert!(session_turns(&conn, "other-agent", "a").unwrap().is_empty());
     }
 
     #[test]
