@@ -1185,3 +1185,53 @@
 .home-logo {
   filter: drop-shadow(0 6px 14px rgb(0 0 0 / 0.18));
 }
+
+/* The Usage view's chart colours. Each split has a set of hues of its own, and no hue is in two
+   sets, so a connection never wears an agent's or a model's colour. Projects and the heatmap take
+   the accent. Light and dark are stepped separately; see docs/usage-view/design.md, "Colour". */
+.usage-viz {
+  --usage-accent: var(--accent);
+  --usage-connection-1: #2563eb;
+  --usage-connection-2: #d97706;
+  --usage-connection-3: #0d9488;
+  --usage-connection-4: #e11d48;
+  --usage-agent-1: #16a34a;
+  --usage-agent-2: #7c3aed;
+  --usage-agent-3: #ea580c;
+  --usage-agent-4: #0284c7;
+  --usage-model-1: #dc2626;
+  --usage-model-2: #4f46e5;
+  --usage-model-3: #65a30d;
+  --usage-model-4: #c026d3;
+  --usage-token-type-1: #ca8a04;
+  --usage-token-type-2: #0891b2;
+  --usage-token-type-3: #db2777;
+  --usage-token-type-4: #a16207;
+  --usage-token-type-5: #64748b;
+  --usage-other: color-mix(in oklab, var(--foreground) 35%, transparent);
+  --usage-grid: color-mix(in oklab, var(--foreground) 10%, transparent);
+}
+.dark .usage-viz {
+  --usage-connection-1: #3b82f6;
+  --usage-connection-2: #f59e0b;
+  --usage-connection-3: #14b8a6;
+  --usage-connection-4: #f43f5e;
+  --usage-agent-1: #22c55e;
+  --usage-agent-2: #8b5cf6;
+  --usage-agent-3: #f97316;
+  --usage-agent-4: #0ea5e9;
+  --usage-model-1: #ef4444;
+  --usage-model-2: #6366f1;
+  --usage-model-3: #84cc16;
+  --usage-model-4: #d946ef;
+  --usage-token-type-1: #eab308;
+  --usage-token-type-2: #06b6d4;
+  --usage-token-type-3: #ec4899;
+  --usage-token-type-4: #a16207;
+  --usage-token-type-5: #94a3b8;
+}
+/* A pane that holds a chart: the `home-pane` look without its hover lift. */
+.usage-pane {
+  background: color-mix(in oklab, var(--background) 50%, transparent);
+  border: 1px solid color-mix(in oklab, var(--foreground) 7%, transparent);
+}

@@ -1,0 +1,1004 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Maestro usage view: approved mock</title>
+    <!-- Standalone copy of the canvas the design was approved on. Open it in a browser.
+     Tokens are the app's light theme from src/index.css; add class="dark" on <html> for dark. -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @custom-variant dark (&:where(.dark, .dark *));
+      @theme inline {
+        --color-background: var(--background);
+        --color-foreground: var(--foreground);
+        --color-card: var(--card);
+        --color-muted: var(--muted);
+        --color-muted-foreground: var(--muted-foreground);
+        --color-primary: var(--primary);
+        --color-primary-foreground: var(--primary-foreground);
+        --color-border: var(--border);
+      }
+      :root {
+        --background: oklch(98% 0.015 70);
+        --foreground: oklch(45% 0.01 250);
+        --card: oklch(99.5% 0.01 70);
+        --muted: oklch(94% 0.015 70);
+        --muted-foreground: oklch(45% 0.01 250);
+        --primary: oklch(0% 0 0);
+        --primary-foreground: oklch(100% 0 0);
+        --border: oklch(90% 0.01 70);
+        --accent: oklch(50% 0.15 250);
+      }
+      .dark {
+        --background: oklch(20% 0.01 250);
+        --foreground: oklch(92% 0.01 250);
+        --card: oklch(24% 0.01 250);
+        --muted: oklch(28% 0.01 250);
+        --muted-foreground: oklch(70% 0.01 250);
+        --primary: oklch(96% 0 0);
+        --primary-foreground: oklch(15% 0 0);
+        --border: oklch(32% 0.01 250);
+        --accent: oklch(75% 0.15 250);
+      }
+      body {
+        margin: 0;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: system-ui, sans-serif;
+      }
+    </style>
+    <style>
+      .dark .viz {
+        --conn-0: #3b82f6;
+        --conn-1: #f59e0b;
+        --conn-2: #14b8a6;
+        --conn-3: #f43f5e;
+        --agent-0: #22c55e;
+        --agent-1: #8b5cf6;
+        --agent-2: #f97316;
+        --agent-3: #0ea5e9;
+        --model-0: #ef4444;
+        --model-1: #6366f1;
+        --model-2: #84cc16;
+        --model-3: #d946ef;
+        --kind-0: #eab308;
+        --kind-1: #06b6d4;
+        --kind-2: #ec4899;
+        --kind-3: #a16207;
+        --kind-4: #94a3b8;
+      }
+    </style>
+  </head>
+  <body>
+    <style>
+      .viz {
+        --conn-0: #2563eb;
+        --conn-1: #d97706;
+        --conn-2: #0d9488;
+        --conn-3: #e11d48;
+        --agent-0: #16a34a;
+        --agent-1: #7c3aed;
+        --agent-2: #ea580c;
+        --agent-3: #0284c7;
+        --model-0: #dc2626;
+        --model-1: #4f46e5;
+        --model-2: #65a30d;
+        --model-3: #c026d3;
+        --kind-0: #ca8a04;
+        --kind-1: #0891b2;
+        --kind-2: #db2777;
+        --kind-3: #a16207;
+        --kind-4: #64748b;
+      }
+      .viz {
+        --heat: var(--accent);
+        --conn-0: #2563eb;
+        --conn-1: #d97706;
+        --conn-2: #0d9488;
+        --conn-3: #e11d48;
+        --agent-0: #16a34a;
+        --agent-1: #7c3aed;
+        --agent-2: #ea580c;
+        --agent-3: #0284c7;
+        --model-0: #dc2626;
+        --model-1: #4f46e5;
+        --model-2: #65a30d;
+        --model-3: #c026d3;
+        --kind-0: #ca8a04;
+        --kind-1: #0891b2;
+        --kind-2: #db2777;
+        --kind-3: #a16207;
+        --kind-4: #64748b;
+        --grid: color-mix(in oklab, currentColor 10%, transparent);
+      }
+      :root[data-theme="dark"] .viz {
+        --conn-0: #3b82f6;
+        --conn-1: #f59e0b;
+        --conn-2: #14b8a6;
+        --conn-3: #f43f5e;
+        --agent-0: #22c55e;
+        --agent-1: #8b5cf6;
+        --agent-2: #f97316;
+        --agent-3: #0ea5e9;
+        --model-0: #ef4444;
+        --model-1: #6366f1;
+        --model-2: #84cc16;
+        --model-3: #d946ef;
+        --kind-0: #eab308;
+        --kind-1: #06b6d4;
+        --kind-2: #ec4899;
+        --kind-3: #a16207;
+        --kind-4: #94a3b8;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:where(:not([data-theme="light"])) .viz {
+          --conn-0: #3b82f6;
+          --conn-1: #f59e0b;
+          --conn-2: #14b8a6;
+          --conn-3: #f43f5e;
+          --agent-0: #22c55e;
+          --agent-1: #8b5cf6;
+          --agent-2: #f97316;
+          --agent-3: #0ea5e9;
+          --model-0: #ef4444;
+          --model-1: #6366f1;
+          --model-2: #84cc16;
+          --model-3: #d946ef;
+          --kind-0: #eab308;
+          --kind-1: #06b6d4;
+          --kind-2: #ec4899;
+          --kind-3: #a16207;
+          --kind-4: #94a3b8;
+        }
+      }
+      .glass {
+        border-radius: 22px;
+        border: 1px solid color-mix(in oklab, currentColor 9%, transparent);
+        background: color-mix(in oklab, var(--card) 60%, transparent);
+        box-shadow: 0 8px 30px -12px rgb(0 0 0/0.25);
+      }
+      .pop {
+        border-radius: 16px;
+        border: 1px solid color-mix(in oklab, currentColor 12%, transparent);
+        background: var(--popover, var(--card));
+        box-shadow: 0 12px 40px -10px rgb(0 0 0/0.45);
+      }
+      .pane {
+        border-radius: 16px;
+        border: 1px solid color-mix(in oklab, currentColor 7%, transparent);
+        background: color-mix(in oklab, var(--background) 50%, transparent);
+      }
+      .seg button {
+        padding: 3px 10px;
+        border-radius: 9px;
+        font-size: 12px;
+        color: var(--muted-foreground);
+      }
+      .seg button.on {
+        background: var(--background);
+        color: var(--foreground);
+        box-shadow: 0 1px 2px rgb(0 0 0/0.1);
+      }
+      .seg button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .kpi {
+        cursor: pointer;
+        text-align: left;
+        transition: border-color 0.15s;
+      }
+      .kpi.on {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 25%, transparent);
+      }
+      .kpi:not(.on) {
+        opacity: 0.75;
+      }
+      .chip {
+        font-size: 11px;
+        border-radius: 999px;
+        padding: 2px 8px 2px 10px;
+        border: 1px solid color-mix(in oklab, currentColor 12%, transparent);
+      }
+      .tip {
+        pointer-events: none;
+        position: absolute;
+        opacity: 0;
+        transition: opacity 0.1s;
+        z-index: 5;
+      }
+      .sw {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+        vertical-align: -1px;
+        margin-right: 6px;
+      }
+      .dot {
+        display: inline-block;
+        flex: none;
+        width: 8px;
+        height: 8px;
+        border-radius: 99px;
+      }
+      .brow {
+        padding: 6px 6px 7px;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .brow:hover {
+        background: color-mix(in oklab, currentColor 5%, transparent);
+      }
+      .brow .top {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+      }
+      .sub {
+        display: flex;
+        gap: 10px;
+        font-size: 12px;
+        color: var(--muted-foreground);
+        padding: 2px 6px 2px 30px;
+        position: relative;
+      }
+      .sub::before {
+        content: "";
+        position: absolute;
+        left: 16px;
+        top: -4px;
+        height: 14px;
+        width: 9px;
+        border-left: 1px solid var(--grid);
+        border-bottom: 1px solid var(--grid);
+      }
+      .track {
+        height: 6px;
+        border-radius: 99px;
+        margin-top: 5px;
+        background: color-mix(in oklab, currentColor 9%, transparent);
+      }
+      .track > div {
+        height: 6px;
+        border-radius: 99px;
+      }
+      #rangepop,
+      #filterpop {
+        display: none;
+        position: absolute;
+        z-index: 20;
+      }
+      #rangepop.open,
+      #filterpop.open {
+        display: block;
+      }
+      .opt {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        text-align: left;
+        font-size: 13px;
+        padding: 6px 10px;
+        border-radius: 8px;
+      }
+      .opt:hover {
+        background: color-mix(in oklab, currentColor 7%, transparent);
+      }
+      .opt.on {
+        background: color-mix(in oklab, var(--accent) 16%, transparent);
+      }
+      .opt .k {
+        margin-left: auto;
+        font-size: 11px;
+        color: var(--muted-foreground);
+      }
+      .cal {
+        display: grid;
+        grid-template-columns: repeat(7, 28px);
+        row-gap: 3px;
+        font-size: 12px;
+        text-align: center;
+      }
+      .cal .h {
+        font-size: 11px;
+        color: var(--muted-foreground);
+        padding-bottom: 4px;
+      }
+      .cal .d {
+        height: 26px;
+        line-height: 26px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .cal .in {
+        background: color-mix(in oklab, var(--accent) 18%, transparent);
+      }
+      .cal .end {
+        background: var(--accent);
+        color: #fff;
+        border-radius: 99px;
+      }
+    </style>
+    <div class="viz p-5 space-y-6 text-foreground">
+      <section id="home-entry" class="glass p-5">
+        <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-3">
+          Home: entry point (hero, a sparkline before the counts)
+        </div>
+        <div class="flex items-end gap-10">
+          <button id="usage-link" class="text-left group mb-1 self-end">
+            <svg width="81" height="26" style="color: var(--accent); opacity: 0.7">
+              <g fill="currentColor">
+                <rect x="0" y="4" width="9" height="22" rx="2" />
+                <rect x="12" y="12" width="9" height="14" rx="2" />
+                <rect x="24" y="14" width="9" height="12" rx="2" />
+                <rect x="36" y="18" width="9" height="8" rx="2" />
+                <rect x="48" y="6" width="9" height="20" rx="2" />
+                <rect x="60" y="10" width="9" height="16" rx="2" />
+                <rect x="72" y="14" width="9" height="12" rx="2" />
+              </g>
+            </svg>
+            <div class="text-xs text-muted-foreground mt-1">$142.18 this week ›</div>
+          </button>
+          <div class="flex gap-8 opacity-60">
+            <div>
+              <div class="text-[40px] font-semibold leading-none tabular-nums">3</div>
+              <div class="text-xs text-muted-foreground">working</div>
+            </div>
+            <div>
+              <div class="text-[40px] font-semibold leading-none tabular-nums text-amber-500">
+                1
+              </div>
+              <div class="text-xs text-muted-foreground">need you</div>
+            </div>
+            <div>
+              <div
+                class="text-[40px] font-semibold leading-none tabular-nums"
+                style="color: #a855f7"
+              >
+                2
+              </div>
+              <div class="text-xs text-muted-foreground">to review</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <button class="text-sm text-muted-foreground mb-3">‹ Home</button>
+      <section id="usage-view" class="glass p-6">
+        <div class="relative">
+          <div class="text-2xl font-semibold tracking-[-0.025em]">
+            Usage <span class="text-muted-foreground font-normal">over the</span>
+            <button
+              id="range-btn"
+              class="underline decoration-dotted underline-offset-4"
+              style="color: var(--accent)"
+            >
+              <span id="range-label">last 7 days</span> ▾
+            </button>
+          </div>
+          <div class="text-xs text-muted-foreground mt-1" id="range-sub"></div>
+          <div id="rangepop" class="pop p-3" style="top: 40px; left: 150px">
+            <div class="flex gap-4">
+              <div class="w-44 border-r border-border/60 pr-3" id="presets"></div>
+              <div>
+                <div class="flex gap-5" id="months"></div>
+                <div class="flex items-center gap-2 mt-3 text-xs">
+                  <span class="text-muted-foreground" id="cal-hint"></span
+                  ><button id="cal-cancel" class="ml-auto opt w-auto">Cancel</button
+                  ><button
+                    id="cal-apply"
+                    class="rounded-lg bg-primary text-primary-foreground px-3 py-1.5"
+                  >
+                    Apply
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 mt-3 text-xs text-muted-foreground" id="filters">
+          Filters: <span id="chips" class="flex gap-1.5"></span
+          ><span class="relative"
+            ><button id="addfilter" class="chip text-foreground">+ Filter</button>
+            <div id="filterpop" class="pop p-2 w-80" style="top: 26px; left: 0"></div
+          ></span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 mt-4">
+          <button id="kpi-cost" class="kpi pane on px-5 py-4" data-m="cost">
+            <div class="text-xs text-muted-foreground">Cost</div>
+            <div class="flex items-baseline gap-3">
+              <span
+                class="text-[34px] font-semibold tabular-nums tracking-[-0.025em] leading-tight"
+                id="v-cost"
+              ></span
+              ><span class="text-sm text-muted-foreground tabular-nums" id="a-cost"></span>
+            </div>
+          </button>
+          <button id="kpi-tokens" class="kpi pane px-5 py-4" data-m="tokens">
+            <div class="text-xs text-muted-foreground">Tokens</div>
+            <div class="flex items-baseline gap-3">
+              <span
+                class="text-[34px] font-semibold tabular-nums tracking-[-0.025em] leading-tight"
+                id="v-tokens"
+              ></span
+              ><span class="text-sm text-muted-foreground tabular-nums" id="a-tokens"></span>
+            </div>
+          </button>
+        </div>
+
+        <div class="pane p-4 mt-4 relative" id="main-chart">
+          <div class="flex items-center gap-3 text-xs mb-3">
+            <div class="seg flex rounded-xl p-0.5 bg-muted/60" id="mode">
+              <button class="on" data-v="bars">Over time</button
+              ><button data-v="cum">Cumulative</button>
+            </div>
+            <div class="ml-auto seg flex rounded-xl p-0.5 bg-muted/60" id="split">
+              <button class="on" data-s="conn">Connection</button
+              ><button data-s="model">Model</button><button data-s="agent">Agent</button
+              ><button data-s="kind">Token type</button>
+            </div>
+          </div>
+          <div
+            id="legend"
+            class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground mb-2"
+          ></div>
+          <div id="plot"></div>
+          <div id="tip" class="tip pop px-3 py-2 text-xs"></div>
+        </div>
+
+        <div class="pane p-4 mt-4 relative" id="heatmap">
+          <div class="text-sm font-semibold mb-3" id="heat-title"></div>
+          <div id="heat-plot"></div>
+          <div id="htip" class="tip pop px-3 py-2 text-xs"></div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 mt-4">
+          <div class="pane p-4" id="by-project">
+            <div class="text-sm font-semibold mb-1" id="proj-title">Projects</div>
+            <div id="proj"></div>
+          </div>
+          <div class="pane p-4" id="by-model">
+            <div class="text-sm font-semibold mb-1" id="mdl-title">Models</div>
+            <div id="mdl"></div>
+          </div>
+        </div>
+
+        <div class="mt-4 text-xs text-muted-foreground" id="coverage">
+          <span class="text-foreground">gpu-rig</span> not connected: showing its usage up to
+          <b>Oct 9, 14:02</b> (cached). <button class="underline">Connect</button> to refresh.
+        </div>
+      </section>
+    </div>
+    <script>
+      const SETS = {
+        conn: [
+          ["This computer", "--conn-0", 1],
+          ["build-box", "--conn-1", 0.7],
+          ["Ubuntu (WSL)", "--conn-2", 0.35],
+          ["gpu-rig (cached)", "--conn-3", 0.25],
+        ],
+        model: [
+          ["claude-sonnet-5-5", "--model-0", 1],
+          ["gpt-5.6-sol", "--model-1", 0.6],
+          ["claude-haiku-4-5", "--model-2", 0.3],
+        ],
+        agent: [
+          ["Claude", "--agent-0", 1.4],
+          ["Codex", "--agent-1", 0.4],
+          ["Gemini", "--agent-2", 0.2],
+        ],
+        kind: [
+          ["Input", "--kind-0", 0.3],
+          ["Output", "--kind-1", 0.25],
+          ["Thought", "--kind-2", 0.1],
+          ["Cache read", "--kind-3", 1.2],
+          ["Cache write", "--kind-4", 0.2],
+        ],
+      };
+      const PRE = [
+        [
+          "1h",
+          "Last hour",
+          "minute",
+          [
+            [9, 11],
+            [9, 11],
+          ],
+          "Oct 11, 13:05 – 14:05",
+        ],
+        [
+          "1d",
+          "Last 24 hours",
+          "hour",
+          [
+            [9, 10],
+            [9, 11],
+          ],
+          "Oct 10, 14:05 – Oct 11, 14:05",
+        ],
+        [
+          "1w",
+          "Last 7 days",
+          "day",
+          [
+            [9, 5],
+            [9, 11],
+          ],
+        ],
+        [
+          "1m",
+          "Last 30 days",
+          "day",
+          [
+            [8, 12],
+            [9, 11],
+          ],
+        ],
+        [
+          "1y",
+          "Last 12 months",
+          "month",
+          [
+            [8, 1],
+            [9, 11],
+          ],
+          "Nov 2025 – Oct 2026",
+        ],
+        [
+          "all",
+          "All time",
+          "month",
+          [
+            [8, 1],
+            [9, 11],
+          ],
+          "May 2025 – Oct 2026",
+        ],
+      ];
+      const N = { "1h": 60, "1d": 24, "1w": 7, "1m": 30, "1y": 12, all: 18, custom: 30 };
+      const AX = {
+        "1h": ["13:05", "13:20", "13:35", "13:50", "14:05"],
+        "1d": ["14:00", "20:00", "02:00", "08:00", "14:00"],
+        "1w": ["Mon", "Wed", "Fri", "Sun"],
+        "1m": ["Sep 12", "Sep 22", "Oct 2", "Oct 11"],
+        "1y": ["Nov 2025", "Feb", "May", "Aug", "Oct"],
+        all: ["May 2025", "Nov", "May 2026", "Oct"],
+        custom: ["start", "", "", "end"],
+      };
+      const scale = { "1h": 0.05, "1d": 0.8, "1w": 20, "1m": 20, "1y": 600, all: 560, custom: 20 };
+      const MN = { 8: "Sep", 9: "Oct" };
+      let st = { m: "cost", s: "conn", r: "1w", unit: "day", v: "bars", f: [], open: {}, days: 7 };
+      let draft = { p: 2, sel: { a: [9, 5], b: [9, 11] }, pick: 0 };
+      const key = ([m, d]) => m * 100 + d;
+      const span = (s) => {
+        const b = s.b || s.a;
+        return `${MN[s.a[0]]} ${s.a[1]} – ${MN[b[0]]} ${b[1]}, 2026`;
+      };
+      const ndays = (s) => {
+        const b = s.b || s.a;
+        return (b[0] - s.a[0]) * 30 + b[1] - s.a[1] + 1;
+      };
+      const bucketFor = (n) => (n <= 3 ? "hour" : n <= 90 ? "day" : "month");
+      const rnd = (i) => {
+        const x = Math.sin(i * 12.9898) * 43758.5453;
+        return x - Math.floor(x);
+      };
+      const fmtc = (v) => "$" + (v < 10 ? v.toFixed(2) : v.toFixed(0));
+      const fmtt = (v) => {
+        const t = v * 1.9e6;
+        return t >= 1e9
+          ? (t / 1e9).toFixed(2) + "B"
+          : t >= 1e6
+            ? (t / 1e6).toFixed(1) + "M"
+            : (t / 1e3).toFixed(1) + "K";
+      };
+      const fmt = (v) => (st.m === "cost" ? fmtc(v) : fmtt(v));
+      const seed = () =>
+        ({ "1h": 1, "1d": 2, "1w": 3, "1m": 4, "1y": 5, all: 6, custom: 7 })[st.r] * 31 +
+        st.f.length * 7 +
+        (st.m === "cost" ? 0 : 99);
+      function header() {
+        const p = PRE.find((x) => x[0] === st.r);
+        document.getElementById("range-label").textContent = p
+          ? p[1].toLowerCase()
+          : "custom range";
+        document.getElementById("range-sub").textContent = p
+          ? p[4] || span({ a: p[3][0], b: p[3][1] })
+          : span(draft.sel);
+      }
+      function pop() {
+        document.getElementById("presets").innerHTML =
+          PRE.map(
+            ([, n], i) =>
+              `<button class="opt ${i === draft.p ? "on" : ""}" data-pre="${i}">${n}</button>`,
+          ).join("") +
+          `<div class="border-t border-border/60 my-1"></div><div class="opt ${draft.p < 0 ? "on" : ""}" style="cursor:default">Custom<span class="k">${draft.p < 0 ? "" : "pick days"}</span></div>`;
+        document.getElementById("months").innerHTML = [
+          [8, "September 2026", 30, 2],
+          [9, "October 2026", 31, 4],
+        ]
+          .map(
+            ([m, name, len, start], i) =>
+              `<div><div class="flex mb-2 text-sm font-semibold">${name}${i ? '<span class="ml-auto flex gap-3" style="color:var(--accent)"><button>‹</button><button>›</button></span>' : ""}</div><div class="cal">${["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((h) => `<div class="h">${h}</div>`).join("")}${"<div></div>".repeat(start)}${Array.from(
+                { length: len },
+                (_, j) => {
+                  const d = j + 1,
+                    k = m * 100 + d,
+                    a = key(draft.sel.a),
+                    b = draft.sel.b ? key(draft.sel.b) : a;
+                  return `<div class="d ${k === a || k === b ? "end" : k > a && k < b ? "in" : ""}" data-day="${m},${d}">${d}</div>`;
+                },
+              ).join("")}</div></div>`,
+          )
+          .join("");
+        document.getElementById("cal-hint").textContent = draft.pick
+          ? "Pick an end day"
+          : span(draft.sel);
+      }
+      function data() {
+        const set = SETS[st.s];
+        const n = N[st.r];
+        const k = st.f.length ? 0.55 : 1;
+        return {
+          set,
+          rows: Array.from({ length: n }, (_, i) =>
+            set.map(([, , w], j) => (w * k * scale[st.r] * (0.4 + rnd(i * 7 + j + n))) / 5),
+          ),
+        };
+      }
+      function draw() {
+        header();
+        // cost is recorded per turn: no cost per token type, no cost per model
+        for (const s of ["kind", "model"]) {
+          const b = document.querySelector(`#split [data-s="${s}"]`);
+          b.disabled = st.m === "cost";
+          b.title =
+            st.m === "cost"
+              ? "Tokens only: cost is recorded per turn, not per " +
+                (s === "kind" ? "token type" : "model")
+              : "";
+        }
+        if (st.m === "cost" && (st.s === "kind" || st.s === "model")) {
+          st.s = "conn";
+          document
+            .querySelectorAll("#split button")
+            .forEach((x) => x.classList.toggle("on", x.dataset.s === "conn"));
+        }
+        const { set, rows } = data();
+        const n = rows.length,
+          unit = st.unit;
+        const tot = rows.flat().reduce((a, b) => a + b, 0);
+        document.getElementById("v-cost").textContent = fmtc(tot);
+        document.getElementById("a-cost").textContent = "avg " + fmtc(tot / n) + " / " + unit;
+        document.getElementById("v-tokens").textContent = fmtt(tot);
+        document.getElementById("a-tokens").textContent = "avg " + fmtt(tot / n) + " / " + unit;
+        const plot = document.getElementById("plot"),
+          tip = document.getElementById("tip");
+        const W = 640,
+          H = 190,
+          cum = st.v === "cum";
+        let shown = rows;
+        if (cum) {
+          let acc = set.map(() => 0);
+          shown = rows.map((r) => (acc = acc.map((a, j) => a + r[j])).slice());
+        }
+        const max = Math.max(...shown.map((r) => r.reduce((a, b) => a + b, 0))) * 1.08;
+        let g = "";
+        for (let t = 1; t < 4; t++)
+          g += `<line x1="0" x2="${W}" y1="${(H * t) / 4}" y2="${(H * t) / 4}" stroke="var(--grid)"/>`;
+        if (cum) {
+          const xs = (i) => (i * W) / (n - 1);
+          let base = shown.map(() => 0);
+          set.forEach((s, j) => {
+            const top = shown.map((r, i) => base[i] + r[j]);
+            const up = top.map((v, i) => `${xs(i).toFixed(1)},${(H - (v / max) * H).toFixed(1)}`),
+              dn = base
+                .map((v, i) => `${xs(i).toFixed(1)},${(H - (v / max) * H).toFixed(1)}`)
+                .reverse();
+            g += `<polygon points="${up.concat(dn).join(" ")}" fill="var(${s[1]})" fill-opacity="${s[0].includes("cached") ? 0.35 : 0.8}" stroke="var(--card)" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+            base = top;
+          });
+          shown.forEach((r, i) => {
+            g += `<rect data-i="${i}" x="${xs(i) - W / n / 2}" y="0" width="${W / n}" height="${H}" fill="transparent"/>`;
+          });
+        } else {
+          const bw = W / n;
+          shown.forEach((r, i) => {
+            let y = H;
+            r.forEach((v, j) => {
+              const h = (v / max) * H;
+              y -= h;
+              g += `<rect x="${i * bw + bw * 0.15}" y="${y + 1}" width="${bw * 0.7}" height="${Math.max(h - 2, 0)}" rx="${j === r.length - 1 || j === 0 ? 3 : 0}" fill="var(${set[j][1]})" opacity="${set[j][0].includes("cached") ? 0.45 : 0.85}"/>`;
+            });
+            g += `<rect data-i="${i}" x="${i * bw}" y="0" width="${bw}" height="${H}" fill="transparent"/>`;
+          });
+          const avgY = H - (tot / n / max) * H;
+          g += `<line x1="0" x2="${W}" y1="${avgY}" y2="${avgY}" stroke="currentColor" stroke-opacity=".5" stroke-dasharray="4 4" vector-effect="non-scaling-stroke"/>`;
+        }
+        plot.innerHTML = `<div class="relative"><svg width="100%" height="190" viewBox="0 0 640 190" preserveAspectRatio="none">${g}</svg>${cum ? "" : `<span class="absolute right-0 text-[10px] text-muted-foreground" style="top:${H - (tot / n / max) * H - 14}px">avg ${fmt(tot / n)}</span>`}</div><div class="flex justify-between text-[11px] text-muted-foreground mt-1">${AX[st.r].map((l) => `<span>${l}</span>`).join("")}</div>`;
+        document.getElementById("legend").innerHTML = set
+          .map(
+            ([nm, c]) => `<span><span class="sw" style="background:var(${c})"></span>${nm}</span>`,
+          )
+          .join("");
+        plot.querySelectorAll("rect[data-i]").forEach((el) => {
+          el.onmouseenter = () => {
+            const i = +el.dataset.i,
+              r = shown[i];
+            tip.innerHTML =
+              `<div class="font-medium mb-1">${cum ? "Total up to this " + unit : "This " + unit}</div>` +
+              r
+                .map(
+                  (v, j) =>
+                    `<div><span class="sw" style="background:var(${set[j][1]})"></span>${set[j][0]} <b class="tabular-nums">${fmt(v)}</b></div>`,
+                )
+                .join("") +
+              `<div class="mt-1 text-muted-foreground">Total ${fmt(r.reduce((a, b) => a + b, 0))}</div>`;
+            const p = document.getElementById("main-chart").getBoundingClientRect(),
+              b = el.getBoundingClientRect();
+            tip.style.left = Math.min(b.left - p.left + 12, p.width - 210) + "px";
+            tip.style.top = "60px";
+            tip.style.opacity = 1;
+          };
+          el.onmouseleave = () => (tip.style.opacity = 0);
+        });
+        // heatmap: 7 days or more, recomputed from the range, filters and metric; a week is hours
+        // by weekday, anything longer a calendar of days
+        const hm = document.getElementById("heatmap");
+        hm.style.display = st.days >= 7 ? "" : "none";
+        if (st.days > 7) {
+          document.getElementById("heat-title").innerHTML =
+            `${st.m === "cost" ? "Cost" : "Tokens"} per day <span class="text-xs text-muted-foreground font-normal">${document.getElementById("range-sub").textContent}</span>`;
+          const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+          const sd = seed(),
+            lead = 4,
+            weeks = Math.ceil((st.days + lead) / 7);
+          const cells = Array.from({ length: st.days }, (_, i) => {
+            const d = (i + lead) % 7;
+            return [i, (d > 4 ? 0.2 : 0.7) + rnd(i + sd) * 0.6];
+          });
+          const mx = Math.max(...cells.map((c) => c[1])),
+            hs = cells.reduce((a, c) => a + c[1], 0);
+          const cw = Math.min(40, 1000 / weeks);
+          document.getElementById("heat-plot").innerHTML =
+            `<div class="flex gap-2"><div class="flex flex-col text-[11px] text-muted-foreground" style="gap:4px">${days.map((d) => `<span style="height:18px;line-height:18px">${d}</span>`).join("")}</div><svg viewBox="0 0 ${weeks * cw} 154" style="height:154px;width:${weeks * cw}px;max-width:100%" preserveAspectRatio="none">${cells.map(([i, v]) => `<rect data-c="${i}" x="${Math.floor((i + lead) / 7) * cw}" y="${((i + lead) % 7) * 22}" width="${cw - 3}" height="18" rx="4" style="fill:color-mix(in oklab, var(--heat) ${(6 + (94 * v) / mx).toFixed(0)}%, transparent)"/>`).join("")}</svg></div>
+  <div class="flex items-center gap-1.5 mt-2 text-[11px] text-muted-foreground"><span>less</span><span class="h-2 w-24 rounded" style="background:linear-gradient(90deg,color-mix(in oklab, var(--heat) 6%, transparent),var(--heat))"></span><span>more</span></div>`;
+          const ht = document.getElementById("htip");
+          hm.querySelectorAll("rect[data-c]").forEach((el) => {
+            el.onmouseenter = () => {
+              const [i, v] = cells[+el.dataset.c];
+              ht.innerHTML = `<div class="font-medium">Day ${i + 1} of the range</div><div class="tabular-nums">${fmt((v / hs) * tot)}</div>`;
+              const p = hm.getBoundingClientRect(),
+                b = el.getBoundingClientRect();
+              ht.style.left = Math.min(b.left - p.left + 20, p.width - 160) + "px";
+              ht.style.top = b.top - p.top - 50 + "px";
+              ht.style.opacity = 1;
+            };
+            el.onmouseleave = () => (ht.style.opacity = 0);
+          });
+        } else if (st.days >= 7) {
+          document.getElementById("heat-title").innerHTML =
+            `${st.m === "cost" ? "Cost" : "Tokens"} by hour and weekday <span class="text-xs text-muted-foreground font-normal">${document.getElementById("range-sub").textContent}</span>`;
+          const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+          let cells = [],
+            hs = 0;
+          const sd = seed();
+          const day0 = 8 + rnd(sd) * 3,
+            day1 = 17 + rnd(sd + 1) * 4,
+            wk = 0.15 + rnd(sd + 2) * 0.5;
+          for (let d = 0; d < 7; d++)
+            for (let x = 0; x < 24; x++) {
+              const v =
+                (x >= day0 && x < day1 ? 0.6 : 0.06) * (d > 4 ? wk : 1) +
+                rnd(d * 24 + x + sd) * 0.4;
+              cells.push([d, x, v]);
+              hs += v;
+            }
+          const mx = Math.max(...cells.map((c) => c[2]));
+          document.getElementById("heat-plot").innerHTML =
+            `<div class="flex gap-2"><div class="flex flex-col text-[11px] text-muted-foreground" style="gap:4px">${days.map((d) => `<span style="height:18px;line-height:18px">${d}</span>`).join("")}</div><svg class="flex-1" viewBox="0 0 624 154" preserveAspectRatio="none" style="height:154px">${cells.map(([d, x, v], i) => `<rect data-c="${i}" x="${x * 26}" y="${d * 22}" width="23" height="18" rx="4" style="fill:color-mix(in oklab, var(--heat) ${(6 + (94 * v) / mx).toFixed(0)}%, transparent)"/>`).join("")}</svg></div>
+  <div class="flex items-center mt-1 pl-9 text-[11px] text-muted-foreground"><div class="flex-1 flex justify-between">${[0, 3, 6, 9, 12, 15, 18, 21].map((h) => `<span>${String(h).padStart(2, "0")}:00</span>`).join("")}</div></div>
+  <div class="flex items-center gap-1.5 mt-2 text-[11px] text-muted-foreground"><span>less</span><span class="h-2 w-24 rounded" style="background:linear-gradient(90deg,color-mix(in oklab, var(--heat) 6%, transparent),var(--heat))"></span><span>more</span></div>`;
+          const ht = document.getElementById("htip");
+          hm.querySelectorAll("rect[data-c]").forEach((el) => {
+            el.onmouseenter = () => {
+              const [d, x, v] = cells[+el.dataset.c];
+              ht.innerHTML = `<div class="font-medium">${days[d]} ${String(x).padStart(2, "0")}:00–${String(x + 1).padStart(2, "0")}:00</div><div class="tabular-nums">${fmt((v / hs) * tot)}</div>`;
+              const p = hm.getBoundingClientRect(),
+                b = el.getBoundingClientRect();
+              ht.style.left = Math.min(b.left - p.left + 20, p.width - 160) + "px";
+              ht.style.top = b.top - p.top - 50 + "px";
+              ht.style.opacity = 1;
+            };
+            el.onmouseleave = () => (ht.style.opacity = 0);
+          });
+        }
+        // breakdowns: one value, the selected metric; models are tokens only
+        const parts = [
+          ["Input", 0.035],
+          ["Output", 0.002],
+          ["Thought", 0.003],
+          ["Cache write", 0.36],
+          ["Cache read", 0.6],
+        ];
+        const list = (id, items, colored, f2) => {
+          document.getElementById(id).innerHTML = items
+            .map(([p, sub, f, c], i) => {
+              const k = id + i,
+                open = st.open[k];
+              return (
+                `<div class="brow" data-o="${k}" ><div class="top">${colored ? `<span class="dot" style="background:var(${c})"></span>` : ""}<span class="font-medium truncate">${p}</span><span class="text-xs text-muted-foreground truncate">${sub}</span><span class="ml-auto font-semibold tabular-nums">${f2(tot * f)}</span><span class="w-11 text-right text-xs text-muted-foreground tabular-nums">${(f * 100).toFixed(1)}%</span><span class="w-7 h-7 grid place-items-center text-muted-foreground">${open ? "⌃" : "⌄"}</span></div><div class="track"><div style="width:${f * 100}%;background:${colored ? `var(${c})` : "var(--accent)"}"></div></div></div>` +
+                (open
+                  ? parts
+                      .map(
+                        ([n, tf]) =>
+                          `<div class="sub"><span>${n}</span><span class="ml-auto tabular-nums">${fmtt(tot * f * tf * 1.6)}</span><span class="w-[68px]"></span></div>`,
+                      )
+                      .join("")
+                  : "")
+              );
+            })
+            .join("");
+        };
+        const pf =
+          st.m === "cost"
+            ? [0.42, 0.24, 0.13, 0.09, 0.07, 0.05]
+            : [0.38, 0.27, 0.12, 0.11, 0.08, 0.04];
+        list(
+          "proj",
+          [
+            ["maestro", "This computer"],
+            ["api-gateway", "build-box"],
+            ["infra", "build-box"],
+            ["website", "This computer"],
+            ["trainer", "gpu-rig"],
+            ["dotfiles", "Ubuntu"],
+          ].map((r, i) => [...r, pf[i]]),
+          false,
+          fmt,
+        );
+        document.getElementById("proj-title").textContent =
+          "Projects · " + (st.m === "cost" ? "cost" : "tokens");
+        document.getElementById("mdl-title").innerHTML =
+          "Models · tokens" +
+          (st.m === "cost"
+            ? ' <span class="text-xs font-normal text-muted-foreground">cost is not recorded per model</span>'
+            : "");
+        list(
+          "mdl",
+          [
+            ["claude-sonnet-5-5", "Claude, Codex", 0.593, "--model-0"],
+            ["gpt-5.6-sol", "Codex", 0.374, "--model-1"],
+            ["claude-haiku-4-5", "Claude", 0.033, "--model-2"],
+          ],
+          true,
+          fmtt,
+        );
+        document.getElementById("chips").innerHTML = st.f
+          .map((f) => `<span class="chip">${f} <button data-x="${f}">✕</button></span>`)
+          .join("");
+        const opts = [
+          ["Projects", ["maestro", "api-gateway", "infra", "website", "trainer", "dotfiles"]],
+          ["Models", ["claude-sonnet-5-5", "gpt-5.6-sol", "claude-haiku-4-5"]],
+        ];
+        document.getElementById("filterpop").innerHTML = opts
+          .map(
+            ([title, names]) =>
+              `<div class="text-[11px] text-muted-foreground px-1.5 pt-1 pb-1">${title}</div>` +
+              names
+                .map(
+                  (n) =>
+                    `<button class="opt flex items-center gap-2" data-t="${n}"><span class="inline-grid place-items-center w-4 h-4 rounded border border-border" style="${st.f.includes(n) ? "background:var(--accent);color:#fff;border-color:var(--accent)" : ""}">${st.f.includes(n) ? "✓" : ""}</span>${n}</button>`,
+                )
+                .join(""),
+          )
+          .join("");
+      }
+      const rp = () => document.getElementById("rangepop");
+      const DAYS = { "1h": 0, "1d": 1, "1w": 7, "1m": 30, "1y": 365, all: 540 };
+      document.addEventListener("click", (e) => {
+        const t = e.target;
+        if (t.closest("#range-btn")) {
+          const o = rp().classList.toggle("open");
+          if (o) {
+            const i = PRE.findIndex((x) => x[0] === st.r);
+            draft.p = i;
+            if (i >= 0) draft.sel = { a: PRE[i][3][0], b: PRE[i][3][1] };
+            draft.pick = 0;
+            pop();
+          }
+          return;
+        }
+        const pre = t.closest("[data-pre]");
+        if (pre) {
+          const i = +pre.dataset.pre;
+          st.r = PRE[i][0];
+          st.unit = PRE[i][2];
+          st.days = DAYS[st.r];
+          draft.p = i;
+          rp().classList.remove("open");
+          draw();
+          return;
+        }
+        const day = t.closest("[data-day]");
+        if (day) {
+          const d = day.dataset.day.split(",").map(Number);
+          if (!draft.pick) {
+            draft.sel = { a: d, b: null };
+            draft.pick = 1;
+          } else {
+            if (key(d) < key(draft.sel.a)) draft.sel = { a: d, b: draft.sel.a };
+            else draft.sel.b = d;
+            draft.pick = 0;
+          }
+          draft.p = -1;
+          pop();
+          return;
+        }
+        if (t.closest("#cal-apply")) {
+          if (draft.p < 0) {
+            st.r = "custom";
+            st.days = ndays(draft.sel);
+            st.unit = bucketFor(st.days);
+          }
+          rp().classList.remove("open");
+          draw();
+          return;
+        }
+        if (t.closest("#cal-cancel")) {
+          rp().classList.remove("open");
+          return;
+        }
+        const seg = t.closest("#split button,#mode button");
+        if (seg && !seg.disabled) {
+          if (seg.parentElement.id === "split") st.s = seg.dataset.s;
+          else st.v = seg.dataset.v;
+          seg.parentElement
+            .querySelectorAll("button")
+            .forEach((x) => x.classList.toggle("on", x === seg));
+          draw();
+          return;
+        }
+        const k = t.closest(".kpi");
+        if (k) {
+          st.m = k.dataset.m;
+          document.querySelectorAll(".kpi").forEach((x) => x.classList.toggle("on", x === k));
+          draw();
+          return;
+        }
+        const o = t.closest("[data-o]");
+        if (o) {
+          st.open[o.dataset.o] = !st.open[o.dataset.o];
+          draw();
+          return;
+        }
+        if (t.closest("#addfilter")) {
+          document.getElementById("filterpop").classList.toggle("open");
+          return;
+        }
+        const ft = t.closest("[data-t]");
+        if (ft) {
+          const n = ft.dataset.t;
+          st.f = st.f.includes(n) ? st.f.filter((f) => f !== n) : [...st.f, n];
+          draw();
+          return;
+        }
+        if (!t.closest("#filterpop")) document.getElementById("filterpop").classList.remove("open");
+        const x = t.closest("[data-x]");
+        if (x) {
+          st.f = st.f.filter((f) => f !== x.dataset.x);
+          draw();
+          return;
+        }
+        if (rp().classList.contains("open") && !t.closest("#rangepop"))
+          rp().classList.remove("open");
+      });
+      draw();
+    </script>
+  </body>
+</html>

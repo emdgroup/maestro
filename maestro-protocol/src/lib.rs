@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 15;
+pub const PROTOCOL_VERSION: u32 = 16;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 ///
@@ -169,6 +169,10 @@ pub enum ServerRequest {
     ListWebhookDeliveries(AutomationIdRequest),
     /// What a conversation's recorded turns used, oldest first.
     SessionUsage(SessionUsageRequest),
+    /// Recorded turns after a turn id, oldest first, a page at a time: how the app mirrors usage.
+    UsageTurns(UsageTurnsRequest),
+    /// Hourly totals after an hour, a page at a time: the history older than the turns.
+    UsageHours(UsageHoursRequest),
     /// What this server is: since when, which version, and how busy.
     GetServerStatus,
     /// Start this server with the machine, or stop doing so. Linux only: on the machines the app
@@ -2294,6 +2298,8 @@ pub enum ServerResponse {
     RollWebhookSecretOk(Automation),
     ListWebhookDeliveriesOk(ListWebhookDeliveriesResponse),
     SessionUsageOk(SessionUsageResponse),
+    UsageTurnsOk(UsageTurnsResponse),
+    UsageHoursOk(UsageHoursResponse),
     ServerStatusOk(ServerStatus),
     PreviewScheduleOk(PreviewScheduleResponse),
     /// A run started or finished. Pushed unasked to whoever is attached, because the client that
@@ -2462,6 +2468,8 @@ impl ServerResponse {
             | Self::RollWebhookSecretOk(_)
             | Self::ListWebhookDeliveriesOk(_)
             | Self::SessionUsageOk(_)
+            | Self::UsageTurnsOk(_)
+            | Self::UsageHoursOk(_)
             | Self::ServerStatusOk(_)
             | Self::PreviewScheduleOk(_)
             | Self::SetModelOk(_)
@@ -4361,6 +4369,42 @@ mod tests {
     }
 
     #[test]
+    fn roundtrip_usage_turns() {
+        let msg = AnyMessage::Response(ServerResponse::UsageTurnsOk(UsageTurnsResponse {
+            store_id: "s".to_string(),
+            merged_through_id: 3,
+            turns: vec![UsageTurnRow {
+                id: 4,
+                agent_id: "claude-acp".to_string(),
+                acp_session_id: "a".to_string(),
+                project_path: "/p".to_string(),
+                model_id: Some("opus".to_string()),
+                started_at: "2026-10-12T10:00:00Z".to_string(),
+                ended_at: "2026-10-12T10:00:30Z".to_string(),
+                tokens: UsageTokens {
+                    total_tokens: Some(30),
+                    input_tokens: Some(10),
+                    ..Default::default()
+                },
+                cost_amount: Some(0.5),
+                cost_currency: Some("USD".to_string()),
+            }],
+            models: vec![UsageTurnModelRow {
+                turn_id: 4,
+                model: "claude-opus".to_string(),
+                tokens: UsageTokens {
+                    input_tokens: Some(10),
+                    ..Default::default()
+                },
+            }],
+            more: false,
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: AnyMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
     fn turn_ended_without_usage_still_decodes() {
         // What a daemon from before token usage sends.
         let ended: TurnEnded =
@@ -4762,6 +4806,104 @@ pub struct UsageTurn {
     pub started_at: String,
     pub ended_at: String,
     pub usage: Option<TurnUsage>,
+}
+
+/// Token counts as stored, `None` where the agent reported none. A model's row has no total.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct UsageTokens {
+    pub total_tokens: Option<i64>,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub thought_tokens: Option<i64>,
+    pub cached_read_tokens: Option<i64>,
+    pub cached_write_tokens: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct UsageTurnsRequest {
+    /// The last turn id the caller has, 0 for none.
+    pub after_turn_id: i64,
+}
+
+/// Every answer names the store, so a caller sees when the database behind the server was
+/// recreated and its turn ids started again.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct UsageTurnsResponse {
+    pub store_id: String,
+    /// The highest turn id merged into its hour so far. Above the caller's last turn id, turns the
+    /// caller never received are gone into hours, and only a sync from scratch recovers them.
+    pub merged_through_id: i64,
+    pub turns: Vec<UsageTurnRow>,
+    /// The models of the turns in this page.
+    pub models: Vec<UsageTurnModelRow>,
+    /// More turns follow the last one in this page.
+    pub more: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UsageTurnRow {
+    pub id: i64,
+    pub agent_id: String,
+    pub acp_session_id: String,
+    pub project_path: String,
+    pub model_id: Option<String>,
+    /// RFC 3339, UTC.
+    pub started_at: String,
+    pub ended_at: String,
+    #[serde(flatten)]
+    pub tokens: UsageTokens,
+    pub cost_amount: Option<f64>,
+    pub cost_currency: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UsageTurnModelRow {
+    pub turn_id: i64,
+    pub model: String,
+    #[serde(flatten)]
+    pub tokens: UsageTokens,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct UsageHoursRequest {
+    /// The last hour the caller has, empty for none.
+    pub after_hour: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct UsageHoursResponse {
+    pub store_id: String,
+    /// Every row of each hour in this page: a page never splits an hour.
+    pub hours: Vec<UsageHourRow>,
+    pub models: Vec<UsageHourModelRow>,
+    pub more: bool,
+}
+
+/// Turns past retention summed per UTC hour. `''` is an unknown model or currency.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UsageHourRow {
+    /// `YYYY-MM-DDTHH:00:00Z`.
+    pub hour: String,
+    pub agent_id: String,
+    pub project_path: String,
+    pub model_id: String,
+    pub cost_currency: String,
+    pub turns: i64,
+    pub sessions: i64,
+    pub active_seconds: i64,
+    #[serde(flatten)]
+    pub tokens: UsageTokens,
+    pub cost_amount: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UsageHourModelRow {
+    pub hour: String,
+    pub agent_id: String,
+    pub project_path: String,
+    pub model: String,
+    #[serde(flatten)]
+    pub tokens: UsageTokens,
 }
 
 /// How a server was set to start with its machine.

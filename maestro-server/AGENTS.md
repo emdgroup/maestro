@@ -484,6 +484,15 @@ The session header reads a conversation's turns back with `SessionUsage`, keyed 
 `acp_session_id` so every load of it is found, and adds them up itself. Merged hours do not name a
 session, so a conversation older than 90 days shows only its recent turns.
 
+The app mirrors the whole store for the Usage view (`docs/usage-view/`) with two paged requests:
+`UsageTurns` sends the turns after a turn id, in id order, with their models, and `UsageHours` the
+hourly totals after an hour, never splitting an hour across pages. Every answer carries the
+store id, a random id `usage_meta` makes when the table is created, so a mirror sees when
+`projects.db` was recreated and its turn ids started again. `UsageTurns` also carries
+`merged_through_id`, the highest turn id `merge_old` has folded into an hour: above the mirror's
+last turn id, it means turns the mirror never received are gone into hours, and only a sync from
+scratch recovers them.
+
 ## The Maestro MCP server
 
 Agents get a channel back into Maestro that returns a value: `maestro-server` registers **itself**

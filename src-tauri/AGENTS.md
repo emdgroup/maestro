@@ -34,7 +34,7 @@ described in `maestro-server/AGENTS.md`, beside the daemon half.
 
 ## Database Schema
 
-SQLite with foreign key constraints enabled. Schema V32. Configured with WAL mode and 5s `busy_timeout` for concurrent access.
+SQLite with foreign key constraints enabled. Schema V33. Configured with WAL mode and 5s `busy_timeout` for concurrent access.
 
 `SCHEMA_VERSION` lives in `src-tauri/src/core/schema.rs` — that constant is the source of truth; update this doc when you bump it.
 
@@ -42,7 +42,7 @@ SQLite with foreign key constraints enabled. Schema V32. Configured with WAL mod
 
 | Stored version      | Behaviour                                                                  |
 | ------------------- | -------------------------------------------------------------------------- |
-| `0` (fresh install) | create the full schema from `SCHEMA_V32_FULL`                              |
+| `0` (fresh install) | create `SCHEMA_V32_FULL`, then run the migrations after v32                |
 | `>= 22`             | apply incremental migrations in `run_migrations()` — **data is preserved** |
 | `1..=21` (legacy)   | drop every table and recreate — **data is lost**                           |
 
@@ -58,7 +58,7 @@ repository was ever in is three code paths maintained to serve nobody. This is o
 the versions in question are absent from `main` and from every tag; check both before doing it,
 and expect to delete `.maestro/dev-data/` on any machine that ran the intermediate builds.
 
-Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `task_comments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`, `connection_settings`, `templates`, `prompts`
+Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `task_comments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`, `connection_settings`, `templates`, `prompts`, and the usage mirror (`usage_stores`, `usage_turns`, `usage_turn_models`, `usage_hourly`, `usage_hourly_models`, with the views `usage_facts` and `usage_model_facts`; see `usage/mirror.rs` and `docs/usage-view/design.md`)
 
 The app reads and writes `projects`, `settings`, `known_hosts`, the three connection tables,
 `templates` and the shared rows of `prompts`. It reads `connection_settings` only to carry a

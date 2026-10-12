@@ -36,3 +36,4 @@ pub use crate::integration::pull_request_handlers::*;
 pub use crate::prompts::*;
 pub use crate::settings::handlers::*;
 pub use crate::templates::*;
+pub use crate::usage::handlers::*;
