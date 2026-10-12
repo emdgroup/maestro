@@ -202,7 +202,7 @@ Gaps the survey found, which the phases below close:
 
 | Phase | What                                                       | State       |
 | ----- | ---------------------------------------------------------- | ----------- |
-| 0     | Data model and protocol                                    | In progress |
+| 0     | Data model and protocol                                    | Done        |
 | 1     | The iteration engine and sealed checks                     | Not started |
 | 2     | Judge, digest, proposals, steering, sign-off, pull request | Not started |
 | 3     | Usage-limit gate, for every task                           | Not started |
