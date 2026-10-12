@@ -67,10 +67,17 @@ export function resolveRange(choice: RangeChoice, now: Date): UsageRange {
   }
 }
 
-/** The heatmap needs a week of data to say anything. */
-export function heatmapShown(choice: RangeChoice): boolean {
-  if ("from" in choice) return differenceInCalendarDays(choice.to, choice.from) + 1 >= 7;
-  return !["1h", "1d"].includes(choice.preset);
+/**
+ * The heatmap needs a week of data to say anything. A week is hours by weekday; anything longer
+ * is a calendar of days, since a week of days would be one column.
+ */
+export function heatmapKind(choice: RangeChoice): "hours" | "days" | null {
+  if ("from" in choice) {
+    const days = differenceInCalendarDays(choice.to, choice.from) + 1;
+    return days < 7 ? null : days === 7 ? "hours" : "days";
+  }
+  if (choice.preset === "1h" || choice.preset === "1d") return null;
+  return choice.preset === "7d" ? "hours" : "days";
 }
 
 /** The title's words: `Usage over the last 7 days`. */
@@ -105,7 +112,7 @@ export function bucketKey(date: Date, bucket: UsageBucket): string {
   return format(date, KEY_FORMAT[bucket]);
 }
 
-function parseKey(key: string, bucket: UsageBucket): Date {
+export function parseKey(key: string, bucket: UsageBucket): Date {
   const [day, time] = key.split("T");
   const [y, m, d] = day.split("-").map(Number);
   const [h, min] = (time ?? "").split(":").map(Number);

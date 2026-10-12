@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bucketKeys, describeDates, heatmapShown, resolveRange } from "./range";
+import { bucketKeys, describeDates, heatmapKind, resolveRange } from "./range";
 
 const now = new Date(2026, 9, 11, 14, 5, 30);
 
@@ -38,12 +38,14 @@ describe("resolveRange", () => {
   });
 });
 
-describe("heatmapShown", () => {
-  it("needs a week", () => {
-    expect(heatmapShown({ preset: "1d" })).toBe(false);
-    expect(heatmapShown({ preset: "7d" })).toBe(true);
-    expect(heatmapShown({ from: new Date(2026, 9, 5), to: new Date(2026, 9, 10) })).toBe(false);
-    expect(heatmapShown({ from: new Date(2026, 9, 5), to: new Date(2026, 9, 11) })).toBe(true);
+describe("heatmapKind", () => {
+  it("needs a week, and turns into days past one", () => {
+    expect(heatmapKind({ preset: "1d" })).toBe(null);
+    expect(heatmapKind({ preset: "7d" })).toBe("hours");
+    expect(heatmapKind({ preset: "30d" })).toBe("days");
+    expect(heatmapKind({ from: new Date(2026, 9, 5), to: new Date(2026, 9, 10) })).toBe(null);
+    expect(heatmapKind({ from: new Date(2026, 9, 5), to: new Date(2026, 9, 11) })).toBe("hours");
+    expect(heatmapKind({ from: new Date(2026, 9, 5), to: new Date(2026, 9, 12) })).toBe("days");
   });
 });
 

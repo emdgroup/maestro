@@ -54,6 +54,7 @@
         --s3: #199e70;
         --s4: #c98500;
         --s5: #d55181;
+        --s6: #3987e5;
       }
     </style>
   </head>
@@ -65,6 +66,7 @@
         --s3: #1baf7a;
         --s4: #eda100;
         --s5: #e87ba4;
+        --s6: #2a78d6;
         --grid: color-mix(in oklab, currentColor 10%, transparent);
       }
       :root[data-theme="dark"] .viz {
@@ -73,6 +75,7 @@
         --s3: #199e70;
         --s4: #c98500;
         --s5: #d55181;
+        --s6: #3987e5;
       }
       @media (prefers-color-scheme: dark) {
         :root:where(:not([data-theme="light"])) .viz {
@@ -81,6 +84,8 @@
           --s3: #199e70;
           --s4: #c98500;
           --s5: #d55181;
+          --s6: #3987e5;
+          --s6: #3987e5;
         }
       }
       .glass {
@@ -292,8 +297,8 @@
         </div>
       </section>
 
+      <button class="text-sm text-muted-foreground mb-3">‹ Home</button>
       <section id="usage-view" class="glass p-6">
-        <button class="text-sm text-muted-foreground mb-2">‹ Home</button>
         <div class="relative">
           <div class="text-2xl font-semibold tracking-[-0.025em]">
             Usage <span class="text-muted-foreground font-normal">over the</span>
@@ -415,7 +420,7 @@
           ["Gemini", "--s3", 0.2],
         ],
         kind: [
-          ["Input", "--s1", 0.3],
+          ["Input", "--s6", 0.3],
           ["Output", "--s2", 0.25],
           ["Thought", "--s3", 0.1],
           ["Cache read", "--s4", 1.2],
@@ -669,10 +674,41 @@
           };
           el.onmouseleave = () => (tip.style.opacity = 0);
         });
-        // heatmap: 7 days or more, recomputed from the range, filters and metric
+        // heatmap: 7 days or more, recomputed from the range, filters and metric; a week is hours
+        // by weekday, anything longer a calendar of days
         const hm = document.getElementById("heatmap");
         hm.style.display = st.days >= 7 ? "" : "none";
-        if (st.days >= 7) {
+        if (st.days > 7) {
+          document.getElementById("heat-title").innerHTML =
+            `${st.m === "cost" ? "Cost" : "Tokens"} per day <span class="text-xs text-muted-foreground font-normal">${document.getElementById("range-sub").textContent}</span>`;
+          const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+          const sd = seed(),
+            lead = 4,
+            weeks = Math.ceil((st.days + lead) / 7);
+          const cells = Array.from({ length: st.days }, (_, i) => {
+            const d = (i + lead) % 7;
+            return [i, (d > 4 ? 0.2 : 0.7) + rnd(i + sd) * 0.6];
+          });
+          const mx = Math.max(...cells.map((c) => c[1])),
+            hs = cells.reduce((a, c) => a + c[1], 0);
+          const cw = Math.min(40, 1000 / weeks);
+          document.getElementById("heat-plot").innerHTML =
+            `<div class="flex gap-2"><div class="flex flex-col text-[11px] text-muted-foreground" style="gap:4px">${days.map((d) => `<span style="height:18px;line-height:18px">${d}</span>`).join("")}</div><svg viewBox="0 0 ${weeks * cw} 154" style="height:154px;width:${weeks * cw}px;max-width:100%" preserveAspectRatio="none">${cells.map(([i, v]) => `<rect data-c="${i}" x="${Math.floor((i + lead) / 7) * cw}" y="${((i + lead) % 7) * 22}" width="${cw - 3}" height="18" rx="4" style="fill:color-mix(in oklab, var(--s1) ${(6 + (94 * v) / mx).toFixed(0)}%, transparent)"/>`).join("")}</svg></div>
+  <div class="flex items-center gap-1.5 mt-2 text-[11px] text-muted-foreground"><span>less</span><span class="h-2 w-24 rounded" style="background:linear-gradient(90deg,color-mix(in oklab, var(--s1) 6%, transparent),var(--s1))"></span><span>more</span></div>`;
+          const ht = document.getElementById("htip");
+          hm.querySelectorAll("rect[data-c]").forEach((el) => {
+            el.onmouseenter = () => {
+              const [i, v] = cells[+el.dataset.c];
+              ht.innerHTML = `<div class="font-medium">Day ${i + 1} of the range</div><div class="tabular-nums">${fmt((v / hs) * tot)}</div>`;
+              const p = hm.getBoundingClientRect(),
+                b = el.getBoundingClientRect();
+              ht.style.left = Math.min(b.left - p.left + 20, p.width - 160) + "px";
+              ht.style.top = b.top - p.top - 50 + "px";
+              ht.style.opacity = 1;
+            };
+            el.onmouseleave = () => (ht.style.opacity = 0);
+          });
+        } else if (st.days >= 7) {
           document.getElementById("heat-title").innerHTML =
             `${st.m === "cost" ? "Cost" : "Tokens"} by hour and weekday <span class="text-xs text-muted-foreground font-normal">${document.getElementById("range-sub").textContent}</span>`;
           const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];

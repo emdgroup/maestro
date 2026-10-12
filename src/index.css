@@ -1187,7 +1187,8 @@
 }
 
 /* The Usage view's chart colours: categorical series in fixed order, led by the accent, which is
-   also the heatmap's one hue. Light and dark are stepped separately; see
+   also the heatmap's one hue. Token types never take the accent: they lead with --usage-6 instead.
+   Light and dark are stepped separately; see
    docs/usage-view/design.md, "Colour". */
 .usage-viz {
   --usage-1: var(--accent);
@@ -1195,6 +1196,7 @@
   --usage-3: #1baf7a;
   --usage-4: #eda100;
   --usage-5: #e87ba4;
+  --usage-6: #2a78d6;
   --usage-other: color-mix(in oklab, var(--foreground) 35%, transparent);
   --usage-grid: color-mix(in oklab, var(--foreground) 10%, transparent);
 }
@@ -1203,6 +1205,7 @@
   --usage-3: #199e70;
   --usage-4: #c98500;
   --usage-5: #d55181;
+  --usage-6: #3987e5;
 }
 /* A pane that holds a chart: the `home-pane` look without its hover lift. */
 .usage-pane {

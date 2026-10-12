@@ -4348,6 +4348,11 @@ connection_name: string;
  * RFC 3339; `None` until a sync has copied a turn.
  */
 synced_at: string | null; removed: boolean }
+export type UsageDayCell = { 
+/**
+ * The local day: `2026-10-12`.
+ */
+day: string; cost: number; tokens: number }
 export type UsageHeatCell = { 
 /**
  * 0 is Sunday.
@@ -4382,7 +4387,16 @@ projects: UsageProjectRef[];
  * turns (and hours) that used one of them, whatever else they used.
  */
 models: string[] }
-export type UsageReport = { cost: number; tokens: number; series: UsageSeriesPoint[]; heatmap: UsageHeatCell[]; projects: UsageProjectRow[]; models: UsageModelRow[]; coverage: UsageCoverage[] }
+export type UsageReport = { cost: number; tokens: number; series: UsageSeriesPoint[]; heatmap: UsageHeatCell[]; 
+/**
+ * The calendar heatmap, for ranges longer than a week.
+ */
+days: UsageDayCell[]; projects: UsageProjectRow[]; models: UsageModelRow[]; 
+/**
+ * Every model of the range by tokens, ignoring the project and model filters, so a model
+ * keeps its colour while filtered.
+ */
+model_ranking: string[]; coverage: UsageCoverage[] }
 export type UsageSeriesPoint = { 
 /**
  * The bucket, in the local clock: `2026-10-12`, `2026-10-12T14`, …

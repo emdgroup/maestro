@@ -90,6 +90,14 @@ pub struct UsageHeatCell {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+pub struct UsageDayCell {
+    /// The local day: `2026-10-12`.
+    pub day: String,
+    pub cost: f64,
+    pub tokens: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 pub struct UsageProjectRow {
     pub connection_key: String,
     pub project_path: String,
@@ -124,8 +132,13 @@ pub struct UsageReport {
     pub tokens: i64,
     pub series: Vec<UsageSeriesPoint>,
     pub heatmap: Vec<UsageHeatCell>,
+    /// The calendar heatmap, for ranges longer than a week.
+    pub days: Vec<UsageDayCell>,
     pub projects: Vec<UsageProjectRow>,
     pub models: Vec<UsageModelRow>,
+    /// Every model of the range by tokens, ignoring the project and model filters, so a model
+    /// keeps its colour while filtered.
+    pub model_ranking: Vec<String>,
     pub coverage: Vec<UsageCoverage>,
 }
 
@@ -359,6 +372,24 @@ pub fn report(conn: &Connection, query: &UsageQuery) -> Result<UsageReport, Stri
     )
     .map_err(fail)?;
 
+    let days = rows(
+        conn,
+        &format!(
+            "SELECT strftime('%Y-%m-%d', f.at, 'localtime'),
+                    COALESCE(SUM(f.cost_amount), 0), COALESCE(SUM(f.total_tokens), 0)
+             FROM {FACTS} {facts_where} GROUP BY 1 ORDER BY 1"
+        ),
+        &facts_values,
+        |r| {
+            Ok(UsageDayCell {
+                day: r.get(0)?,
+                cost: r.get(1)?,
+                tokens: r.get(2)?,
+            })
+        },
+    )
+    .map_err(fail)?;
+
     let projects = rows(
         conn,
         &format!(
@@ -407,6 +438,25 @@ pub fn report(conn: &Connection, query: &UsageQuery) -> Result<UsageReport, Stri
     .map_err(fail)?;
     models.sort_by(|a, b| b.tokens.cmp(&a.tokens));
 
+    let unfiltered = UsageQuery {
+        projects: Vec::new(),
+        models: Vec::new(),
+        ..query.clone()
+    };
+    let (ranking_where, ranking_values) = filters(&unfiltered, ModelMatch::Column)?;
+    let model_ranking = rows(
+        conn,
+        &format!(
+            "SELECT f.model FROM {MODEL_FACTS} {ranking_where} GROUP BY 1
+             ORDER BY COALESCE(SUM(f.input_tokens), 0) + COALESCE(SUM(f.output_tokens), 0)
+                      + COALESCE(SUM(f.thought_tokens), 0) + COALESCE(SUM(f.cached_read_tokens), 0)
+                      + COALESCE(SUM(f.cached_write_tokens), 0) DESC, 1"
+        ),
+        &ranking_values,
+        |r| r.get(0),
+    )
+    .map_err(fail)?;
+
     // One line per connection, named as at its newest store's last sync.
     let coverage = rows(
         conn,
@@ -442,8 +492,10 @@ pub fn report(conn: &Connection, query: &UsageQuery) -> Result<UsageReport, Stri
         tokens,
         series,
         heatmap,
+        days,
         projects,
         models,
+        model_ranking,
         coverage,
     })
 }
@@ -547,6 +599,8 @@ mod tests {
         let keys: Vec<_> = report.series.iter().map(|p| p.key.as_str()).collect();
         assert_eq!(keys, ["local", "ssh:9"]);
         assert_eq!(report.series[0].cost, Some(1.5));
+        let days: Vec<_> = report.days.iter().map(|d| d.tokens).collect();
+        assert_eq!(days, [100, 60]);
 
         // The same path on two connections is two projects; the dearest first.
         let projects: Vec<_> = report
@@ -612,6 +666,7 @@ mod tests {
         let report = super::report(&conn, &q).unwrap();
         assert_eq!((report.cost, report.tokens), (3.0, 110));
         assert_eq!(report.models.len(), 1);
+        assert_eq!(report.model_ranking, ["claude-opus", "sonnet"]);
         q.models = vec!["sonnet".into()];
         let report = super::report(&conn, &q).unwrap();
         assert_eq!((report.cost, report.tokens), (0.5, 50));

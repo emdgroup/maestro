@@ -15,6 +15,7 @@ const report: UsageReport = {
   tokens: 160,
   series: [],
   heatmap: [],
+  days: [],
   projects: [
     {
       connection_key: "local",
@@ -25,6 +26,7 @@ const report: UsageReport = {
     },
   ],
   models: [{ model: "claude-opus", agent_ids: ["claude-acp"], tokens: 100, by_type: split }],
+  model_ranking: ["claude-opus"],
   coverage: [
     { connection_key: "local", connection_name: "This computer", synced_at: null, removed: false },
     {
@@ -72,12 +74,15 @@ describe("the Usage view", () => {
     expect(model.disabled).toBe(false);
   });
 
-  it("hides the heatmap under 7 days", async () => {
+  it("hides the heatmap under 7 days, and shows days past 7", async () => {
     renderView();
     expect(await screen.findByText(/by hour and weekday/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /last 7 days/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Last 24 hours" }));
     expect(screen.queryByText(/by hour and weekday/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /last 24 hours/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Last 30 days" }));
+    expect(await screen.findByText(/Cost per day/)).toBeTruthy();
   });
 
   it("filters by a clicked project", async () => {

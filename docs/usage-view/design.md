@@ -29,7 +29,7 @@ nothing has been.
 One screen, the same glass recipes as Home (`docs/home-dashboard/design.md`, "Visual system").
 Top to bottom:
 
-1. `‹ Home`, back to Home.
+1. `‹ Home`, back to Home, above the panel at its top left, outside the glass.
 2. **Title with the range.** `Usage over the last 7 days ▾` in `2xl` semibold, with `over the` in
    muted regular weight. The range part is the control: accent coloured, dotted underline. Under it
    in muted `text-xs`, the dates it covers (`Oct 5 – Oct 11, 2026`), nothing else.
@@ -49,11 +49,16 @@ Top to bottom:
    - With Cost selected, `Model` and `Token type` are disabled, with the tooltip
      `Tokens only: cost is recorded per turn, not per model` (or `per token type`). If either was
      the split, it falls back to `Connection`.
-6. **Heatmap**, its own panel, only when the range is 7 days or longer; hidden otherwise. Title
-   `Cost by hour and weekday` (or `Tokens …`) followed by the dates in muted text. Seven rows
-   (Mon to Sun) by 24 columns (hours, local time), each cell the selected metric summed over the
-   range, on one sequential hue from faint to full, with a `less … more` legend. Hover shows the
-   hour and the value.
+6. **Heatmap**, its own panel, only when the range is 7 days or longer; hidden otherwise. Its
+   cells follow the range, on one sequential hue from faint to full, with a `less … more` legend,
+   and the title is followed by the dates in muted text.
+   - _A week_ (`Last 7 days`, or a custom range of exactly 7 days): `Cost by hour and weekday`
+     (or `Tokens …`). Seven rows (Mon to Sun) by 24 columns (hours, local time), each cell the
+     selected metric summed over the range. Hover shows the hour and the value.
+   - _Longer_: `Cost per day`, a calendar. Seven rows (Mon to Sun), one column per week, one cell
+     per local day of the range, with the month named above the week holding its first day. Hover
+     shows the date and the value. A week of days would be one column, which is why a week keeps
+     the hours.
 7. **Projects** and **Models**, two panels side by side. Each row is two lines: the name, a muted
    qualifier (the project's connection, or the model's agent), the value, the share in percent and
    a chevron; then the bar on its own line. The chevron expands the row into tokens by type
@@ -99,8 +104,13 @@ finer than an hour.
 
 Series take the categorical palette in fixed order and keep their colour when filters change the
 series count. The first slot, and the heatmap's one hue, is the user's accent colour; the other
-slots are fixed. A connection that is not attached draws at reduced opacity. Text never takes a
-series colour. Light and dark steps are in the mock.
+slots are fixed.
+
+- **Models** are ranked by tokens over the range before any filter, so the main model has the
+  accent and a filtered model keeps the colour it has unfiltered.
+- **Token types** never take the accent: they are not a ranking. Input takes a sixth fixed blue,
+  the others the fixed slots 2 to 5. A connection that is not attached draws at reduced opacity. Text never takes a
+  series colour. Light and dark steps are in the mock.
 
 ## Data
 
