@@ -22,18 +22,11 @@ import { UsageBreakdown, type BreakdownRow } from "./UsageBreakdown";
 import { UsageChart, type ChartSeries } from "./UsageChart";
 import { UsageCalendar, UsageHeatmap } from "./UsageHeatmap";
 
-/**
- * Each series' lightness step from the split's hue, alternating lighter and darker so neighbours
- * in a stack stand apart; a sixth series and beyond fold into Other.
- */
-const STEPS = [0, 0.15, -0.14, 0.24, -0.24];
-/** One hue per split, so no two splits share a colour. */
-const palette = (split: UsageSplit) => {
-  const hue = `var(--usage-${split.replace("_", "-")})`;
-  return STEPS.map((step) =>
-    step ? `oklch(from ${hue} clamp(0.25, calc(l + ${step}), 0.85) c h)` : hue,
-  );
-};
+/** How many hues each split has; the series past them fold into Other. */
+const HUES: Record<UsageSplit, number> = { connection: 4, agent: 4, model: 4, token_type: 5 };
+/** A split's own hues, none of them in another split's set. */
+const palette = (split: UsageSplit) =>
+  Array.from({ length: HUES[split] }, (_, i) => `var(--usage-${split.replace("_", "-")}-${i + 1})`);
 const OTHER = "var(--usage-other)";
 const TOKEN_TYPES: Record<string, string> = {
   input: "Input",

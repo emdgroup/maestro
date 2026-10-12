@@ -49,57 +49,106 @@
     </style>
     <style>
       .dark .viz {
-        --conn: #3987e5;
-        --agent: #199e70;
-        --model: #d95926;
-        --kind: #9f7aea;
+        --conn-0: #3b82f6;
+        --conn-1: #f59e0b;
+        --conn-2: #14b8a6;
+        --conn-3: #f43f5e;
+        --agent-0: #22c55e;
+        --agent-1: #8b5cf6;
+        --agent-2: #f97316;
+        --agent-3: #0ea5e9;
+        --model-0: #ef4444;
+        --model-1: #6366f1;
+        --model-2: #84cc16;
+        --model-3: #d946ef;
+        --kind-0: #eab308;
+        --kind-1: #06b6d4;
+        --kind-2: #ec4899;
+        --kind-3: #a16207;
+        --kind-4: #94a3b8;
       }
     </style>
   </head>
   <body>
     <style>
       .viz {
-        --conn-0: var(--conn);
-        --conn-1: oklch(from var(--conn) clamp(0.25, calc(l + 0.15), 0.85) c h);
-        --conn-2: oklch(from var(--conn) clamp(0.25, calc(l + -0.14), 0.85) c h);
-        --conn-3: oklch(from var(--conn) clamp(0.25, calc(l + 0.24), 0.85) c h);
-        --conn-4: oklch(from var(--conn) clamp(0.25, calc(l + -0.24), 0.85) c h);
-        --agent-0: var(--agent);
-        --agent-1: oklch(from var(--agent) clamp(0.25, calc(l + 0.15), 0.85) c h);
-        --agent-2: oklch(from var(--agent) clamp(0.25, calc(l + -0.14), 0.85) c h);
-        --agent-3: oklch(from var(--agent) clamp(0.25, calc(l + 0.24), 0.85) c h);
-        --agent-4: oklch(from var(--agent) clamp(0.25, calc(l + -0.24), 0.85) c h);
-        --model-0: var(--model);
-        --model-1: oklch(from var(--model) clamp(0.25, calc(l + 0.15), 0.85) c h);
-        --model-2: oklch(from var(--model) clamp(0.25, calc(l + -0.14), 0.85) c h);
-        --model-3: oklch(from var(--model) clamp(0.25, calc(l + 0.24), 0.85) c h);
-        --model-4: oklch(from var(--model) clamp(0.25, calc(l + -0.24), 0.85) c h);
-        --kind-0: var(--kind);
-        --kind-1: oklch(from var(--kind) clamp(0.25, calc(l + 0.15), 0.85) c h);
-        --kind-2: oklch(from var(--kind) clamp(0.25, calc(l + -0.14), 0.85) c h);
-        --kind-3: oklch(from var(--kind) clamp(0.25, calc(l + 0.24), 0.85) c h);
-        --kind-4: oklch(from var(--kind) clamp(0.25, calc(l + -0.24), 0.85) c h);
+        --conn-0: #2563eb;
+        --conn-1: #d97706;
+        --conn-2: #0d9488;
+        --conn-3: #e11d48;
+        --agent-0: #16a34a;
+        --agent-1: #7c3aed;
+        --agent-2: #ea580c;
+        --agent-3: #0284c7;
+        --model-0: #dc2626;
+        --model-1: #4f46e5;
+        --model-2: #65a30d;
+        --model-3: #c026d3;
+        --kind-0: #ca8a04;
+        --kind-1: #0891b2;
+        --kind-2: #db2777;
+        --kind-3: #a16207;
+        --kind-4: #64748b;
       }
       .viz {
         --heat: var(--accent);
-        --conn: #2a78d6;
-        --agent: #1baf7a;
-        --model: #eb6834;
-        --kind: #8b5cf6;
+        --conn-0: #2563eb;
+        --conn-1: #d97706;
+        --conn-2: #0d9488;
+        --conn-3: #e11d48;
+        --agent-0: #16a34a;
+        --agent-1: #7c3aed;
+        --agent-2: #ea580c;
+        --agent-3: #0284c7;
+        --model-0: #dc2626;
+        --model-1: #4f46e5;
+        --model-2: #65a30d;
+        --model-3: #c026d3;
+        --kind-0: #ca8a04;
+        --kind-1: #0891b2;
+        --kind-2: #db2777;
+        --kind-3: #a16207;
+        --kind-4: #64748b;
         --grid: color-mix(in oklab, currentColor 10%, transparent);
       }
       :root[data-theme="dark"] .viz {
-        --conn: #3987e5;
-        --agent: #199e70;
-        --model: #d95926;
-        --kind: #9f7aea;
+        --conn-0: #3b82f6;
+        --conn-1: #f59e0b;
+        --conn-2: #14b8a6;
+        --conn-3: #f43f5e;
+        --agent-0: #22c55e;
+        --agent-1: #8b5cf6;
+        --agent-2: #f97316;
+        --agent-3: #0ea5e9;
+        --model-0: #ef4444;
+        --model-1: #6366f1;
+        --model-2: #84cc16;
+        --model-3: #d946ef;
+        --kind-0: #eab308;
+        --kind-1: #06b6d4;
+        --kind-2: #ec4899;
+        --kind-3: #a16207;
+        --kind-4: #94a3b8;
       }
       @media (prefers-color-scheme: dark) {
         :root:where(:not([data-theme="light"])) .viz {
-          --conn: #3987e5;
-          --agent: #199e70;
-          --model: #d95926;
-          --kind: #9f7aea;
+          --conn-0: #3b82f6;
+          --conn-1: #f59e0b;
+          --conn-2: #14b8a6;
+          --conn-3: #f43f5e;
+          --agent-0: #22c55e;
+          --agent-1: #8b5cf6;
+          --agent-2: #f97316;
+          --agent-3: #0ea5e9;
+          --model-0: #ef4444;
+          --model-1: #6366f1;
+          --model-2: #84cc16;
+          --model-3: #d946ef;
+          --kind-0: #eab308;
+          --kind-1: #06b6d4;
+          --kind-2: #ec4899;
+          --kind-3: #a16207;
+          --kind-4: #94a3b8;
         }
       }
       .glass {
@@ -277,30 +326,23 @@
     <div class="viz p-5 space-y-6 text-foreground">
       <section id="home-entry" class="glass p-5">
         <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-3">
-          Home: entry point (hero, first on the scoreboard)
+          Home: entry point (hero, a sparkline before the counts)
         </div>
         <div class="flex items-end gap-10">
-          <button id="usage-link" class="text-left group">
-            <div class="text-[40px] font-semibold leading-none tabular-nums">$142.18</div>
-            <div class="text-xs text-muted-foreground flex items-center gap-1">
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M3 3v16a2 2 0 0 0 2 2h16" />
-                <path d="M18 17V9M13 17V5M8 17v-3" />
-              </svg>
-              this week · 268M tokens ›
-            </div>
+          <button id="usage-link" class="text-left group mb-1 self-end">
+            <svg width="81" height="26" style="color: var(--accent); opacity: 0.7">
+              <g fill="currentColor">
+                <rect x="0" y="4" width="9" height="22" rx="2" />
+                <rect x="12" y="12" width="9" height="14" rx="2" />
+                <rect x="24" y="14" width="9" height="12" rx="2" />
+                <rect x="36" y="18" width="9" height="8" rx="2" />
+                <rect x="48" y="6" width="9" height="20" rx="2" />
+                <rect x="60" y="10" width="9" height="16" rx="2" />
+                <rect x="72" y="14" width="9" height="12" rx="2" />
+              </g>
+            </svg>
+            <div class="text-xs text-muted-foreground mt-1">$142.18 this week ›</div>
           </button>
-          <span
-            class="w-px self-stretch"
-            style="background: color-mix(in oklab, currentColor 10%, transparent)"
-          ></span>
           <div class="flex gap-8 opacity-60">
             <div>
               <div class="text-[40px] font-semibold leading-none tabular-nums">3</div>

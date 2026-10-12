@@ -19,11 +19,11 @@ itself still shows real time only, apart from the one tile below; history lives 
 
 ## Home tile
 
-A fourth score, first on the hero's scoreboard and set off from the three counts by a thin
-divider: the last 7 days' cost in the counts' own `52px` figures, `$142.18`, and under it in muted
-`text-xs` a chart icon and `this week · 268M tokens ›`. It opens the Usage view. It reads
-the app's local copy of the usage (see "Data"), so it shows what was last synced, and nothing when
-nothing has been.
+First on the hero's scoreboard, before the three counts and quieter than them: a sparkline of the
+last 7 days' cost, one accent bar a day at 70% opacity, and under it in muted `text-xs`
+`$142.18 this week ›`. The counts stay the hero; the cost is never a figure of their size. It
+opens the Usage view. It reads the app's local copy of the usage (see "Data"), so it shows what
+was last synced, and nothing when nothing has been.
 
 ## Layout
 
@@ -106,14 +106,14 @@ finer than an hour.
 
 ## Colour
 
-Each split has a hue of its own, so a connection never wears an agent's or a model's colour:
-connections blue, agents green, models orange, token types violet. A split's series take that hue
-in fixed order, stepping its lightness up and down in turn (`0, +0.15, −0.14, +0.24, −0.24` in
-OKLCH) so neighbours in a stack stand apart; a sixth series and beyond fold into a grey Other.
-Series keep their colour when filters change the series count, and a model's colour is its place
-in the Models list, which no filter narrows. The accent colour is for the projects' bars, the
-heatmap and the range in the title. A connection that is not attached draws at reduced opacity.
-Text never takes a series colour. Light and dark steps are in the mock.
+Each split has a set of hues of its own, and no hue is in two sets, so a connection never wears an
+agent's or a model's colour: connections blue, amber, teal, rose; agents green, violet, orange,
+sky; models red, indigo, lime, fuchsia; token types yellow, cyan, pink, ochre, slate. A split's
+series take its hues in order, and the series past them fold into a grey Other. Series keep their
+colour when filters change the series count, and a model's colour is its place in the Models list,
+which no filter narrows. The accent colour is for the projects' bars, the heatmap and the range in
+the title. A connection that is not attached draws at reduced opacity. Text never takes a series
+colour. Light and dark steps are in the mock.
 
 ## Data
 
