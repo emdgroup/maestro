@@ -31,7 +31,6 @@ interface UsageBreakdownProps {
 export function UsageBreakdown({ rows, format }: UsageBreakdownProps) {
   const [open, setOpen] = useState<string[]>([]);
   const total = rows.reduce((sum, row) => sum + row.value, 0) || 1;
-  const top = rows[0]?.value || 1;
   if (!rows.length) return <div className="py-2 text-xs text-muted-foreground">Nothing yet.</div>;
   return (
     <div>
@@ -70,7 +69,8 @@ export function UsageBreakdown({ rows, format }: UsageBreakdownProps) {
                 <div
                   className="h-1.5 rounded-full"
                   style={{
-                    width: `${(row.value / top) * 100}%`,
+                    // The bar is the share beside it, not the row's size against the largest.
+                    width: `${(row.value / total) * 100}%`,
                     background: row.color ?? "var(--usage-accent)",
                   }}
                 />

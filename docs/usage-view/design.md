@@ -69,7 +69,7 @@ Top to bottom:
      the hours.
 7. **Projects** and **Models**, two panels side by side. Each row is two lines: the name, a muted
    qualifier (the project's connection, or the model's agents), the value, the share in percent and
-   a chevron; then the bar on its own line. Clicking anywhere on a row expands it into tokens by
+   a chevron; then the bar on its own line, as long as that share. Clicking anywhere on a row expands it into tokens by
    type (Input, Output, Thought, Cache write, Cache read), tokens only. The lists are never
    filtered: a row that is a filter keeps its place, with nothing to mark it.
    - _Projects_ shows the selected metric; the title says which, `Projects · cost`.

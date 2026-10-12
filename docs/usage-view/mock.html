@@ -827,13 +827,12 @@
           ["Cache read", 0.6],
         ];
         const list = (id, items, colored, f2) => {
-          const top = items[0][2];
           document.getElementById(id).innerHTML = items
             .map(([p, sub, f, c], i) => {
               const k = id + i,
                 open = st.open[k];
               return (
-                `<div class="brow" data-o="${k}" ><div class="top">${colored ? `<span class="dot" style="background:var(${c})"></span>` : ""}<span class="font-medium truncate">${p}</span><span class="text-xs text-muted-foreground truncate">${sub}</span><span class="ml-auto font-semibold tabular-nums">${f2(tot * f)}</span><span class="w-11 text-right text-xs text-muted-foreground tabular-nums">${(f * 100).toFixed(1)}%</span><span class="w-7 h-7 grid place-items-center text-muted-foreground">${open ? "⌃" : "⌄"}</span></div><div class="track"><div style="width:${(f / top) * 100}%;background:${colored ? `var(${c})` : "var(--accent)"}"></div></div></div>` +
+                `<div class="brow" data-o="${k}" ><div class="top">${colored ? `<span class="dot" style="background:var(${c})"></span>` : ""}<span class="font-medium truncate">${p}</span><span class="text-xs text-muted-foreground truncate">${sub}</span><span class="ml-auto font-semibold tabular-nums">${f2(tot * f)}</span><span class="w-11 text-right text-xs text-muted-foreground tabular-nums">${(f * 100).toFixed(1)}%</span><span class="w-7 h-7 grid place-items-center text-muted-foreground">${open ? "⌃" : "⌄"}</span></div><div class="track"><div style="width:${f * 100}%;background:${colored ? `var(${c})` : "var(--accent)"}"></div></div></div>` +
                 (open
                   ? parts
                       .map(
