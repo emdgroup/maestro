@@ -713,7 +713,7 @@
             r.forEach((v, j) => {
               const h = (v / max) * H;
               y -= h;
-              g += `<rect x="${i * bw + bw * 0.15}" y="${y + 1}" width="${bw * 0.7}" height="${Math.max(h - 2, 0)}" rx="${j === r.length - 1 ? 2 : 0}" fill="var(${set[j][1]})" ${set[j][0].includes("cached") ? 'opacity=".55"' : ""}/>`;
+              g += `<rect x="${i * bw + bw * 0.15}" y="${y + 1}" width="${bw * 0.7}" height="${Math.max(h - 2, 0)}" rx="${j === r.length - 1 || j === 0 ? 3 : 0}" fill="var(${set[j][1]})" opacity="${set[j][0].includes("cached") ? 0.45 : 0.85}"/>`;
             });
             g += `<rect data-i="${i}" x="${i * bw}" y="0" width="${bw}" height="${H}" fill="transparent"/>`;
           });

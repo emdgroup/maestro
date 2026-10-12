@@ -443,7 +443,7 @@ pub fn report(conn: &Connection, query: &UsageQuery) -> Result<UsageReport, Stri
         },
     )
     .map_err(fail)?;
-    models.sort_by(|a, b| b.tokens.cmp(&a.tokens));
+    models.sort_by_key(|model| std::cmp::Reverse(model.tokens));
 
     // One line per connection, named as at its newest store's last sync.
     let coverage = rows(

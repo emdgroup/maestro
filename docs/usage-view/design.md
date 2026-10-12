@@ -48,8 +48,10 @@ Top to bottom:
 5. **Main chart.** A switch, `Over time` or `Cumulative`, and on the right the split:
    `Connection`, `Model`, `Agent`, `Token type`. Legend under it.
    - _Over time_: stacked bars, one per bucket, coloured by the split, with a dashed line and a
-     label at the average.
-   - _Cumulative_: stacked areas, the running total from the start of the range, same split.
+     label at the average. Segments are at 85% opacity, and a bar is rounded only at its two ends:
+     the joins between segments stay square.
+   - _Cumulative_: stacked areas at 70% opacity, the running total from the start of the range,
+     same split.
    - Hovering a bar or a point shows each series' value and the total for that bucket, in the
      app's tooltip. Every tooltip in the view is the app's, never a native `title`.
    - With Cost selected, `Model` and `Token type` are disabled, with the tooltip

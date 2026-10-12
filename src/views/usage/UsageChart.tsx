@@ -25,6 +25,38 @@ interface UsageChartProps {
 const W = 640;
 const H = 190;
 const AXIS_LABELS = 5;
+// The SVG stretches wider than it is tall, so a corner is narrower than it is high.
+const RX = 3;
+const RY = 4;
+
+/** One segment of a stacked bar, rounded only where it ends the bar: the top of the top one and
+ * the bottom of the bottom one, so the joins stay square. */
+function segment(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  roundTop: boolean,
+  roundBottom: boolean,
+) {
+  const ry = Math.min(RY, h / 2);
+  const rx = Math.min(RX, w / 2);
+  const t = roundTop ? ry : 0;
+  const b = roundBottom ? ry : 0;
+  const tx = roundTop ? rx : 0;
+  const bx = roundBottom ? rx : 0;
+  return [
+    `M${x},${y + t}`,
+    t ? `A${tx},${t} 0 0 1 ${x + tx},${y}` : "",
+    `H${x + w - tx}`,
+    t ? `A${tx},${t} 0 0 1 ${x + w},${y + t}` : "",
+    `V${y + h - b}`,
+    b ? `A${bx},${b} 0 0 1 ${x + w - bx},${y + h}` : "",
+    `H${x + bx}`,
+    b ? `A${bx},${b} 0 0 1 ${x},${y + h - b}` : "",
+    "Z",
+  ].join("");
+}
 
 /**
  * Stacked bars per bucket with a dashed average, or stacked areas of the running total. Hovering
@@ -60,7 +92,7 @@ export function UsageChart({ buckets, bucket, series, cumulative, format }: Usag
           key={s.key}
           points={[...upper, ...lower].join(" ")}
           fill={s.color}
-          fillOpacity={s.faded ? 0.35 : 0.8}
+          fillOpacity={s.faded ? 0.3 : 0.7}
           stroke="var(--card)"
           strokeWidth={2}
           vectorEffect="non-scaling-stroke"
@@ -71,20 +103,23 @@ export function UsageChart({ buckets, bucket, series, cumulative, format }: Usag
   } else {
     buckets.forEach((_, i) => {
       let top = H;
-      shown.forEach((s) => {
-        const value = s.values[i] ?? 0;
-        if (!value) return;
-        const height = (value / max) * H;
+      const stack = shown.filter((s) => s.values[i]);
+      stack.forEach((s, j) => {
+        const height = (s.values[i] / max) * H;
         top -= height;
         marks.push(
-          <rect
+          <path
             key={`${s.key}-${i}`}
-            x={i * slot + slot * 0.15}
-            y={top + 1}
-            width={slot * 0.7}
-            height={Math.max(height - 2, 0)}
+            d={segment(
+              i * slot + slot * 0.15,
+              top + 1,
+              slot * 0.7,
+              Math.max(height - 2, 0),
+              j === stack.length - 1,
+              j === 0,
+            )}
             fill={s.color}
-            opacity={s.faded ? 0.55 : 1}
+            opacity={s.faded ? 0.45 : 0.85}
           />,
         );
       });
