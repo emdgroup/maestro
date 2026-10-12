@@ -6,13 +6,14 @@
 //! a transition its guard refused, owes no push.
 
 use maestro_protocol::{
-    OptionalTask, OptionalTaskReview, OptionalWorktree, ProjectRef, RequestTaskExecutionResponse,
-    SaveTaskReviewResponse, ServerRequest, ServerResponse, TaskAttachmentList, TaskCommentList,
-    TaskIdList, TaskInstructionList, TaskList, TaskRef, TaskRelationshipList, WorktreeList,
+    LoopCheckList, LoopHiddenFileList, LoopIterationList, OptionalTask, OptionalTaskReview,
+    OptionalWorktree, ProjectRef, RequestTaskExecutionResponse, SaveTaskReviewResponse,
+    ServerRequest, ServerResponse, TaskAttachmentList, TaskCommentList, TaskIdList,
+    TaskInstructionList, TaskList, TaskRef, TaskRelationshipList, WorktreeList,
 };
 use rusqlite::Connection;
 
-use super::{reviews, transition, worktrees};
+use super::{loops, reviews, transition, worktrees};
 use crate::automations::canonical_project_path;
 
 /// What a change to the rows of one project owes: which of the three pushes to send.
@@ -321,6 +322,55 @@ pub fn answer(
             canonical(&mut r.project_path);
             reviews::clear_review(conn, &r.project_path, r.task_id)?;
             (r.project_path, A::ClearTaskReviewOk, tasks)
+        }
+        // A loop's rows are about its task, so their change is the task's too.
+        Q::ListLoopChecks(mut r) => {
+            canonical(&mut r.project_path);
+            let checks = loops::list_checks(conn, &r.project_path, r.task_id)?;
+            let reply = A::ListLoopChecksOk(LoopCheckList { checks });
+            (r.project_path, reply, Changed::default())
+        }
+        Q::SetLoopChecks(mut r) => {
+            canonical(&mut r.project_path);
+            let checks = loops::set_checks(conn, &r)?;
+            (
+                r.project_path,
+                A::SetLoopChecksOk(LoopCheckList { checks }),
+                tasks,
+            )
+        }
+        Q::AnswerLoopProposal(mut r) => {
+            canonical(&mut r.project_path);
+            let checks = loops::answer_proposal(conn, &r)?;
+            let reply = A::AnswerLoopProposalOk(LoopCheckList { checks });
+            (r.project_path, reply, tasks)
+        }
+        Q::TickLoopCheck(mut r) => {
+            canonical(&mut r.project_path);
+            let checks = loops::tick(conn, &r)?;
+            (
+                r.project_path,
+                A::TickLoopCheckOk(LoopCheckList { checks }),
+                tasks,
+            )
+        }
+        Q::ListLoopIterations(mut r) => {
+            canonical(&mut r.project_path);
+            let iterations = loops::list_iterations(conn, &r.project_path, r.task_id)?;
+            let reply = A::ListLoopIterationsOk(LoopIterationList { iterations });
+            (r.project_path, reply, Changed::default())
+        }
+        Q::ListLoopHiddenFiles(mut r) => {
+            canonical(&mut r.project_path);
+            let files = loops::list_hidden_files(conn, &r.project_path, r.task_id)?;
+            let reply = A::ListLoopHiddenFilesOk(LoopHiddenFileList { files });
+            (r.project_path, reply, Changed::default())
+        }
+        Q::SetLoopHiddenFiles(mut r) => {
+            canonical(&mut r.project_path);
+            let files = loops::set_hidden_files(conn, &r)?;
+            let reply = A::SetLoopHiddenFilesOk(LoopHiddenFileList { files });
+            (r.project_path, reply, tasks)
         }
         _ => return Err("not a task, worktree or review request".to_string()),
     };

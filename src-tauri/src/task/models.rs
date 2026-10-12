@@ -99,6 +99,53 @@ pub struct Task {
     /// stage that phase hands to failed to start, rather than failing at its work.
     #[specta(optional)]
     pub claimed_from: Option<TaskPhase>,
+    /// The stage pipeline, or a loop that iterates until its checks pass. See
+    /// `docs/loops-plan.md`.
+    pub run_mode: RunMode,
+    /// Set on every loop task. A task switched back to the pipeline keeps the one it had.
+    #[specta(optional)]
+    pub loop_config: Option<LoopConfig>,
+    /// The base commit a loop's sealed snapshot was taken from.
+    #[specta(optional)]
+    pub loop_sealed_sha: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[specta(export)]
+#[serde(rename_all = "PascalCase")]
+pub enum RunMode {
+    Pipeline,
+    Loop,
+}
+
+/// A loop's budget and how its checks run. Mirrors `maestro_protocol::LoopConfig`, which holds the
+/// defaults.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct LoopConfig {
+    pub max_iterations: u32,
+    /// Agent time over the counted iterations, in seconds.
+    pub max_agent_secs: u32,
+    /// Iterations in a row that change nothing before the loop stops as stalled.
+    pub stall_limit: u32,
+    pub check_timeout_secs: u32,
+    #[specta(optional)]
+    pub setup_command: Option<String>,
+    /// Relative paths kept out of the worker's worktree. A trailing `/` names a directory.
+    pub sealed_paths: Vec<String>,
+}
+
+impl From<wire::LoopConfig> for LoopConfig {
+    fn from(config: wire::LoopConfig) -> Self {
+        LoopConfig {
+            max_iterations: config.max_iterations,
+            max_agent_secs: config.max_agent_secs,
+            stall_limit: config.stall_limit,
+            check_timeout_secs: config.check_timeout_secs,
+            setup_command: config.setup_command,
+            sealed_paths: config.sealed_paths,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -371,6 +418,7 @@ wire_enum!(
     [NewWorktree, RepositoryDirectory, ReuseWorkspace]
 );
 wire_enum!(BranchMode, wire::BranchMode, [Create, Checkout]);
+wire_enum!(RunMode, wire::RunMode, [Pipeline, Loop]);
 wire_enum!(
     TaskPhase,
     wire::TaskPhase,
@@ -453,6 +501,9 @@ impl Task {
             pull_request_ci: task.pull_request_ci.map(Into::into),
             profile_overrides: task.profile_overrides,
             claimed_from: task.claimed_from.map(Into::into),
+            run_mode: task.run_mode.into(),
+            loop_config: task.loop_config.map(Into::into),
+            loop_sealed_sha: task.loop_sealed_sha,
         }
     }
 }

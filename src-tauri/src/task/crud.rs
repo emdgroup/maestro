@@ -138,6 +138,8 @@ pub async fn create_task(
                 workspace_branch_mode: request.workspace_branch_mode.into(),
                 workspace_branch: request.workspace_branch,
                 model_override: request.model_override,
+                run_mode: maestro_protocol::RunMode::Pipeline,
+                loop_config: None,
             })
         },
         reply!(ServerResponse::CreateTaskOk(task) => task),

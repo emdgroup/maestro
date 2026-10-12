@@ -624,6 +624,8 @@ mod tests {
                 workspace_branch_mode: BranchMode::Create,
                 workspace_branch: None,
                 model_override: None,
+                run_mode: maestro_protocol::RunMode::Pipeline,
+                loop_config: None,
             },
         )
         .unwrap();

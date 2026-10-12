@@ -8,6 +8,7 @@
 //! Every function that reads and then writes runs in one transaction. The app got that atomicity
 //! from its one `Mutex<Connection>`; here the guard travels with the request instead.
 
+pub mod loops;
 pub mod project_import;
 pub mod requests;
 pub mod reviews;
@@ -20,8 +21,8 @@ pub use threads::*;
 use chrono::Utc;
 use maestro_protocol::{
     BranchMode, CloseRefinementRequest, CreateTaskRequest, EndTaskTurnRequest, ImportTasksRequest,
-    ListQueueCandidatesRequest, RequestTaskExecutionRequest, Task, TaskPhase, TaskStatus,
-    TaskTransition, TaskUpdate, TransitionGuard, TurnEnding, WorkspaceMode,
+    ListQueueCandidatesRequest, LoopConfig, RequestTaskExecutionRequest, RunMode, Task, TaskPhase,
+    TaskStatus, TaskTransition, TaskUpdate, TransitionGuard, TurnEnding, WorkspaceMode,
 };
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{de::DeserializeOwned, Serialize};
@@ -222,6 +223,11 @@ fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         pull_request_ci: optional_text("pull_request_ci")?.and_then(|s| parse(&s)),
         profile_overrides: row.get("profile_overrides")?,
         claimed_from: optional_text("claimed_from")?.and_then(|s| parse(&s)),
+        run_mode: optional_text("run_mode")?
+            .and_then(|s| parse(&s))
+            .unwrap_or_default(),
+        loop_config: optional_text("loop_config")?.and_then(|s| serde_json::from_str(&s).ok()),
+        loop_sealed_sha: row.get("loop_sealed_sha")?,
     })
 }
 
@@ -280,6 +286,11 @@ pub fn create(conn: &mut Connection, request: &CreateTaskRequest) -> Result<Task
         .as_deref()
         .map(str::trim)
         .filter(|d| !d.is_empty());
+    let loop_config = match (request.run_mode, &request.loop_config) {
+        (_, Some(config)) => Some(loops::normalize_config(config)?),
+        (RunMode::Loop, None) => Some(LoopConfig::default()),
+        (RunMode::Pipeline, None) => None,
+    };
     let now = Utc::now().to_rfc3339();
 
     let tx = transaction(conn)?;
@@ -288,9 +299,9 @@ pub fn create(conn: &mut Connection, request: &CreateTaskRequest) -> Result<Task
         "INSERT INTO tasks (project_path, id, title, description, skills, status, base_branch,
                             agent_id, priority, auto_approve, workspace_mode, workspace_worktree_id,
                             workspace_branch_mode, workspace_branch, model_override, labels,
-                            created_at, updated_at)
+                            created_at, updated_at, run_mode, loop_config)
          VALUES (?1, ?2, ?3, ?4, ?5, 'Planning', ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                 ?16, ?16)",
+                 ?16, ?16, ?17, ?18)",
         params![
             request.project_path,
             id,
@@ -323,6 +334,8 @@ pub fn create(conn: &mut Connection, request: &CreateTaskRequest) -> Result<Task
             request.model_override,
             json(&request.labels)?,
             now,
+            text(request.run_mode),
+            loop_config.as_ref().map(json).transpose()?,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -421,6 +434,29 @@ fn write_update(
     if let Some(v) = &update.external_updated_at {
         sets.push(("external_updated_at", Box::new(v.clone())));
     }
+    if let Some(mode) = update.run_mode {
+        // A started task has a worktree and sessions made for the mode it started in.
+        let started: bool = conn
+            .query_row(
+                "SELECT phase IS NOT NULL OR status NOT IN ('Planning', 'Queue') FROM tasks
+                 WHERE project_path = ?1 AND id = ?2",
+                params![project_path, task_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?
+            .unwrap_or(false);
+        if started {
+            return Err("A task's run mode can only change before it starts".to_string());
+        }
+        sets.push(("run_mode", Box::new(text(mode))));
+    }
+    if let Some(config) = &update.loop_config {
+        sets.push((
+            "loop_config",
+            Box::new(json(&loops::normalize_config(config)?)?),
+        ));
+    }
     let edits = sets.len();
     let edited = edits > 0 || update.status.is_some();
 
@@ -450,6 +486,10 @@ fn write_update(
         assignments.push("fix_rounds = fix_rounds + 1".to_string());
     }
     let mut values: Vec<Box<dyn rusqlite::ToSql>> = sets.into_iter().map(|(_, v)| v).collect();
+    if update.run_mode == Some(RunMode::Loop) && update.loop_config.is_none() {
+        assignments.push("loop_config = COALESCE(loop_config, ?)".to_string());
+        values.push(Box::new(json(&LoopConfig::default())?));
+    }
     if let Some(sha) = &update.execution_start_sha_if_empty {
         assignments
             .push("execution_start_sha = COALESCE(NULLIF(execution_start_sha, ''), ?)".to_string());
@@ -837,6 +877,8 @@ mod tests {
                 workspace_branch_mode: BranchMode::Create,
                 workspace_branch: None,
                 model_override: None,
+                run_mode: maestro_protocol::RunMode::Pipeline,
+                loop_config: None,
             },
         )
         .expect("create a task")
@@ -960,6 +1002,8 @@ mod tests {
             workspace_branch_mode: BranchMode::Create,
             workspace_branch: Some("topic".to_string()),
             model_override: None,
+            run_mode: maestro_protocol::RunMode::Pipeline,
+            loop_config: None,
         }
     }
 

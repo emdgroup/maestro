@@ -202,7 +202,7 @@ Gaps the survey found, which the phases below close:
 
 | Phase | What                                                       | State       |
 | ----- | ---------------------------------------------------------- | ----------- |
-| 0     | Data model and protocol                                    | Not started |
+| 0     | Data model and protocol                                    | In progress |
 | 1     | The iteration engine and sealed checks                     | Not started |
 | 2     | Judge, digest, proposals, steering, sign-off, pull request | Not started |
 | 3     | Usage-limit gate, for every task                           | Not started |
@@ -215,16 +215,19 @@ is independent of 2 and can go in either order. Phase 4 needs 0 to 2.
 
 ## Phase 0: data model and protocol
 
+Storage, protocol fields and the row requests. No behaviour: nothing can put a task into a loop phase
+yet, so nothing iterates.
+
 `projects.db` gains one migration, a new frozen literal appended to `project_store::MIGRATIONS` the
 way V8 added `claimed_from`.
 
 **`tasks` columns:**
 
-| Column            | Type                       | Meaning                                                                                                                          |
-| ----------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `run_mode`        | TEXT, default `'Pipeline'` | `Pipeline` or `Loop`                                                                                                             |
-| `loop_config`     | TEXT, JSON                 | `max_iterations`, `max_agent_secs`, `stall_limit`, `judge_agent_id`, `check_timeout_secs` (600), `setup_command`, `sealed_paths` |
-| `loop_sealed_sha` | TEXT                       | The base commit the sealed snapshot was taken from                                                                               |
+| Column            | Type                       | Meaning                                                                                                                        |
+| ----------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `run_mode`        | TEXT, default `'Pipeline'` | `Pipeline` or `Loop`                                                                                                           |
+| `loop_config`     | TEXT, JSON                 | `max_iterations` (10), `max_agent_secs` (7200), `stall_limit` (3), `check_timeout_secs` (600), `setup_command`, `sealed_paths` |
+| `loop_sealed_sha` | TEXT                       | The base commit the sealed snapshot was taken from                                                                             |
 
 **New tables**, keyed by `(project_path, task_id, …)` like every task table:
 
@@ -235,30 +238,24 @@ way V8 added `claimed_from`.
   `outcome` (`running`/`checked`/`interrupted`/`empty`/`failed`), `counted` (bool), `touched_sealed`
   (bool), `commit_sha`, `files`, `added`, `removed`, `summary` (the agent's final message),
   `check_output` (tail).
-- `loop_hidden_files`: `path` (relative, under the sealed folder), `content`, `updated_at`.
+- `loop_hidden_files`: `path` (relative, under the sealed folder), `content`.
 - `agent_gates` (daemon-wide, not per project): `agent_id`, `resume_at`, `reason`, `backoff_step`.
-
-**Phases.** New `TaskPhase` variants, so the compiler forces every label and every `match`:
-
-| Phase       | Session                           | Writes | Handoff when                              |
-| ----------- | --------------------------------- | ------ | ----------------------------------------- |
-| `Iterating` | Coder, fresh per iteration        | yes    | `Waiting` + ball `Agent` (next iteration) |
-| `Checking`  | none, the daemon runs commands    | no     | n/a, runs inside the turn end             |
-| `Judging`   | new `AgentRole::Judge`, read-only | no     | `Waiting` + ball `Agent`                  |
-
-A flaky check leaves the task in `Checking` with `Failed` and ball `User`. The existing `Approval` and
-`AwaitingMerge` are reused unchanged for sign-off and the pull request.
 
 **Protocol.**
 
-- `Task` gains `run_mode`, `loop_config` and `loop_sealed_sha`. `CreateTaskRequest` and `TaskUpdate`
-  gain the loop fields.
-- New requests:
-  - `ListLoopChecks`, and `SetLoopChecks` (the whole list, from the editor)
+- `Task` gains `run_mode`, `loop_config` and `loop_sealed_sha`. `CreateTaskRequest` gains
+  `run_mode` and `loop_config`, and `TaskUpdate` gains both too. A loop task created or switched
+  without a config gets the defaults above.
+- New requests, each answered from the store and pushing `TasksChanged` when it writes:
+  - `ListLoopChecks`, and `SetLoopChecks` (the user's whole list, from the editor)
   - `AnswerLoopProposal`, `TickLoopCheck`
   - `ListLoopIterations`
-  - `SetLoopHiddenFiles`, `RerunLoopChecks`, `ReadLoopNotes`
-- `PROTOCOL_VERSION` bumps once for the whole plan, in this phase.
+  - `ListLoopHiddenFiles`, `SetLoopHiddenFiles`
+- `PROTOCOL_VERSION` bumps once for the whole plan, in this phase. Requests added by later phases
+  ride on that bump, since nothing releases in between.
+
+**The app.** Its `Task` model and the generated bindings carry the new fields so they round-trip.
+No new Tauri commands and no UI until phase 4.
 
 ### Decisions (locked)
 
@@ -266,6 +263,29 @@ A flaky check leaves the task in `Checking` with `Failed` and ball `User`. The e
   `src-tauri/AGENTS.md`.
 - A loop task's checks are rows, not JSON in `loop_config`. Their state changes every iteration, and
   each one is read, ticked and answered individually.
+- Enum variants arrive with their behaviour, never as placeholder arms. `Iterating` and `Checking`
+  land in phase 1 with the engine and its restart handling; `Judging` and `AgentRole::Judge` in
+  phase 2 with the judge prompt. The phase column is TEXT, so the migration needs nothing for them.
+- `RerunLoopChecks` and `ReadLoopNotes` need the worktree and the engine, so they are phase 1's.
+- The judge is picked through the profile system, as the planner and reviewer are: a project default
+  and a per-task override in `profile_overrides`. There is no `judge_agent_id`.
+- `run_mode` changes only while the task has never started (no phase). The config, the checks and
+  the hidden files can be edited at any time.
+- `SetLoopChecks` writes the user's checks and leaves pending proposals alone; a proposal leaves that
+  state only through `AnswerLoopProposal`. A check whose kind, label or command changed goes back to
+  `pending`; an unchanged one keeps its state.
+- Sealed paths and hidden file paths are relative, use `/`, and never contain `..`.
+
+**Phases** the later phases add to `TaskPhase`, listed here so the model is in one place:
+
+| Phase       | Session                        | Writes | Handoff when                              |
+| ----------- | ------------------------------ | ------ | ----------------------------------------- |
+| `Iterating` | Coder, fresh per iteration     | yes    | `Waiting` + ball `Agent` (next iteration) |
+| `Checking`  | none, the daemon runs commands | no     | n/a, runs inside the turn end             |
+| `Judging`   | `AgentRole::Judge`, read-only  | no     | `Waiting` + ball `Agent`                  |
+
+A flaky check leaves the task in `Checking` with `Failed` and ball `User`. The existing `Approval` and
+`AwaitingMerge` are reused unchanged for sign-off and the pull request.
 
 ## Phase 1: the iteration engine and sealed checks
 
@@ -353,7 +373,8 @@ since no session is live.
 - **`AgentRole::Judge`.** Read-only, like the reviewer.
   - Its prompt is the goal, the diff against the base, and the judge checks to decide.
   - It answers each check `PASS` or `FAIL` with one line of reason, parsed like `classify_verdict`.
-  - The agent comes from `loop_config.judge_agent_id`, else the worker's.
+  - The agent comes from the Judge profile: the task's override in `profile_overrides`, else the
+    project's default judge, else the worker's agent.
   - The sealed files stay out of its worktree too. The judge reads the diff, not the tests.
 - **Re-judging.** A judge check whose `passed_at_sha` is the current commit is skipped. One final
   judge pass always runs before sign-off.

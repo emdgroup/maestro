@@ -502,6 +502,18 @@ fn make_room(tx: &Transaction, request: &ImportProjectRequest) -> Result<(), Str
             task_offset,
         ),
         (
+            "UPDATE loop_checks SET task_id = task_id + ?2 WHERE project_path = ?1",
+            task_offset,
+        ),
+        (
+            "UPDATE loop_iterations SET task_id = task_id + ?2 WHERE project_path = ?1",
+            task_offset,
+        ),
+        (
+            "UPDATE loop_hidden_files SET task_id = task_id + ?2 WHERE project_path = ?1",
+            task_offset,
+        ),
+        (
             "UPDATE worktrees SET task_id = task_id + ?2
              WHERE project_path = ?1 AND task_id IS NOT NULL",
             task_offset,
@@ -860,6 +872,9 @@ mod tests {
             pull_request_ci: None,
             profile_overrides: None,
             claimed_from: None,
+            run_mode: maestro_protocol::RunMode::Pipeline,
+            loop_config: None,
+            loop_sealed_sha: None,
         }
     }
 
@@ -1052,6 +1067,8 @@ mod tests {
                 workspace_branch_mode: BranchMode::Create,
                 workspace_branch: None,
                 model_override: None,
+                run_mode: maestro_protocol::RunMode::Pipeline,
+                loop_config: None,
             },
         )
         .expect("create");
@@ -1098,6 +1115,8 @@ mod tests {
             workspace_branch_mode: BranchMode::Create,
             workspace_branch: None,
             model_override: None,
+            run_mode: maestro_protocol::RunMode::Pipeline,
+            loop_config: None,
         }
     }
 

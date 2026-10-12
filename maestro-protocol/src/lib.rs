@@ -274,6 +274,18 @@ pub enum ServerRequest {
     GetTaskReview(TaskRef),
     SaveTaskReview(SaveTaskReviewRequest),
     ClearTaskReview(TaskRef),
+    /// A loop task's checks in list order, pending proposals included.
+    ListLoopChecks(TaskRef),
+    /// The user's whole list. Pending proposals are left alone.
+    SetLoopChecks(SetLoopChecksRequest),
+    AnswerLoopProposal(AnswerLoopProposalRequest),
+    /// Tick or untick a `Manual` check.
+    TickLoopCheck(TickLoopCheckRequest),
+    /// Oldest first.
+    ListLoopIterations(TaskRef),
+    ListLoopHiddenFiles(TaskRef),
+    /// The whole set, replacing what was there.
+    SetLoopHiddenFiles(SetLoopHiddenFilesRequest),
     /// The project's prompt collection, favorites first, then most recently edited.
     ListPrompts(ProjectRef),
     GetPrompt(PromptRef),
@@ -1355,6 +1367,160 @@ pub struct Task {
     /// failure is a start that did not come up, which a retry of that phase's stage answers.
     #[serde(default)]
     pub claimed_from: Option<TaskPhase>,
+    #[serde(default)]
+    pub run_mode: RunMode,
+    /// Set on every loop task. A task switched back to the pipeline keeps the one it had.
+    #[serde(default)]
+    pub loop_config: Option<LoopConfig>,
+    /// The base commit a loop's sealed snapshot was taken from.
+    #[serde(default)]
+    pub loop_sealed_sha: Option<String>,
+}
+
+/// How a task runs once it is started: the stage pipeline, or a loop of fresh coder sessions that
+/// ends when its checks pass. See `docs/loops-plan.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum RunMode {
+    #[default]
+    Pipeline,
+    Loop,
+}
+
+/// A loop's budget and how its checks run, stored as JSON on the task. A field the stored JSON
+/// lacks takes its default, so adding one needs no migration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LoopConfig {
+    /// Iterations that count. One a usage limit cut off does not.
+    pub max_iterations: u32,
+    /// Agent time over the counted iterations, in seconds.
+    pub max_agent_secs: u32,
+    /// Iterations in a row that change nothing before the loop stops as stalled.
+    pub stall_limit: u32,
+    /// Per check. A check still running past it is killed and fails.
+    pub check_timeout_secs: u32,
+    /// Run before the checks, in the state they run in.
+    pub setup_command: Option<String>,
+    /// Relative paths kept out of the worker's worktree and written in only while checks run. A
+    /// trailing `/` names a directory.
+    pub sealed_paths: Vec<String>,
+}
+
+impl Default for LoopConfig {
+    fn default() -> Self {
+        LoopConfig {
+            max_iterations: 10,
+            max_agent_secs: 2 * 60 * 60,
+            stall_limit: 3,
+            check_timeout_secs: 10 * 60,
+            setup_command: None,
+            sealed_paths: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LoopCheckKind {
+    /// A shell command; exit 0 passes.
+    Command,
+    /// A sentence a separate agent judges against the diff.
+    Judge,
+    /// The user ticks it.
+    Manual,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LoopCheckState {
+    Pending,
+    Pass,
+    Fail,
+    /// Failed, then passed on the same commit, or the reverse.
+    Flaky,
+}
+
+/// One item of a loop's done criteria.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LoopCheck {
+    pub id: i32,
+    pub position: i32,
+    pub kind: LoopCheckKind,
+    pub label: String,
+    /// What a `Command` check runs. `None` for the other kinds.
+    #[serde(default)]
+    pub command: Option<String>,
+    pub state: LoopCheckState,
+    /// The last output tail, or the judge's reason.
+    #[serde(default)]
+    pub detail: Option<String>,
+    /// Proposed by the worker rather than written by the user.
+    pub proposed: bool,
+    /// A proposal the user accepted. A proposal not accepted is waiting for an answer.
+    pub accepted: bool,
+    /// The commit a `Judge` check last passed on.
+    #[serde(default)]
+    pub passed_at_sha: Option<String>,
+    pub updated_at: String,
+}
+
+/// What the user writes of a check. The rest is the loop's.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LoopCheckSpec {
+    pub kind: LoopCheckKind,
+    pub label: String,
+    #[serde(default)]
+    pub command: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LoopIterationOutcome {
+    Running,
+    /// Ended and its checks ran.
+    Checked,
+    /// Cut off by a usage limit or the user; it runs again without counting.
+    Interrupted,
+    /// Ended with nothing to commit.
+    Empty,
+    /// The agent failed.
+    Failed,
+}
+
+/// One attempt at one iteration. An interrupted iteration runs again as the next `attempt` of the
+/// same `n`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LoopIteration {
+    pub n: i32,
+    pub attempt: i32,
+    #[serde(default)]
+    pub acp_session_id: Option<String>,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    pub started_at: String,
+    #[serde(default)]
+    pub ended_at: Option<String>,
+    pub outcome: LoopIterationOutcome,
+    /// Whether it counts against `max_iterations` and the agent time.
+    pub counted: bool,
+    /// The worker wrote at a sealed path, and the write was discarded.
+    pub touched_sealed: bool,
+    #[serde(default)]
+    pub commit_sha: Option<String>,
+    pub files: i32,
+    pub added: i32,
+    pub removed: i32,
+    /// The agent's final message.
+    #[serde(default)]
+    pub summary: Option<String>,
+    /// The tail of the checks' output.
+    #[serde(default)]
+    pub check_output: Option<String>,
+}
+
+/// A file only the checks see, stored by the daemon and never in the repository.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LoopHiddenFile {
+    /// Relative to the sealed folder, with `/`.
+    pub path: String,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1482,6 +1648,11 @@ pub struct CreateTaskRequest {
     pub workspace_branch: Option<String>,
     #[serde(default)]
     pub model_override: Option<String>,
+    #[serde(default)]
+    pub run_mode: RunMode,
+    /// A loop created without one gets `LoopConfig::default()`.
+    #[serde(default)]
+    pub loop_config: Option<LoopConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -1570,6 +1741,12 @@ pub struct TaskUpdate {
         skip_serializing_if = "Option::is_none"
     )]
     pub external_updated_at: Option<Option<String>>,
+    /// Refused once the task has started. Switching to `Loop` gives a task with no config the
+    /// default one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_mode: Option<RunMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loop_config: Option<LoopConfig>,
     #[serde(
         default,
         deserialize_with = "clearable",
@@ -1958,6 +2135,63 @@ pub struct AddTaskInstructionRequest {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct TaskInstructionList {
     pub instructions: Vec<TaskInstruction>,
+}
+
+/// One check of the user's list. `id` names a check it keeps, which goes back to `Pending` when
+/// its spec changed; no `id` adds one. A check the list leaves out is deleted.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LoopCheckEntry {
+    #[serde(default)]
+    pub id: Option<i32>,
+    #[serde(flatten)]
+    pub spec: LoopCheckSpec,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SetLoopChecksRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub checks: Vec<LoopCheckEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AnswerLoopProposalRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub check_id: i32,
+    /// The check as the user accepts it, kind included. `None` rejects the proposal and deletes it.
+    #[serde(default)]
+    pub accept: Option<LoopCheckSpec>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TickLoopCheckRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub check_id: i32,
+    pub ticked: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SetLoopHiddenFilesRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub files: Vec<LoopHiddenFile>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct LoopCheckList {
+    pub checks: Vec<LoopCheck>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct LoopIterationList {
+    pub iterations: Vec<LoopIteration>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct LoopHiddenFileList {
+    pub files: Vec<LoopHiddenFile>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -2385,6 +2619,13 @@ pub enum ServerResponse {
     GetTaskReviewOk(OptionalTaskReview),
     SaveTaskReviewOk(SaveTaskReviewResponse),
     ClearTaskReviewOk,
+    ListLoopChecksOk(LoopCheckList),
+    SetLoopChecksOk(LoopCheckList),
+    AnswerLoopProposalOk(LoopCheckList),
+    TickLoopCheckOk(LoopCheckList),
+    ListLoopIterationsOk(LoopIterationList),
+    ListLoopHiddenFilesOk(LoopHiddenFileList),
+    SetLoopHiddenFilesOk(LoopHiddenFileList),
     ListPromptsOk(PromptList),
     GetPromptOk(OptionalPrompt),
     CreatePromptOk(Prompt),
@@ -2534,6 +2775,13 @@ impl ServerResponse {
             | Self::GetTaskReviewOk(_)
             | Self::SaveTaskReviewOk(_)
             | Self::ClearTaskReviewOk
+            | Self::ListLoopChecksOk(_)
+            | Self::SetLoopChecksOk(_)
+            | Self::AnswerLoopProposalOk(_)
+            | Self::TickLoopCheckOk(_)
+            | Self::ListLoopIterationsOk(_)
+            | Self::ListLoopHiddenFilesOk(_)
+            | Self::SetLoopHiddenFilesOk(_)
             | Self::ListPromptsOk(_)
             | Self::GetPromptOk(_)
             | Self::CreatePromptOk(_)

@@ -754,6 +754,8 @@ async fn task_tool(
                 workspace_branch_mode: maestro_protocol::BranchMode::Create,
                 workspace_branch: None,
                 model_override: None,
+                run_mode: maestro_protocol::RunMode::Pipeline,
+                loop_config: None,
             });
             let ServerResponse::CreateTaskOk(task) =
                 ask(&mut *store.lock().await, request, &mut pushes)?

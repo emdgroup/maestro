@@ -3750,6 +3750,23 @@ active_directory: string;
  * Directory that will be used at the next launch.
  */
 configured_directory: string }
+/**
+ * A loop's budget and how its checks run. Mirrors `maestro_protocol::LoopConfig`, which holds the
+ * defaults.
+ */
+export type LoopConfig = { max_iterations: number; 
+/**
+ * Agent time over the counted iterations, in seconds.
+ */
+max_agent_secs: number; 
+/**
+ * Iterations in a row that change nothing before the loop stops as stalled.
+ */
+stall_limit: number; check_timeout_secs: number; setup_command?: string | null; 
+/**
+ * Relative paths kept out of the worker's worktree. A trailing `/` names a directory.
+ */
+sealed_paths: string[] }
 export type McpCatalogEntry = { id: string; name: string; description: string; icon_url: string | null; stars: number | null; repo_url: string | null; 
 /**
  * What the editor opens prefilled with. Required values the user has to supply are left
@@ -4089,6 +4106,7 @@ warnings: string[] }
  * Typed response for save_task_review and request_changes IPC commands
  */
 export type ReviewResult = { success: boolean; review_id: number; task_status: string | null }
+export type RunMode = "Pipeline" | "Loop"
 /**
  * Which finished runs a project keeps, per automation. A run is deleted once it is past the newest
  * `keep_last` **and** older than `max_age_days`; a limit left unset does not apply, and both unset
@@ -4260,7 +4278,20 @@ profile_overrides?: string | null;
  * The phase the last claim took the task from. Equal to `phase` on a `Failed` task when the
  * stage that phase hands to failed to start, rather than failing at its work.
  */
-claimed_from?: TaskPhase | null }
+claimed_from?: TaskPhase | null; 
+/**
+ * The stage pipeline, or a loop that iterates until its checks pass. See
+ * `docs/loops-plan.md`.
+ */
+run_mode: RunMode; 
+/**
+ * Set on every loop task. A task switched back to the pipeline keeps the one it had.
+ */
+loop_config?: LoopConfig | null; 
+/**
+ * The base commit a loop's sealed snapshot was taken from.
+ */
+loop_sealed_sha?: string | null }
 export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
 /**
  * Who the pipeline is blocked on — not who owns the ticket.
