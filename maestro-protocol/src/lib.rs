@@ -1262,6 +1262,8 @@ pub enum TaskPhase {
     Iterating,
     /// A loop's checks running, with no session live.
     Checking,
+    /// A loop's judge deciding its `judge` checks, once every command check passes.
+    Judging,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1302,6 +1304,8 @@ pub enum AgentRole {
     Planner,
     Coder,
     Reviewer,
+    /// Decides a loop's `judge` checks and writes its review digest. Read-only.
+    Judge,
 }
 
 /// One task, every column the app reads.
@@ -1522,6 +1526,27 @@ pub struct LoopIteration {
     /// The tail of the checks' output.
     #[serde(default)]
     pub check_output: Option<String>,
+    /// The `git` commands the worker ran that name a sealed path.
+    #[serde(default)]
+    pub peeks: Vec<String>,
+}
+
+/// What a loop's record says deserves a look before sign-off: the iterations that wrote at a sealed
+/// path, and the `git` commands that named one. The digest and the pull request body both list it.
+pub fn loop_sealed_findings(iterations: &[LoopIteration]) -> Vec<String> {
+    let mut found = Vec::new();
+    for iteration in iterations {
+        if iteration.touched_sealed {
+            found.push(format!(
+                "Iteration {} wrote at a sealed path, and the write was discarded.",
+                iteration.n
+            ));
+        }
+        for peek in &iteration.peeks {
+            found.push(format!("Iteration {} ran `{peek}`.", iteration.n));
+        }
+    }
+    found
 }
 
 /// A file only the checks see, stored by the daemon and never in the repository.
@@ -1825,8 +1850,13 @@ pub enum TaskTransition {
     LoopIterate,
     /// The loop stopped for the user: it stalled or spent its budget.
     LoopHalted,
-    /// Every command check passed: the loop goes to sign-off.
+    /// Every check passed: the loop goes to sign-off.
     LoopChecksPassed,
+    /// Every command check passed and a `judge` check is left: the judge waits on the drain.
+    LoopJudging,
+    /// The user let a stopped loop, or one at sign-off, go on: the next iteration waits on the
+    /// drain. Its stall streak counts from here.
+    LoopResumed,
 }
 
 /// What must hold, read under the store's lock, for a transition to apply. One per guarded
@@ -2085,7 +2115,8 @@ pub struct AddTaskCommentRequest {
     pub comment: NewTaskComment,
 }
 
-/// A thread entry to write. A `proposal` or `plan` replaces the task's previous one of that kind.
+/// A thread entry to write. A `proposal`, `plan` or `digest` replaces the task's previous one of
+/// that kind.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct NewTaskComment {
     pub kind: String,
@@ -2181,6 +2212,9 @@ pub struct AnswerLoopProposalRequest {
     /// The check as the user accepts it, kind included. `None` rejects the proposal and deletes it.
     #[serde(default)]
     pub accept: Option<LoopCheckSpec>,
+    /// The paths accepting it seals, each on the base branch. Ignored on a rejection.
+    #[serde(default)]
+    pub seal: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -3740,6 +3774,9 @@ mod tests {
             import_source: Some("jira".to_string()),
             skills: vec!["rust".to_string()],
             model_override: None,
+            run_mode: RunMode::Pipeline,
+            loop_config: None,
+            loop_sealed_sha: None,
             mcp_allowlist: Some(vec!["maestro".to_string()]),
             skills_override: None,
             labels: vec!["bug".to_string()],

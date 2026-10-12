@@ -1,8 +1,9 @@
 //! What hangs off a task: its outcome thread, attachments, relationships and instruction log.
 //!
 //! The thread is a history: entries are never edited, and a correction is a new entry, so the entry
-//! a gate approved cannot change under it. Two kinds are not history. A proposal and a plan are
-//! both about the task as it stands, so a new one replaces the last rather than stacking on it.
+//! a gate approved cannot change under it. Three kinds are not history. A proposal, a plan and a
+//! loop's digest are about the task as it stands, so a new one replaces the last rather than
+//! stacking on it.
 
 use std::path::Path;
 
@@ -12,10 +13,11 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 /// Whether a kind is the task's current answer rather than one of a series.
 pub fn holds_a_single_value(kind: &str) -> bool {
-    matches!(kind, "proposal" | "plan")
+    matches!(kind, "proposal" | "plan" | "digest")
 }
 
-/// Write one entry, returning it as stored. A `proposal` or `plan` replaces the task's last one.
+/// Write one entry, returning it as stored. A `proposal`, `plan` or `digest` replaces the task's
+/// last one.
 #[allow(clippy::too_many_arguments)]
 pub fn append(
     conn: &Connection,

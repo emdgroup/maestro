@@ -1,5 +1,6 @@
 //! A loop task between two iterations: the worker's session closed, its work committed, the sealed
-//! checks run with no session live, and the next step decided. See `docs/loops-plan.md`, phase 1.
+//! checks run with no session live, the judge asked once every command passes, and the next step
+//! decided. See `docs/loops-plan.md`, phases 1 and 2.
 //!
 //! Everything here runs off the main loop. The one thing the loop has to do, closing the iteration's
 //! session, goes to it through `Settle::LoopSessionClose`, and the engine waits for the close
@@ -35,29 +36,54 @@ const FAILURES_IN_A_ROW: usize = 3;
 /// pipe open.
 const DRAIN_GRACE: Duration = Duration::from_secs(5);
 
-/// The iteration a loop session was started for, from its role meta.
-pub(crate) fn iteration_of(session: &crate::sessions::ActiveSession) -> Option<i32> {
+/// What a loop session was started for, kept in its role meta under `loop`.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum LoopSession {
+    Iteration(i32),
+    /// The judge, deciding these checks, by id in the order its prompt numbers them, at `sha`.
+    Judge {
+        checks: Vec<i32>,
+        sha: String,
+    },
+}
+
+/// The loop session `session` is, from its role meta.
+pub(crate) fn session_of(session: &crate::sessions::ActiveSession) -> Option<LoopSession> {
     let role = session.project.as_ref()?.meta.role.as_deref()?;
     let value: serde_json::Value = serde_json::from_str(role).ok()?;
-    value.get("iteration")?.as_i64().map(|n| n as i32)
+    serde_json::from_value(value.get("loop")?.clone()).ok()
 }
 
 /// A loop session's turn ended.
-pub(crate) struct IterationEnd {
+pub(crate) struct LoopEnd {
     pub project_path: String,
     pub task_id: i32,
-    pub iteration: i32,
+    pub session: LoopSession,
     pub session_id: String,
     pub stop_reason: String,
     pub facts: TurnFacts,
 }
 
-/// Finish the iteration off the loop. What follows is the drain's to start.
-pub(crate) fn spawn(store: Store, stdout: crate::ClientOut, end: IterationEnd) {
+/// Finish the iteration, or read the judge, off the loop. What follows is the drain's to start.
+pub(crate) fn spawn(store: Store, stdout: crate::ClientOut, end: LoopEnd) {
     tokio::spawn(Box::pin(async move {
         let everyone = crate::client_sink::ClientSink::everyone(&stdout).await;
         let path = crate::automations::canonical_project_path(&end.project_path);
-        Box::pin(iteration_ended(&store, &stdout, &everyone, &path, end)).await;
+        // The pipeline's rule: a turn the user stopped, or one cut short, ends nothing.
+        let cut_short = end.facts.user_interrupted
+            || matches!(end.stop_reason.as_str(), "cancelled" | "auth_required");
+        if !cut_short {
+            match end.session.clone() {
+                LoopSession::Iteration(n) => {
+                    Box::pin(iteration_ended(&store, &stdout, &everyone, &path, n, end)).await
+                }
+                LoopSession::Judge { checks, sha } => {
+                    let judged = judge_ended(&store, &stdout, &everyone, &path, &checks, &sha, end);
+                    Box::pin(judged).await
+                }
+            }
+        }
         crate::scheduler::request_drain(&path);
     }));
 }
@@ -67,14 +93,9 @@ async fn iteration_ended(
     stdout: &crate::ClientOut,
     everyone: &crate::ClientOut,
     path: &str,
-    end: IterationEnd,
+    n: i32,
+    end: LoopEnd,
 ) {
-    // The pipeline's rule: a turn the user stopped, or one cut short, ends nothing.
-    if end.facts.user_interrupted
-        || matches!(end.stop_reason.as_str(), "cancelled" | "auth_required")
-    {
-        return;
-    }
     let read = {
         let conn = store.lock().await;
         crate::task_store::get(&conn, path, end.task_id).and_then(|task| {
@@ -94,28 +115,181 @@ async fn iteration_ended(
             task.phase_status,
             Some(PhaseStatus::Running | PhaseStatus::Blocked)
         );
-    if !working || iteration.n != end.iteration {
+    if !working || iteration.n != n {
         send_diag(
             "debug",
             format!(
-                "[loop] ignoring the end of iteration {} of task {}, not the one running",
-                end.iteration, end.task_id
+                "[loop] ignoring the end of iteration {n} of task {}, not the one running",
+                end.task_id
             ),
         );
         return;
     }
     close(stdout, &end.session_id).await;
-    let failed = end.stop_reason != "end_turn";
-    finish(
+    let ended = Ended {
+        summary: end.facts.closing_message.as_deref(),
+        agent_failed: end.stop_reason != "end_turn",
+        git_commands: &end.facts.git_commands,
+    };
+    finish(store, everyone, path, &task, &iteration, ended).await;
+}
+
+/// The judge's turn ended: its verdicts recorded, then sign-off with its digest, or another
+/// iteration with its reasons.
+async fn judge_ended(
+    store: &Store,
+    stdout: &crate::ClientOut,
+    everyone: &crate::ClientOut,
+    path: &str,
+    checks: &[i32],
+    sha: &str,
+    end: LoopEnd,
+) {
+    let task = match crate::task_store::get(&*store.lock().await, path, end.task_id) {
+        Ok(Some(task)) => task,
+        Ok(None) => return,
+        Err(e) => {
+            send_diag("warn", format!("[loop] task {}: {e}", end.task_id));
+            return;
+        }
+    };
+    let judging = task.phase == Some(TaskPhase::Judging)
+        && matches!(
+            task.phase_status,
+            Some(PhaseStatus::Running | PhaseStatus::Blocked)
+        );
+    if !judging {
+        send_diag(
+            "debug",
+            format!(
+                "[loop] ignoring a judge's turn end on task {}, not judging",
+                task.id
+            ),
+        );
+        return;
+    }
+    close(stdout, &end.session_id).await;
+    if end.stop_reason != "end_turn" {
+        let why = format!(
+            "The judge stopped before it decided: its turn ended with \"{}\".",
+            end.stop_reason
+        );
+        stop(store, everyone, path, task.id, TaskPhase::Judging, &why).await;
+        return;
+    }
+
+    let reply = end.facts.closing_message.unwrap_or_default();
+    let judged: Vec<(i32, bool, String)> = checks
+        .iter()
+        .zip(judge_verdicts(&reply, checks.len()))
+        .map(|(&id, verdict)| match verdict {
+            Some((passed, reason)) => (id, passed, reason),
+            None => (
+                id,
+                false,
+                format!(
+                    "The judge gave no verdict on this check. Its answer:\n\n{}",
+                    tail_chars(reply.trim(), OUTPUT_CHARS)
+                ),
+            ),
+        })
+        .collect();
+    let iterations = {
+        let mut conn = store.lock().await;
+        if let Err(e) = loops::record_judged(&mut conn, path, task.id, sha, &judged) {
+            send_diag("warn", format!("[loop] task {}: {e}", task.id));
+        }
+        loops::list_iterations(&conn, path, task.id).unwrap_or_default()
+    };
+    let failed = judged.iter().filter(|(_, passed, _)| !passed).count();
+    if failed > 0 {
+        let step = Step::Judged {
+            failed,
+            of: judged.len(),
+        };
+        conclude(store, everyone, path, task.id, TaskPhase::Judging, step).await;
+        return;
+    }
+    let n = iterations.last().map_or(0, |i| i.n);
+    let comment = match digest_of(&reply) {
+        Some(digest) => {
+            let found = maestro_protocol::loop_sealed_findings(&iterations);
+            let body = match found.is_empty() {
+                true => digest,
+                false => format!(
+                    "{digest}\n\nSealed paths, from the loop's record:\n\n- {}",
+                    found.join("\n- ")
+                ),
+            };
+            entry("digest", "judge", body)
+        }
+        None => entry(
+            "note",
+            "maestro",
+            format!("The judge passes every check after iteration {n}, but wrote no digest."),
+        ),
+    };
+    apply(
         store,
         everyone,
         path,
-        &task,
-        &iteration,
-        end.facts.closing_message.as_deref(),
-        failed,
+        task.id,
+        TaskTransition::LoopChecksPassed,
+        TransitionGuard::Phase(TaskPhase::Judging),
+        Some(comment),
     )
     .await;
+}
+
+/// Each check's verdict, by its number from 1: passed or not, and the reason. The first line
+/// naming a number wins, and decorations around it (`**1. PASS**:`) are ignored.
+fn judge_verdicts(reply: &str, count: usize) -> Vec<Option<(bool, String)>> {
+    let mut verdicts = vec![None; count];
+    let decoration = |c: char| !c.is_ascii_alphanumeric();
+    for line in reply.lines() {
+        let line = line.trim_start_matches(decoration);
+        let digits = line.chars().take_while(char::is_ascii_digit).count();
+        let Ok(number) = line[..digits].parse::<usize>() else {
+            continue;
+        };
+        let rest = line[digits..].trim_start_matches(decoration);
+        let word: String = rest.chars().take_while(char::is_ascii_alphabetic).collect();
+        let passed = match word.to_ascii_uppercase().as_str() {
+            "PASS" | "PASSED" | "PASSES" => true,
+            "FAIL" | "FAILED" | "FAILS" => false,
+            _ => continue,
+        };
+        let reason = rest[word.len()..]
+            .trim_start_matches(|c: char| c.is_whitespace() || ":-*).—–".contains(c))
+            .trim_end_matches(|c: char| c.is_whitespace() || c == '*')
+            .to_string();
+        if let Some(slot @ None) = number.checked_sub(1).and_then(|i| verdicts.get_mut(i)) {
+            *slot = Some((passed, reason));
+        }
+    }
+    verdicts
+}
+
+/// What follows the judge's `## Digest` line, if it wrote one.
+fn digest_of(reply: &str) -> Option<String> {
+    let mut lines = reply.lines();
+    lines.find(|line| {
+        let words: String = line.chars().filter(char::is_ascii_alphanumeric).collect();
+        words.eq_ignore_ascii_case("digest")
+    })?;
+    let digest = lines.collect::<Vec<_>>().join("\n").trim().to_string();
+    (!digest.is_empty()).then_some(digest)
+}
+
+/// The judge's view of the loop's work, as its prompt shows it: `git diff --stat` from the base.
+pub(crate) async fn diff_stat(dir: &str, task: &Task) -> Option<String> {
+    let base = match task.base_branch.trim() {
+        "" => task.loop_sealed_sha.clone()?,
+        base => base.to_string(),
+    };
+    git(dir, &["diff", "--stat", &format!("{base}...HEAD")])
+        .await
+        .ok()
 }
 
 /// The live iteration: the newest row still running.
@@ -157,11 +331,20 @@ pub(crate) async fn finish_orphan(
     };
     match read {
         Ok(Some((task, iteration))) => {
-            finish(store, everyone, path, &task, &iteration, None, false).await
+            finish(store, everyone, path, &task, &iteration, Ended::default()).await
         }
         Ok(None) => {}
         Err(e) => send_diag("warn", format!("[loop] task {task_id} at startup: {e}")),
     }
+}
+
+/// What the worker's turn left besides its files.
+#[derive(Default)]
+struct Ended<'a> {
+    /// Its last words.
+    summary: Option<&'a str>,
+    agent_failed: bool,
+    git_commands: &'a [String],
 }
 
 /// Discard what the worker wrote where it may not, commit the rest, and check it.
@@ -171,8 +354,7 @@ async fn finish(
     path: &str,
     task: &Task,
     iteration: &LoopIteration,
-    summary: Option<&str>,
-    agent_failed: bool,
+    ended: Ended<'_>,
 ) {
     let task_id = task.id;
     let Some(dir) = worktree_dir(store, path, task_id).await else {
@@ -205,6 +387,7 @@ async fn finish(
     };
     let row = Committed {
         touched_sealed,
+        peeks: peeks(ended.git_commands, &config.sealed_paths),
         ..committed.clone().ok().flatten().unwrap_or_default()
     };
     if let Err(e) = loops::record_commit(
@@ -212,7 +395,7 @@ async fn finish(
         path,
         task_id,
         iteration,
-        summary,
+        ended.summary,
         &row,
     ) {
         send_diag("warn", format!("[loop] task {task_id}: {e}"));
@@ -228,7 +411,7 @@ async fn finish(
     }
 
     let (outcome, output) = match committed {
-        _ if agent_failed => (LoopIterationOutcome::Failed, None),
+        _ if ended.agent_failed => (LoopIterationOutcome::Failed, None),
         Err(e) => (
             LoopIterationOutcome::Failed,
             Some(format!(
@@ -264,10 +447,34 @@ async fn finish(
     ) {
         send_diag("warn", format!("[loop] task {task_id}: {e}"));
     }
-    conclude(store, everyone, path, task_id, TaskPhase::Iterating, None).await;
+    conclude(
+        store,
+        everyone,
+        path,
+        task_id,
+        TaskPhase::Iterating,
+        Step::Iteration,
+    )
+    .await;
 }
 
-/// `RerunLoopChecks` and `ReadLoopNotes`: the reply, and the pushes owed after it.
+// ponytail: a substring match, so a sealed `tests` also matches `git log -- latests.rs`. Parse the
+// command's paths if the false hits get in the way.
+/// The commands that name a sealed path.
+fn peeks(commands: &[String], sealed: &[String]) -> Vec<String> {
+    commands
+        .iter()
+        .filter(|command| {
+            sealed
+                .iter()
+                .any(|path| command.contains(path.trim_end_matches('/')))
+        })
+        .cloned()
+        .collect()
+}
+
+/// `RerunLoopChecks`, `ReadLoopNotes` and `AnswerLoopProposal`: the reply, and the pushes owed
+/// after it.
 pub(crate) async fn answer(
     request: ServerRequest,
     store: Option<&Store>,
@@ -280,6 +487,12 @@ pub(crate) async fn answer(
     let (task, rerun) = match request {
         ServerRequest::RerunLoopChecks(task) => (task, true),
         ServerRequest::ReadLoopNotes(task) => (task, false),
+        ServerRequest::AnswerLoopProposal(request) => {
+            return match Box::pin(answer_proposal(store, request)).await {
+                Ok(answered) => answered,
+                Err(e) => (crate::helpers::error_response(e), Vec::new()),
+            };
+        }
         _ => {
             return (
                 crate::helpers::error_response("not a loop request".to_string()),
@@ -314,6 +527,72 @@ pub(crate) async fn answer(
     };
     let notes = maestro_protocol::LoopNotes { content };
     (ServerResponse::ReadLoopNotesOk(notes), Vec::new())
+}
+
+/// Accept or reject a proposed check. Accepting seals the paths it names, each of which has to be on
+/// the base branch, since the checks take sealed files from there: the snapshot is taken again so
+/// they are in it, and the worktree drops them at once, unless the checks are running in it.
+async fn answer_proposal(
+    store: &Store,
+    mut request: maestro_protocol::AnswerLoopProposalRequest,
+) -> Result<(ServerResponse, Vec<ServerResponse>), String> {
+    let path = crate::automations::canonical_project_path(&request.project_path);
+    request.project_path = path.clone();
+    let task_id = request.task_id;
+    let task = crate::task_store::get(&*store.lock().await, &path, task_id)?
+        .ok_or_else(|| format!("Task {task_id} not found"))?;
+    let base = match task.base_branch.trim() {
+        "" => "HEAD",
+        base => base,
+    };
+    if request.accept.is_none() {
+        request.seal.clear();
+    }
+    let mut sealing = Vec::new();
+    for wanted in &request.seal {
+        let wanted = loops::relative_path(wanted, true)?;
+        let listed = git(
+            &path,
+            &[
+                "ls-tree",
+                "--name-only",
+                base,
+                "--",
+                wanted.trim_end_matches('/'),
+            ],
+        )
+        .await?;
+        if listed.trim().is_empty() {
+            return Err(format!(
+                "\"{wanted}\" is not on {base}, so it cannot be sealed: the checks take sealed files \
+                 from there. Commit it to {base} first, or add it as a hidden file."
+            ));
+        }
+        sealing.push(wanted);
+    }
+    request.seal = sealing;
+    let sealed = !request.seal.is_empty();
+    let answered = crate::task_store::requests::answer(
+        &mut *store.lock().await,
+        ServerRequest::AnswerLoopProposal(request),
+    )?;
+    if sealed {
+        let tip = git(&path, &["rev-parse", "--verify", base]).await?;
+        let task = {
+            let conn = store.lock().await;
+            loops::set_sealed_sha(&conn, &path, task_id, tip.trim())?;
+            crate::task_store::get(&conn, &path, task_id)?
+        };
+        let dir = worktree_dir(store, &path, task_id).await;
+        if let (Some(task), Some(dir)) = (task, dir) {
+            if task.phase != Some(TaskPhase::Checking) {
+                if let Err(e) = crate::worktree::seal(&dir, &task).await {
+                    send_diag("warn", format!("[loop] task {task_id}: {e}"));
+                }
+            }
+        }
+    }
+    Ok(answered)
 }
 
 /// After a restart: checks that died with the daemon run again.
@@ -433,9 +712,21 @@ async fn check(store: &Store, everyone: &crate::ClientOut, path: &str, task_id: 
         path,
         task_id,
         TaskPhase::Checking,
-        Some(&run),
+        Step::Commands(&run),
     )
     .await;
+}
+
+/// What just finished, for the verdict and its note.
+enum Step<'a> {
+    /// An iteration that ran no checks: it changed nothing, or failed.
+    Iteration,
+    Commands(&'a CheckRun),
+    /// Every command passed, and the judge failed `failed` of the `of` checks it decided.
+    Judged {
+        failed: usize,
+        of: usize,
+    },
 }
 
 /// Where the loop stands once an iteration is recorded, and the transition that says so.
@@ -445,23 +736,34 @@ async fn conclude(
     path: &str,
     task_id: i32,
     phase: TaskPhase,
-    run: Option<&CheckRun>,
+    step: Step<'_>,
 ) {
     let read = {
         let conn = store.lock().await;
-        crate::task_store::get(&conn, path, task_id)
-            .and_then(|task| Ok(task.map(|t| (t, loops::list_iterations(&conn, path, task_id)))))
+        (|| -> Result<_, String> {
+            let Some(task) = crate::task_store::get(&conn, path, task_id)? else {
+                return Ok(None);
+            };
+            let iterations = loops::list_iterations(&conn, path, task_id)?;
+            let resumed = loops::resumed_at(&conn, path, task_id)?;
+            let (judge, _) = loops::to_judge(&conn, path, task_id)?;
+            Ok(Some((task, iterations, resumed, !judge.is_empty())))
+        })()
     };
-    let (task, iterations) = match read {
-        Ok(Some((task, Ok(iterations)))) => (task, iterations),
+    let (task, iterations, resumed, judge) = match read {
+        Ok(Some(found)) => found,
         Ok(None) => return,
-        Ok(Some((_, Err(e)))) | Err(e) => {
+        Err(e) => {
             send_diag("warn", format!("[loop] task {task_id}: {e}"));
             return;
         }
     };
     let config = task.loop_config.clone().unwrap_or_default();
-    let verdict = verdict(&config, &iterations, run);
+    let run = match step {
+        Step::Commands(run) => Some(run),
+        _ => None,
+    };
+    let verdict = verdict(&config, &iterations, run, resumed.as_deref());
     let n = iterations.last().map_or(0, |i| i.n);
     let (event, note) = match &verdict {
         Verdict::Flaky(labels) => (
@@ -470,6 +772,12 @@ async fn conclude(
                 "Paused after iteration {n}: {} gave a different result when run again on the same \
                  commit, so it is flaky. Fix it or remove it, then re-run the checks.",
                 labels.join(", ")
+            ),
+        ),
+        Verdict::Passed if judge => (
+            TaskTransition::LoopJudging,
+            format!(
+                "Every command check passes after iteration {n}, so the judge decides the rest."
             ),
         ),
         Verdict::Passed => (
@@ -503,7 +811,7 @@ async fn conclude(
         ),
         Verdict::Iterate => (
             TaskTransition::LoopIterate,
-            progress_note(n, &iterations, run),
+            progress_note(n, &iterations, &step),
         ),
     };
     apply(
@@ -513,13 +821,22 @@ async fn conclude(
         task_id,
         event,
         TransitionGuard::Phase(phase),
-        Some(note),
+        Some(note_entry(note)),
     )
     .await;
 }
 
-fn progress_note(n: i32, iterations: &[LoopIteration], run: Option<&CheckRun>) -> String {
+fn progress_note(n: i32, iterations: &[LoopIteration], step: &Step<'_>) -> String {
     let last = iterations.last();
+    let run = match step {
+        Step::Commands(run) => Some(*run),
+        Step::Judged { failed, of } => {
+            return format!(
+                "Iteration {n}: every command check passes, and the judge failed {failed} of {of}."
+            )
+        }
+        Step::Iteration => None,
+    };
     match (run, last.map(|i| i.outcome)) {
         (Some(run), _) => {
             let passing = run
@@ -551,8 +868,15 @@ enum Verdict {
     Iterate,
 }
 
-/// What the loop does next, from its iterations, oldest first, and the checks just run.
-fn verdict(config: &LoopConfig, iterations: &[LoopIteration], run: Option<&CheckRun>) -> Verdict {
+/// What the loop does next, from its iterations, oldest first, and the checks just run. The stall
+/// and failure streaks count from `resumed`, when the user last let the loop go on; the budget
+/// counts every iteration.
+fn verdict(
+    config: &LoopConfig,
+    iterations: &[LoopIteration],
+    run: Option<&CheckRun>,
+    resumed: Option<&str>,
+) -> Verdict {
     if let Some(run) = run {
         if !run.flaky.is_empty() {
             return Verdict::Flaky(run.flaky.clone());
@@ -570,7 +894,12 @@ fn verdict(config: &LoopConfig, iterations: &[LoopIteration], run: Option<&Check
             )
         })
         .collect();
-    let failing = ended
+    let recent: Vec<&LoopIteration> = ended
+        .iter()
+        .copied()
+        .filter(|i| resumed.is_none_or(|at| i.started_at.as_str() > at))
+        .collect();
+    let failing = recent
         .iter()
         .rev()
         .take_while(|i| i.outcome == LoopIterationOutcome::Failed)
@@ -578,16 +907,16 @@ fn verdict(config: &LoopConfig, iterations: &[LoopIteration], run: Option<&Check
     if failing >= FAILURES_IN_A_ROW {
         return Verdict::Failing;
     }
-    let stalled = (0..ended.len())
+    let stalled = (0..recent.len())
         .rev()
         .take_while(|&k| {
             // Measured against the last iteration that was checked: an empty one in between
             // changed nothing to compare.
-            let checked = ended[..k]
+            let checked = recent[..k]
                 .iter()
                 .rev()
                 .find(|i| i.outcome == LoopIterationOutcome::Checked);
-            no_progress(checked.copied(), ended[k])
+            no_progress(checked.copied(), recent[k])
         })
         .count();
     if stalled >= config.stall_limit as usize {
@@ -648,7 +977,21 @@ fn duration_words(seconds: u32) -> String {
     }
 }
 
-/// One guarded transition with a note in the thread, pushed. Whether it applied.
+fn entry(kind: &str, author: &str, body: String) -> NewTaskComment {
+    NewTaskComment {
+        kind: kind.to_string(),
+        author: author.to_string(),
+        body: Some(body),
+        external_ref: None,
+        phase: None,
+    }
+}
+
+fn note_entry(body: String) -> NewTaskComment {
+    entry("note", "maestro", body)
+}
+
+/// One guarded transition with an entry in the thread, pushed. Whether it applied.
 async fn apply(
     store: &Store,
     everyone: &crate::ClientOut,
@@ -656,7 +999,7 @@ async fn apply(
     task_id: i32,
     event: TaskTransition,
     guard: TransitionGuard,
-    note: Option<String>,
+    comment: Option<NewTaskComment>,
 ) -> bool {
     let request = ServerRequest::ApplyTaskTransition(ApplyTaskTransitionRequest {
         project_path: path.to_string(),
@@ -664,13 +1007,7 @@ async fn apply(
         event,
         guard,
         update: None,
-        comment: note.map(|body| NewTaskComment {
-            kind: "note".to_string(),
-            author: "maestro".to_string(),
-            body: Some(body),
-            external_ref: None,
-            phase: None,
-        }),
+        comment,
     });
     let answered = crate::task_store::requests::answer(&mut *store.lock().await, request);
     match answered {
@@ -700,7 +1037,7 @@ async fn stop(
     why: &str,
 ) {
     let guard = TransitionGuard::Phase(phase);
-    let note = Some(why.to_string());
+    let note = Some(note_entry(why.to_string()));
     apply(
         store,
         everyone,
@@ -1121,6 +1458,7 @@ mod tests {
             removed: 0,
             summary: None,
             check_output: output.map(str::to_string),
+            peeks: vec![],
         }
     }
 
@@ -1144,16 +1482,16 @@ mod tests {
             ..CheckRun::default()
         };
         assert_eq!(
-            verdict(&config, &one, Some(&flaky)),
+            verdict(&config, &one, Some(&flaky), None),
             Verdict::Flaky(vec!["Tests pass".to_string()])
         );
         let passed = CheckRun {
             all_pass: true,
             ..CheckRun::default()
         };
-        assert_eq!(verdict(&config, &one, Some(&passed)), Verdict::Passed);
+        assert_eq!(verdict(&config, &one, Some(&passed), None), Verdict::Passed);
         assert_eq!(
-            verdict(&config, &one, Some(&failing("x"))),
+            verdict(&config, &one, Some(&failing("x")), None),
             Verdict::OutOfIterations
         );
     }
@@ -1169,9 +1507,9 @@ mod tests {
             iteration(4, Failed, None),
             iteration(5, Failed, None),
         ];
-        assert_eq!(verdict(&config, &iterations, None), Verdict::Iterate);
+        assert_eq!(verdict(&config, &iterations, None, None), Verdict::Iterate);
         iterations.push(iteration(6, Failed, None));
-        assert_eq!(verdict(&config, &iterations, None), Verdict::Failing);
+        assert_eq!(verdict(&config, &iterations, None, None), Verdict::Failing);
     }
 
     #[test]
@@ -1185,14 +1523,14 @@ mod tests {
         ];
         // Iteration 2 changed the failure; 3 changed nothing.
         assert_eq!(
-            verdict(&config, &iterations, Some(&failing("x"))),
+            verdict(&config, &iterations, Some(&failing("x")), None),
             Verdict::Iterate
         );
         let mut stalled = iterations.to_vec();
         stalled.push(iteration(4, Checked, Some("2 failed in 1.31s")));
         stalled.push(iteration(5, Checked, Some("2 failed in 0.98s")));
         // Empty, then the same failure twice, timings aside.
-        assert_eq!(verdict(&config, &stalled, None), Verdict::Stalled);
+        assert_eq!(verdict(&config, &stalled, None, None), Verdict::Stalled);
     }
 
     #[test]
@@ -1205,9 +1543,76 @@ mod tests {
         let mut interrupted = iteration(1, Interrupted, None);
         interrupted.counted = false;
         let iterations = [interrupted, iteration(2, Checked, Some("a"))];
-        assert_eq!(verdict(&config, &iterations, None), Verdict::Iterate);
+        assert_eq!(verdict(&config, &iterations, None, None), Verdict::Iterate);
         let more = [iterations[1].clone(), iteration(3, Checked, Some("b"))];
-        assert_eq!(verdict(&config, &more, None), Verdict::OutOfTime);
+        assert_eq!(verdict(&config, &more, None, None), Verdict::OutOfTime);
+    }
+
+    #[test]
+    fn a_resume_restarts_the_streaks_but_not_the_budget() {
+        use LoopIterationOutcome::*;
+        let config = LoopConfig {
+            max_iterations: 5,
+            ..LoopConfig::default()
+        };
+        let mut iterations = vec![
+            iteration(1, Empty, None),
+            iteration(2, Empty, None),
+            iteration(3, Empty, None),
+        ];
+        assert_eq!(verdict(&config, &iterations, None, None), Verdict::Stalled);
+        let mut after = iteration(4, Empty, None);
+        after.started_at = "2026-10-12T11:00:00Z".to_string();
+        iterations.push(after);
+        let resumed = Some("2026-10-12T10:30:00Z");
+        assert_eq!(
+            verdict(&config, &iterations, None, resumed),
+            Verdict::Iterate,
+            "one empty iteration since the resume"
+        );
+        let mut last = iteration(5, Empty, None);
+        last.started_at = "2026-10-12T11:30:00Z".to_string();
+        iterations.push(last);
+        assert_eq!(
+            verdict(&config, &iterations, None, resumed),
+            Verdict::OutOfIterations
+        );
+    }
+
+    #[test]
+    fn the_judge_answers_by_number_through_its_decorations() {
+        let reply = "Here is my verdict.\n\n**1. PASS**: unknown ids answer 404\n- 3) fail - nothing \
+                     handles an empty list\n2. FAILED: `parse` panics on \"\"\n1. FAIL: changed my mind\n\
+                     5. PASS: no such check\n\n## Digest\n\n### What changed\nThe handler.";
+        let verdicts = judge_verdicts(reply, 4);
+        assert_eq!(
+            verdicts,
+            [
+                Some((true, "unknown ids answer 404".to_string())),
+                Some((false, "`parse` panics on \"\"".to_string())),
+                Some((false, "nothing handles an empty list".to_string())),
+                None,
+            ]
+        );
+        assert_eq!(
+            digest_of(reply).as_deref(),
+            Some("### What changed\nThe handler.")
+        );
+        assert_eq!(digest_of("1. PASS: fine"), None);
+    }
+
+    #[test]
+    fn a_peek_is_a_git_command_naming_a_sealed_path() {
+        let commands = [
+            "git show main:tests/t.rs".to_string(),
+            "git status".to_string(),
+            "git log -- scripts/check.sh".to_string(),
+        ];
+        let sealed = ["tests/".to_string(), "scripts/check.sh".to_string()];
+        assert_eq!(
+            peeks(&commands, &sealed),
+            [commands[0].clone(), commands[2].clone()]
+        );
     }
 
     #[test]
@@ -1397,8 +1802,11 @@ mod tests {
             &path,
             &task,
             &iteration,
-            Some("added b"),
-            false,
+            Ended {
+                summary: Some("added b"),
+                git_commands: &["git show main:tests/t.txt".to_string()],
+                ..Ended::default()
+            },
         )
         .await;
 
@@ -1417,6 +1825,7 @@ mod tests {
             let row = &loops::list_iterations(&conn, &path, task.id).unwrap()[0];
             assert_eq!(row.outcome, LoopIterationOutcome::Checked);
             assert!(row.touched_sealed);
+            assert_eq!(row.peeks, ["git show main:tests/t.txt"]);
             assert_eq!((row.files, row.summary.as_deref()), (1, Some("added b")));
         }
         let committed = git(&dir, &["show", "--name-only", "--format=", "HEAD"])
@@ -1440,7 +1849,15 @@ mod tests {
 
         let everyone = crate::client_sink::ClientSink::detached();
         let path = task.project_path.clone();
-        finish(&store, &everyone, &path, &task, &iteration, None, false).await;
+        finish(
+            &store,
+            &everyone,
+            &path,
+            &task,
+            &iteration,
+            Ended::default(),
+        )
+        .await;
 
         let conn = store.lock().await;
         let task = crate::task_store::get(&conn, &path, task.id)
@@ -1456,6 +1873,18 @@ mod tests {
         );
         let check = &loops::list_checks(&conn, &path, task.id).unwrap()[0];
         assert_eq!(check.state, LoopCheckState::Fail);
+        // A note the user added while the iteration ran goes to the next one.
+        crate::task_store::append(
+            &conn,
+            &path,
+            task.id,
+            "steer",
+            "user",
+            Some("Try the cache first."),
+            None,
+            None,
+        )
+        .unwrap();
         let prompt = crate::task_prompt::compose(
             &conn,
             &path,
@@ -1474,6 +1903,14 @@ mod tests {
             text.contains("src/missing.txt"),
             "the output reaches it: {text}"
         );
+        assert!(
+            text.contains(
+                "## Notes from the user
+
+Try the cache first."
+            ),
+            "{text}"
+        );
     }
 
     #[tokio::test]
@@ -1490,7 +1927,15 @@ mod tests {
         std::fs::write(Path::new(&dir).join("src/b.txt"), "b").unwrap();
         let everyone = crate::client_sink::ClientSink::detached();
         let path = task.project_path.clone();
-        finish(&store, &everyone, &path, &task, &iteration, None, false).await;
+        finish(
+            &store,
+            &everyone,
+            &path,
+            &task,
+            &iteration,
+            Ended::default(),
+        )
+        .await;
 
         let conn = store.lock().await;
         let row = &loops::list_iterations(&conn, &path, task.id).unwrap()[0];
@@ -1521,13 +1966,231 @@ mod tests {
         assert!(text.contains("lint says no"), "{text}");
     }
 
+    fn state(conn: &rusqlite::Connection, task: &Task) -> (Option<TaskPhase>, Option<PhaseStatus>) {
+        let task = crate::task_store::get(conn, &task.project_path, task.id)
+            .unwrap()
+            .unwrap();
+        (task.phase, task.phase_status)
+    }
+
+    fn judge_says(task: &Task, checks: &[i32], sha: &str, reply: &str) -> LoopEnd {
+        LoopEnd {
+            project_path: task.project_path.clone(),
+            task_id: task.id,
+            session: LoopSession::Judge {
+                checks: checks.to_vec(),
+                sha: sha.to_string(),
+            },
+            session_id: "judge".to_string(),
+            stop_reason: "end_turn".to_string(),
+            facts: TurnFacts {
+                closing_message: Some(reply.to_string()),
+                ..TurnFacts::default()
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn the_judge_decides_once_the_commands_pass_and_its_digest_goes_to_sign_off() {
+        let (_repo, store, task) = sealed_loop(SEES_THEM).await;
+        let path = task.project_path.clone();
+        loops::set_checks(
+            &mut *store.lock().await,
+            &SetLoopChecksRequest {
+                project_path: path.clone(),
+                task_id: task.id,
+                checks: [
+                    (
+                        LoopCheckKind::Command,
+                        "Sees the sealed files",
+                        Some(SEES_THEM),
+                    ),
+                    (LoopCheckKind::Judge, "Names say what they hold", None),
+                ]
+                .into_iter()
+                .map(|(kind, label, command)| LoopCheckEntry {
+                    id: None,
+                    spec: LoopCheckSpec {
+                        kind,
+                        label: label.to_string(),
+                        command: command.map(str::to_string),
+                    },
+                })
+                .collect(),
+            },
+        )
+        .unwrap();
+        let (dir, task, iteration) = start(&store, &task).await;
+        std::fs::write(Path::new(&dir).join("src/b.txt"), "b").unwrap();
+        let everyone = crate::client_sink::ClientSink::detached();
+        let ended = Ended {
+            git_commands: &["git show main:tests/t.txt".to_string()],
+            ..Ended::default()
+        };
+        finish(&store, &everyone, &path, &task, &iteration, ended).await;
+
+        let (checks, sha) = {
+            let conn = store.lock().await;
+            assert_eq!(
+                state(&conn, &task),
+                (Some(TaskPhase::Judging), Some(PhaseStatus::Waiting))
+            );
+            let task = crate::task_store::get(&conn, &path, task.id)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                crate::task_turn::next_stage(&task),
+                Some(maestro_protocol::AgentRole::Judge)
+            );
+            let prompt = crate::task_prompt::compose(
+                &conn,
+                &path,
+                &task,
+                Some(TaskPhase::Judging),
+                maestro_protocol::AgentRole::Judge,
+                None,
+                Some(" src/b.txt | 1 +"),
+            )
+            .unwrap()
+            .embed();
+            let text = prompt.blocks[1]["text"].as_str().unwrap();
+            assert!(text.contains("`git diff main...HEAD`"), "{text}");
+            assert!(text.contains("src/b.txt | 1 +"), "{text}");
+            assert!(text.contains("1. Names say what they hold"), "{text}");
+            let (checks, sha) = loops::to_judge(&conn, &path, task.id).unwrap();
+            let ids: Vec<i32> = checks.iter().map(|c| c.id).collect();
+            (ids, sha.unwrap())
+        };
+        let judging = "UPDATE tasks SET phase = 'Judging', phase_status = 'Running' WHERE id = ?1";
+
+        store.lock().await.execute(judging, [task.id]).unwrap();
+        let fail = judge_says(
+            &task,
+            &checks,
+            &sha,
+            "1. FAIL: `b.txt` holds a letter, not a name",
+        );
+        judge_ended(&store, &everyone, &everyone, &path, &checks, &sha, fail).await;
+        {
+            let conn = store.lock().await;
+            assert_eq!(
+                state(&conn, &task),
+                (Some(TaskPhase::Iterating), Some(PhaseStatus::Waiting))
+            );
+            let task = crate::task_store::get(&conn, &path, task.id)
+                .unwrap()
+                .unwrap();
+            let prompt = crate::task_prompt::compose(
+                &conn,
+                &path,
+                &task,
+                Some(TaskPhase::Iterating),
+                maestro_protocol::AgentRole::Coder,
+                None,
+                None,
+            )
+            .unwrap()
+            .embed();
+            let text = prompt.blocks[1]["text"].as_str().unwrap();
+            assert!(
+                text.contains("Names say what they hold (the judge failed it)"),
+                "{text}"
+            );
+            assert!(text.contains("holds a letter, not a name"), "{text}");
+        }
+
+        store.lock().await.execute(judging, [task.id]).unwrap();
+        let pass = judge_says(
+            &task,
+            &checks,
+            &sha,
+            "1. PASS: clear enough\n\n## Digest\n\n### What changed\nAdded b.",
+        );
+        judge_ended(&store, &everyone, &everyone, &path, &checks, &sha, pass).await;
+        let conn = store.lock().await;
+        assert_eq!(
+            state(&conn, &task),
+            (Some(TaskPhase::Approval), Some(PhaseStatus::Waiting))
+        );
+        let check = &loops::list_checks(&conn, &path, task.id).unwrap()[1];
+        assert_eq!(check.passed_at_sha.as_deref(), Some(sha.as_str()));
+        let digest = crate::task_store::latest_of_kind(&conn, &path, task.id, "digest")
+            .unwrap()
+            .and_then(|c| c.body)
+            .unwrap();
+        assert!(digest.starts_with("### What changed\nAdded b."), "{digest}");
+        assert!(
+            digest.contains("Iteration 1 ran `git show main:tests/t.txt`."),
+            "the peek is worth a look: {digest}"
+        );
+    }
+
+    #[tokio::test]
+    async fn accepting_a_proposal_seals_only_what_the_base_branch_has() {
+        let (_repo, store, task) = sealed_loop(SEES_THEM).await;
+        let path = task.project_path.clone();
+        let proposal = {
+            let conn = store.lock().await;
+            conn.execute(
+                "INSERT INTO loop_checks (project_path, task_id, position, kind, label, proposed,
+                                          updated_at)
+                 VALUES (?1, ?2, 9, 'Command', 'Empty lists', 1, '')",
+                rusqlite::params![path, task.id],
+            )
+            .unwrap();
+            conn.last_insert_rowid() as i32
+        };
+        let ask = |seal: &[&str]| {
+            ServerRequest::AnswerLoopProposal(maestro_protocol::AnswerLoopProposalRequest {
+                project_path: path.clone(),
+                task_id: task.id,
+                check_id: proposal,
+                accept: Some(LoopCheckSpec {
+                    kind: LoopCheckKind::Command,
+                    label: "Empty lists".to_string(),
+                    command: Some("git hash-object src/a.txt".to_string()),
+                }),
+                seal: seal.iter().map(|s| s.to_string()).collect(),
+            })
+        };
+        let stdout = crate::client_sink::ClientSink::detached();
+        let (refused, _) = answer(ask(&["nowhere/"]), Some(&store), &stdout).await;
+        assert!(
+            matches!(&refused, ServerResponse::Error(e) if e.message.contains("not on main")),
+            "{refused:?}"
+        );
+        let (accepted, pushes) = answer(ask(&["src/a.txt"]), Some(&store), &stdout).await;
+        assert!(
+            matches!(accepted, ServerResponse::AnswerLoopProposalOk(_)),
+            "{accepted:?}"
+        );
+        assert!(!pushes.is_empty());
+        let conn = store.lock().await;
+        let task = crate::task_store::get(&conn, &path, task.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            task.loop_config.unwrap().sealed_paths,
+            ["tests/", "src/a.txt"]
+        );
+        assert!(task.loop_sealed_sha.is_some(), "the snapshot is taken");
+    }
+
     #[tokio::test]
     async fn an_iteration_with_nothing_to_commit_runs_no_checks() {
         let (_repo, store, task) = sealed_loop(SEES_THEM).await;
         let (_dir, task, iteration) = start(&store, &task).await;
         let everyone = crate::client_sink::ClientSink::detached();
         let path = task.project_path.clone();
-        finish(&store, &everyone, &path, &task, &iteration, None, false).await;
+        finish(
+            &store,
+            &everyone,
+            &path,
+            &task,
+            &iteration,
+            Ended::default(),
+        )
+        .await;
 
         let conn = store.lock().await;
         let row = &loops::list_iterations(&conn, &path, task.id).unwrap()[0];

@@ -11,7 +11,7 @@ import type { AgentProfile, AgentRole, ConnectionKey, ProfilesDocument } from "@
 import { cn } from "@/lib/utils";
 
 /**
- * The four roles, in the order a task passes through them.
+ * The five roles, in the order a task passes through them; the judge only ever works a loop.
  *
  * Each line says what the role costs the user rather than what it is called: a project with no
  * profile for a role simply skips that stage, and "no Reviewer" being the difference between a
@@ -69,6 +69,17 @@ const ROLES: Array<{ role: AgentRole; title: string; blurb: string; defaultPromp
       "unhandled cases, and changes that go beyond the task; judge style against the project's own " +
       "conventions, not your preferences. Report findings with a file and line and a concrete " +
       "failure case. Send the work back only for problems worth another run.",
+  },
+  {
+    role: "Judge",
+    title: "Judging",
+    blurb:
+      "Decides a loop's judge checks and writes the digest you sign off. Without one, the loop's own " +
+      "agent judges.",
+    defaultPrompt:
+      "Judge each check against the loop's diff and the code it touches, as a reviewer who has to " +
+      "sign it off. Pass a check only when the work plainly meets it; when you fail one, say what " +
+      "is missing and where, because that reason is all the next iteration gets.",
   },
 ];
 
@@ -345,7 +356,9 @@ export function AgentProfilesSection({ projectId, agents, connection }: AgentPro
               <p className="text-[11px] text-muted-foreground italic">
                 {role === "Coder"
                   ? "No profile — runs on the project's default agent."
-                  : "No profile — stage skipped."}
+                  : role === "Judge"
+                    ? "No profile: the loop's own agent judges."
+                    : "No profile — stage skipped."}
               </p>
             ) : (
               forRole.map((profile) => (

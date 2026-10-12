@@ -1143,7 +1143,9 @@ pub(crate) async fn dispatch_message(
         }
 
         // Boxed and out of line: this function's frame is already most of the main thread's stack.
-        request @ (ServerRequest::RerunLoopChecks(_) | ServerRequest::ReadLoopNotes(_)) => {
+        request @ (ServerRequest::RerunLoopChecks(_)
+        | ServerRequest::ReadLoopNotes(_)
+        | ServerRequest::AnswerLoopProposal(_)) => {
             let (reply, pushes) =
                 Box::pin(crate::loop_engine::answer(request, project_store, stdout)).await;
             send_or_return!(send_response(stdout, &reply).await);
@@ -1684,7 +1686,6 @@ pub(crate) async fn dispatch_message(
         | ServerRequest::ClearTaskReview(_)
         | ServerRequest::ListLoopChecks(_)
         | ServerRequest::SetLoopChecks(_)
-        | ServerRequest::AnswerLoopProposal(_)
         | ServerRequest::TickLoopCheck(_)
         | ServerRequest::ListLoopIterations(_)
         | ServerRequest::ListLoopHiddenFiles(_)

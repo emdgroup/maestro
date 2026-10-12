@@ -30,6 +30,9 @@ const REVIEWER_PROTOCOL: &str = "Review the changes on this branch against the t
 /// A loop's worker: one iteration of many, judged by checks it cannot see.
 const LOOP_PROTOCOL: &str = "You are one iteration of a loop that runs until this task's checks pass. Each iteration is a fresh session, so nothing you say carries over, only what you leave on disk. Start by reading `.maestro/loop/PROGRESS.md` if it exists, and before you stop, update it with what you did, what you learned and what is left, for the next iteration. Make real progress toward the goal, then end your turn: your changes are committed and the checks run after you stop. The checks' sources are not available to you and their failures reach you as output only, so do not look for them or try to change them. Do not declare the task done; the checks decide.";
 
+/// A loop's judge: decides the `judge` checks against the loop's work, then writes the digest.
+const JUDGE_PROTOCOL: &str = "You are the judge of a loop: another agent has worked on this task in iterations, and its work is committed on this branch. Decide each check listed below against that work, reading the diff and the code it touches. Do not modify any files, and do not run the project's tests; they are checked separately. Answer every check on a line of its own, by its number, starting with PASS or FAIL and one line of reason, for example:\n\n1. PASS: unknown ids answer 404\n2. FAIL: nothing handles an empty list\n\nA FAIL's reason is all the next iteration is told, so make it specific. If every check passes, follow the verdicts with a line reading `## Digest` and a short review for the person who signs the work off, in three parts: `### What changed`, `### What the loop decided on its own` and `### Worth a look`.";
+
 /// Where a task's attachments are copied, relative to the project root.
 #[cfg(test)]
 const TASK_ATTACHMENTS_DIR: &str = ".maestro/attachments/tasks";
@@ -101,6 +104,7 @@ pub fn compose(
         AgentRole::Refiner => REFINER_PROTOCOL,
         AgentRole::Planner => PLANNER_PROTOCOL,
         AgentRole::Reviewer => REVIEWER_PROTOCOL,
+        AgentRole::Judge => JUDGE_PROTOCOL,
         AgentRole::Coder if looping => LOOP_PROTOCOL,
         AgentRole::Coder => COMPLETION_PROTOCOL,
     };
@@ -129,6 +133,9 @@ pub fn compose(
 
     if looping {
         blocks.push(text(loop_context(conn, project_path, task)?));
+    } else if role == AgentRole::Judge {
+        // The judge's `feedback` is the diff's stat, which the starter read from the worktree.
+        blocks.push(text(judge_context(conn, project_path, task, feedback)?));
     } else if role == AgentRole::Coder {
         if let Some(plan) = latest("plan")? {
             blocks.push(text(format!("## The approved plan\n\n{plan}")));
@@ -215,44 +222,89 @@ fn loop_context(conn: &Connection, project_path: &str, task: &Task) -> Result<St
     if !checks.is_empty() {
         out.push_str("\n\n## Checks\n");
         for check in &checks {
-            let how = match check.kind {
-                LoopCheckKind::Command => match check.state {
-                    LoopCheckState::Pass => "passing",
-                    LoopCheckState::Fail => "failing",
-                    LoopCheckState::Flaky => "flaky",
-                    LoopCheckState::Pending => "not run yet",
-                },
-                LoopCheckKind::Judge => "judged against your diff once the others pass",
-                LoopCheckKind::Manual => "checked by the user at the end",
+            let how = match (check.kind, check.state) {
+                (LoopCheckKind::Command, LoopCheckState::Pass) => "passing",
+                (LoopCheckKind::Command, LoopCheckState::Fail) => "failing",
+                (LoopCheckKind::Command, LoopCheckState::Flaky) => "flaky",
+                (LoopCheckKind::Command, LoopCheckState::Pending) => "not run yet",
+                (LoopCheckKind::Judge, LoopCheckState::Fail) => "the judge failed it",
+                (LoopCheckKind::Judge, _) => "judged against your diff once the others pass",
+                (LoopCheckKind::Manual, _) => "checked by the user at the end",
             };
             out.push_str(&format!("\n- {} ({how})", check.label));
         }
-        for check in checks.iter().filter(|c| {
-            c.kind == LoopCheckKind::Command
-                && matches!(c.state, LoopCheckState::Fail | LoopCheckState::Flaky)
-        }) {
-            if let Some(detail) = check.detail.as_deref().filter(|d| !d.trim().is_empty()) {
-                out.push_str(&format!(
+        for check in checks
+            .iter()
+            .filter(|c| matches!(c.state, LoopCheckState::Fail | LoopCheckState::Flaky))
+        {
+            let Some(detail) = check.detail.as_deref().filter(|d| !d.trim().is_empty()) else {
+                continue;
+            };
+            match check.kind {
+                LoopCheckKind::Command => out.push_str(&format!(
                     "\n\n### Output of \"{}\"\n\n```\n{}\n```",
                     check.label,
                     detail.trim_end()
-                ));
+                )),
+                LoopCheckKind::Judge => out.push_str(&format!(
+                    "\n\n### The judge on \"{}\"\n\n{}",
+                    check.label,
+                    detail.trim()
+                )),
+                LoopCheckKind::Manual => {}
             }
         }
     }
 
-    // The previous iteration's commit, when a hook refused it.
-    if let Some(last) = iterations
+    let last = iterations
         .iter()
         .rev()
-        .find(|i| i.outcome != LoopIterationOutcome::Running)
-    {
+        .find(|i| i.outcome != LoopIterationOutcome::Running);
+    // The previous iteration's commit, when a hook refused it.
+    if let Some(last) = last {
         if let (LoopIterationOutcome::Failed, Some(output)) = (last.outcome, &last.check_output) {
             out.push_str(&format!(
                 "\n\n## The last iteration ended with an error\n\n```\n{}\n```",
                 output.trim_end()
             ));
         }
+    }
+
+    // What the user said since the previous iteration began.
+    let notes: Vec<String> = task_store::list_comments(conn, project_path, task.id)?
+        .into_iter()
+        .filter(|c| c.kind == "steer")
+        .filter(|c| last.is_none_or(|last| c.created_at > last.started_at))
+        .filter_map(|c| c.body)
+        .map(|body| body.trim().to_string())
+        .filter(|body| !body.is_empty())
+        .collect();
+    if !notes.is_empty() {
+        out.push_str("\n\n## Notes from the user\n\n");
+        out.push_str(&notes.join("\n\n"));
+    }
+    Ok(out)
+}
+
+/// What the judge decides: the loop's work against its base, and the checks to answer by number.
+fn judge_context(
+    conn: &Connection,
+    project_path: &str,
+    task: &Task,
+    stat: Option<&str>,
+) -> Result<String, String> {
+    let base = match task.base_branch.trim() {
+        "" => task.loop_sealed_sha.as_deref().unwrap_or("HEAD"),
+        base => base,
+    };
+    let mut out = format!("## The work\n\nThe loop's changes are `git diff {base}...HEAD`.");
+    if let Some(stat) = stat.map(str::trim_end).filter(|s| !s.trim().is_empty()) {
+        out.push_str(&format!("\n\n```\n{stat}\n```"));
+    }
+    out.push_str("\n\n## Checks to decide\n");
+    let (checks, _) = task_store::loops::to_judge(conn, project_path, task.id)?;
+    for (i, check) in checks.iter().enumerate() {
+        out.push_str(&format!("\n{}. {}", i + 1, check.label));
     }
     Ok(out)
 }

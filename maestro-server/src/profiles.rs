@@ -89,6 +89,7 @@ fn role_key(role: AgentRole) -> &'static str {
         AgentRole::Planner => "Planner",
         AgentRole::Coder => "Coder",
         AgentRole::Reviewer => "Reviewer",
+        AgentRole::Judge => "Judge",
     }
 }
 
@@ -264,7 +265,8 @@ pub fn resolve_automatic_mode(mode_ids: &[String], read_only: bool) -> Option<St
 }
 
 /// The agent to spawn for a stage, asked before capabilities are known. The task's own agent is
-/// the coder's only; then the role's profile; then the project's default agent.
+/// the coder's only; then the role's profile; then the project's default agent, or for the judge
+/// the coder's.
 fn choose_agent(
     document: &ProfilesDocument,
     default_agent: Option<String>,
@@ -274,13 +276,18 @@ fn choose_agent(
     let task_agent = (role == AgentRole::Coder)
         .then(|| task.agent_id.clone())
         .flatten();
-    task_agent
-        .or_else(|| {
-            document
-                .resolve(role, profile_id_for(task, role).as_deref())
-                .map(|p| p.agent_id.clone())
-        })
-        .or(default_agent)
+    let profiled = task_agent.or_else(|| {
+        document
+            .resolve(role, profile_id_for(task, role).as_deref())
+            .map(|p| p.agent_id.clone())
+    });
+    match role {
+        // With no judge profile, the judge is the worker's agent.
+        AgentRole::Judge => {
+            profiled.or_else(|| choose_agent(document, default_agent, task, AgentRole::Coder))
+        }
+        _ => profiled.or(default_agent),
+    }
 }
 
 pub fn agent_for(project_path: &str, task: &Task, role: AgentRole) -> Option<String> {
@@ -665,6 +672,8 @@ mod tests {
             Some("profile-reviewer")
         );
         assert_eq!(pick(AgentRole::Planner).as_deref(), Some("default"));
+        // No judge profile: the worker's agent judges, not the project's default.
+        assert_eq!(pick(AgentRole::Judge).as_deref(), Some("task-agent"));
     }
 
     #[test]

@@ -69,6 +69,7 @@ pub(crate) fn role(phase: Option<TaskPhase>) -> Option<AgentRole> {
         | TaskPhase::AwaitingMerge
         | TaskPhase::Iterating => Some(AgentRole::Coder),
         TaskPhase::SelfReview => Some(AgentRole::Reviewer),
+        TaskPhase::Judging => Some(AgentRole::Judge),
         _ => None,
     }
 }

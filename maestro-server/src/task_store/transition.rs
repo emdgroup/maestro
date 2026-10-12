@@ -124,13 +124,14 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
             AgentRole::Planner => TaskState::active(InProgress, Drafting, Running, Ball::Agent),
             AgentRole::Coder => TaskState::active(InProgress, Implementing, Running, Ball::Agent),
             AgentRole::Reviewer => TaskState::active(Review, SelfReview, Running, Ball::Agent),
+            AgentRole::Judge => TaskState::active(InProgress, Judging, Running, Ball::Agent),
         },
 
         TaskTransition::SpawnAborted => current.unclaimed(TaskState::parked(current.status)),
 
         // A hand-off waits on its agent again, so the drain starts it as if nothing had happened.
         TaskTransition::SpawnInterrupted => match current.claimed_from {
-            Some(phase @ (SelfReview | Rework | AwaitingMerge | Iterating))
+            Some(phase @ (SelfReview | Rework | AwaitingMerge | Iterating | Judging))
                 if current.phase == Some(Spawning) =>
             {
                 TaskState::active(current.status, phase, Waiting, Ball::Agent)
@@ -246,6 +247,12 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
         TaskTransition::LoopChecksPassed => {
             TaskState::active(Review, Approval, Waiting, Ball::User)
         }
+
+        TaskTransition::LoopJudging => TaskState::active(InProgress, Judging, Waiting, Ball::Agent),
+
+        TaskTransition::LoopResumed => {
+            TaskState::active(InProgress, Iterating, Waiting, Ball::Agent)
+        }
     }
 }
 
@@ -296,6 +303,7 @@ fn admit(
                             | TaskPhase::Rework
                             | TaskPhase::AwaitingMerge
                             | TaskPhase::Iterating
+                            | TaskPhase::Judging
                     ),
                     Some(PhaseStatus::Waiting)
                 )
@@ -311,6 +319,7 @@ fn admit(
                             | TaskPhase::Rework
                             | TaskPhase::AwaitingMerge
                             | TaskPhase::Iterating
+                            | TaskPhase::Judging
                     ),
                     Some(PhaseStatus::Failed)
                 )
@@ -401,7 +410,21 @@ fn write(
     task_id: i32,
     event: TaskTransition,
 ) -> Result<Task, String> {
-    let next = resolve(event, read_state(conn, project_path, task_id)?);
+    let current = read_state(conn, project_path, task_id)?;
+    let next = resolve(event, current);
+    // The user letting a stopped loop go on, or sending it back from sign-off: its streaks count
+    // from here, so the stall it stopped on does not stop it again at once.
+    let resumed = event == TaskTransition::LoopResumed
+        || (event == TaskTransition::ExecutionStarted
+            && current.phase == Some(TaskPhase::Iterating)
+            && current.ball == TaskBall::User);
+    if resumed {
+        conn.execute(
+            "UPDATE tasks SET loop_resumed_at = ?3 WHERE project_path = ?1 AND id = ?2",
+            params![project_path, task_id, Utc::now().to_rfc3339()],
+        )
+        .map_err(|e| format!("Failed to resume task {task_id}: {e}"))?;
+    }
 
     // A deferral is a promise to a task the scheduler has not picked up yet, so it only survives
     // while the task is still a candidate: parked in Queue. Being claimed clears it, and so does
@@ -599,6 +622,9 @@ mod tests {
             (at(Iterating, Failed, TaskBall::User), true),
             (at(Checking, Failed, TaskBall::User), false),
             (at(Checking, Running, TaskBall::Agent), false),
+            (at(Judging, Waiting, TaskBall::Agent), true),
+            (at(Judging, Failed, TaskBall::User), true),
+            (at(Judging, Running, TaskBall::Agent), false),
         ] {
             assert_eq!(
                 admit(&claim, TaskTransition::ExecutionStarted, state).is_some(),
@@ -615,6 +641,83 @@ mod tests {
             resolve(TaskTransition::SpawnInterrupted, claimed),
             at(Iterating, Waiting, TaskBall::Agent)
         );
+    }
+
+    #[test]
+    fn the_judge_comes_between_the_commands_and_sign_off_and_a_resume_goes_back_to_work() {
+        use PhaseStatus::*;
+        use TaskPhase::*;
+        let at =
+            |phase, status, ball| TaskState::active(TaskStatus::InProgress, phase, status, ball);
+        let checking = at(Checking, Running, TaskBall::Agent);
+        let waiting = resolve(TaskTransition::LoopJudging, checking);
+        assert_eq!(waiting, at(Judging, Waiting, TaskBall::Agent));
+        let claimed = resolve(TaskTransition::ExecutionStarted, waiting);
+        assert_eq!(
+            resolve(TaskTransition::SpawnInterrupted, claimed),
+            waiting,
+            "a judge that never came up waits on the drain again"
+        );
+        let judging = resolve(TaskTransition::SessionReady(AgentRole::Judge), claimed);
+        assert_eq!(judging, at(Judging, Running, TaskBall::Agent));
+        let signing = resolve(TaskTransition::LoopChecksPassed, judging);
+        assert_eq!(
+            resolve(TaskTransition::LoopResumed, signing),
+            at(Iterating, Waiting, TaskBall::Agent)
+        );
+    }
+
+    #[test]
+    fn letting_a_stopped_loop_go_on_marks_when() {
+        let mut conn = crate::project_store::open_in_memory();
+        let task = crate::task_store::create(
+            &mut conn,
+            &maestro_protocol::CreateTaskRequest {
+                project_path: "/repo".to_string(),
+                title: "Loop".to_string(),
+                description: None,
+                skills: vec![],
+                labels: vec![],
+                base_branch: "main".to_string(),
+                agent_id: None,
+                priority: None,
+                auto_approve: false,
+                workspace_mode: maestro_protocol::WorkspaceMode::NewWorktree,
+                workspace_worktree_id: None,
+                workspace_branch_mode: maestro_protocol::BranchMode::Create,
+                workspace_branch: None,
+                model_override: None,
+                run_mode: maestro_protocol::RunMode::Loop,
+                loop_config: None,
+            },
+        )
+        .unwrap()
+        .id;
+        let resumed =
+            |conn: &Connection| super::super::loops::resumed_at(conn, "/repo", task).unwrap();
+        let step = |conn: &mut Connection, event| {
+            apply_transition(
+                conn,
+                &ApplyTaskTransitionRequest {
+                    project_path: "/repo".to_string(),
+                    task_id: task,
+                    event,
+                    guard: TransitionGuard::Always,
+                    update: None,
+                    comment: None,
+                },
+            )
+            .unwrap();
+        };
+        step(&mut conn, TaskTransition::LoopIterate);
+        step(&mut conn, TaskTransition::ExecutionStarted);
+        assert!(resumed(&conn).is_none(), "the drain's start is no resume");
+        step(&mut conn, TaskTransition::LoopHalted);
+        step(&mut conn, TaskTransition::ExecutionStarted);
+        let first = resumed(&conn).expect("starting a stalled loop again is");
+        step(&mut conn, TaskTransition::LoopChecksPassed);
+        step(&mut conn, TaskTransition::LoopResumed);
+        assert!(resumed(&conn).unwrap() >= first, "so is sending it back");
     }
 
     /// The claim must not move the card.
@@ -649,6 +752,7 @@ mod tests {
                 TaskStatus::Review,
                 TaskPhase::SelfReview,
             ),
+            (AgentRole::Judge, TaskStatus::InProgress, TaskPhase::Judging),
         ] {
             let next = resolve(
                 TaskTransition::SessionReady(role),

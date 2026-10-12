@@ -64,12 +64,14 @@ pub enum AgentRole {
     Planner,
     Coder,
     Reviewer,
+    /// Decides a loop's `judge` checks and writes its review digest.
+    Judge,
 }
 
 impl AgentRole {
     /// Whether the role is allowed to modify the repository.
     ///
-    /// Three of the four roles write nothing, and this is the single place that says so — a profile
+    /// Only the coder writes, and this is the single place that says so — a profile
     /// claiming otherwise is corrected rather than trusted, because the read-only guarantee is what
     /// the plan and proposal gates are built on.
     pub fn is_read_only(self) -> bool {

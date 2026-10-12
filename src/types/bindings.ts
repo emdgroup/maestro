@@ -3122,7 +3122,11 @@ role_prompt?: string | null; fallback_behaviour?: FallbackBehaviour }
  * Selecting by role is what lets a task say "plan with the planner" without naming a profile, and
  * what makes a project's default reviewer a project-level fact.
  */
-export type AgentRole = "Refiner" | "Planner" | "Coder" | "Reviewer"
+export type AgentRole = "Refiner" | "Planner" | "Coder" | "Reviewer" | 
+/**
+ * Decides a loop's `judge` checks and writes its review digest.
+ */
+"Judge"
 export type AgentStreamWidth = "full" | "compact"
 /**
  * Ahead/behind commit counts relative to the upstream tracking branch.
@@ -4349,7 +4353,11 @@ export type TaskPhase = "Spawning" | "Refining" | "Drafting" | "PlanReview" | "I
 /**
  * A loop's checks running, with no session live.
  */
-"Checking"
+"Checking" | 
+/**
+ * A loop's judge deciding its `judge` checks, once every command check passes.
+ */
+"Judging"
 export type TaskPriority = "Urgent" | "High" | "Medium" | "Low" | "None"
 export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
 export type TaskStatus = "Planning" | "Queue" | "InProgress" | "Review" | "Done" | "Cancelled"

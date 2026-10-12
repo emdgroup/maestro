@@ -19,6 +19,8 @@ pub const V11_LOOPS: &str = "
 ALTER TABLE tasks ADD COLUMN run_mode TEXT NOT NULL DEFAULT 'Pipeline';
 ALTER TABLE tasks ADD COLUMN loop_config TEXT;
 ALTER TABLE tasks ADD COLUMN loop_sealed_sha TEXT;
+-- When the user last let a stopped loop go on: its streaks count from there.
+ALTER TABLE tasks ADD COLUMN loop_resumed_at TEXT;
 
 CREATE TABLE IF NOT EXISTS loop_checks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,6 +58,8 @@ CREATE TABLE IF NOT EXISTS loop_iterations (
     removed INTEGER NOT NULL DEFAULT 0,
     summary TEXT,
     check_output TEXT,
+    -- JSON array of the git commands the worker ran that named a sealed path.
+    peeks TEXT,
     PRIMARY KEY (project_path, task_id, n, attempt),
     FOREIGN KEY (project_path, task_id) REFERENCES tasks(project_path, id) ON DELETE CASCADE
 );
@@ -123,7 +127,7 @@ pub(crate) fn check_workspace(mode: RunMode, workspace: WorkspaceMode) -> Result
 
 /// A path inside the worktree, with `/`. A sealed path may end in `/` to name a directory; a hidden
 /// file's may not. Nothing may climb out with `..`.
-fn relative_path(path: &str, directory: bool) -> Result<String, String> {
+pub(crate) fn relative_path(path: &str, directory: bool) -> Result<String, String> {
     let path = path.trim().replace('\\', "/");
     let body = match path.strip_suffix('/') {
         Some(body) if directory => body,
@@ -348,6 +352,9 @@ pub fn answer_proposal(
     match &request.accept {
         Some(accepted) => {
             let spec = spec(accepted)?;
+            if !request.seal.is_empty() {
+                seal_more(&tx, project, task_id, &request.seal)?;
+            }
             tx.execute(
                 "UPDATE loop_checks SET kind = ?2, label = ?3, command = ?4, accepted = 1,
                         state = 'Pending', detail = NULL, updated_at = ?5
@@ -367,6 +374,38 @@ pub fn answer_proposal(
     let checks = list_checks(&tx, project, task_id)?;
     commit(tx)?;
     Ok(checks)
+}
+
+/// Add `paths` to the loop's sealed paths, each once.
+fn seal_more(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+    paths: &[String],
+) -> Result<(), String> {
+    let stored: Option<String> = conn
+        .query_row(
+            "SELECT loop_config FROM tasks WHERE project_path = ?1 AND id = ?2",
+            params![project_path, task_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let mut config: LoopConfig = stored
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default();
+    for path in paths {
+        let path = relative_path(path, true)?;
+        if !config.sealed_paths.contains(&path) {
+            config.sealed_paths.push(path);
+        }
+    }
+    let json = serde_json::to_string(&config).map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE tasks SET loop_config = ?3 WHERE project_path = ?1 AND id = ?2",
+        params![project_path, task_id, json],
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
 }
 
 pub fn tick(
@@ -426,6 +465,10 @@ pub fn list_iterations(
                 removed: row.get("removed")?,
                 summary: row.get("summary")?,
                 check_output: row.get("check_output")?,
+                peeks: row
+                    .get::<_, Option<String>>("peeks")?
+                    .and_then(|json| serde_json::from_str(&json).ok())
+                    .unwrap_or_default(),
             })
         })
         .map_err(|e| e.to_string())?
@@ -550,10 +593,12 @@ pub(crate) struct Committed {
     pub files: i32,
     pub added: i32,
     pub removed: i32,
+    /// The `git` commands it ran that name a sealed path.
+    pub peeks: Vec<String>,
 }
 
 /// The iteration's session is over: when it ended, what it said and what was committed. It counts
-/// from here on.
+/// from here on. A commit clears every manual tick, since the user ticked what came before it.
 pub(crate) fn record_commit(
     conn: &Connection,
     project_path: &str,
@@ -562,10 +607,14 @@ pub(crate) fn record_commit(
     summary: Option<&str>,
     committed: &Committed,
 ) -> Result<(), String> {
+    let peeks = (!committed.peeks.is_empty())
+        .then(|| serde_json::to_string(&committed.peeks).ok())
+        .flatten();
     conn.execute(
         "UPDATE loop_iterations
          SET ended_at = COALESCE(ended_at, ?5), counted = 1, summary = COALESCE(?6, summary),
-             touched_sealed = ?7, commit_sha = ?8, files = ?9, added = ?10, removed = ?11
+             touched_sealed = ?7, commit_sha = ?8, files = ?9, added = ?10, removed = ?11,
+             peeks = ?12
          WHERE project_path = ?1 AND task_id = ?2 AND n = ?3 AND attempt = ?4",
         params![
             project_path,
@@ -579,10 +628,19 @@ pub(crate) fn record_commit(
             committed.files,
             committed.added,
             committed.removed,
+            peeks,
         ],
     )
-    .map(|_| ())
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    if committed.commit_sha.is_some() {
+        conn.execute(
+            "UPDATE loop_checks SET state = 'Pending', updated_at = ?3
+             WHERE project_path = ?1 AND task_id = ?2 AND kind = 'Manual' AND state = 'Pass'",
+            params![project_path, task_id, Utc::now().to_rfc3339()],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 pub(crate) fn record_outcome(
@@ -629,6 +687,81 @@ pub(crate) fn record_results(
     commit(tx)
 }
 
+/// What the judge concluded, by check id: passed or not, and its reason. A pass holds for `sha`.
+pub(crate) fn record_judged(
+    conn: &mut Connection,
+    project_path: &str,
+    task_id: i32,
+    sha: &str,
+    verdicts: &[(i32, bool, String)],
+) -> Result<(), String> {
+    let tx = transaction(conn)?;
+    let now = Utc::now().to_rfc3339();
+    for (id, passed, reason) in verdicts {
+        let state = if *passed {
+            LoopCheckState::Pass
+        } else {
+            LoopCheckState::Fail
+        };
+        tx.execute(
+            "UPDATE loop_checks SET state = ?4, detail = ?5, passed_at_sha = ?6, updated_at = ?7
+             WHERE project_path = ?1 AND task_id = ?2 AND id = ?3",
+            params![
+                project_path,
+                task_id,
+                id,
+                text(state),
+                reason,
+                passed.then_some(sha),
+                now
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    commit(tx)
+}
+
+/// The commit the loop is at: the newest iteration's that committed anything.
+pub(crate) fn head_sha(iterations: &[LoopIteration]) -> Option<&str> {
+    iterations
+        .iter()
+        .rev()
+        .find_map(|i| i.commit_sha.as_deref())
+}
+
+/// The `judge` checks the judge has to decide at the loop's commit: every one, but those that
+/// already passed there. With the commit, `None` when nothing was committed yet.
+pub(crate) fn to_judge(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+) -> Result<(Vec<LoopCheck>, Option<String>), String> {
+    let iterations = list_iterations(conn, project_path, task_id)?;
+    let sha = head_sha(&iterations).map(str::to_owned);
+    let checks = list_checks(conn, project_path, task_id)?
+        .into_iter()
+        .filter(|c| c.kind == LoopCheckKind::Judge && !is_pending_proposal(c))
+        .filter(|c| c.passed_at_sha.is_none() || c.passed_at_sha != sha)
+        .collect();
+    Ok((checks, sha))
+}
+
+/// When the user last let the loop go on, if ever.
+pub(crate) fn resumed_at(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+) -> Result<Option<String>, String> {
+    conn.query_row(
+        "SELECT loop_resumed_at FROM tasks WHERE project_path = ?1 AND id = ?2",
+        params![project_path, task_id],
+        |row| row.get(0),
+    )
+    .optional()
+    .map(Option::flatten)
+    .map_err(|e| e.to_string())
+}
+
 pub(crate) fn set_sealed_sha(
     conn: &Connection,
     project_path: &str,
@@ -662,7 +795,7 @@ pub(crate) fn claim_recheck(
     let settled = matches!(
         (task.phase, task.phase_status),
         (
-            Some(TaskPhase::Checking | TaskPhase::Iterating),
+            Some(TaskPhase::Checking | TaskPhase::Iterating | TaskPhase::Judging),
             Some(PhaseStatus::Failed)
         ) | (
             Some(TaskPhase::Iterating | TaskPhase::Approval),
@@ -941,6 +1074,7 @@ mod tests {
             task_id: task,
             check_id: proposal,
             accept,
+            seal: vec!["tests/empty.test.ts".to_string(), "tests/".to_string()],
         };
         let accepted = answer_proposal(
             &mut conn,
@@ -953,10 +1087,56 @@ mod tests {
         .unwrap();
         assert!(accepted[1].accepted);
         assert_eq!(accepted[1].kind, LoopCheckKind::Command);
+        let config = super::super::get(&conn, PROJECT, task)
+            .unwrap()
+            .unwrap()
+            .loop_config
+            .unwrap();
+        assert_eq!(
+            config.sealed_paths,
+            ["tests/empty.test.ts", "tests/"],
+            "what accepting it seals joins the list"
+        );
         assert!(
             answer_proposal(&mut conn, &answer(None)).is_err(),
             "answered once"
         );
+    }
+
+    #[test]
+    fn a_commit_clears_the_manual_ticks() {
+        let mut conn = crate::project_store::open_in_memory();
+        let task = create(&mut conn, RunMode::Loop, None);
+        let manual = set(
+            &mut conn,
+            task,
+            vec![entry(None, LoopCheckKind::Manual, "Looks right", None)],
+        )
+        .unwrap()[0]
+            .id;
+        let ticked = tick(
+            &mut conn,
+            &TickLoopCheckRequest {
+                project_path: PROJECT.to_string(),
+                task_id: task,
+                check_id: manual,
+                ticked: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(ticked[0].state, LoopCheckState::Pass);
+        start_iteration(&conn, PROJECT, task, 1, "acp", "claude").unwrap();
+        let iteration = list_iterations(&conn, PROJECT, task).unwrap().remove(0);
+        let nothing = Committed::default();
+        record_commit(&conn, PROJECT, task, &iteration, None, &nothing).unwrap();
+        let state = |conn: &Connection| list_checks(conn, PROJECT, task).unwrap()[0].state;
+        assert_eq!(state(&conn), LoopCheckState::Pass, "nothing committed");
+        let committed = Committed {
+            commit_sha: Some("abc".to_string()),
+            ..Committed::default()
+        };
+        record_commit(&conn, PROJECT, task, &iteration, None, &committed).unwrap();
+        assert_eq!(state(&conn), LoopCheckState::Pending);
     }
 
     #[test]
@@ -971,6 +1151,7 @@ mod tests {
                 task_id: task,
                 check_id: proposal,
                 accept: None,
+                seal: vec![],
             },
         )
         .unwrap();

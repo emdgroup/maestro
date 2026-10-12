@@ -310,6 +310,9 @@ pub struct TurnFacts {
     pub user_interrupted: bool,
     /// The agent's last run of prose, marker removed, or `None` if it said nothing.
     pub closing_message: Option<String>,
+    /// Every shell command it ran that mentions `git`, in order, which is what a loop reads for a
+    /// worker looking at its sealed checks.
+    pub git_commands: Vec<String>,
 }
 
 #[derive(Default)]
@@ -318,6 +321,49 @@ struct TurnState {
     declared_complete: bool,
     user_interrupted: bool,
     closing: ClosingMessage,
+    /// By tool call id, since a call's input can arrive in its updates.
+    git_commands: Vec<(String, String)>,
+}
+
+/// Enough for any turn; past it, the rest are not kept.
+const MAX_GIT_COMMANDS: usize = 500;
+
+/// The shell command a tool call runs, as its raw input names it: a string, or an argument list.
+fn shell_command(payload: &serde_json::Value) -> Option<String> {
+    let command = payload.get("rawInput")?.get("command")?;
+    match command {
+        serde_json::Value::String(command) => Some(command.clone()),
+        serde_json::Value::Array(parts) => Some(
+            parts
+                .iter()
+                .filter_map(|p| p.as_str())
+                .collect::<Vec<_>>()
+                .join(" "),
+        ),
+        _ => None,
+    }
+}
+
+fn note_git_command(state: &mut TurnState, payload: &serde_json::Value) {
+    let Some(command) = shell_command(payload).filter(|c| c.contains("git")) else {
+        return;
+    };
+    let id = payload
+        .get("toolCallId")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let known = state
+        .git_commands
+        .iter()
+        .position(|(seen, _)| !id.is_empty() && *seen == id);
+    match known {
+        Some(at) => state.git_commands[at].1 = command,
+        None if state.git_commands.len() < MAX_GIT_COMMANDS => {
+            state.git_commands.push((id, command))
+        }
+        None => {}
+    }
 }
 
 /// Per session, keyed by routing id. An entry is dropped when its turn's facts are taken, which
@@ -361,7 +407,14 @@ pub(crate) fn note_update(session_id: &str, payload: &serde_json::Value) {
                 state.closing.push(&forward);
             });
         }
-        Some("tool_call") | Some("user_message_chunk") => {
+        Some("tool_call") => with_state(session_id, |state| {
+            state.closing.reset();
+            note_git_command(state, payload);
+        }),
+        Some("tool_call_update") => with_state(session_id, |state| {
+            note_git_command(state, payload);
+        }),
+        Some("user_message_chunk") => {
             with_state(session_id, |state| state.closing.reset());
         }
         _ => {}
@@ -381,6 +434,11 @@ pub(crate) fn take_turn_facts(session_id: &str) -> TurnFacts {
         declared_complete: state.declared_complete,
         user_interrupted: state.user_interrupted,
         closing_message: (!message.trim().is_empty()).then_some(message),
+        git_commands: state
+            .git_commands
+            .into_iter()
+            .map(|(_, command)| command)
+            .collect(),
     }
 }
 
@@ -408,6 +466,30 @@ mod tests {
                 note_update(sid, &update(kind, *text));
             }
             take_turn_facts(sid)
+        }
+
+        #[test]
+        fn a_turn_keeps_the_git_commands_it_ran_once_each() {
+            let sid = "git-1";
+            note_turn_started(sid);
+            for payload in [
+                // Claude's input arrives in an update of the call.
+                serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "a"}),
+                serde_json::json!({"sessionUpdate": "tool_call_update", "toolCallId": "a",
+                                   "rawInput": {"command": "git show main:tests/t.rs"}}),
+                serde_json::json!({"sessionUpdate": "tool_call_update", "toolCallId": "a",
+                                   "rawInput": {"command": "git show main:tests/t.rs"}}),
+                serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "b",
+                                   "rawInput": {"command": ["git", "log"]}}),
+                serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "c",
+                                   "rawInput": {"command": "cargo test"}}),
+            ] {
+                note_update(sid, &payload);
+            }
+            assert_eq!(
+                take_turn_facts(sid).git_commands,
+                ["git show main:tests/t.rs", "git log"]
+            );
         }
 
         #[test]

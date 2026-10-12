@@ -833,17 +833,17 @@ async fn run_server(
                 }
                 let task_binding = ending.and_then(task_turn::task_of);
                 let role = ending.and_then(task_turn::role_of);
-                let iteration = ending.and_then(loop_engine::iteration_of);
-                if let (Some(store), Some((project_path, task_id)), Some(iteration)) =
-                    (project_store.as_ref(), task_binding.clone(), iteration)
+                let loop_session = ending.and_then(loop_engine::session_of);
+                if let (Some(store), Some((project_path, task_id)), Some(session)) =
+                    (project_store.as_ref(), task_binding.clone(), loop_session)
                 {
                     loop_engine::spawn(
                         Arc::clone(store),
                         Arc::clone(&stdout),
-                        loop_engine::IterationEnd {
+                        loop_engine::LoopEnd {
                             project_path,
                             task_id,
-                            iteration,
+                            session,
                             session_id: ended.session_id.clone(),
                             stop_reason: ended.stop_reason.clone(),
                             facts: ended.facts.clone(),

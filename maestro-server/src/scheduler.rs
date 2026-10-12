@@ -322,7 +322,8 @@ fn candidates(conn: &Connection, project_path: &str) -> Result<Vec<i32>, String>
 }
 
 /// The hand-offs a drain may start: tasks waiting on an agent, neither held nor refused, with no
-/// session of their own mid-turn. The flag marks a loop's next iteration, which waits for a slot.
+/// session of their own mid-turn. The flag marks a loop's next iteration or its judge, which wait
+/// for a slot.
 fn handoffs(
     conn: &Connection,
     project_path: &str,
@@ -333,7 +334,10 @@ fn handoffs(
     Ok(tasks
         .iter()
         .filter_map(|task| {
-            let iterating = task.phase == Some(maestro_protocol::TaskPhase::Iterating);
+            let iterating = matches!(
+                task.phase,
+                Some(maestro_protocol::TaskPhase::Iterating | maestro_protocol::TaskPhase::Judging)
+            );
             Some((task.id, crate::task_turn::next_stage(task)?, iterating))
         })
         .filter(|(id, _, _)| {
@@ -402,7 +406,7 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
         let mut conn = deps.store.lock().await;
         // Read again under the lock that claims them, now the busy sessions are known. A pipeline
         // hand-off ignores the limit, since the session it follows usually still holds the slot;
-        // a loop's closed its session before the checks, so its next iteration waits for one.
+        // a loop's closed its session before the checks, so its next iteration or judge waits for one.
         let (iterations, stages): (Vec<_>, Vec<_>) = handoffs(&conn, path, &busy)
             .unwrap_or_default()
             .into_iter()

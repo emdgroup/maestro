@@ -291,6 +291,8 @@ pub enum TaskPhase {
     Iterating,
     /// A loop's checks running, with no session live.
     Checking,
+    /// A loop's judge deciding its `judge` checks, once every command check passes.
+    Judging,
 }
 
 impl TaskPhase {
@@ -303,7 +305,7 @@ impl TaskPhase {
     pub fn is_read_only(self) -> bool {
         matches!(
             self,
-            TaskPhase::Refining | TaskPhase::Drafting | TaskPhase::SelfReview
+            TaskPhase::Refining | TaskPhase::Drafting | TaskPhase::SelfReview | TaskPhase::Judging
         )
     }
 }
@@ -437,7 +439,8 @@ wire_enum!(
         Approval,
         AwaitingMerge,
         Iterating,
-        Checking
+        Checking,
+        Judging
     ]
 );
 wire_enum!(
@@ -459,7 +462,7 @@ wire_enum!(
 wire_enum!(
     crate::project::profiles::AgentRole,
     wire::AgentRole,
-    [Refiner, Planner, Coder, Reviewer]
+    [Refiner, Planner, Coder, Reviewer, Judge]
 );
 
 impl Task {

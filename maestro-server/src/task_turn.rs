@@ -71,6 +71,7 @@ pub(crate) fn next_stage(task: &Task) -> Option<AgentRole> {
         Some(TaskPhase::Rework | TaskPhase::AwaitingMerge | TaskPhase::Iterating) => {
             Some(AgentRole::Coder)
         }
+        Some(TaskPhase::Judging) => Some(AgentRole::Judge),
         _ => None,
     }
 }
@@ -501,6 +502,7 @@ mod tests {
             declared_complete,
             user_interrupted: false,
             closing_message: Some(closing.to_string()),
+            git_commands: vec![],
         }
     }
 

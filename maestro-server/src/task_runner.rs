@@ -129,6 +129,7 @@ fn stage(role: AgentRole) -> &'static str {
         AgentRole::Planner => "Planning",
         AgentRole::Coder => "Implementation",
         AgentRole::Reviewer => "Review",
+        AgentRole::Judge => "Judging",
     }
 }
 
@@ -567,9 +568,10 @@ async fn run(
         result.config_options.as_ref(),
         &result.session,
         feedback.as_deref(),
+        &workspace.cwd,
     )
     .await;
-    let (profile_id, skipped_attachments, iteration) = match prepared {
+    let (profile_id, skipped_attachments, loop_session) = match prepared {
         Ok(prepared) => prepared,
         Err(failure) => {
             forget_turn_ends(&session_id);
@@ -586,22 +588,24 @@ async fn run(
         }
     };
 
-    // A loop session carries its iteration, which is how its turn end finds the loop engine and
-    // how a stale iteration's is told from the live one's.
-    let role_json = match iteration {
-        Some(n) => {
-            let started = crate::task_store::loops::start_iteration(
-                &*launcher.store.lock().await,
-                &project_path,
-                task.id,
-                n,
-                &result.acp_session_id,
-                &agent_id,
-            );
-            if let Err(e) = started {
-                send_diag("warn", format!("[loop] task {}: {e}", task.id));
-            }
-            serde_json::json!({ "role": role, "profile_id": profile_id, "iteration": n })
+    // A loop session carries what it was started for, which is how its turn end finds the loop
+    // engine and how a stale iteration's is told from the live one's.
+    if let Some(crate::loop_engine::LoopSession::Iteration(n)) = loop_session {
+        let started = crate::task_store::loops::start_iteration(
+            &*launcher.store.lock().await,
+            &project_path,
+            task.id,
+            n,
+            &result.acp_session_id,
+            &agent_id,
+        );
+        if let Err(e) = started {
+            send_diag("warn", format!("[loop] task {}: {e}", task.id));
+        }
+    }
+    let role_json = match loop_session {
+        Some(session) => {
+            serde_json::json!({ "role": role, "profile_id": profile_id, "loop": session })
         }
         None => serde_json::json!({ "role": role, "profile_id": profile_id }),
     }
@@ -692,8 +696,8 @@ pub(crate) fn settings_commands(
 }
 
 /// Steps seven to ten on a session that is up: settings, prompt, review cleared, task moved on.
-/// Returns the profile the stage ran on, the attachments the prompt went without, and a loop's
-/// iteration number.
+/// Returns the profile the stage ran on, the attachments the prompt went without, and what a loop
+/// session was started for.
 #[allow(clippy::too_many_arguments)]
 async fn prepare(
     launcher: &Launcher,
@@ -706,20 +710,43 @@ async fn prepare(
     config_options: Option<&Vec<serde_json::Value>>,
     session: &ActiveSession,
     feedback: Option<&str>,
-) -> Result<(Option<String>, Vec<String>, Option<i32>), Failure> {
+    cwd: &str,
+) -> Result<
+    (
+        Option<String>,
+        Vec<String>,
+        Option<crate::loop_engine::LoopSession>,
+    ),
+    Failure,
+> {
+    use crate::loop_engine::LoopSession;
+    use crate::task_store::loops;
     // A profile set to fail rather than degrade fails the start.
     let settings = profiles::resolve_stage(project_path, task, role, capabilities)?;
     for warning in &settings.warnings {
         send_diag("warn", format!("[task] task {}: {warning}", task.id));
     }
+    // The judge is shown what the loop changed, read before the store is locked.
+    let stat = match role {
+        AgentRole::Judge => crate::loop_engine::diff_stat(cwd, task).await,
+        _ => None,
+    };
+    let feedback = stat.as_deref().or(feedback);
 
     let mut pushes = Vec::new();
-    let (draft, iteration) = {
+    let (draft, loop_session) = {
         let conn = launcher.store.lock().await;
-        let iteration = match (task.run_mode, role) {
-            (maestro_protocol::RunMode::Loop, AgentRole::Coder) => Some(
-                crate::task_store::loops::next_iteration(&conn, project_path, task.id)?,
-            ),
+        let loop_session = match (task.run_mode, role) {
+            (maestro_protocol::RunMode::Loop, AgentRole::Coder) => Some(LoopSession::Iteration(
+                loops::next_iteration(&conn, project_path, task.id)?,
+            )),
+            (maestro_protocol::RunMode::Loop, AgentRole::Judge) => {
+                let (checks, sha) = loops::to_judge(&conn, project_path, task.id)?;
+                Some(LoopSession::Judge {
+                    checks: checks.iter().map(|c| c.id).collect(),
+                    sha: sha.unwrap_or_default(),
+                })
+            }
             _ => None,
         };
         let draft = crate::task_prompt::compose(
@@ -731,7 +758,7 @@ async fn prepare(
             settings.role_prompt.as_deref(),
             feedback,
         )?;
-        (draft, iteration)
+        (draft, loop_session)
     };
     // Files read and images scaled with the store let go, and off the runtime.
     let composed = tokio::task::spawn_blocking(move || draft.embed())
@@ -775,9 +802,9 @@ async fn prepare(
                 send_diag("warn", format!("[task] could not clear a review: {e}"));
             }
         }
-        let ready = match iteration {
-            Some(_) => TaskTransition::LoopIterationStarted,
-            None => TaskTransition::SessionReady(role),
+        let ready = match loop_session {
+            Some(LoopSession::Iteration(_)) => TaskTransition::LoopIterationStarted,
+            _ => TaskTransition::SessionReady(role),
         };
         transition(
             &mut conn,
@@ -793,7 +820,11 @@ async fn prepare(
         broadcast(everyone, push).await;
     }
     match ready? {
-        Some(_) => Ok((settings.profile_id, composed.skipped_attachments, iteration)),
+        Some(_) => Ok((
+            settings.profile_id,
+            composed.skipped_attachments,
+            loop_session,
+        )),
         None => Err(Failure::Moved),
     }
 }
