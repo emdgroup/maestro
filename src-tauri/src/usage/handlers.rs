@@ -125,3 +125,18 @@ pub async fn sync_usage(
         mirror::merge_old_daily(conn, chrono::Utc::now())
     })
 }
+
+/// What the Usage view shows for a range and its filters, from the mirror alone: connections
+/// that are not attached show what they last synced.
+#[tauri::command]
+#[specta::specta]
+pub fn get_usage_report(
+    app_state: State<'_, Arc<AppState>>,
+    query: crate::usage::report::UsageQuery,
+) -> Result<crate::usage::report::UsageReport, String> {
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
+    crate::usage::report::report(&conn, &query)
+}

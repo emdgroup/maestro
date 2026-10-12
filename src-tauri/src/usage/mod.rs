@@ -3,3 +3,4 @@
 
 pub mod handlers;
 pub mod mirror;
+pub mod report;

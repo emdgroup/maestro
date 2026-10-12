@@ -126,6 +126,18 @@ async syncUsage(connection: ConnectionKey) : Promise<Result<null, string>> {
 }
 },
 /**
+ * What the Usage view shows for a range and its filters, from the mirror alone: connections
+ * that are not attached show what they last synced.
+ */
+async getUsageReport(query: UsageQuery) : Promise<Result<UsageReport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_usage_report", { query }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Ask whoever holds a project to give it up. `true` once it is this window's; the caller opens
  * it as usual after that.
  */
@@ -4326,6 +4338,74 @@ workspace_mode: WorkspaceMode | null; workspace_worktree_id: number | null;
  * `Checkout` must not leave the name of a branch nobody is going to create.
  */
 workspace_branch_mode: BranchMode | null; workspace_branch: string | null }
+export type UsageBucket = "minute" | "hour" | "day" | "month"
+export type UsageCoverage = { connection_key: string; 
+/**
+ * The name at the last sync, which is all a removed connection has left.
+ */
+connection_name: string; 
+/**
+ * RFC 3339; `None` until a sync has copied a turn.
+ */
+synced_at: string | null; removed: boolean }
+export type UsageHeatCell = { 
+/**
+ * 0 is Sunday.
+ */
+weekday: number; hour: number; cost: number; tokens: number }
+export type UsageModelRow = { model: string; agent_id: string; 
+/**
+ * The five token types added up: a model's rows carry no total of their own.
+ */
+tokens: number; by_type: UsageTokenSplit }
+export type UsageProjectRef = { connection_key: string; project_path: string }
+export type UsageProjectRow = { connection_key: string; project_path: string; cost: number; tokens: number; by_type: UsageTokenSplit }
+export type UsageQuery = { 
+/**
+ * RFC 3339; `None` for the first record.
+ */
+start: string | null; 
+/**
+ * RFC 3339, exclusive; `None` for now.
+ */
+end: string | null; bucket: UsageBucket; split: UsageSplit; 
+/**
+ * Any of these projects; none means every project.
+ */
+projects: UsageProjectRef[]; 
+/**
+ * Any of these models. Cost has no model, so for cost and the turn totals this keeps the
+ * turns (and hours) that used one of them, whatever else they used.
+ */
+models: string[] }
+export type UsageReport = { cost: number; tokens: number; series: UsageSeriesPoint[]; heatmap: UsageHeatCell[]; projects: UsageProjectRow[]; models: UsageModelRow[]; coverage: UsageCoverage[] }
+export type UsageSeriesPoint = { 
+/**
+ * The bucket, in the local clock: `2026-10-12`, `2026-10-12T14`, …
+ */
+bucket: string; 
+/**
+ * A connection key, an agent id, a model, or `input`, `output`, `thought`, `cached_read`,
+ * `cached_write`.
+ */
+key: string; 
+/**
+ * `None` for the tokens-only splits.
+ */
+cost: number | null; tokens: number }
+/**
+ * What the main chart's series are.
+ */
+export type UsageSplit = "connection" | "agent" | 
+/**
+ * Tokens only: cost is recorded per turn.
+ */
+"model" | 
+/**
+ * Tokens only, for the same reason.
+ */
+"token_type"
+export type UsageTokenSplit = { input: number; output: number; thought: number; cached_read: number; cached_write: number }
 /**
  * One recorded turn. The token counts are `None` when the agent reported none for it.
  */

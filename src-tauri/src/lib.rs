@@ -42,6 +42,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::get_home_summary,
         crate::ipc::get_session_usage,
         crate::ipc::sync_usage,
+        crate::ipc::get_usage_report,
         crate::ipc::request_project_takeover,
         crate::ipc::answer_project_takeover,
         crate::ipc::delete_project,

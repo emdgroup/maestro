@@ -102,14 +102,15 @@ CREATE TABLE IF NOT EXISTS usage_hourly_models (
 );
 
 -- Turns and hours in one shape, so a chart is one GROUP BY. `at` is UTC; '' is an unknown model
--- or currency, as in the hours.
+-- or currency, as in the hours. `turn_id` is null on an hour.
 CREATE VIEW IF NOT EXISTS usage_facts AS
-SELECT store_id, started_at AS at, agent_id, project_path, COALESCE(model_id, '') AS model_id,
+SELECT store_id, id AS turn_id, started_at AS at, agent_id, project_path,
+       COALESCE(model_id, '') AS model_id,
        COALESCE(cost_currency, '') AS cost_currency, 1 AS turns, total_tokens, input_tokens,
        output_tokens, thought_tokens, cached_read_tokens, cached_write_tokens, cost_amount
 FROM usage_turns
 UNION ALL
-SELECT store_id, hour, agent_id, project_path, model_id, cost_currency, turns, total_tokens,
+SELECT store_id, NULL, hour, agent_id, project_path, model_id, cost_currency, turns, total_tokens,
        input_tokens, output_tokens, thought_tokens, cached_read_tokens, cached_write_tokens,
        cost_amount
 FROM usage_hourly;
