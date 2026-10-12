@@ -10,13 +10,15 @@ export const usageQueryKeys = {
 
 /**
  * What the Usage view shows for a range and its filters, read from the app's mirror of every
- * connection's usage. The previous answer stays on screen while the next one loads.
+ * connection's usage. The previous answer stays on screen while the next one loads. It is a local
+ * query, so it also rereads every 30 seconds: Home's tile has no sync of its own to wait on.
  */
 export function useUsageReport(query: UsageQuery) {
   return useQuery({
     queryKey: usageQueryKeys.report(query),
     queryFn: () => api.getUsageReport(query),
     placeholderData: keepPreviousData,
+    refetchInterval: 30_000,
   });
 }
 

@@ -1,13 +1,16 @@
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 interface HeroProps {
   working: number;
   needYou: number;
   toReview: number;
+  /** Beside the scoreboard: the tile into the Usage view. */
+  aside?: ReactNode;
 }
 
 /** The logo and name on the left, the three numbers that matter across every connection on the right. */
-export function Hero({ working, needYou, toReview }: HeroProps) {
+export function Hero({ working, needYou, toReview, aside }: HeroProps) {
   const scores = [
     { value: working, label: "working", className: "home-working" },
     { value: needYou, label: "need you", className: "text-amber-600 dark:text-amber-400" },
@@ -36,6 +39,7 @@ export function Hero({ working, needYou, toReview }: HeroProps) {
             <div className="mt-1 text-xs text-muted-foreground">{score.label}</div>
           </div>
         ))}
+        {aside}
       </div>
     </section>
   );

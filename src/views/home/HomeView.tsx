@@ -25,11 +25,13 @@ import { Hero } from "./Hero";
 import { IntegrationsPanel } from "./IntegrationsPanel";
 import type { ProjectCard } from "./ProjectTile";
 import { VersionBadge } from "./VersionBadge";
-import { attach, signInWith, useConnectionLossEvents } from "./useConnectionActions";
+import { attach, connect, signInWith, useConnectionLossEvents } from "./useConnectionActions";
 import { useHomeConnections } from "./useHomeConnections";
 import { useHomeSummaries } from "./useHomeSummaries";
 import { useOpenProject } from "./useOpenProject";
 import { zoomIntoProject } from "@/components/layout/project-transition/projectTransition";
+import { UsageTile } from "@/views/usage/UsageTile";
+import { UsageView } from "@/views/usage/UsageView";
 
 const LOCAL: ConnectionKey = { type: "local" };
 
@@ -55,6 +57,7 @@ export function HomeView() {
   const [signingIn, setSigningIn] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [more, setMore] = useState({ up: false, down: false });
+  const [usageOpen, setUsageOpen] = useState(false);
 
   useConnectionLossEvents();
 
@@ -211,49 +214,76 @@ export function HomeView() {
         <span aria-hidden className="home-edge home-edge-bottom" />
         <div ref={scrollRef} className="absolute inset-0 scrollbar-none overflow-y-auto">
           <main className="relative z-10 mx-auto max-w-[1200px] px-12 pt-8 pb-4">
-            <Hero working={totals.working} needYou={totals.needYou} toReview={totals.toReview} />
-            <div className="mb-5 grid grid-cols-2 gap-5">
-              <AddConnectionPanel />
-              <IntegrationsPanel />
-            </div>
-            <div className="grid grid-cols-2 gap-5">
-              {ordered.map((connection) => {
-                const phase = phases[connection.id] ?? { kind: "idle" as const };
-                const summary = summaries.get(connection.id);
-                return (
-                  <ConnectionPanel
-                    key={connection.id}
-                    connection={
-                      connection.id === "local" && summary?.hostname
-                        ? { ...connection, detail: summary.hostname }
-                        : connection
-                    }
-                    phase={phase}
-                    projects={cardsFor(connection)}
-                    runningAutomations={summary?.runningAutomations ?? 0}
-                    minimized={minimized.includes(connection.id)}
-                    onToggleMinimized={() => toggleMinimized(connection.id)}
-                    openingProject={opening}
-                    onOpenProject={(card) => void openCard(connection, card)}
-                    onRemoveProject={(card) => removeCard(connection, card)}
-                    onAddProject={() => setAddingTo(connection)}
-                    menu={
-                      <ConnectionMenu
-                        connection={connection}
+            {usageOpen ? (
+              <UsageView
+                attached={up.map((connection) => connection.key)}
+                onBack={() => setUsageOpen(false)}
+                onConnect={(key) => {
+                  setUsageOpen(false);
+                  void connect(key);
+                }}
+              />
+            ) : (
+              <>
+                <Hero
+                  working={totals.working}
+                  needYou={totals.needYou}
+                  toReview={totals.toReview}
+                  aside={
+                    <UsageTile
+                      onOpen={() => {
+                        scrollRef.current?.scrollTo({ top: 0 });
+                        setUsageOpen(true);
+                      }}
+                    />
+                  }
+                />
+                <div className="mb-5 grid grid-cols-2 gap-5">
+                  <AddConnectionPanel />
+                  <IntegrationsPanel />
+                </div>
+                <div className="grid grid-cols-2 gap-5">
+                  {ordered.map((connection) => {
+                    const phase = phases[connection.id] ?? { kind: "idle" as const };
+                    const summary = summaries.get(connection.id);
+                    return (
+                      <ConnectionPanel
+                        key={connection.id}
+                        connection={
+                          connection.id === "local" && summary?.hostname
+                            ? { ...connection, detail: summary.hostname }
+                            : connection
+                        }
                         phase={phase}
                         projects={cardsFor(connection)}
-                        server={summary?.server ?? null}
-                        onSettings={() => setSettingsFor(connection.key)}
-                        onChangeSignIn={() => setSignInFor(connection)}
-                        onRemove={
-                          connection.id === "local" ? undefined : () => removeConnection(connection)
+                        runningAutomations={summary?.runningAutomations ?? 0}
+                        minimized={minimized.includes(connection.id)}
+                        onToggleMinimized={() => toggleMinimized(connection.id)}
+                        openingProject={opening}
+                        onOpenProject={(card) => void openCard(connection, card)}
+                        onRemoveProject={(card) => removeCard(connection, card)}
+                        onAddProject={() => setAddingTo(connection)}
+                        menu={
+                          <ConnectionMenu
+                            connection={connection}
+                            phase={phase}
+                            projects={cardsFor(connection)}
+                            server={summary?.server ?? null}
+                            onSettings={() => setSettingsFor(connection.key)}
+                            onChangeSignIn={() => setSignInFor(connection)}
+                            onRemove={
+                              connection.id === "local"
+                                ? undefined
+                                : () => removeConnection(connection)
+                            }
+                          />
                         }
                       />
-                    }
-                  />
-                );
-              })}
-            </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </main>
         </div>
       </div>
