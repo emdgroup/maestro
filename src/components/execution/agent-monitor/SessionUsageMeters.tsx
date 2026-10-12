@@ -34,7 +34,7 @@ const TEXT: Record<WindowTone, string> = {
 /** What is left of the window: it shrinks toward the reset, and a fill running into it is ahead of pace. */
 const HATCH = {
   backgroundImage:
-    "repeating-linear-gradient(135deg, rgb(255 255 255 / 0.16) 0 2px, transparent 2px 4px)",
+    "repeating-linear-gradient(135deg, color-mix(in oklab, var(--foreground) 16%, transparent) 0 2px, transparent 2px 4px)",
 };
 const OVERAGE_REASON: Record<string, string> = {
   org_level_disabled: "disabled by your organisation",
