@@ -367,6 +367,23 @@ since no session is live.
   dependencies and build caches.
 - A loop session is closed at the end of its iteration, not at the next one's start, because the
   sealed files must never be on disk while a session is live.
+- A loop needs a git project and its own new worktree (`NewWorktree`). Sealing a shared checkout
+  would hide the tests from the user too, so creating a loop or switching a task to Loop with
+  another workspace mode is refused, and a loop started outside a git repository fails with a note.
+- The next iteration respects the capacity limit. The drain claims it before Queue tasks, but only
+  into a free slot, so a loop never runs past the limit and loops take turns.
+- A loop never runs the planner. The goal and the checklist are its spec, and the first iteration
+  can write its own plan into `PROGRESS.md`.
+- **Stall.** An iteration makes no progress when it has nothing to commit, or when the same command
+  checks fail with the same output as the iteration before. `stall_limit` such iterations in a row
+  stop the loop. An empty iteration runs no checks.
+- **The iteration commit runs the repository's hooks**, with the user's git identity. A hook that
+  fails fails the iteration, and its output is fed to the next one like a failing check's. A missing
+  identity fails it the same way, with git's message.
+- The sealed snapshot comes from the local `base_branch` ref. The daemon fetches nothing.
+- Until phase 2, a loop whose command checks all pass goes straight to the `Approval` gate, with any
+  `judge` check still pending. Phase 2 puts the judge in between.
+- The prompt names no Maestro tool until phase 5 adds them.
 
 ## Phase 2: judge, digest, proposals, steering, sign-off, pull request
 

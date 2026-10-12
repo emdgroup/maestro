@@ -53,6 +53,10 @@ pub(crate) enum Action {
     Fail(&'static str),
     /// A hand-off the old daemon did not get to start.
     StartNext(AgentRole),
+    /// A loop whose checks were running: they died with the daemon, so they run again.
+    Recheck,
+    /// A loop iteration whose session had already closed: committed and checked now.
+    FinishIteration,
 }
 
 /// The role a phase is worked by.
@@ -60,9 +64,10 @@ pub(crate) fn role(phase: Option<TaskPhase>) -> Option<AgentRole> {
     match phase? {
         TaskPhase::Refining => Some(AgentRole::Refiner),
         TaskPhase::Drafting => Some(AgentRole::Planner),
-        TaskPhase::Implementing | TaskPhase::Rework | TaskPhase::AwaitingMerge => {
-            Some(AgentRole::Coder)
-        }
+        TaskPhase::Implementing
+        | TaskPhase::Rework
+        | TaskPhase::AwaitingMerge
+        | TaskPhase::Iterating => Some(AgentRole::Coder),
         TaskPhase::SelfReview => Some(AgentRole::Reviewer),
         _ => None,
     }
@@ -84,6 +89,9 @@ pub(crate) fn decide(
     }
     if let Some(next) = next {
         return Some(Action::StartNext(next));
+    }
+    if (phase, status) == (Some(TaskPhase::Checking), Some(PhaseStatus::Running)) {
+        return Some(Action::Recheck);
     }
     let unblock = match status {
         Some(PhaseStatus::Running) => false,
@@ -107,6 +115,8 @@ pub(crate) fn decide(
             unblock,
         }),
         Some(_) => Some(Action::Fail("its agent cannot reload a session")),
+        // The engine closes an iteration's session before it commits.
+        None if phase == Some(TaskPhase::Iterating) && !unblock => Some(Action::FinishIteration),
         None => Some(Action::Fail("it left no session to reload")),
     }
 }
@@ -222,6 +232,19 @@ pub(crate) fn spawn(driver: Driver, planned: Vec<(String, i32, Action)>) {
                 Action::Fail(why) => fail(&driver, &everyone, &path, task_id, why).await,
                 // The drain starts hand-offs, whoever left them.
                 Action::StartNext(_) => crate::scheduler::request_drain(&path),
+                Action::Recheck => {
+                    Box::pin(crate::loop_engine::recheck(&driver.store, &everyone, &path, task_id))
+                        .await
+                }
+                Action::FinishIteration => {
+                    Box::pin(crate::loop_engine::finish_orphan(
+                        &driver.store,
+                        &everyone,
+                        &path,
+                        task_id,
+                    ))
+                    .await
+                }
                 Action::Resume { row, role, unblock } => {
                     let acp_session_id = row.acp_session_id.clone();
                     let resumed = Box::pin(resume(
@@ -465,6 +488,34 @@ mod tests {
                 |_| false
             ),
             None
+        );
+    }
+
+    #[test]
+    fn a_loop_runs_its_checks_again_or_finishes_an_iteration_whose_session_closed() {
+        let running = Some(PhaseStatus::Running);
+        assert_eq!(
+            decide(1, Some(TaskPhase::Checking), running, None, &[], |_| false),
+            Some(Action::Recheck)
+        );
+        assert_eq!(
+            decide(1, Some(TaskPhase::Iterating), running, None, &[], |_| false),
+            Some(Action::FinishIteration)
+        );
+        // Paused on a flaky check: the user's.
+        let failed = Some(PhaseStatus::Failed);
+        assert_eq!(
+            decide(1, Some(TaskPhase::Checking), failed, None, &[], |_| false),
+            None
+        );
+        let rows = [row(1, true, false)];
+        assert_eq!(
+            decide(1, Some(TaskPhase::Iterating), running, None, &rows, |_| false),
+            Some(Action::Resume {
+                row: Box::new(rows[0].clone()),
+                role: AgentRole::Coder,
+                unblock: false
+            })
         );
     }
 

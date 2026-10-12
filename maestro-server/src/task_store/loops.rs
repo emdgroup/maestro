@@ -6,7 +6,7 @@ use chrono::Utc;
 use maestro_protocol::{
     AnswerLoopProposalRequest, LoopCheck, LoopCheckKind, LoopCheckSpec, LoopCheckState, LoopConfig,
     LoopHiddenFile, LoopIteration, LoopIterationOutcome, RunMode, SetLoopChecksRequest,
-    SetLoopHiddenFilesRequest, TickLoopCheckRequest,
+    SetLoopHiddenFilesRequest, TickLoopCheckRequest, WorkspaceMode,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -106,6 +106,17 @@ pub fn normalize_config(config: &LoopConfig) -> Result<LoopConfig, String> {
             .collect::<Result<_, _>>()?,
         ..config.clone()
     })
+}
+
+/// A loop seals its tests by leaving them out of its own worktree, which a shared checkout cannot
+/// do without hiding them from everyone else too.
+pub(crate) fn check_workspace(mode: RunMode, workspace: WorkspaceMode) -> Result<(), String> {
+    if mode == RunMode::Loop && workspace != WorkspaceMode::NewWorktree {
+        return Err("A loop runs in a new worktree of its own, so its checks can be sealed \
+                    from the agent"
+            .to_string());
+    }
+    Ok(())
 }
 
 /// A path inside the worktree, with `/`. A sealed path may end in `/` to name a directory; a hidden
@@ -479,6 +490,204 @@ pub fn set_hidden_files(
     Ok(files)
 }
 
+/// The number the next iteration takes: one past every iteration that ended. A `Running` row is
+/// the live iteration's, or a start's that never came up, which the next start replaces.
+pub(crate) fn next_iteration(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+) -> Result<i32, String> {
+    conn.query_row(
+        "SELECT COALESCE(MAX(n), 0) + 1 FROM loop_iterations
+         WHERE project_path = ?1 AND task_id = ?2 AND outcome != 'Running'",
+        params![project_path, task_id],
+        |row| row.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// The row of an iteration whose session is up.
+pub(crate) fn start_iteration(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+    n: i32,
+    acp_session_id: &str,
+    agent_id: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "DELETE FROM loop_iterations
+         WHERE project_path = ?1 AND task_id = ?2 AND outcome = 'Running'",
+        params![project_path, task_id],
+    )
+    .and_then(|_| {
+        conn.execute(
+            "INSERT INTO loop_iterations (project_path, task_id, n, attempt, acp_session_id,
+                                          agent_id, started_at)
+             VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6)",
+            params![
+                project_path,
+                task_id,
+                n,
+                acp_session_id,
+                agent_id,
+                Utc::now().to_rfc3339()
+            ],
+        )
+    })
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
+/// What ending an iteration found in its worktree.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub(crate) struct Committed {
+    pub touched_sealed: bool,
+    /// `None` when there was nothing to commit, or the commit failed.
+    pub commit_sha: Option<String>,
+    pub files: i32,
+    pub added: i32,
+    pub removed: i32,
+}
+
+/// The iteration's session is over: when it ended, what it said and what was committed. It counts
+/// from here on.
+pub(crate) fn record_commit(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+    iteration: &LoopIteration,
+    summary: Option<&str>,
+    committed: &Committed,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE loop_iterations
+         SET ended_at = COALESCE(ended_at, ?5), counted = 1, summary = COALESCE(?6, summary),
+             touched_sealed = ?7, commit_sha = ?8, files = ?9, added = ?10, removed = ?11
+         WHERE project_path = ?1 AND task_id = ?2 AND n = ?3 AND attempt = ?4",
+        params![
+            project_path,
+            task_id,
+            iteration.n,
+            iteration.attempt,
+            Utc::now().to_rfc3339(),
+            summary,
+            committed.touched_sealed,
+            committed.commit_sha,
+            committed.files,
+            committed.added,
+            committed.removed,
+        ],
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
+pub(crate) fn record_outcome(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+    iteration: &LoopIteration,
+    outcome: LoopIterationOutcome,
+    check_output: Option<&str>,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE loop_iterations SET outcome = ?5, check_output = ?6
+         WHERE project_path = ?1 AND task_id = ?2 AND n = ?3 AND attempt = ?4",
+        params![
+            project_path,
+            task_id,
+            iteration.n,
+            iteration.attempt,
+            text(outcome),
+            check_output
+        ],
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
+/// What one check run concluded about each check, by id.
+pub(crate) fn record_results(
+    conn: &mut Connection,
+    project_path: &str,
+    task_id: i32,
+    results: &[(i32, LoopCheckState, Option<String>)],
+) -> Result<(), String> {
+    let tx = transaction(conn)?;
+    let now = Utc::now().to_rfc3339();
+    for (id, state, detail) in results {
+        tx.execute(
+            "UPDATE loop_checks SET state = ?4, detail = ?5, updated_at = ?6
+             WHERE project_path = ?1 AND task_id = ?2 AND id = ?3",
+            params![project_path, task_id, id, text(*state), detail, now],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    commit(tx)
+}
+
+pub(crate) fn set_sealed_sha(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+    sha: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE tasks SET loop_sealed_sha = ?3 WHERE project_path = ?1 AND id = ?2",
+        params![project_path, task_id, sha],
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
+/// The checks the daemon runs: the user's command checks and the accepted proposals.
+pub(crate) fn is_runnable(check: &LoopCheck) -> bool {
+    check.kind == LoopCheckKind::Command && !is_pending_proposal(check)
+}
+
+/// Move a loop that is not running into `Checking`, for Re-run checks: paused on a flaky check,
+/// stopped, failed, or at sign-off, with a commit to check.
+pub(crate) fn claim_recheck(
+    conn: &mut Connection,
+    project_path: &str,
+    task_id: i32,
+) -> Result<maestro_protocol::Task, String> {
+    use maestro_protocol::{PhaseStatus, TaskPhase, TaskTransition, TransitionGuard};
+    let tx = transaction(conn)?;
+    loop_task(&tx, project_path, task_id)?;
+    let task = super::read(&tx, project_path, task_id)?;
+    let settled = matches!(
+        (task.phase, task.phase_status),
+        (
+            Some(TaskPhase::Checking | TaskPhase::Iterating),
+            Some(PhaseStatus::Failed)
+        ) | (
+            Some(TaskPhase::Iterating | TaskPhase::Approval),
+            Some(PhaseStatus::Waiting)
+        )
+    );
+    if !settled {
+        return Err("The checks can only run again while the loop is stopped".to_string());
+    }
+    let checked = list_iterations(&tx, project_path, task_id)?
+        .iter()
+        .any(|i| i.commit_sha.is_some());
+    if !checked {
+        return Err("No iteration has committed anything to check yet".to_string());
+    }
+    let task = super::transition::apply(
+        &tx,
+        project_path,
+        task_id,
+        TaskTransition::LoopChecking,
+        &TransitionGuard::Always,
+    )?
+    .ok_or_else(|| format!("Task {task_id} not found"))?;
+    commit(tx)?;
+    Ok(task)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -840,6 +1049,81 @@ mod tests {
         );
         assert!(write(&mut conn, &["a.ts", "a.ts"]).is_err());
         assert_eq!(list_hidden_files(&conn, PROJECT, task).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_loop_needs_a_worktree_of_its_own() {
+        let mut conn = crate::project_store::open_in_memory();
+        let mut request = CreateTaskRequest {
+            project_path: PROJECT.to_string(),
+            title: "In place".to_string(),
+            description: None,
+            skills: vec![],
+            labels: vec![],
+            base_branch: "main".to_string(),
+            agent_id: None,
+            priority: None,
+            auto_approve: false,
+            workspace_mode: WorkspaceMode::RepositoryDirectory,
+            workspace_worktree_id: None,
+            workspace_branch_mode: BranchMode::Create,
+            workspace_branch: None,
+            model_override: None,
+            run_mode: RunMode::Loop,
+            loop_config: None,
+        };
+        assert!(super::super::create(&mut conn, &request).is_err());
+        request.run_mode = RunMode::Pipeline;
+        let task = super::super::create(&mut conn, &request).unwrap().id;
+        let to_loop = TaskUpdate {
+            run_mode: Some(RunMode::Loop),
+            ..TaskUpdate::default()
+        };
+        assert!(super::super::update(&mut conn, PROJECT, task, &to_loop).is_err());
+        let both = TaskUpdate {
+            run_mode: Some(RunMode::Loop),
+            workspace_mode: Some(WorkspaceMode::NewWorktree),
+            ..TaskUpdate::default()
+        };
+        let task = super::super::update(&mut conn, PROJECT, task, &both).unwrap();
+        assert_eq!(task.run_mode, RunMode::Loop);
+        let shared = TaskUpdate {
+            workspace_mode: Some(WorkspaceMode::RepositoryDirectory),
+            ..TaskUpdate::default()
+        };
+        assert!(super::super::update(&mut conn, PROJECT, task.id, &shared).is_err());
+    }
+
+    #[test]
+    fn the_checks_run_again_only_on_a_stopped_loop_with_a_commit() {
+        let mut conn = crate::project_store::open_in_memory();
+        let task = create(&mut conn, RunMode::Loop, None);
+        let set_state = |conn: &Connection, phase: &str, status: &str| {
+            conn.execute(
+                "UPDATE tasks SET phase = ?1, phase_status = ?2 WHERE id = ?3",
+                params![phase, status, task],
+            )
+            .unwrap();
+        };
+        set_state(&conn, "Checking", "Failed");
+        let err = claim_recheck(&mut conn, PROJECT, task).unwrap_err();
+        assert!(err.contains("No iteration"), "got: {err}");
+
+        start_iteration(&conn, PROJECT, task, 1, "acp", "claude").unwrap();
+        conn.execute("UPDATE loop_iterations SET commit_sha = 'abc', outcome = 'Checked'", [])
+            .unwrap();
+        set_state(&conn, "Iterating", "Running");
+        assert!(claim_recheck(&mut conn, PROJECT, task).is_err(), "a live iteration");
+        set_state(&conn, "Checking", "Failed");
+        let claimed = claim_recheck(&mut conn, PROJECT, task).unwrap();
+        assert_eq!(
+            (claimed.phase, claimed.phase_status),
+            (
+                Some(maestro_protocol::TaskPhase::Checking),
+                Some(maestro_protocol::PhaseStatus::Running)
+            )
+        );
+        assert_eq!(next_iteration(&conn, PROJECT, task).unwrap(), 2);
     }
 
     #[test]

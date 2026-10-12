@@ -286,6 +286,7 @@ pub fn create(conn: &mut Connection, request: &CreateTaskRequest) -> Result<Task
         .as_deref()
         .map(str::trim)
         .filter(|d| !d.is_empty());
+    loops::check_workspace(request.run_mode, request.workspace_mode)?;
     let loop_config = match (request.run_mode, &request.loop_config) {
         (_, Some(config)) => Some(loops::normalize_config(config)?),
         (RunMode::Loop, None) => Some(LoopConfig::default()),
@@ -506,6 +507,19 @@ fn write_update(
         rusqlite::params_from_iter(values.iter().map(|v| v.as_ref())),
     )
     .map_err(|e| e.to_string())?;
+    if update.run_mode.is_some() || update.workspace_mode.is_some() {
+        let (mode, workspace): (String, String) = conn
+            .query_row(
+                "SELECT run_mode, workspace_mode FROM tasks WHERE project_path = ?1 AND id = ?2",
+                params![project_path, task_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|e| e.to_string())?;
+        loops::check_workspace(
+            parse(&mode).unwrap_or_default(),
+            parse(&workspace).unwrap_or(WorkspaceMode::NewWorktree),
+        )?;
+    }
 
     // Status is not part of the SET above: moving a task also resets its pipeline activity, and
     // that correlation belongs to the transition.

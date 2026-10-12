@@ -322,18 +322,21 @@ fn candidates(conn: &Connection, project_path: &str) -> Result<Vec<i32>, String>
 }
 
 /// The hand-offs a drain may start: tasks waiting on an agent, neither held nor refused, with no
-/// session of their own mid-turn.
+/// session of their own mid-turn. The flag marks a loop's next iteration, which waits for a slot.
 fn handoffs(
     conn: &Connection,
     project_path: &str,
     busy: &HashSet<(String, i32)>,
-) -> Result<Vec<(i32, AgentRole)>, String> {
+) -> Result<Vec<(i32, AgentRole, bool)>, String> {
     let tasks = crate::task_store::list(conn, project_path)?;
     let refused = refused();
     Ok(tasks
         .iter()
-        .filter_map(|task| Some((task.id, crate::task_turn::next_stage(task)?)))
-        .filter(|(id, _)| {
+        .filter_map(|task| {
+            let iterating = task.phase == Some(maestro_protocol::TaskPhase::Iterating);
+            Some((task.id, crate::task_turn::next_stage(task)?, iterating))
+        })
+        .filter(|(id, _, _)| {
             let key = (project_path.to_string(), *id);
             !busy.contains(&key)
                 && !refused.contains_key(&key)
@@ -397,8 +400,14 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
     let mut claimed = Vec::new();
     {
         let mut conn = deps.store.lock().await;
-        // Read again under the lock that claims them, now the busy sessions are known.
-        for (task_id, role) in handoffs(&conn, path, &busy).unwrap_or_default() {
+        // Read again under the lock that claims them, now the busy sessions are known. A pipeline
+        // hand-off ignores the limit, since the session it follows usually still holds the slot;
+        // a loop's closed its session before the checks, so its next iteration waits for one.
+        let (iterations, stages): (Vec<_>, Vec<_>) = handoffs(&conn, path, &busy)
+            .unwrap_or_default()
+            .into_iter()
+            .partition(|(_, _, iterating)| *iterating);
+        for (task_id, role, _) in stages {
             let request = StartTaskRequest {
                 project_path: path.to_string(),
                 task_id,
@@ -426,7 +435,12 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
                 0
             }
         };
-        for task_id in candidates {
+        // Before the queue: a loop under way goes on before a new task starts.
+        let next_iterations = iterations
+            .into_iter()
+            .map(|(task_id, role, _)| (task_id, role))
+            .chain(candidates.into_iter().map(|task_id| (task_id, AgentRole::Coder)));
+        for (task_id, role) in next_iterations {
             if free == 0 {
                 break;
             }
@@ -439,7 +453,7 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
             let request = StartTaskRequest {
                 project_path: path.to_string(),
                 task_id,
-                role: AgentRole::Coder,
+                role,
                 feedback: None,
                 unattended: true,
                 // Counted above, against every slot on the machine.
@@ -580,7 +594,7 @@ mod tests {
         let none = HashSet::new();
         assert_eq!(
             handoffs(&conn, &project, &none).unwrap(),
-            vec![(id, AgentRole::Coder)]
+            vec![(id, AgentRole::Coder, false)]
         );
         assert_eq!(
             projects_with_candidates(&conn).unwrap(),

@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use maestro_protocol::{AgentRole, Task, TaskPhase};
+use maestro_protocol::{AgentRole, RunMode, Task, TaskPhase};
 use rusqlite::Connection;
 use serde_json::{json, Value};
 
@@ -26,6 +26,9 @@ const PLANNER_PROTOCOL: &str = "Investigate the repository and reply with an imp
 
 /// The verdict line is what `classify_verdict` reads.
 const REVIEWER_PROTOCOL: &str = "Review the changes on this branch against the task. Start your reply with a single line reading exactly `APPROVED` or `CHANGES REQUESTED`, then say why — for changes, be specific about what to fix and where, because your reply is what the coder is given. Do not modify any files.";
+
+/// A loop's worker: one iteration of many, judged by checks it cannot see.
+const LOOP_PROTOCOL: &str = "You are one iteration of a loop that runs until this task's checks pass. Each iteration is a fresh session, so nothing you say carries over, only what you leave on disk. Start by reading `.maestro/loop/PROGRESS.md` if it exists, and before you stop, update it with what you did, what you learned and what is left, for the next iteration. Make real progress toward the goal, then end your turn: your changes are committed and the checks run after you stop. The checks' sources are not available to you and their failures reach you as output only, so do not look for them or try to change them. Do not declare the task done; the checks decide.";
 
 /// Where a task's attachments are copied, relative to the project root.
 #[cfg(test)]
@@ -93,10 +96,12 @@ pub fn compose(
         Some(p) if !p.is_empty() => format!("{p}\n\n---\n"),
         _ => String::new(),
     };
+    let looping = role == AgentRole::Coder && task.run_mode == RunMode::Loop;
     let protocol = match role {
         AgentRole::Refiner => REFINER_PROTOCOL,
         AgentRole::Planner => PLANNER_PROTOCOL,
         AgentRole::Reviewer => REVIEWER_PROTOCOL,
+        AgentRole::Coder if looping => LOOP_PROTOCOL,
         AgentRole::Coder => COMPLETION_PROTOCOL,
     };
     blocks.push(text(format!(
@@ -122,7 +127,9 @@ pub fn compose(
         )));
     }
 
-    if role == AgentRole::Coder {
+    if looping {
+        blocks.push(text(loop_context(conn, project_path, task)?));
+    } else if role == AgentRole::Coder {
         if let Some(plan) = latest("plan")? {
             blocks.push(text(format!("## The approved plan\n\n{plan}")));
         }
@@ -150,8 +157,8 @@ pub fn compose(
 
     let mut tail = Vec::new();
 
-    // Only the coder acts on a review's per-file comments.
-    if role == AgentRole::Coder {
+    // Only the coder acts on a review's per-file comments, and a loop has no review.
+    if role == AgentRole::Coder && !looping {
         if let Some(review) = task_store::reviews::get_review(conn, project_path, task.id)?
             .filter(|r| r.decision == "RequestChanges")
         {
@@ -186,6 +193,64 @@ pub fn compose(
         attachments,
         tail,
     })
+}
+
+/// Where the loop stands: the iteration and budget, every check, and what the failing ones said.
+fn loop_context(conn: &Connection, project_path: &str, task: &Task) -> Result<String, String> {
+    use maestro_protocol::{LoopCheckKind, LoopCheckState, LoopIterationOutcome};
+    use task_store::loops;
+
+    let config = task.loop_config.clone().unwrap_or_default();
+    let n = loops::next_iteration(conn, project_path, task.id)?;
+    let iterations = loops::list_iterations(conn, project_path, task.id)?;
+    let mut out = format!(
+        "## Iteration {n}\n\nThis is iteration {n} of at most {}.",
+        config.max_iterations
+    );
+
+    let checks: Vec<_> = loops::list_checks(conn, project_path, task.id)?
+        .into_iter()
+        .filter(|c| !c.proposed || c.accepted)
+        .collect();
+    if !checks.is_empty() {
+        out.push_str("\n\n## Checks\n");
+        for check in &checks {
+            let how = match check.kind {
+                LoopCheckKind::Command => match check.state {
+                    LoopCheckState::Pass => "passing",
+                    LoopCheckState::Fail => "failing",
+                    LoopCheckState::Flaky => "flaky",
+                    LoopCheckState::Pending => "not run yet",
+                },
+                LoopCheckKind::Judge => "judged against your diff once the others pass",
+                LoopCheckKind::Manual => "checked by the user at the end",
+            };
+            out.push_str(&format!("\n- {} ({how})", check.label));
+        }
+        for check in checks.iter().filter(|c| {
+            c.kind == LoopCheckKind::Command
+                && matches!(c.state, LoopCheckState::Fail | LoopCheckState::Flaky)
+        }) {
+            if let Some(detail) = check.detail.as_deref().filter(|d| !d.trim().is_empty()) {
+                out.push_str(&format!(
+                    "\n\n### Output of \"{}\"\n\n```\n{}\n```",
+                    check.label,
+                    detail.trim_end()
+                ));
+            }
+        }
+    }
+
+    // The previous iteration's commit, when a hook refused it.
+    if let Some(last) = iterations.iter().rev().find(|i| i.outcome != LoopIterationOutcome::Running) {
+        if let (LoopIterationOutcome::Failed, Some(output)) = (last.outcome, &last.check_output) {
+            out.push_str(&format!(
+                "\n\n## The last iteration ended with an error\n\n```\n{}\n```",
+                output.trim_end()
+            ));
+        }
+    }
+    Ok(out)
 }
 
 /// A row's path as an absolute path on this machine: relative rows are measured from the project.

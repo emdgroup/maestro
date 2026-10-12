@@ -287,6 +287,10 @@ pub enum TaskPhase {
     SelfReview,
     Approval,
     AwaitingMerge,
+    /// A loop's coder, one fresh session per iteration.
+    Iterating,
+    /// A loop's checks running, with no session live.
+    Checking,
 }
 
 impl TaskPhase {
@@ -431,7 +435,9 @@ wire_enum!(
         Rework,
         SelfReview,
         Approval,
-        AwaitingMerge
+        AwaitingMerge,
+        Iterating,
+        Checking
     ]
 );
 wire_enum!(

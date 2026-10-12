@@ -286,6 +286,11 @@ pub enum ServerRequest {
     ListLoopHiddenFiles(TaskRef),
     /// The whole set, replacing what was there.
     SetLoopHiddenFiles(SetLoopHiddenFilesRequest),
+    /// Take the sealed snapshot again and run the checks on the loop's current commit. Not an
+    /// iteration. Answered once the checks have started.
+    RerunLoopChecks(TaskRef),
+    /// The worker's `.maestro/loop/PROGRESS.md`, as it stands in the loop's worktree.
+    ReadLoopNotes(TaskRef),
     /// The project's prompt collection, favorites first, then most recently edited.
     ListPrompts(ProjectRef),
     GetPrompt(PromptRef),
@@ -1253,6 +1258,10 @@ pub enum TaskPhase {
     SelfReview,
     Approval,
     AwaitingMerge,
+    /// A loop's coder, one fresh session per iteration.
+    Iterating,
+    /// A loop's checks running, with no session live.
+    Checking,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1808,6 +1817,16 @@ pub enum TaskTransition {
     Discarded,
     Cancelled,
     PhaseFailed,
+    /// A loop's coder session is up and prompted: the iteration runs.
+    LoopIterationStarted,
+    /// An iteration was committed, or the user asked for the checks again: they run now.
+    LoopChecking,
+    /// The checks left work to do and budget to do it: the next iteration waits on the drain.
+    LoopIterate,
+    /// The loop stopped for the user: it stalled or spent its budget.
+    LoopHalted,
+    /// Every command check passed: the loop goes to sign-off.
+    LoopChecksPassed,
 }
 
 /// What must hold, read under the store's lock, for a transition to apply. One per guarded
@@ -2192,6 +2211,13 @@ pub struct LoopIterationList {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct LoopHiddenFileList {
     pub files: Vec<LoopHiddenFile>,
+}
+
+/// `None` when the worker has written no notes yet.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct LoopNotes {
+    #[serde(default)]
+    pub content: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -2626,6 +2652,8 @@ pub enum ServerResponse {
     ListLoopIterationsOk(LoopIterationList),
     ListLoopHiddenFilesOk(LoopHiddenFileList),
     SetLoopHiddenFilesOk(LoopHiddenFileList),
+    RerunLoopChecksOk,
+    ReadLoopNotesOk(LoopNotes),
     ListPromptsOk(PromptList),
     GetPromptOk(OptionalPrompt),
     CreatePromptOk(Prompt),
@@ -2782,6 +2810,8 @@ impl ServerResponse {
             | Self::ListLoopIterationsOk(_)
             | Self::ListLoopHiddenFilesOk(_)
             | Self::SetLoopHiddenFilesOk(_)
+            | Self::RerunLoopChecksOk
+            | Self::ReadLoopNotesOk(_)
             | Self::ListPromptsOk(_)
             | Self::GetPromptOk(_)
             | Self::CreatePromptOk(_)

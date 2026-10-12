@@ -116,13 +116,14 @@ pub(crate) fn runs_under_key(sessions: &SessionMap, agent_id: &str, acp_session_
 
 /// Close a session already taken out of the map: through its command loop, so the agent keeps a
 /// transcript `session/load` can replay, and by aborting it when the loop cannot take the command.
+/// Returns the graceful close still running, for a caller that has to know when it is over.
 pub(crate) async fn close_session(
     session_id: &str,
     session: ActiveSession,
     agent_connections: &SharedAgentConnections,
     automation_store: Option<&crate::automation_runner::Store>,
     stdout: &crate::ClientOut,
-) {
+) -> Option<tokio::task::JoinHandle<()>> {
     let session_agent_id = session.agent_id.clone();
     // A run's workspace is settled once its session is closed, whoever closed it. The sweep only
     // closes sessions nobody is attached to, so with a window open this is the only close there is.
@@ -145,7 +146,7 @@ pub(crate) async fn close_session(
         let abort_handle = session.task.abort_handle();
         let cleanup = session.cleanup;
         let agent_connections_cancel = Arc::clone(agent_connections);
-        tokio::spawn(async move {
+        Some(tokio::spawn(async move {
             let timed_out = tokio::time::timeout(std::time::Duration::from_secs(5), session.task)
                 .await
                 .is_err();
@@ -168,7 +169,7 @@ pub(crate) async fn close_session(
             if let Some(settle) = settle {
                 settle.await;
             }
-        });
+        }))
     } else {
         // Channel full or closed: force abort and clean up manually.
         session.task.abort();
@@ -181,6 +182,7 @@ pub(crate) async fn close_session(
         if let Some(settle) = settle {
             tokio::spawn(settle);
         }
+        None
     }
 }
 
@@ -194,7 +196,7 @@ pub(crate) async fn cancel_session(
     project_store: Option<&crate::project_store::Store>,
     automation_store: Option<&crate::automation_runner::Store>,
     stdout: &crate::ClientOut,
-) {
+) -> Option<tokio::task::JoinHandle<()>> {
     crate::mcp_gateway::cancel_session(pending_host_tools, session_id);
     let session = sessions.remove(session_id);
     if let Some(store) = project_store {
@@ -211,15 +213,18 @@ pub(crate) async fn cancel_session(
             chrono::Utc::now(),
         ));
     }
-    if let Some(session) = session {
-        close_session(
-            session_id,
-            session,
-            agent_connections,
-            automation_store,
-            stdout,
-        )
-        .await;
+    match session {
+        Some(session) => {
+            close_session(
+                session_id,
+                session,
+                agent_connections,
+                automation_store,
+                stdout,
+            )
+            .await
+        }
+        None => None,
     }
 }
 
@@ -244,6 +249,13 @@ pub(crate) enum Settle {
         session_id: String,
         next: Option<(String, i32, maestro_protocol::AgentRole)>,
         stdout: crate::ClientOut,
+    },
+    /// A loop iteration's turn ended: close its session, and say so once it is closed, since the
+    /// sealed checks may only reach the disk after.
+    LoopSessionClose {
+        session_id: String,
+        stdout: crate::ClientOut,
+        closed: tokio::sync::oneshot::Sender<()>,
     },
 }
 
@@ -274,6 +286,30 @@ pub(crate) async fn settle(
                 pending_host_tools,
             )
             .await;
+            return;
+        }
+        Settle::LoopSessionClose {
+            session_id,
+            stdout,
+            closed,
+        } => {
+            let everyone = crate::client_sink::ClientSink::everyone(&stdout).await;
+            let closing = cancel_session(
+                &session_id,
+                sessions,
+                pending_host_tools,
+                agent_connections,
+                project_store,
+                automation_store,
+                &everyone,
+            )
+            .await;
+            tokio::spawn(async move {
+                if let Some(closing) = closing {
+                    let _ = closing.await;
+                }
+                let _ = closed.send(());
+            });
             return;
         }
         Settle::ArtifactTaken {
@@ -1104,6 +1140,58 @@ pub(crate) async fn dispatch_message(
                     .await
                 );
             }
+        }
+
+        // A loop's checks run again off the loop; the reply only says they started.
+        ServerRequest::RerunLoopChecks(request) => {
+            let Some(store) = project_store else {
+                let error = error_response(crate::project_store::UNAVAILABLE.to_string());
+                send_or_return!(send_response(stdout, &error).await);
+                return true;
+            };
+            let path = crate::automations::canonical_project_path(&request.project_path);
+            let claimed =
+                crate::task_store::loops::claim_recheck(&mut *store.lock().await, &path, request.task_id);
+            match claimed {
+                Ok(_) => {
+                    send_or_return!(send_response(stdout, &ServerResponse::RerunLoopChecksOk).await);
+                    let changed = ServerResponse::TasksChanged(maestro_protocol::ProjectRef {
+                        project_path: path.clone(),
+                    });
+                    crate::helpers::broadcast(stdout, changed).await;
+                    crate::loop_engine::rerun(Arc::clone(store), Arc::clone(stdout), path, request.task_id);
+                }
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        ServerRequest::ReadLoopNotes(request) => {
+            let Some(store) = project_store else {
+                let error = error_response(crate::project_store::UNAVAILABLE.to_string());
+                send_or_return!(send_response(stdout, &error).await);
+                return true;
+            };
+            let path = crate::automations::canonical_project_path(&request.project_path);
+            let worktree = crate::task_store::worktrees::list(&*store.lock().await, &path, Some(request.task_id))
+                .map(|rows| rows.into_iter().next());
+            let reply = match worktree {
+                Ok(worktree) => {
+                    let content = match worktree {
+                        Some(row) => {
+                            let dir = crate::worktree::absolute(&path, &row.path);
+                            tokio::fs::read_to_string(
+                                std::path::Path::new(&dir).join(".maestro/loop/PROGRESS.md"),
+                            )
+                            .await
+                            .ok()
+                        }
+                        None => None,
+                    };
+                    ServerResponse::ReadLoopNotesOk(maestro_protocol::LoopNotes { content })
+                }
+                Err(e) => error_response(e),
+            };
+            send_or_return!(send_response(stdout, &reply).await);
         }
 
         ServerRequest::HostToolResult(result) => {

@@ -41,7 +41,7 @@ pub(crate) async fn git(dir: &str, args: &[&str]) -> Result<String, String> {
 }
 
 /// `git` in `dir` that never waits on a prompt: nobody may be there to answer one.
-fn git_command(dir: &str, args: &[&str]) -> tokio::process::Command {
+pub(crate) fn git_command(dir: &str, args: &[&str]) -> tokio::process::Command {
     let mut command = tokio::process::Command::new("git");
     command
         .current_dir(dir)
@@ -365,6 +365,22 @@ async fn verify(project_path: &str, reference: &str) -> bool {
     .is_ok_and(|out| !out.trim().is_empty())
 }
 
+/// Leave a loop's sealed paths out of its worktree, as its config lists them now. A non-cone
+/// sparse checkout: the files are gone from disk and git does not read their absence as a
+/// deletion, so nothing the worker commits removes them. Run before every iteration and again at
+/// its end, which also undoes a worker that turned the sparse checkout off.
+pub(crate) async fn seal(cwd: &str, task: &maestro_protocol::Task) -> Result<(), String> {
+    let excluded: Vec<String> = task
+        .loop_config
+        .iter()
+        .flat_map(|config| &config.sealed_paths)
+        .map(|path| format!("!/{path}"))
+        .collect();
+    let mut args = vec!["sparse-checkout", "set", "--no-cone", "/*"];
+    args.extend(excluded.iter().map(String::as_str));
+    git(cwd, &args).await.map(|_| ())
+}
+
 /// Find or make the workspace a task's session runs in, and anchor the task's start sha.
 ///
 /// As the app's `useExecuteTask` chooses: a refiner reads the repository and writes nothing, so it
@@ -479,6 +495,23 @@ pub async fn prepare_task_workspace(
             }
         }
     };
+
+    if task.run_mode == maestro_protocol::RunMode::Loop {
+        seal(&cwd, task).await?;
+        if task.loop_sealed_sha.is_none() {
+            let base = match task.base_branch.trim() {
+                "" => "HEAD",
+                base => base,
+            };
+            let sha = git(project_path, &["rev-parse", "--verify", base]).await?;
+            crate::task_store::loops::set_sealed_sha(
+                &*store.lock().await,
+                project_path,
+                task.id,
+                sha.trim(),
+            )?;
+        }
+    }
 
     // Best effort, as in the app: a session starts even when HEAD cannot be read. A task that
     // already has a sha keeps it, or a resumed run would hide everything the earlier one changed.

@@ -68,7 +68,9 @@ pub(crate) fn next_stage(task: &Task) -> Option<AgentRole> {
     }
     match task.phase {
         Some(TaskPhase::SelfReview) => Some(AgentRole::Reviewer),
-        Some(TaskPhase::Rework | TaskPhase::AwaitingMerge) => Some(AgentRole::Coder),
+        Some(TaskPhase::Rework | TaskPhase::AwaitingMerge | TaskPhase::Iterating) => {
+            Some(AgentRole::Coder)
+        }
         _ => None,
     }
 }

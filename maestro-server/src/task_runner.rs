@@ -217,9 +217,11 @@ pub(crate) fn begin(
         .ok_or_else(|| format!("No task {} in this project", request.task_id))?;
 
     // The planner runs first from a standing start when the project has one and the task has not
-    // turned it off. Not at the plan gate, where approving calls this with the coder.
+    // turned it off. Not at the plan gate, where approving calls this with the coder. Never for a
+    // loop, whose goal and checks are its spec.
     let planner_first = request.role == AgentRole::Coder
         && task.phase.is_none()
+        && task.run_mode == maestro_protocol::RunMode::Pipeline
         && !profiles::role_is_skipped(task.profile_overrides.as_deref(), AgentRole::Planner)
         && profiles::read_profiles(&project_path)
             .resolve(
@@ -567,7 +569,7 @@ async fn run(
         feedback.as_deref(),
     )
     .await;
-    let (profile_id, skipped_attachments) = match prepared {
+    let (profile_id, skipped_attachments, iteration) = match prepared {
         Ok(prepared) => prepared,
         Err(failure) => {
             forget_turn_ends(&session_id);
@@ -584,7 +586,26 @@ async fn run(
         }
     };
 
-    let role_json = serde_json::json!({ "role": role, "profile_id": profile_id }).to_string();
+    // A loop session carries its iteration, which is how its turn end finds the loop engine and
+    // how a stale iteration's is told from the live one's.
+    let role_json = match iteration {
+        Some(n) => {
+            let started = crate::task_store::loops::start_iteration(
+                &*launcher.store.lock().await,
+                &project_path,
+                task.id,
+                n,
+                &result.acp_session_id,
+                &agent_id,
+            );
+            if let Err(e) = started {
+                send_diag("warn", format!("[loop] task {}: {e}", task.id));
+            }
+            serde_json::json!({ "role": role, "profile_id": profile_id, "iteration": n })
+        }
+        None => serde_json::json!({ "role": role, "profile_id": profile_id }),
+    }
+    .to_string();
     result.session.agent_id = agent_id.clone();
     result.session.cwd = workspace.cwd;
     result.session.project = Some(crate::sessions::ProjectBinding {
@@ -671,7 +692,8 @@ pub(crate) fn settings_commands(
 }
 
 /// Steps seven to ten on a session that is up: settings, prompt, review cleared, task moved on.
-/// Returns the profile the stage ran on and the attachments the prompt went without.
+/// Returns the profile the stage ran on, the attachments the prompt went without, and a loop's
+/// iteration number.
 #[allow(clippy::too_many_arguments)]
 async fn prepare(
     launcher: &Launcher,
@@ -684,7 +706,7 @@ async fn prepare(
     config_options: Option<&Vec<serde_json::Value>>,
     session: &ActiveSession,
     feedback: Option<&str>,
-) -> Result<(Option<String>, Vec<String>), Failure> {
+) -> Result<(Option<String>, Vec<String>, Option<i32>), Failure> {
     // A profile set to fail rather than degrade fails the start.
     let settings = profiles::resolve_stage(project_path, task, role, capabilities)?;
     for warning in &settings.warnings {
@@ -692,15 +714,25 @@ async fn prepare(
     }
 
     let mut pushes = Vec::new();
-    let draft = crate::task_prompt::compose(
-        &*launcher.store.lock().await,
-        project_path,
-        task,
-        prior_phase,
-        role,
-        settings.role_prompt.as_deref(),
-        feedback,
-    )?;
+    let (draft, iteration) = {
+        let conn = launcher.store.lock().await;
+        let iteration = match (task.run_mode, role) {
+            (maestro_protocol::RunMode::Loop, AgentRole::Coder) => Some(
+                crate::task_store::loops::next_iteration(&conn, project_path, task.id)?,
+            ),
+            _ => None,
+        };
+        let draft = crate::task_prompt::compose(
+            &conn,
+            project_path,
+            task,
+            prior_phase,
+            role,
+            settings.role_prompt.as_deref(),
+            feedback,
+        )?;
+        (draft, iteration)
+    };
     // Files read and images scaled with the store let go, and off the runtime.
     let composed = tokio::task::spawn_blocking(move || draft.embed())
         .await
@@ -743,11 +775,15 @@ async fn prepare(
                 send_diag("warn", format!("[task] could not clear a review: {e}"));
             }
         }
+        let ready = match iteration {
+            Some(_) => TaskTransition::LoopIterationStarted,
+            None => TaskTransition::SessionReady(role),
+        };
         transition(
             &mut conn,
             project_path,
             task.id,
-            TaskTransition::SessionReady(role),
+            ready,
             TransitionGuard::Spawning,
             None,
             &mut pushes,
@@ -757,7 +793,7 @@ async fn prepare(
         broadcast(everyone, push).await;
     }
     match ready? {
-        Some(_) => Ok((settings.profile_id, composed.skipped_attachments)),
+        Some(_) => Ok((settings.profile_id, composed.skipped_attachments, iteration)),
         None => Err(Failure::Moved),
     }
 }

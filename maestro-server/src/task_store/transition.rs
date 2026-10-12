@@ -130,7 +130,7 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
 
         // A hand-off waits on its agent again, so the drain starts it as if nothing had happened.
         TaskTransition::SpawnInterrupted => match current.claimed_from {
-            Some(phase @ (SelfReview | Rework | AwaitingMerge))
+            Some(phase @ (SelfReview | Rework | AwaitingMerge | Iterating))
                 if current.phase == Some(Spawning) =>
             {
                 TaskState::active(current.status, phase, Waiting, Ball::Agent)
@@ -227,6 +227,19 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
             ball: Ball::User,
             ..current
         }),
+
+        TaskTransition::LoopIterationStarted => {
+            TaskState::active(InProgress, Iterating, Running, Ball::Agent)
+        }
+
+        // Nothing is live, but the daemon is at work on the agent's behalf.
+        TaskTransition::LoopChecking => TaskState::active(InProgress, Checking, Running, Ball::Agent),
+
+        TaskTransition::LoopIterate => TaskState::active(InProgress, Iterating, Waiting, Ball::Agent),
+
+        TaskTransition::LoopHalted => TaskState::active(InProgress, Iterating, Waiting, Ball::User),
+
+        TaskTransition::LoopChecksPassed => TaskState::active(Review, Approval, Waiting, Ball::User),
     }
 }
 
@@ -267,10 +280,17 @@ fn admit(
             // A handoff: one role finished and the board asks for the next. It bypasses
             // `expected`, which lists the columns a user may press Execute from; the phase already
             // pins where the task is. `Approval` waits on a person, so it is not one.
+            // A loop waiting between iterations is one too, whether its next iteration waits on the
+            // drain or on the user starting it again after a stall.
             let handoff = matches!(
                 (current.phase, current.phase_status),
                 (
-                    Some(TaskPhase::SelfReview | TaskPhase::Rework | TaskPhase::AwaitingMerge),
+                    Some(
+                        TaskPhase::SelfReview
+                            | TaskPhase::Rework
+                            | TaskPhase::AwaitingMerge
+                            | TaskPhase::Iterating
+                    ),
                     Some(PhaseStatus::Waiting)
                 )
             );
@@ -284,6 +304,7 @@ fn admit(
                             | TaskPhase::SelfReview
                             | TaskPhase::Rework
                             | TaskPhase::AwaitingMerge
+                            | TaskPhase::Iterating
                     ),
                     Some(PhaseStatus::Failed)
                 )
@@ -524,6 +545,62 @@ mod tests {
             has_changes,
             reviewer_pending,
         }
+    }
+
+    #[test]
+    fn a_loop_iterates_checks_and_stops_for_the_user() {
+        use PhaseStatus::*;
+        use TaskPhase::*;
+        let at = |phase, status, ball| TaskState::active(TaskStatus::InProgress, phase, status, ball);
+        let iterating = resolve(TaskTransition::LoopIterationStarted, TaskState::parked(TaskStatus::Queue));
+        assert_eq!(iterating, at(Iterating, Running, TaskBall::Agent));
+        let checking = resolve(TaskTransition::LoopChecking, iterating);
+        assert_eq!(checking, at(Checking, Running, TaskBall::Agent));
+        assert_eq!(
+            resolve(TaskTransition::LoopIterate, checking),
+            at(Iterating, Waiting, TaskBall::Agent)
+        );
+        assert_eq!(
+            resolve(TaskTransition::LoopHalted, checking),
+            at(Iterating, Waiting, TaskBall::User)
+        );
+        // A flaky check pauses the loop where it is.
+        assert_eq!(
+            resolve(TaskTransition::PhaseFailed, checking),
+            at(Checking, Failed, TaskBall::User)
+        );
+        let passed = resolve(TaskTransition::LoopChecksPassed, checking);
+        assert_eq!(
+            (passed.status, passed.phase, passed.ball),
+            (TaskStatus::Review, Some(Approval), TaskBall::User)
+        );
+    }
+
+    #[test]
+    fn the_next_iteration_is_claimable_and_a_flaky_pause_is_not() {
+        use PhaseStatus::*;
+        use TaskPhase::*;
+        let claim = TransitionGuard::Claim(vec![TaskStatus::Queue]);
+        let at = |phase, status, ball| TaskState::active(TaskStatus::InProgress, phase, status, ball);
+        for (state, claimable) in [
+            (at(Iterating, Waiting, TaskBall::Agent), true),
+            (at(Iterating, Waiting, TaskBall::User), true),
+            (at(Iterating, Failed, TaskBall::User), true),
+            (at(Checking, Failed, TaskBall::User), false),
+            (at(Checking, Running, TaskBall::Agent), false),
+        ] {
+            assert_eq!(
+                admit(&claim, TaskTransition::ExecutionStarted, state).is_some(),
+                claimable,
+                "{state:?}"
+            );
+        }
+        // A start of the next iteration that never came up waits on the drain again.
+        let claimed = resolve(TaskTransition::ExecutionStarted, at(Iterating, Waiting, TaskBall::Agent));
+        assert_eq!(
+            resolve(TaskTransition::SpawnInterrupted, claimed),
+            at(Iterating, Waiting, TaskBall::Agent)
+        );
     }
 
     /// The claim must not move the card.
