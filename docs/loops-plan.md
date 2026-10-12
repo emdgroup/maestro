@@ -204,7 +204,7 @@ Gaps the survey found, which the phases below close:
 | ----- | ---------------------------------------------------------- | ----------- |
 | 0     | Data model and protocol                                    | Done        |
 | 1     | The iteration engine and sealed checks                     | Done        |
-| 2     | Judge, digest, proposals, steering, sign-off, pull request | Not started |
+| 2     | Judge, digest, proposals, steering, sign-off, pull request | Done        |
 | 3     | Usage-limit gate, for every task                           | Not started |
 | 4     | The board: create, card, loop view                         | Not started |
 | 5     | MCP tools, drafts from automations, the waiting cap        | Not started |
@@ -433,6 +433,56 @@ since no session is live.
 
 - The judge decides `judge` checks only. It never re-runs commands.
 - Proposed checks follow the rule in "Decisions that span every phase".
+- **The judge reads the diff itself.** Its prompt gives the base commit and `git diff --stat`; it
+  runs `git diff` as the reviewer does. Nothing is cut to a size limit.
+- **The digest comes in the judge's own turn.** The prompt asks for it after the verdicts, only when
+  every check passed. There is no second turn or session for it.
+- **No judge checks, no digest.** A loop whose checklist has no `judge` check goes straight from its
+  commands to `Approval`, and its pull request body is the description, the checklist and the
+  iteration count.
+- **A check the judge gives no readable verdict counts as a fail.** The loop iterates, and the
+  worker is told the judge gave no verdict, with the judge's reply.
+- **A resume restarts the stall streak only.** Sending a loop back, or starting a stalled or
+  stopped one again, counts stalls from the resume. Iterations and agent time stay cumulative, so a
+  spent budget is raised before a resume can run.
+- **Accepting a proposal names the paths to seal.** `AnswerLoopProposal` carries them; the editor
+  prefills them in phase 4. A path that does not exist on the base branch is refused: the snapshot
+  comes from there, so the user commits the test to the base branch or adds it as a hidden file.
+- **Judge time is not agent time.** The budget measures the worker's iterations.
+- **Peeking is reported.** While an iteration runs the daemon notes every shell tool call that runs
+  `git` and names a sealed path, and stores them on the iteration. The digest's "what deserves a
+  look" lists them beside `touched_sealed`; a loop with no digest lists them in the pull request
+  body.
+
+**As built** (`loop_engine.rs`, `task_store/loops.rs`, `task_prompt.rs`, `src-tauri/src/git/merge.rs`):
+
+- The states: `Judging` Waiting with ball Agent is the judge waiting on the drain, which claims it
+  into a free slot like a next iteration; `Judging` Running is the judge's session; `Judging` Failed
+  is a judge session that ended badly, retried by the judge or by Re-run checks.
+- A judge session's role meta carries the check ids it was given, in its prompt's order, and the
+  commit they were judged at, so a check edited or added meanwhile cannot shift the numbering. Its
+  answer is read by number (`1. PASS: reason`), decorations ignored; the first line for a number
+  wins. A pass is recorded with that commit in `passed_at_sha`.
+- The digest is a `digest` comment, one per task like a plan: a new one replaces the last. The
+  daemon appends "Sealed paths, from the loop's record" to it when an iteration touched or named
+  one (`loop_sealed_findings`, shared with the app's pull request body).
+- A failed judge check reaches the next prompt as "The judge on ...", with the reason. Its failures
+  never count as a stall: the judge's wording changes every time, so the budget is what ends a
+  loop the judge keeps failing.
+- Steering is a `steer` comment. The prompt shows every one written after the previous iteration
+  started, so a note added while an iteration runs reaches the next one.
+- A resume is stamped in `tasks.loop_resumed_at` by `LoopResumed`, and by a start of an `Iterating`
+  task whose ball was the user's (Execute on a stalled loop, Retry on a failing one). The failure
+  streak restarts with the stall streak.
+- Accepting a proposal checks each path with `git ls-tree` on the base branch, retakes the sealed
+  snapshot from the branch's tip so the new path is in it, and applies the sparse checkout at once,
+  unless the checks are running in the worktree; then the next iteration's start applies it.
+- A peek is a substring match of a sealed path in a shell command that contains `git`, read from
+  the turn's `tool_call` and `tool_call_update` raw input.
+- Sign-off is refused in `approve_task_and_merge` before anything is committed: every check must
+  pass and no proposal may wait. Any commit an iteration makes clears the manual ticks.
+- The Settings page lists the Judge role. With no Judge profile, the judge runs on the worker's
+  agent, not the project's default.
 
 ## Phase 3: usage-limit gate, for every task
 
