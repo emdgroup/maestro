@@ -906,6 +906,34 @@ pub(crate) async fn dispatch_message(
             send_or_return!(send_response(stdout, &response).await);
         }
 
+        ServerRequest::UsageTurns(req) => {
+            let page = match project_store {
+                Some(store) => {
+                    crate::usage_store::turns_after(&*store.lock().await, req.after_turn_id)
+                }
+                None => Err("This server has no project store".to_string()),
+            };
+            let response = match page {
+                Ok(page) => ServerResponse::UsageTurnsOk(page),
+                Err(e) => error_response(e),
+            };
+            send_or_return!(send_response(stdout, &response).await);
+        }
+
+        ServerRequest::UsageHours(req) => {
+            let page = match project_store {
+                Some(store) => {
+                    crate::usage_store::hours_after(&*store.lock().await, &req.after_hour)
+                }
+                None => Err("This server has no project store".to_string()),
+            };
+            let response = match page {
+                Ok(page) => ServerResponse::UsageHoursOk(page),
+                Err(e) => error_response(e),
+            };
+            send_or_return!(send_response(stdout, &response).await);
+        }
+
         // No store and no project: an expression being typed belongs to nothing yet. This is here
         // rather than in the editor because the daemon is the only thing that parses cron, and it
         // must stay that way while it is also the thing that decides when a run happens.

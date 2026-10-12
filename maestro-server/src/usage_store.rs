@@ -95,6 +95,18 @@ CREATE TABLE IF NOT EXISTS usage_hourly_models (
 );
 ";
 
+/// What a mirror of this store needs to stay in step: an id that changes when the database is
+/// recreated, and how far the merge into hours has reached.
+pub const V11_USAGE_META: &str = "
+CREATE TABLE IF NOT EXISTS usage_meta (
+    id                  INTEGER PRIMARY KEY CHECK (id = 1),
+    store_id            TEXT NOT NULL,
+    -- The highest turn id merge_old has folded into an hour.
+    merged_through_id   INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO usage_meta (id, store_id) VALUES (1, lower(hex(randomblob(16))));
+";
+
 /// How long a turn is kept whole before it is merged into its hour.
 const TURN_RETENTION_DAYS: i64 = 90;
 
@@ -436,6 +448,12 @@ pub(crate) fn merge_old(conn: &Connection, now: DateTime<Utc>) -> Result<(), Str
     )
     .map_err(fail)?;
     tx.execute(
+        "UPDATE usage_meta SET merged_through_id = MAX(merged_through_id,
+             COALESCE((SELECT MAX(id) FROM usage_turns WHERE started_at < ?1), 0))",
+        params![cutoff],
+    )
+    .map_err(fail)?;
+    tx.execute(
         "DELETE FROM usage_turns WHERE started_at < ?1",
         params![cutoff],
     )
@@ -483,6 +501,181 @@ pub(crate) fn session_turns(
     })
     .and_then(|rows| rows.collect())
     .map_err(fail)
+}
+
+/// Turns per [`turns_after`] answer, and hours per [`hours_after`] answer. An hour holds one row
+/// per agent, project, model and currency, so a page of hours is a few times larger in rows.
+const TURNS_PAGE: usize = 2000;
+const HOURS_PAGE: usize = 500;
+
+fn store_meta(conn: &Connection) -> rusqlite::Result<(String, i64)> {
+    conn.query_row(
+        "SELECT store_id, merged_through_id FROM usage_meta",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+}
+
+/// The six token columns, read from `start` on. A model's row selects `NULL` for its total.
+fn tokens(r: &rusqlite::Row, start: usize) -> rusqlite::Result<maestro_protocol::UsageTokens> {
+    Ok(maestro_protocol::UsageTokens {
+        total_tokens: r.get(start)?,
+        input_tokens: r.get(start + 1)?,
+        output_tokens: r.get(start + 2)?,
+        thought_tokens: r.get(start + 3)?,
+        cached_read_tokens: r.get(start + 4)?,
+        cached_write_tokens: r.get(start + 5)?,
+    })
+}
+
+/// The turns after `after_turn_id` in id order, one page, with their models.
+pub(crate) fn turns_after(
+    conn: &Connection,
+    after_turn_id: i64,
+) -> Result<maestro_protocol::UsageTurnsResponse, String> {
+    turns_page(conn, after_turn_id, TURNS_PAGE)
+}
+
+fn turns_page(
+    conn: &Connection,
+    after_turn_id: i64,
+    page: usize,
+) -> Result<maestro_protocol::UsageTurnsResponse, String> {
+    let fail = |e: rusqlite::Error| format!("cannot read usage turns: {e}");
+    let (store_id, merged_through_id) = store_meta(conn).map_err(fail)?;
+    let mut turns = conn
+        .prepare(&format!(
+            "SELECT id, agent_id, acp_session_id, project_path, model_id, started_at, ended_at,
+                    {tokens}, cost_amount, cost_currency
+             FROM usage_turns WHERE id > ?1 ORDER BY id LIMIT ?2",
+            tokens = TOKENS.join(", "),
+        ))
+        .map_err(fail)?
+        .query_map(params![after_turn_id, page as i64 + 1], |r| {
+            Ok(maestro_protocol::UsageTurnRow {
+                id: r.get(0)?,
+                agent_id: r.get(1)?,
+                acp_session_id: r.get(2)?,
+                project_path: r.get(3)?,
+                model_id: r.get(4)?,
+                started_at: r.get(5)?,
+                ended_at: r.get(6)?,
+                tokens: tokens(r, 7)?,
+                cost_amount: r.get(13)?,
+                cost_currency: r.get(14)?,
+            })
+        })
+        .and_then(|rows| rows.collect::<Result<Vec<_>, _>>())
+        .map_err(fail)?;
+    let more = turns.len() > page;
+    turns.truncate(page);
+    let last = turns.last().map_or(after_turn_id, |t| t.id);
+    let models = conn
+        .prepare(&format!(
+            "SELECT turn_id, model, NULL, {tokens} FROM usage_turn_models
+             WHERE turn_id > ?1 AND turn_id <= ?2 ORDER BY turn_id, model",
+            tokens = TOKENS[1..].join(", "),
+        ))
+        .map_err(fail)?
+        .query_map(params![after_turn_id, last], |r| {
+            Ok(maestro_protocol::UsageTurnModelRow {
+                turn_id: r.get(0)?,
+                model: r.get(1)?,
+                tokens: tokens(r, 2)?,
+            })
+        })
+        .and_then(|rows| rows.collect())
+        .map_err(fail)?;
+    Ok(maestro_protocol::UsageTurnsResponse {
+        store_id,
+        merged_through_id,
+        turns,
+        models,
+        more,
+    })
+}
+
+/// Every hourly row of the hours after `after_hour`, one page of hours, with their models.
+pub(crate) fn hours_after(
+    conn: &Connection,
+    after_hour: &str,
+) -> Result<maestro_protocol::UsageHoursResponse, String> {
+    hours_page(conn, after_hour, HOURS_PAGE)
+}
+
+fn hours_page(
+    conn: &Connection,
+    after_hour: &str,
+    page: usize,
+) -> Result<maestro_protocol::UsageHoursResponse, String> {
+    let fail = |e: rusqlite::Error| format!("cannot read usage hours: {e}");
+    let (store_id, _) = store_meta(conn).map_err(fail)?;
+    let mut hours: Vec<String> = conn
+        .prepare("SELECT DISTINCT hour FROM usage_hourly WHERE hour > ?1 ORDER BY hour LIMIT ?2")
+        .map_err(fail)?
+        .query_map(params![after_hour, page as i64 + 1], |r| r.get(0))
+        .and_then(|rows| rows.collect())
+        .map_err(fail)?;
+    let more = hours.len() > page;
+    hours.truncate(page);
+    let Some(last) = hours.last() else {
+        return Ok(maestro_protocol::UsageHoursResponse {
+            store_id,
+            hours: Vec::new(),
+            models: Vec::new(),
+            more: false,
+        });
+    };
+    let rows = conn
+        .prepare(&format!(
+            "SELECT hour, agent_id, project_path, model_id, cost_currency, turns, sessions,
+                    active_seconds, {tokens}, cost_amount
+             FROM usage_hourly WHERE hour > ?1 AND hour <= ?2
+             ORDER BY hour, agent_id, project_path, model_id, cost_currency",
+            tokens = TOKENS.join(", "),
+        ))
+        .map_err(fail)?
+        .query_map(params![after_hour, last], |r| {
+            Ok(maestro_protocol::UsageHourRow {
+                hour: r.get(0)?,
+                agent_id: r.get(1)?,
+                project_path: r.get(2)?,
+                model_id: r.get(3)?,
+                cost_currency: r.get(4)?,
+                turns: r.get(5)?,
+                sessions: r.get(6)?,
+                active_seconds: r.get(7)?,
+                tokens: tokens(r, 8)?,
+                cost_amount: r.get(14)?,
+            })
+        })
+        .and_then(|rows| rows.collect())
+        .map_err(fail)?;
+    let models = conn
+        .prepare(&format!(
+            "SELECT hour, agent_id, project_path, model, NULL, {tokens}
+             FROM usage_hourly_models WHERE hour > ?1 AND hour <= ?2
+             ORDER BY hour, agent_id, project_path, model",
+            tokens = TOKENS[1..].join(", "),
+        ))
+        .map_err(fail)?
+        .query_map(params![after_hour, last], |r| {
+            Ok(maestro_protocol::UsageHourModelRow {
+                hour: r.get(0)?,
+                agent_id: r.get(1)?,
+                project_path: r.get(2)?,
+                model: r.get(3)?,
+                tokens: tokens(r, 4)?,
+            })
+        })
+        .and_then(|rows| rows.collect())
+        .map_err(fail)?;
+    Ok(maestro_protocol::UsageHoursResponse {
+        store_id,
+        hours: rows,
+        models,
+        more,
+    })
 }
 
 #[cfg(test)]
@@ -737,5 +930,73 @@ mod tests {
             .unwrap();
         assert_eq!((turns, tokens), (4, 1600));
         assert_eq!(count(&conn, "usage_hourly"), 1);
+    }
+
+    #[test]
+    fn turns_page_by_id_with_their_models_and_name_the_store() {
+        let conn = crate::project_store::open_in_memory();
+        let now = Utc::now();
+        for i in 0..5 {
+            turn_at(
+                &conn,
+                "a",
+                now - Duration::minutes(10 - i),
+                100 + i as u64,
+                0.1,
+            );
+        }
+
+        let first = turns_page(&conn, 0, 2).expect("page");
+        let ids = |page: &maestro_protocol::UsageTurnsResponse| {
+            page.turns.iter().map(|t| t.id).collect::<Vec<_>>()
+        };
+        assert_eq!(ids(&first), [1, 2]);
+        let model_turns: Vec<_> = first.models.iter().map(|m| m.turn_id).collect();
+        assert_eq!(model_turns, [1, 2], "only this page's models");
+        assert_eq!(first.models[0].tokens.input_tokens, Some(100));
+        assert_eq!(first.models[0].tokens.total_tokens, None);
+        assert_eq!(first.turns[0].tokens.total_tokens, Some(100));
+        assert_eq!(first.turns[0].cost_currency.as_deref(), Some("USD"));
+        assert!(first.more);
+        assert_eq!(first.store_id.len(), 32);
+
+        let last = turns_page(&conn, 4, 2).expect("page");
+        assert_eq!(ids(&last), [5]);
+        assert!(!last.more);
+        assert_eq!(last.store_id, first.store_id, "the store keeps its id");
+        assert!(turns_page(&conn, 5, 2).unwrap().turns.is_empty());
+    }
+
+    #[test]
+    fn merging_moves_merged_through_id_and_hours_page_whole() {
+        let conn = crate::project_store::open_in_memory();
+        let now = Utc::now();
+        let old = now - Duration::days(100);
+        turn_at(&conn, "a", old, 100, 1.0);
+        turn_at(&conn, "a", old + Duration::hours(1), 200, 1.0);
+        turn_at(&conn, "b", old + Duration::hours(1), 300, 1.0);
+        turn_at(&conn, "a", old + Duration::hours(2), 400, 1.0);
+        turn_at(&conn, "a", now - Duration::days(1), 500, 1.0);
+
+        merge_old(&conn, now).expect("merge");
+
+        let turns = turns_page(&conn, 0, 10).unwrap();
+        assert_eq!(turns.merged_through_id, 4);
+        let ids: Vec<_> = turns.turns.iter().map(|t| t.id).collect();
+        assert_eq!(ids, [5]);
+
+        let first = hours_page(&conn, "", 2).expect("hours");
+        assert!(first.more);
+        assert_eq!(first.hours.len(), 2, "two hours, one row each");
+        assert_eq!(first.hours[1].turns, 2, "both sessions' turns in one row");
+        assert_eq!(first.models.len(), 2);
+        let rest = hours_page(&conn, &first.hours[1].hour, 2).expect("hours");
+        assert_eq!(rest.hours.len(), 1);
+        assert_eq!(rest.hours[0].tokens.total_tokens, Some(400));
+        assert!(!rest.more);
+        assert!(hours_page(&conn, &rest.hours[0].hour, 2)
+            .unwrap()
+            .hours
+            .is_empty());
     }
 }
