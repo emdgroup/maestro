@@ -27,7 +27,9 @@ was last synced, and nothing when nothing has been.
 
 ## Layout
 
-One screen, the same glass recipes as Home (`docs/home-dashboard/design.md`, "Visual system").
+One screen, the same glass recipes as Home (`docs/home-dashboard/design.md`, "Visual system"). It
+replaces Home's content in place: Home fades out growing slightly, and the view rises in from
+16 px below at 97% scale, over 220 ms; going back reverses it. Reduced motion turns both off.
 Top to bottom:
 
 1. `‹ Home`, back to Home, above the panel at its top left, outside the glass.
@@ -40,7 +42,7 @@ Top to bottom:
    heatmap. It never narrows the Projects or Models lists.
 4. **Two metric cards**, `Cost` and `Tokens`, side by side. Each shows the total for the range and,
    beside it, the average per bucket in the bucket's unit (`avg $20.31 / day`). The cards are also
-   the metric switch: the selected one has the primary border and ring, the other sits at 75%
+   the metric switch: the selected one has the accent border and ring, the other sits at 75%
    opacity. Every chart, list and tooltip below shows the selected metric. There is no comparison
    with the previous period, and no other card.
 5. **Main chart.** A switch, `Over time` or `Cumulative`, and on the right the split:

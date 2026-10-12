@@ -264,7 +264,8 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
               onClick={() => setMetric(id)}
               className={cn(
                 "usage-pane cursor-pointer rounded-2xl px-5 py-4 text-left transition",
-                metric === id ? "border-primary ring-2 ring-primary/25" : "opacity-75",
+                // `!`: .usage-pane sets the border outside any layer, so it beats a plain utility.
+                metric === id ? "border-accent! ring-2 ring-accent/25" : "opacity-75",
               )}
             >
               <div className="text-xs text-muted-foreground">{label}</div>
