@@ -22,14 +22,18 @@ import { UsageBreakdown, type BreakdownRow } from "./UsageBreakdown";
 import { UsageChart, type ChartSeries } from "./UsageChart";
 import { UsageCalendar, UsageHeatmap } from "./UsageHeatmap";
 
-/** Categorical slots in fixed order; a sixth series and beyond fold into Other. */
-const COLORS = [
-  "var(--usage-1)",
-  "var(--usage-2)",
-  "var(--usage-3)",
-  "var(--usage-4)",
-  "var(--usage-5)",
-];
+/**
+ * Each series' lightness step from the split's hue, alternating lighter and darker so neighbours
+ * in a stack stand apart; a sixth series and beyond fold into Other.
+ */
+const STEPS = [0, 0.15, -0.14, 0.24, -0.24];
+/** One hue per split, so no two splits share a colour. */
+const palette = (split: UsageSplit) => {
+  const hue = `var(--usage-${split.replace("_", "-")})`;
+  return STEPS.map((step) =>
+    step ? `oklch(from ${hue} clamp(0.25, calc(l + ${step}), 0.85) c h)` : hue,
+  );
+};
 const OTHER = "var(--usage-other)";
 const TOKEN_TYPES: Record<string, string> = {
   input: "Input",
@@ -109,7 +113,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
   // Models keep one colour everywhere: the Models panel and the Model split share this map. The
   // panel ignores the model filter, so a filtered model keeps its colour.
   const modelColors = new Map(
-    (report?.models ?? []).map((row, i) => [row.model, COLORS[i] ?? OTHER]),
+    (report?.models ?? []).map((row, i) => [row.model, palette("model")[i] ?? OTHER]),
   );
 
   const series: ChartSeries[] = (() => {
@@ -145,14 +149,15 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
           : effectiveSplit === "token_type"
             ? TOKEN_TYPES[key]
             : key || "Unknown model";
-    const shown = keys.slice(0, COLORS.length).map((key, i) => ({
+    const colors = palette(effectiveSplit);
+    const shown = keys.slice(0, colors.length).map((key, i) => ({
       key,
       label: label(key),
-      color: effectiveSplit === "model" ? (modelColors.get(key) ?? COLORS[i]) : COLORS[i],
+      color: effectiveSplit === "model" ? (modelColors.get(key) ?? colors[i]) : colors[i],
       faded: effectiveSplit === "connection" && !attachedIds.includes(key),
       values: byKey.get(key)!,
     }));
-    const rest = keys.slice(COLORS.length);
+    const rest = keys.slice(colors.length);
     if (rest.length) {
       shown.push({
         key: "other",
@@ -171,7 +176,6 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
       name: folderName(p.project_path),
       qualifier: connectionName(p.connection_key),
       value: metric === "cost" ? p.cost : p.tokens,
-      selected: projects.some((x) => projectId(x) === projectId(p)),
       byType: p.by_type,
     }))
     .sort((a, b) => b.value - a.value);
@@ -181,7 +185,6 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
     qualifier: m.agent_ids.map(agentName).join(", "),
     value: m.tokens,
     color: modelColors.get(m.model),
-    selected: models.includes(m.model),
     byType: m.by_type,
   }));
 

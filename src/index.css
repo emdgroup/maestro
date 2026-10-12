@@ -1186,25 +1186,24 @@
   filter: drop-shadow(0 6px 14px rgb(0 0 0 / 0.18));
 }
 
-/* The Usage view's chart colours: categorical series in fixed order, and the heatmap's one hue,
-   which is the accent. Light and dark are stepped separately; see
-   docs/usage-view/design.md, "Colour". */
+/* The Usage view's chart colours. Each split has a hue of its own, stepped towards the background
+   for its series, so a connection never wears an agent's or a model's colour. Projects and the
+   heatmap take the accent. Light and dark are stepped separately; see docs/usage-view/design.md,
+   "Colour". */
 .usage-viz {
-  --usage-heat: var(--accent);
-  --usage-1: #2a78d6;
-  --usage-2: #eb6834;
-  --usage-3: #1baf7a;
-  --usage-4: #eda100;
-  --usage-5: #e87ba4;
+  --usage-accent: var(--accent);
+  --usage-connection: #2a78d6;
+  --usage-agent: #1baf7a;
+  --usage-model: #eb6834;
+  --usage-token-type: #8b5cf6;
   --usage-other: color-mix(in oklab, var(--foreground) 35%, transparent);
   --usage-grid: color-mix(in oklab, var(--foreground) 10%, transparent);
 }
 .dark .usage-viz {
-  --usage-1: #3987e5;
-  --usage-2: #d95926;
-  --usage-3: #199e70;
-  --usage-4: #c98500;
-  --usage-5: #d55181;
+  --usage-connection: #3987e5;
+  --usage-agent: #199e70;
+  --usage-model: #d95926;
+  --usage-token-type: #9f7aea;
 }
 /* A pane that holds a chart: the `home-pane` look without its hover lift. */
 .usage-pane {

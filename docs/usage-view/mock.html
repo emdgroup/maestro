@@ -49,39 +49,57 @@
     </style>
     <style>
       .dark .viz {
-        --s1: #3987e5;
-        --s2: #d95926;
-        --s3: #199e70;
-        --s4: #c98500;
-        --s5: #d55181;
+        --conn: #3987e5;
+        --agent: #199e70;
+        --model: #d95926;
+        --kind: #9f7aea;
       }
     </style>
   </head>
   <body>
     <style>
       .viz {
-        --s1: #2a78d6;
+        --conn-0: var(--conn);
+        --conn-1: oklch(from var(--conn) clamp(0.25, calc(l + 0.15), 0.85) c h);
+        --conn-2: oklch(from var(--conn) clamp(0.25, calc(l + -0.14), 0.85) c h);
+        --conn-3: oklch(from var(--conn) clamp(0.25, calc(l + 0.24), 0.85) c h);
+        --conn-4: oklch(from var(--conn) clamp(0.25, calc(l + -0.24), 0.85) c h);
+        --agent-0: var(--agent);
+        --agent-1: oklch(from var(--agent) clamp(0.25, calc(l + 0.15), 0.85) c h);
+        --agent-2: oklch(from var(--agent) clamp(0.25, calc(l + -0.14), 0.85) c h);
+        --agent-3: oklch(from var(--agent) clamp(0.25, calc(l + 0.24), 0.85) c h);
+        --agent-4: oklch(from var(--agent) clamp(0.25, calc(l + -0.24), 0.85) c h);
+        --model-0: var(--model);
+        --model-1: oklch(from var(--model) clamp(0.25, calc(l + 0.15), 0.85) c h);
+        --model-2: oklch(from var(--model) clamp(0.25, calc(l + -0.14), 0.85) c h);
+        --model-3: oklch(from var(--model) clamp(0.25, calc(l + 0.24), 0.85) c h);
+        --model-4: oklch(from var(--model) clamp(0.25, calc(l + -0.24), 0.85) c h);
+        --kind-0: var(--kind);
+        --kind-1: oklch(from var(--kind) clamp(0.25, calc(l + 0.15), 0.85) c h);
+        --kind-2: oklch(from var(--kind) clamp(0.25, calc(l + -0.14), 0.85) c h);
+        --kind-3: oklch(from var(--kind) clamp(0.25, calc(l + 0.24), 0.85) c h);
+        --kind-4: oklch(from var(--kind) clamp(0.25, calc(l + -0.24), 0.85) c h);
+      }
+      .viz {
         --heat: var(--accent);
-        --s2: #eb6834;
-        --s3: #1baf7a;
-        --s4: #eda100;
-        --s5: #e87ba4;
+        --conn: #2a78d6;
+        --agent: #1baf7a;
+        --model: #eb6834;
+        --kind: #8b5cf6;
         --grid: color-mix(in oklab, currentColor 10%, transparent);
       }
       :root[data-theme="dark"] .viz {
-        --s1: #3987e5;
-        --s2: #d95926;
-        --s3: #199e70;
-        --s4: #c98500;
-        --s5: #d55181;
+        --conn: #3987e5;
+        --agent: #199e70;
+        --model: #d95926;
+        --kind: #9f7aea;
       }
       @media (prefers-color-scheme: dark) {
         :root:where(:not([data-theme="light"])) .viz {
-          --s1: #3987e5;
-          --s2: #d95926;
-          --s3: #199e70;
-          --s4: #c98500;
-          --s5: #d55181;
+          --conn: #3987e5;
+          --agent: #199e70;
+          --model: #d95926;
+          --kind: #9f7aea;
         }
       }
       .glass {
@@ -417,27 +435,27 @@
     <script>
       const SETS = {
         conn: [
-          ["This computer", "--s1", 1],
-          ["build-box", "--s2", 0.7],
-          ["Ubuntu (WSL)", "--s3", 0.35],
-          ["gpu-rig (cached)", "--s4", 0.25],
+          ["This computer", "--conn-0", 1],
+          ["build-box", "--conn-1", 0.7],
+          ["Ubuntu (WSL)", "--conn-2", 0.35],
+          ["gpu-rig (cached)", "--conn-3", 0.25],
         ],
         model: [
-          ["claude-sonnet-5-5", "--s1", 1],
-          ["gpt-5.6-sol", "--s2", 0.6],
-          ["claude-haiku-4-5", "--s3", 0.3],
+          ["claude-sonnet-5-5", "--model-0", 1],
+          ["gpt-5.6-sol", "--model-1", 0.6],
+          ["claude-haiku-4-5", "--model-2", 0.3],
         ],
         agent: [
-          ["Claude", "--s1", 1.4],
-          ["Codex", "--s2", 0.4],
-          ["Gemini", "--s3", 0.2],
+          ["Claude", "--agent-0", 1.4],
+          ["Codex", "--agent-1", 0.4],
+          ["Gemini", "--agent-2", 0.2],
         ],
         kind: [
-          ["Input", "--s1", 0.3],
-          ["Output", "--s2", 0.25],
-          ["Thought", "--s3", 0.1],
-          ["Cache read", "--s4", 1.2],
-          ["Cache write", "--s5", 0.2],
+          ["Input", "--kind-0", 0.3],
+          ["Output", "--kind-1", 0.25],
+          ["Thought", "--kind-2", 0.1],
+          ["Cache read", "--kind-3", 1.2],
+          ["Cache write", "--kind-4", 0.2],
         ],
       };
       const PRE = [
@@ -773,7 +791,7 @@
               const k = id + i,
                 open = st.open[k];
               return (
-                `<div class="brow" data-o="${k}" style="${st.f.includes(p) ? "outline:2px solid var(--primary);outline-offset:-2px" : ""}"><div class="top">${colored ? `<span class="dot" style="background:var(${c})"></span>` : ""}<span class="font-medium truncate">${p}</span><span class="text-xs text-muted-foreground truncate">${sub}</span><span class="ml-auto font-semibold tabular-nums">${f2(tot * f)}</span><span class="w-11 text-right text-xs text-muted-foreground tabular-nums">${(f * 100).toFixed(1)}%</span><span class="w-7 h-7 grid place-items-center text-muted-foreground">${open ? "⌃" : "⌄"}</span></div><div class="track"><div style="width:${(f / top) * 100}%;background:${colored ? `var(${c})` : "var(--s1)"}"></div></div></div>` +
+                `<div class="brow" data-o="${k}" ><div class="top">${colored ? `<span class="dot" style="background:var(${c})"></span>` : ""}<span class="font-medium truncate">${p}</span><span class="text-xs text-muted-foreground truncate">${sub}</span><span class="ml-auto font-semibold tabular-nums">${f2(tot * f)}</span><span class="w-11 text-right text-xs text-muted-foreground tabular-nums">${(f * 100).toFixed(1)}%</span><span class="w-7 h-7 grid place-items-center text-muted-foreground">${open ? "⌃" : "⌄"}</span></div><div class="track"><div style="width:${(f / top) * 100}%;background:${colored ? `var(${c})` : "var(--accent)"}"></div></div></div>` +
                 (open
                   ? parts
                       .map(
@@ -813,9 +831,9 @@
         list(
           "mdl",
           [
-            ["claude-sonnet-5-5", "Claude, Codex", 0.593, "--s1"],
-            ["gpt-5.6-sol", "Codex", 0.374, "--s2"],
-            ["claude-haiku-4-5", "Claude", 0.033, "--s3"],
+            ["claude-sonnet-5-5", "Claude, Codex", 0.593, "--model-0"],
+            ["gpt-5.6-sol", "Codex", 0.374, "--model-1"],
+            ["claude-haiku-4-5", "Claude", 0.033, "--model-2"],
           ],
           true,
           fmtt,

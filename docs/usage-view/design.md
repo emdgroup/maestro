@@ -67,7 +67,7 @@ Top to bottom:
    qualifier (the project's connection, or the model's agents), the value, the share in percent and
    a chevron; then the bar on its own line. Clicking anywhere on a row expands it into tokens by
    type (Input, Output, Thought, Cache write, Cache read), tokens only. The lists are never
-   filtered: a row that is a filter keeps its place and gets the primary outline.
+   filtered: a row that is a filter keeps its place, with nothing to mark it.
    - _Projects_ shows the selected metric; the title says which, `Projects · cost`.
    - _Models_ always shows tokens, `Models · tokens`, and with Cost selected adds
      `cost is not recorded per model` in muted text. Model dots and bars use the model's colour
@@ -106,10 +106,13 @@ finer than an hour.
 
 ## Colour
 
-Series take the fixed categorical palette in order, starting with blue, and keep their colour
-when filters change the series count. A model's colour is its place in the Models list, which no
-filter narrows, so a filtered model keeps its colour. The heatmap's one hue, and the range in the
-title, are the user's accent colour. A connection that is not attached draws at reduced opacity.
+Each split has a hue of its own, so a connection never wears an agent's or a model's colour:
+connections blue, agents green, models orange, token types violet. A split's series take that hue
+in fixed order, stepping its lightness up and down in turn (`0, +0.15, −0.14, +0.24, −0.24` in
+OKLCH) so neighbours in a stack stand apart; a sixth series and beyond fold into a grey Other.
+Series keep their colour when filters change the series count, and a model's colour is its place
+in the Models list, which no filter narrows. The accent colour is for the projects' bars, the
+heatmap and the range in the title. A connection that is not attached draws at reduced opacity.
 Text never takes a series colour. Light and dark steps are in the mock.
 
 ## Data

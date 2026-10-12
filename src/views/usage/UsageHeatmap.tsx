@@ -18,7 +18,7 @@ const DAYS = [
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const pad = (hour: number) => String(hour).padStart(2, "0");
 const shade = (v: number, max: number) =>
-  `color-mix(in oklab, var(--usage-heat) ${6 + (94 * v) / max}%, transparent)`;
+  `color-mix(in oklab, var(--usage-accent) ${6 + (94 * v) / max}%, transparent)`;
 
 type CellHandle = TooltipPrimitive.Handle<unknown>;
 
@@ -56,7 +56,7 @@ function Legend() {
       <span>less</span>
       <span
         className="h-2 w-24 rounded"
-        style={{ background: `linear-gradient(90deg, ${shade(0, 1)}, var(--usage-heat))` }}
+        style={{ background: `linear-gradient(90deg, ${shade(0, 1)}, var(--usage-accent))` }}
       />
       <span>more</span>
     </div>

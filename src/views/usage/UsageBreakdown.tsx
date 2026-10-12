@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import type { UsageTokenSplit } from "@/types/bindings";
-import { cn } from "@/lib/utils";
 import { formatTokens } from "./format";
 
 export interface BreakdownRow {
@@ -10,10 +9,8 @@ export interface BreakdownRow {
   /** The project's connection, or the model's agent. */
   qualifier: string;
   value: number;
-  /** A model's colour from the Model split; projects use the first series colour. */
+  /** A model's colour from the Model split; projects use the accent. */
   color?: string;
-  /** Filtered on: outlined, since the lists themselves are never filtered. */
-  selected?: boolean;
   byType: UsageTokenSplit;
 }
 
@@ -50,10 +47,7 @@ export function UsageBreakdown({ rows, format }: UsageBreakdownProps) {
               aria-expanded={expanded}
               onClick={toggle}
               onKeyDown={(event) => (event.key === "Enter" || event.key === " ") && toggle()}
-              className={cn(
-                "cursor-pointer rounded-lg px-1.5 pt-1 pb-2 hover:bg-foreground/5",
-                row.selected && "outline-2 -outline-offset-2 outline-primary",
-              )}
+              className="cursor-pointer rounded-lg px-1.5 pt-1 pb-2 hover:bg-foreground/5"
             >
               <div className="flex items-center gap-2 text-[13px]">
                 {row.color && (
@@ -77,7 +71,7 @@ export function UsageBreakdown({ rows, format }: UsageBreakdownProps) {
                   className="h-1.5 rounded-full"
                   style={{
                     width: `${(row.value / top) * 100}%`,
-                    background: row.color ?? "var(--usage-1)",
+                    background: row.color ?? "var(--usage-accent)",
                   }}
                 />
               </div>
