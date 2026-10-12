@@ -29,7 +29,8 @@ closed. Three consequences drove the design:
   task waiting on its pull request (forge work still needs a window and the keychain token) and a
   task in Review are all readable from the daemon without opening the project.
 - **The board shows real time only.** Nothing is tracked over time, so there are no sparklines,
-  histories or "last activity" lines.
+  histories or "last activity" lines. Usage has been tracked since 2026-10-12; its history lives
+  in the Usage view (`docs/usage-view/design.md`), and Home only gains the tile that opens it.
 
 ## Layout
 
