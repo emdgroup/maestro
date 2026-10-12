@@ -19,8 +19,9 @@ itself still shows real time only, apart from the one tile below; history lives 
 
 ## Home tile
 
-A `pane` button in the hero, right of the scoreboard: `This week` in muted `11px`, then the cost
-and the token total of the last 7 days, `$142.18 · 268M tokens ›`. It opens the Usage view. It reads
+A fourth score, first on the hero's scoreboard and set off from the three counts by a thin
+divider: the last 7 days' cost in the counts' own `52px` figures, `$142.18`, and under it in muted
+`text-xs` a chart icon and `this week · 268M tokens ›`. It opens the Usage view. It reads
 the app's local copy of the usage (see "Data"), so it shows what was last synced, and nothing when
 nothing has been.
 
@@ -33,8 +34,10 @@ Top to bottom:
 2. **Title with the range.** `Usage over the last 7 days ▾` in `2xl` semibold, with `over the` in
    muted regular weight. The range part is the control: accent coloured, dotted underline. Under it
    in muted `text-xs`, the dates it covers (`Oct 5 – Oct 11, 2026`), nothing else.
-3. **Filters.** `Filters:` then one removable chip per active filter, or a muted
-   `none. Click a project or model below.`
+3. **Filters.** `Filters:`, one removable chip per active filter, then `+ Filter`. That opens a
+   popover with two checklists, Projects and Models, in the order of the lists below; ticking an
+   entry adds it as a filter, unticking removes it. A filter narrows the cards, the chart and the
+   heatmap. It never narrows the Projects or Models lists.
 4. **Two metric cards**, `Cost` and `Tokens`, side by side. Each shows the total for the range and,
    beside it, the average per bucket in the bucket's unit (`avg $20.31 / day`). The cards are also
    the metric switch: the selected one has the primary border and ring, the other sits at 75%
@@ -45,7 +48,8 @@ Top to bottom:
    - _Over time_: stacked bars, one per bucket, coloured by the split, with a dashed line and a
      label at the average.
    - _Cumulative_: stacked areas, the running total from the start of the range, same split.
-   - Hovering a bar or a point shows each series' value and the total for that bucket.
+   - Hovering a bar or a point shows each series' value and the total for that bucket, in the
+     app's tooltip. Every tooltip in the view is the app's, never a native `title`.
    - With Cost selected, `Model` and `Token type` are disabled, with the tooltip
      `Tokens only: cost is recorded per turn, not per model` (or `per token type`). If either was
      the split, it falls back to `Connection`.
@@ -60,10 +64,10 @@ Top to bottom:
      shows the date and the value. A week of days would be one column, which is why a week keeps
      the hours.
 7. **Projects** and **Models**, two panels side by side. Each row is two lines: the name, a muted
-   qualifier (the project's connection, or the model's agent), the value, the share in percent and
-   a chevron; then the bar on its own line. The chevron expands the row into tokens by type
-   (Input, Output, Thought, Cache write, Cache read), tokens only. Clicking a row adds it as a
-   filter.
+   qualifier (the project's connection, or the model's agents), the value, the share in percent and
+   a chevron; then the bar on its own line. Clicking anywhere on a row expands it into tokens by
+   type (Input, Output, Thought, Cache write, Cache read), tokens only. The lists are never
+   filtered: a row that is a filter keeps its place and gets the primary outline.
    - _Projects_ shows the selected metric; the title says which, `Projects · cost`.
    - _Models_ always shows tokens, `Models · tokens`, and with Cost selected adds
      `cost is not recorded per model` in muted text. Model dots and bars use the model's colour
@@ -102,15 +106,11 @@ finer than an hour.
 
 ## Colour
 
-Series take the categorical palette in fixed order and keep their colour when filters change the
-series count. The first slot, and the heatmap's one hue, is the user's accent colour; the other
-slots are fixed.
-
-- **Models** are ranked by tokens over the range before any filter, so the main model has the
-  accent and a filtered model keeps the colour it has unfiltered.
-- **Token types** never take the accent: they are not a ranking. Input takes a sixth fixed blue,
-  the others the fixed slots 2 to 5. A connection that is not attached draws at reduced opacity. Text never takes a
-  series colour. Light and dark steps are in the mock.
+Series take the fixed categorical palette in order, starting with blue, and keep their colour
+when filters change the series count. A model's colour is its place in the Models list, which no
+filter narrows, so a filtered model keeps its colour. The heatmap's one hue, and the range in the
+title, are the user's accent colour. A connection that is not attached draws at reduced opacity.
+Text never takes a series colour. Light and dark steps are in the mock.
 
 ## Data
 

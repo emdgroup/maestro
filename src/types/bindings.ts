@@ -4391,12 +4391,7 @@ export type UsageReport = { cost: number; tokens: number; series: UsageSeriesPoi
 /**
  * The calendar heatmap, for ranges longer than a week.
  */
-days: UsageDayCell[]; projects: UsageProjectRow[]; models: UsageModelRow[]; 
-/**
- * Every model of the range by tokens, ignoring the project and model filters, so a model
- * keeps its colour while filtered.
- */
-model_ranking: string[]; coverage: UsageCoverage[] }
+days: UsageDayCell[]; projects: UsageProjectRow[]; models: UsageModelRow[]; coverage: UsageCoverage[] }
 export type UsageSeriesPoint = { 
 /**
  * The bucket, in the local clock: `2026-10-12`, `2026-10-12T14`, …

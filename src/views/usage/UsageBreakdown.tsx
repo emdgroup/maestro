@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import type { UsageTokenSplit } from "@/types/bindings";
+import { cn } from "@/lib/utils";
 import { formatTokens } from "./format";
 
 export interface BreakdownRow {
@@ -11,6 +12,8 @@ export interface BreakdownRow {
   value: number;
   /** A model's colour from the Model split; projects use the first series colour. */
   color?: string;
+  /** Filtered on: outlined, since the lists themselves are never filtered. */
+  selected?: boolean;
   byType: UsageTokenSplit;
 }
 
@@ -25,11 +28,10 @@ const TYPES: [keyof UsageTokenSplit, string][] = [
 interface UsageBreakdownProps {
   rows: BreakdownRow[];
   format: (value: number) => string;
-  onPick: (row: BreakdownRow) => void;
 }
 
-/** Ranked rows with a bar and a share; the chevron opens tokens by type, a click filters. */
-export function UsageBreakdown({ rows, format, onPick }: UsageBreakdownProps) {
+/** Ranked rows with a bar and a share; a click anywhere on a row opens its tokens by type. */
+export function UsageBreakdown({ rows, format }: UsageBreakdownProps) {
   const [open, setOpen] = useState<string[]>([]);
   const total = rows.reduce((sum, row) => sum + row.value, 0) || 1;
   const top = rows[0]?.value || 1;
@@ -38,14 +40,20 @@ export function UsageBreakdown({ rows, format, onPick }: UsageBreakdownProps) {
     <div>
       {rows.map((row) => {
         const expanded = open.includes(row.id);
+        const toggle = () =>
+          setOpen((ids) => (expanded ? ids.filter((id) => id !== row.id) : [...ids, row.id]));
         return (
           <div key={row.id}>
             <div
               role="button"
               tabIndex={0}
-              onClick={() => onPick(row)}
-              onKeyDown={(event) => event.key === "Enter" && onPick(row)}
-              className="cursor-pointer rounded-lg px-1.5 pt-1.5 pb-2 hover:bg-foreground/5"
+              aria-expanded={expanded}
+              onClick={toggle}
+              onKeyDown={(event) => (event.key === "Enter" || event.key === " ") && toggle()}
+              className={cn(
+                "cursor-pointer rounded-lg px-1.5 pt-1 pb-2 hover:bg-foreground/5",
+                row.selected && "outline-2 -outline-offset-2 outline-primary",
+              )}
             >
               <div className="flex items-center gap-2 text-[13px]">
                 {row.color && (
@@ -60,21 +68,11 @@ export function UsageBreakdown({ rows, format, onPick }: UsageBreakdownProps) {
                 <span className="w-11 text-right text-xs text-muted-foreground tabular-nums">
                   {((row.value / total) * 100).toFixed(1)}%
                 </span>
-                <button
-                  type="button"
-                  aria-label={expanded ? "Hide tokens by type" : "Tokens by type"}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setOpen((ids) =>
-                      expanded ? ids.filter((id) => id !== row.id) : [...ids, row.id],
-                    );
-                  }}
-                  className="text-muted-foreground hover:text-foreground [&>svg]:size-3.5"
-                >
+                <span className="grid size-7 place-items-center rounded-md text-muted-foreground [&>svg]:size-4">
                   {expanded ? <ChevronUp /> : <ChevronDown />}
-                </button>
+                </span>
               </div>
-              <div className="mt-1.5 h-1.5 rounded-full bg-foreground/10">
+              <div className="mt-1 mr-9 h-1.5 rounded-full bg-foreground/10">
                 <div
                   className="h-1.5 rounded-full"
                   style={{
@@ -86,10 +84,7 @@ export function UsageBreakdown({ rows, format, onPick }: UsageBreakdownProps) {
             </div>
             {expanded &&
               TYPES.map(([key, label]) => (
-                <div
-                  key={key}
-                  className="flex py-0.5 pr-[4.25rem] pl-8 text-xs text-muted-foreground"
-                >
+                <div key={key} className="flex py-0.5 pr-[6rem] pl-8 text-xs text-muted-foreground">
                   <span>{label}</span>
                   <span className="ml-auto tabular-nums">{formatTokens(row.byType[key])}</span>
                 </div>

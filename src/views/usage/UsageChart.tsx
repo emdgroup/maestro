@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 import type { UsageBucket } from "@/types/bindings";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { bucketLabel } from "./range";
 
 export interface ChartSeries {
@@ -29,7 +31,8 @@ const AXIS_LABELS = 5;
  * a bucket shows each series and the total.
  */
 export function UsageChart({ buckets, bucket, series, cumulative, format }: UsageChartProps) {
-  const [hover, setHover] = useState<number | null>(null);
+  // One tooltip for every bucket, fed the hovered bucket's index.
+  const [handle] = useState(() => TooltipPrimitive.createHandle<number>());
   const n = buckets.length;
   const shown = cumulative
     ? series.map((s) => {
@@ -89,10 +92,9 @@ export function UsageChart({ buckets, bucket, series, cumulative, format }: Usag
   }
 
   const step = Math.max(1, Math.ceil(n / AXIS_LABELS));
-  const hovered = hover === null ? null : shown.map((s) => ({ ...s, value: s.values[hover] ?? 0 }));
 
   return (
-    <div className="relative" onMouseLeave={() => setHover(null)}>
+    <div className="relative">
       <div className="relative">
         <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
           {[1, 2, 3].map((t) => (
@@ -120,14 +122,12 @@ export function UsageChart({ buckets, bucket, series, cumulative, format }: Usag
             />
           )}
           {buckets.map((key, i) => (
-            <rect
+            <TooltipTrigger
               key={key}
-              x={i * slot}
-              y={0}
-              width={slot}
-              height={H}
-              fill="transparent"
-              onMouseEnter={() => setHover(i)}
+              handle={handle}
+              payload={i}
+              delay={0}
+              render={<rect x={i * slot} y={0} width={slot} height={H} fill="transparent" />}
             />
           ))}
         </svg>
@@ -147,27 +147,31 @@ export function UsageChart({ buckets, bucket, series, cumulative, format }: Usag
             <span key={key}>{bucketLabel(key, bucket)}</span>
           ))}
       </div>
-      {hover !== null && hovered && (
-        <div
-          className="home-pop pointer-events-none absolute top-8 z-10 rounded-xl px-3 py-2 text-xs"
-          style={{ left: `min(${((hover + 0.5) / Math.max(n, 1)) * 100}%, calc(100% - 13rem))` }}
-        >
-          <div className="mb-1 font-medium">
-            {cumulative ? "Total up to " : ""}
-            {bucketLabel(buckets[hover], bucket)}
-          </div>
-          {hovered.map((s) => (
-            <div key={s.key} className="flex items-center gap-1.5">
-              <span className="size-2.5 rounded-[3px]" style={{ background: s.color }} />
-              <span>{s.label}</span>
-              <span className="ml-auto pl-3 font-semibold tabular-nums">{format(s.value)}</span>
-            </div>
-          ))}
-          <div className="mt-1 text-muted-foreground">
-            Total {format(hovered.reduce((sum, s) => sum + s.value, 0))}
-          </div>
-        </div>
-      )}
+      {/* Portalled out of the view, so the content carries the series colours itself. */}
+      <Tooltip handle={handle}>
+        {({ payload: index }) =>
+          typeof index === "number" && (
+            <TooltipContent className="usage-viz flex-col items-stretch gap-0.5">
+              <div className="font-medium">
+                {cumulative ? "Total up to " : ""}
+                {bucketLabel(buckets[index], bucket)}
+              </div>
+              {shown.map((s) => (
+                <div key={s.key} className="flex items-center gap-1.5">
+                  <span className="size-2.5 rounded-[3px]" style={{ background: s.color }} />
+                  <span>{s.label}</span>
+                  <span className="ml-auto pl-3 font-semibold tabular-nums">
+                    {format(s.values[index] ?? 0)}
+                  </span>
+                </div>
+              ))}
+              <div className="opacity-70">
+                Total {format(shown.reduce((sum, s) => sum + (s.values[index] ?? 0), 0))}
+              </div>
+            </TooltipContent>
+          )
+        }
+      </Tooltip>
     </div>
   );
 }

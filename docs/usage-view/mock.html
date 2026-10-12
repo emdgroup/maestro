@@ -49,43 +49,39 @@
     </style>
     <style>
       .dark .viz {
-        --s1: var(--accent);
+        --s1: #3987e5;
         --s2: #d95926;
         --s3: #199e70;
         --s4: #c98500;
         --s5: #d55181;
-        --s6: #3987e5;
       }
     </style>
   </head>
   <body>
     <style>
       .viz {
-        --s1: var(--accent);
+        --s1: #2a78d6;
+        --heat: var(--accent);
         --s2: #eb6834;
         --s3: #1baf7a;
         --s4: #eda100;
         --s5: #e87ba4;
-        --s6: #2a78d6;
         --grid: color-mix(in oklab, currentColor 10%, transparent);
       }
       :root[data-theme="dark"] .viz {
-        --s1: var(--accent);
+        --s1: #3987e5;
         --s2: #d95926;
         --s3: #199e70;
         --s4: #c98500;
         --s5: #d55181;
-        --s6: #3987e5;
       }
       @media (prefers-color-scheme: dark) {
         :root:where(:not([data-theme="light"])) .viz {
-          --s1: var(--accent);
+          --s1: #3987e5;
           --s2: #d95926;
           --s3: #199e70;
           --s4: #c98500;
           --s5: #d55181;
-          --s6: #3987e5;
-          --s6: #3987e5;
         }
       }
       .glass {
@@ -202,12 +198,14 @@
         height: 6px;
         border-radius: 99px;
       }
-      #rangepop {
+      #rangepop,
+      #filterpop {
         display: none;
         position: absolute;
         z-index: 20;
       }
-      #rangepop.open {
+      #rangepop.open,
+      #filterpop.open {
         display: block;
       }
       .opt {
@@ -224,7 +222,7 @@
         background: color-mix(in oklab, currentColor 7%, transparent);
       }
       .opt.on {
-        background: color-mix(in oklab, var(--s1) 16%, transparent);
+        background: color-mix(in oklab, var(--accent) 16%, transparent);
       }
       .opt .k {
         margin-left: auto;
@@ -250,10 +248,10 @@
         font-weight: 600;
       }
       .cal .in {
-        background: color-mix(in oklab, var(--s1) 18%, transparent);
+        background: color-mix(in oklab, var(--accent) 18%, transparent);
       }
       .cal .end {
-        background: var(--s1);
+        background: var(--accent);
         color: #fff;
         border-radius: 99px;
       }
@@ -261,9 +259,30 @@
     <div class="viz p-5 space-y-6 text-foreground">
       <section id="home-entry" class="glass p-5">
         <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-3">
-          Home: entry point (hero, right of the scoreboard)
+          Home: entry point (hero, first on the scoreboard)
         </div>
         <div class="flex items-end gap-10">
+          <button id="usage-link" class="text-left group">
+            <div class="text-[40px] font-semibold leading-none tabular-nums">$142.18</div>
+            <div class="text-xs text-muted-foreground flex items-center gap-1">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M3 3v16a2 2 0 0 0 2 2h16" />
+                <path d="M18 17V9M13 17V5M8 17v-3" />
+              </svg>
+              this week · 268M tokens ›
+            </div>
+          </button>
+          <span
+            class="w-px self-stretch"
+            style="background: color-mix(in oklab, currentColor 10%, transparent)"
+          ></span>
           <div class="flex gap-8 opacity-60">
             <div>
               <div class="text-[40px] font-semibold leading-none tabular-nums">3</div>
@@ -285,15 +304,6 @@
               <div class="text-xs text-muted-foreground">to review</div>
             </div>
           </div>
-          <button
-            id="usage-link"
-            class="pane px-4 py-2.5 text-left hover:-translate-y-0.5 transition"
-          >
-            <div class="text-[11px] text-muted-foreground">This week</div>
-            <div class="text-sm font-semibold tabular-nums">
-              $142.18 · 268M tokens <span class="text-muted-foreground">›</span>
-            </div>
-          </button>
         </div>
       </section>
 
@@ -305,7 +315,7 @@
             <button
               id="range-btn"
               class="underline decoration-dotted underline-offset-4"
-              style="color: var(--s1)"
+              style="color: var(--accent)"
             >
               <span id="range-label">last 7 days</span> ▾
             </button>
@@ -332,7 +342,10 @@
         </div>
         <div class="flex items-center gap-2 mt-3 text-xs text-muted-foreground" id="filters">
           Filters: <span id="chips" class="flex gap-1.5"></span
-          ><span id="nofilter">none. Click a project or model below.</span>
+          ><span class="relative"
+            ><button id="addfilter" class="chip text-foreground">+ Filter</button>
+            <div id="filterpop" class="pop p-2 w-80" style="top: 26px; left: 0"></div
+          ></span>
         </div>
 
         <div class="grid grid-cols-2 gap-4 mt-4">
@@ -420,7 +433,7 @@
           ["Gemini", "--s3", 0.2],
         ],
         kind: [
-          ["Input", "--s6", 0.3],
+          ["Input", "--s1", 0.3],
           ["Output", "--s2", 0.25],
           ["Thought", "--s3", 0.1],
           ["Cache read", "--s4", 1.2],
@@ -551,7 +564,7 @@
         ]
           .map(
             ([m, name, len, start], i) =>
-              `<div><div class="flex mb-2 text-sm font-semibold">${name}${i ? '<span class="ml-auto flex gap-3" style="color:var(--s1)"><button>‹</button><button>›</button></span>' : ""}</div><div class="cal">${["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((h) => `<div class="h">${h}</div>`).join("")}${"<div></div>".repeat(start)}${Array.from(
+              `<div><div class="flex mb-2 text-sm font-semibold">${name}${i ? '<span class="ml-auto flex gap-3" style="color:var(--accent)"><button>‹</button><button>›</button></span>' : ""}</div><div class="cal">${["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((h) => `<div class="h">${h}</div>`).join("")}${"<div></div>".repeat(start)}${Array.from(
                 { length: len },
                 (_, j) => {
                   const d = j + 1,
@@ -693,8 +706,8 @@
             hs = cells.reduce((a, c) => a + c[1], 0);
           const cw = Math.min(40, 1000 / weeks);
           document.getElementById("heat-plot").innerHTML =
-            `<div class="flex gap-2"><div class="flex flex-col text-[11px] text-muted-foreground" style="gap:4px">${days.map((d) => `<span style="height:18px;line-height:18px">${d}</span>`).join("")}</div><svg viewBox="0 0 ${weeks * cw} 154" style="height:154px;width:${weeks * cw}px;max-width:100%" preserveAspectRatio="none">${cells.map(([i, v]) => `<rect data-c="${i}" x="${Math.floor((i + lead) / 7) * cw}" y="${((i + lead) % 7) * 22}" width="${cw - 3}" height="18" rx="4" style="fill:color-mix(in oklab, var(--s1) ${(6 + (94 * v) / mx).toFixed(0)}%, transparent)"/>`).join("")}</svg></div>
-  <div class="flex items-center gap-1.5 mt-2 text-[11px] text-muted-foreground"><span>less</span><span class="h-2 w-24 rounded" style="background:linear-gradient(90deg,color-mix(in oklab, var(--s1) 6%, transparent),var(--s1))"></span><span>more</span></div>`;
+            `<div class="flex gap-2"><div class="flex flex-col text-[11px] text-muted-foreground" style="gap:4px">${days.map((d) => `<span style="height:18px;line-height:18px">${d}</span>`).join("")}</div><svg viewBox="0 0 ${weeks * cw} 154" style="height:154px;width:${weeks * cw}px;max-width:100%" preserveAspectRatio="none">${cells.map(([i, v]) => `<rect data-c="${i}" x="${Math.floor((i + lead) / 7) * cw}" y="${((i + lead) % 7) * 22}" width="${cw - 3}" height="18" rx="4" style="fill:color-mix(in oklab, var(--heat) ${(6 + (94 * v) / mx).toFixed(0)}%, transparent)"/>`).join("")}</svg></div>
+  <div class="flex items-center gap-1.5 mt-2 text-[11px] text-muted-foreground"><span>less</span><span class="h-2 w-24 rounded" style="background:linear-gradient(90deg,color-mix(in oklab, var(--heat) 6%, transparent),var(--heat))"></span><span>more</span></div>`;
           const ht = document.getElementById("htip");
           hm.querySelectorAll("rect[data-c]").forEach((el) => {
             el.onmouseenter = () => {
@@ -728,9 +741,9 @@
             }
           const mx = Math.max(...cells.map((c) => c[2]));
           document.getElementById("heat-plot").innerHTML =
-            `<div class="flex gap-2"><div class="flex flex-col text-[11px] text-muted-foreground" style="gap:4px">${days.map((d) => `<span style="height:18px;line-height:18px">${d}</span>`).join("")}</div><svg class="flex-1" viewBox="0 0 624 154" preserveAspectRatio="none" style="height:154px">${cells.map(([d, x, v], i) => `<rect data-c="${i}" x="${x * 26}" y="${d * 22}" width="23" height="18" rx="4" style="fill:color-mix(in oklab, var(--s1) ${(6 + (94 * v) / mx).toFixed(0)}%, transparent)"/>`).join("")}</svg></div>
+            `<div class="flex gap-2"><div class="flex flex-col text-[11px] text-muted-foreground" style="gap:4px">${days.map((d) => `<span style="height:18px;line-height:18px">${d}</span>`).join("")}</div><svg class="flex-1" viewBox="0 0 624 154" preserveAspectRatio="none" style="height:154px">${cells.map(([d, x, v], i) => `<rect data-c="${i}" x="${x * 26}" y="${d * 22}" width="23" height="18" rx="4" style="fill:color-mix(in oklab, var(--heat) ${(6 + (94 * v) / mx).toFixed(0)}%, transparent)"/>`).join("")}</svg></div>
   <div class="flex items-center mt-1 pl-9 text-[11px] text-muted-foreground"><div class="flex-1 flex justify-between">${[0, 3, 6, 9, 12, 15, 18, 21].map((h) => `<span>${String(h).padStart(2, "0")}:00</span>`).join("")}</div></div>
-  <div class="flex items-center gap-1.5 mt-2 text-[11px] text-muted-foreground"><span>less</span><span class="h-2 w-24 rounded" style="background:linear-gradient(90deg,color-mix(in oklab, var(--s1) 6%, transparent),var(--s1))"></span><span>more</span></div>`;
+  <div class="flex items-center gap-1.5 mt-2 text-[11px] text-muted-foreground"><span>less</span><span class="h-2 w-24 rounded" style="background:linear-gradient(90deg,color-mix(in oklab, var(--heat) 6%, transparent),var(--heat))"></span><span>more</span></div>`;
           const ht = document.getElementById("htip");
           hm.querySelectorAll("rect[data-c]").forEach((el) => {
             el.onmouseenter = () => {
@@ -760,7 +773,7 @@
               const k = id + i,
                 open = st.open[k];
               return (
-                `<div class="brow" data-f="${p}"><div class="top">${colored ? `<span class="dot" style="background:var(${c})"></span>` : ""}<span class="font-medium truncate">${p}</span><span class="text-xs text-muted-foreground truncate">${sub}</span><span class="ml-auto font-semibold tabular-nums">${f2(tot * f)}</span><span class="w-11 text-right text-xs text-muted-foreground tabular-nums">${(f * 100).toFixed(1)}%</span><button class="w-4 text-muted-foreground" data-o="${k}" title="Tokens by type">${open ? "⌃" : "⌄"}</button></div><div class="track"><div style="width:${(f / top) * 100}%;background:${colored ? `var(${c})` : "var(--s1)"}"></div></div></div>` +
+                `<div class="brow" data-o="${k}" style="${st.f.includes(p) ? "outline:2px solid var(--primary);outline-offset:-2px" : ""}"><div class="top">${colored ? `<span class="dot" style="background:var(${c})"></span>` : ""}<span class="font-medium truncate">${p}</span><span class="text-xs text-muted-foreground truncate">${sub}</span><span class="ml-auto font-semibold tabular-nums">${f2(tot * f)}</span><span class="w-11 text-right text-xs text-muted-foreground tabular-nums">${(f * 100).toFixed(1)}%</span><span class="w-7 h-7 grid place-items-center text-muted-foreground">${open ? "⌃" : "⌄"}</span></div><div class="track"><div style="width:${(f / top) * 100}%;background:${colored ? `var(${c})` : "var(--s1)"}"></div></div></div>` +
                 (open
                   ? parts
                       .map(
@@ -810,7 +823,22 @@
         document.getElementById("chips").innerHTML = st.f
           .map((f) => `<span class="chip">${f} <button data-x="${f}">✕</button></span>`)
           .join("");
-        document.getElementById("nofilter").style.display = st.f.length ? "none" : "";
+        const opts = [
+          ["Projects", ["maestro", "api-gateway", "infra", "website", "trainer", "dotfiles"]],
+          ["Models", ["claude-sonnet-5-5", "gpt-5.6-sol", "claude-haiku-4-5"]],
+        ];
+        document.getElementById("filterpop").innerHTML = opts
+          .map(
+            ([title, names]) =>
+              `<div class="text-[11px] text-muted-foreground px-1.5 pt-1 pb-1">${title}</div>` +
+              names
+                .map(
+                  (n) =>
+                    `<button class="opt flex items-center gap-2" data-t="${n}"><span class="inline-grid place-items-center w-4 h-4 rounded border border-border" style="${st.f.includes(n) ? "background:var(--accent);color:#fff;border-color:var(--accent)" : ""}">${st.f.includes(n) ? "✓" : ""}</span>${n}</button>`,
+                )
+                .join(""),
+          )
+          .join("");
       }
       const rp = () => document.getElementById("rangepop");
       const DAYS = { "1h": 0, "1d": 1, "1w": 7, "1m": 30, "1y": 365, all: 540 };
@@ -890,12 +918,18 @@
           draw();
           return;
         }
-        const row = t.closest(".brow");
-        if (row && !st.f.includes(row.dataset.f)) {
-          st.f.push(row.dataset.f);
+        if (t.closest("#addfilter")) {
+          document.getElementById("filterpop").classList.toggle("open");
+          return;
+        }
+        const ft = t.closest("[data-t]");
+        if (ft) {
+          const n = ft.dataset.t;
+          st.f = st.f.includes(n) ? st.f.filter((f) => f !== n) : [...st.f, n];
           draw();
           return;
         }
+        if (!t.closest("#filterpop")) document.getElementById("filterpop").classList.remove("open");
         const x = t.closest("[data-x]");
         if (x) {
           st.f = st.f.filter((f) => f !== x.dataset.x);

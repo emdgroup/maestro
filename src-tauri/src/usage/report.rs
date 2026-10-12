@@ -136,9 +136,6 @@ pub struct UsageReport {
     pub days: Vec<UsageDayCell>,
     pub projects: Vec<UsageProjectRow>,
     pub models: Vec<UsageModelRow>,
-    /// Every model of the range by tokens, ignoring the project and model filters, so a model
-    /// keeps its colour while filtered.
-    pub model_ranking: Vec<String>,
     pub coverage: Vec<UsageCoverage>,
 }
 
@@ -390,14 +387,24 @@ pub fn report(conn: &Connection, query: &UsageQuery) -> Result<UsageReport, Stri
     )
     .map_err(fail)?;
 
+    // The two lists ignore the filters: a filtered project or model stays one row among the
+    // others, with its colour, rather than the only one.
+    let lists = UsageQuery {
+        projects: Vec::new(),
+        models: Vec::new(),
+        ..query.clone()
+    };
+    let (lists_where, lists_values) = filters(&lists, ModelMatch::Used)?;
+    let (list_models_where, list_models_values) = filters(&lists, ModelMatch::Column)?;
+
     let projects = rows(
         conn,
         &format!(
             "SELECT s.connection_key, f.project_path, COALESCE(SUM(f.cost_amount), 0),
                     COALESCE(SUM(f.total_tokens), 0), {SPLIT_SUMS}
-             FROM {FACTS} {facts_where} GROUP BY 1, 2 ORDER BY 3 DESC, 4 DESC"
+             FROM {FACTS} {lists_where} GROUP BY 1, 2 ORDER BY 3 DESC, 4 DESC"
         ),
-        &facts_values,
+        &lists_values,
         |r| {
             Ok(UsageProjectRow {
                 connection_key: r.get(0)?,
@@ -414,9 +421,9 @@ pub fn report(conn: &Connection, query: &UsageQuery) -> Result<UsageReport, Stri
         conn,
         &format!(
             "SELECT f.model, GROUP_CONCAT(DISTINCT f.agent_id), {SPLIT_SUMS}
-             FROM {MODEL_FACTS} {models_where} GROUP BY 1"
+             FROM {MODEL_FACTS} {list_models_where} GROUP BY 1"
         ),
-        &models_values,
+        &list_models_values,
         |r| {
             let by_type = token_split(r, 2)?;
             Ok(UsageModelRow {
@@ -437,25 +444,6 @@ pub fn report(conn: &Connection, query: &UsageQuery) -> Result<UsageReport, Stri
     )
     .map_err(fail)?;
     models.sort_by(|a, b| b.tokens.cmp(&a.tokens));
-
-    let unfiltered = UsageQuery {
-        projects: Vec::new(),
-        models: Vec::new(),
-        ..query.clone()
-    };
-    let (ranking_where, ranking_values) = filters(&unfiltered, ModelMatch::Column)?;
-    let model_ranking = rows(
-        conn,
-        &format!(
-            "SELECT f.model FROM {MODEL_FACTS} {ranking_where} GROUP BY 1
-             ORDER BY COALESCE(SUM(f.input_tokens), 0) + COALESCE(SUM(f.output_tokens), 0)
-                      + COALESCE(SUM(f.thought_tokens), 0) + COALESCE(SUM(f.cached_read_tokens), 0)
-                      + COALESCE(SUM(f.cached_write_tokens), 0) DESC, 1"
-        ),
-        &ranking_values,
-        |r| r.get(0),
-    )
-    .map_err(fail)?;
 
     // One line per connection, named as at its newest store's last sync.
     let coverage = rows(
@@ -495,7 +483,6 @@ pub fn report(conn: &Connection, query: &UsageQuery) -> Result<UsageReport, Stri
         days,
         projects,
         models,
-        model_ranking,
         coverage,
     })
 }
@@ -644,6 +631,11 @@ mod tests {
         }];
         let report = super::report(&conn, &q).unwrap();
         assert_eq!((report.cost, report.tokens), (0.5, 50));
+        assert_eq!(
+            report.projects.len(),
+            2,
+            "the lists ignore the project filter"
+        );
         let types: Vec<_> = report
             .series
             .iter()
@@ -665,8 +657,9 @@ mod tests {
         q.models = vec!["claude-opus".into()];
         let report = super::report(&conn, &q).unwrap();
         assert_eq!((report.cost, report.tokens), (3.0, 110));
-        assert_eq!(report.models.len(), 1);
-        assert_eq!(report.model_ranking, ["claude-opus", "sonnet"]);
+        // The lists keep every model and project: a filter narrows the totals and charts only.
+        assert_eq!(report.models.len(), 2);
+        assert_eq!(report.projects.len(), 2);
         q.models = vec!["sonnet".into()];
         let report = super::report(&conn, &q).unwrap();
         assert_eq!((report.cost, report.tokens), (0.5, 50));

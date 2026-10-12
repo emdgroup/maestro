@@ -6,6 +6,7 @@ import { useUsageReport, useUsageSync } from "@/services/usage.service";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { connectionKeyId } from "@/store/homeStore";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { folderName, formatCost, formatMetric, formatTokens, type Metric } from "./format";
 import {
   bucketKeys,
@@ -15,6 +16,7 @@ import {
   resolveRange,
   type RangeChoice,
 } from "./range";
+import { FilterMenu } from "./FilterMenu";
 import { RangePicker } from "./RangePicker";
 import { UsageBreakdown, type BreakdownRow } from "./UsageBreakdown";
 import { UsageChart, type ChartSeries } from "./UsageChart";
@@ -29,14 +31,6 @@ const COLORS = [
   "var(--usage-5)",
 ];
 const OTHER = "var(--usage-other)";
-/** Token types are not a ranking, so none of them takes the accent. */
-const TOKEN_COLORS = [
-  "var(--usage-6)",
-  "var(--usage-2)",
-  "var(--usage-3)",
-  "var(--usage-4)",
-  "var(--usage-5)",
-];
 const TOKEN_TYPES: Record<string, string> = {
   input: "Input",
   output: "Output",
@@ -51,8 +45,9 @@ const SPLITS: { id: UsageSplit; label: string; tokensOnly?: string }[] = [
   { id: "token_type", label: "Token type", tokensOnly: "token type" },
 ];
 const LOCAL: ConnectionKey = { type: "local" };
+const projectId = (p: UsageProjectRef) => `${p.connection_key}|${p.project_path}`;
 const segment =
-  "rounded-[9px] px-2.5 py-1 text-xs text-muted-foreground disabled:cursor-not-allowed disabled:opacity-40";
+  "rounded-[9px] px-2.5 py-1 text-xs text-muted-foreground disabled:pointer-events-none disabled:opacity-40";
 const segmentOn = "bg-background text-foreground shadow-sm";
 
 function parseConnectionKey(key: string): ConnectionKey | null {
@@ -111,10 +106,10 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
   const earliest = report?.series[0]?.bucket;
   const buckets = bucketKeys(range, earliest);
 
-  // Models keep one colour everywhere, filtered or not: the Models panel and the Model split
-  // share this map, ranked over the range before any filter, so the main model has the accent.
+  // Models keep one colour everywhere: the Models panel and the Model split share this map. The
+  // panel ignores the model filter, so a filtered model keeps its colour.
   const modelColors = new Map(
-    (report?.model_ranking ?? []).map((model, i) => [model, COLORS[i] ?? OTHER]),
+    (report?.models ?? []).map((row, i) => [row.model, COLORS[i] ?? OTHER]),
   );
 
   const series: ChartSeries[] = (() => {
@@ -153,12 +148,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
     const shown = keys.slice(0, COLORS.length).map((key, i) => ({
       key,
       label: label(key),
-      color:
-        effectiveSplit === "model"
-          ? (modelColors.get(key) ?? COLORS[i])
-          : effectiveSplit === "token_type"
-            ? TOKEN_COLORS[i]
-            : COLORS[i],
+      color: effectiveSplit === "model" ? (modelColors.get(key) ?? COLORS[i]) : COLORS[i],
       faded: effectiveSplit === "connection" && !attachedIds.includes(key),
       values: byKey.get(key)!,
     }));
@@ -177,10 +167,11 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
 
   const projectRows: BreakdownRow[] = (report?.projects ?? [])
     .map((p) => ({
-      id: `${p.connection_key}|${p.project_path}`,
+      id: projectId(p),
       name: folderName(p.project_path),
       qualifier: connectionName(p.connection_key),
       value: metric === "cost" ? p.cost : p.tokens,
+      selected: projects.some((x) => projectId(x) === projectId(p)),
       byType: p.by_type,
     }))
     .sort((a, b) => b.value - a.value);
@@ -190,6 +181,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
     qualifier: m.agent_ids.map(agentName).join(", "),
     value: m.tokens,
     color: modelColors.get(m.model),
+    selected: models.includes(m.model),
     byType: m.by_type,
   }));
 
@@ -210,6 +202,20 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
       remove: () => setModels((all) => all.filter((x) => x !== m)),
     })),
   ];
+  const toggleFilter = (kind: "project" | "model", id: string) => {
+    if (kind === "model") {
+      setModels((all) => (all.includes(id) ? all.filter((x) => x !== id) : [...all, id]));
+      return;
+    }
+    const picked = report?.projects.find((p) => projectId(p) === id);
+    setProjects((all) =>
+      all.some((p) => projectId(p) === id)
+        ? all.filter((p) => projectId(p) !== id)
+        : picked
+          ? [...all, { connection_key: picked.connection_key, project_path: picked.project_path }]
+          : all,
+    );
+  };
 
   return (
     <>
@@ -229,21 +235,23 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
           Filters:
-          {chips.length ? (
-            chips.map((chip) => (
-              <span
-                key={chip.label}
-                className="flex items-center gap-1 rounded-full border border-foreground/15 py-0.5 pr-1.5 pl-2.5 text-[11px] text-foreground"
-              >
-                {chip.label}
-                <button type="button" aria-label={`Remove ${chip.label}`} onClick={chip.remove}>
-                  <X className="size-3" />
-                </button>
-              </span>
-            ))
-          ) : (
-            <span>none. Click a project or model below.</span>
-          )}
+          {chips.map((chip) => (
+            <span
+              key={chip.label}
+              className="flex items-center gap-1 rounded-full border border-foreground/15 py-0.5 pr-1.5 pl-2.5 text-[11px] text-foreground"
+            >
+              {chip.label}
+              <button type="button" aria-label={`Remove ${chip.label}`} onClick={chip.remove}>
+                <X className="size-3" />
+              </button>
+            </span>
+          ))}
+          <FilterMenu
+            projects={projectRows}
+            models={modelRows}
+            selected={[...projects.map(projectId), ...models]}
+            onToggle={toggleFilter}
+          />
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-4">
@@ -293,21 +301,28 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
             <div className="ml-auto flex rounded-xl bg-muted/60 p-0.5">
               {SPLITS.map((s) => {
                 const disabled = metric === "cost" && !!s.tokensOnly;
-                return (
+                const button = (
                   <button
                     key={s.id}
                     type="button"
                     disabled={disabled}
-                    title={
-                      disabled
-                        ? `Tokens only: cost is recorded per turn, not per ${s.tokensOnly}`
-                        : undefined
-                    }
                     onClick={() => setSplit(s.id)}
                     className={cn(segment, effectiveSplit === s.id && segmentOn)}
                   >
                     {s.label}
                   </button>
+                );
+                if (!disabled) return button;
+                // A disabled button fires no pointer events, so the wrapper carries the tooltip.
+                return (
+                  <Tooltip key={s.id}>
+                    <TooltipTrigger render={<span className="inline-flex cursor-not-allowed" />}>
+                      {button}
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Tokens only: cost is recorded per turn, not per {s.tokensOnly}
+                    </TooltipContent>
+                  </Tooltip>
                 );
               })}
             </div>
@@ -355,29 +370,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
         <div className="mt-4 grid grid-cols-2 gap-4">
           <div className="usage-pane rounded-2xl p-4">
             <div className="mb-1 text-sm font-semibold">Projects · {metric}</div>
-            <UsageBreakdown
-              rows={projectRows}
-              format={format}
-              onPick={(row) => {
-                const picked = report?.projects.find(
-                  (p) => `${p.connection_key}|${p.project_path}` === row.id,
-                );
-                if (!picked) return;
-                const ref = {
-                  connection_key: picked.connection_key,
-                  project_path: picked.project_path,
-                };
-                setProjects((all) =>
-                  all.some(
-                    (p) =>
-                      p.connection_key === ref.connection_key &&
-                      p.project_path === ref.project_path,
-                  )
-                    ? all
-                    : [...all, ref],
-                );
-              }}
-            />
+            <UsageBreakdown rows={projectRows} format={format} />
           </div>
           <div className="usage-pane rounded-2xl p-4">
             <div className="mb-1 text-sm font-semibold">
@@ -388,13 +381,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
                 </span>
               )}
             </div>
-            <UsageBreakdown
-              rows={modelRows}
-              format={formatTokens}
-              onPick={(row) => {
-                setModels((all) => (all.includes(row.id) ? all : [...all, row.id]));
-              }}
-            />
+            <UsageBreakdown rows={modelRows} format={formatTokens} />
           </div>
         </div>
 

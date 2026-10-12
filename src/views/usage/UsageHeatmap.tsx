@@ -1,5 +1,8 @@
+import { useState } from "react";
+import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 import { addDays, addWeeks, format as formatDate, startOfDay, startOfWeek } from "date-fns";
 import type { UsageDayCell, UsageHeatCell } from "@/types/bindings";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { Metric } from "./format";
 
 /** Monday first; the report counts weekdays from Sunday, as SQLite does. */
@@ -15,7 +18,37 @@ const DAYS = [
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const pad = (hour: number) => String(hour).padStart(2, "0");
 const shade = (v: number, max: number) =>
-  `color-mix(in oklab, var(--usage-1) ${6 + (94 * v) / max}%, transparent)`;
+  `color-mix(in oklab, var(--usage-heat) ${6 + (94 * v) / max}%, transparent)`;
+
+type CellHandle = TooltipPrimitive.Handle<unknown>;
+
+/** One tooltip for the whole grid: a few hundred cells each owning one is a few hundred roots. */
+function CellTooltip({ handle }: { handle: CellHandle }) {
+  return (
+    <Tooltip handle={handle}>
+      {({ payload }) => <TooltipContent>{String(payload ?? "")}</TooltipContent>}
+    </Tooltip>
+  );
+}
+
+function Cell({
+  handle,
+  label,
+  background,
+}: {
+  handle: CellHandle;
+  label: string;
+  background: string;
+}) {
+  return (
+    <TooltipTrigger
+      handle={handle}
+      payload={label}
+      delay={0}
+      render={<div className="h-[18px] rounded" style={{ background }} />}
+    />
+  );
+}
 
 function Legend() {
   return (
@@ -23,7 +56,7 @@ function Legend() {
       <span>less</span>
       <span
         className="h-2 w-24 rounded"
-        style={{ background: `linear-gradient(90deg, ${shade(0, 1)}, var(--usage-1))` }}
+        style={{ background: `linear-gradient(90deg, ${shade(0, 1)}, var(--usage-heat))` }}
       />
       <span>more</span>
     </div>
@@ -38,6 +71,7 @@ interface UsageHeatmapProps {
 
 /** The selected metric summed per hour of each weekday over the range, on one hue. */
 export function UsageHeatmap({ cells, metric, format }: UsageHeatmapProps) {
+  const [handle] = useState(() => TooltipPrimitive.createHandle());
   const value = (weekday: number, hour: number) => {
     const cell = cells.find((c) => c.weekday === weekday && c.hour === hour);
     return cell ? (metric === "cost" ? cell.cost : cell.tokens) : 0;
@@ -53,11 +87,11 @@ export function UsageHeatmap({ cells, metric, format }: UsageHeatmapProps) {
               {HOURS.map((hour) => {
                 const v = value(weekday, hour);
                 return (
-                  <div
+                  <Cell
                     key={hour}
-                    title={`${name} ${pad(hour)}:00–${pad(hour + 1)}:00 · ${format(v)}`}
-                    className="h-[18px] rounded"
-                    style={{ background: shade(v, max) }}
+                    handle={handle}
+                    label={`${name} ${pad(hour)}:00–${pad(hour + 1)}:00 · ${format(v)}`}
+                    background={shade(v, max)}
                   />
                 );
               })}
@@ -71,6 +105,7 @@ export function UsageHeatmap({ cells, metric, format }: UsageHeatmapProps) {
         ))}
       </div>
       <Legend />
+      <CellTooltip handle={handle} />
     </div>
   );
 }
@@ -86,6 +121,7 @@ interface UsageCalendarProps {
 
 /** The selected metric per day, one column per week from Monday, on the heatmap's hue. */
 export function UsageCalendar({ days, start, end, metric, format }: UsageCalendarProps) {
+  const [handle] = useState(() => TooltipPrimitive.createHandle());
   const values = new Map(days.map((d) => [d.day, metric === "cost" ? d.cost : d.tokens]));
   const max = Math.max(...values.values(), 0) || 1;
   const first = startOfDay(start);
@@ -124,11 +160,11 @@ export function UsageCalendar({ days, start, end, metric, format }: UsageCalenda
                   if (day < first || day >= end) return <span key={week.toISOString()} />;
                   const v = values.get(formatDate(day, "yyyy-MM-dd")) ?? 0;
                   return (
-                    <div
+                    <Cell
                       key={week.toISOString()}
-                      title={`${formatDate(day, "EEE, MMM d")} · ${format(v)}`}
-                      className="h-[18px] rounded"
-                      style={{ background: shade(v, max) }}
+                      handle={handle}
+                      label={`${formatDate(day, "EEE, MMM d")} · ${format(v)}`}
+                      background={shade(v, max)}
                     />
                   );
                 })}
@@ -138,6 +174,7 @@ export function UsageCalendar({ days, start, end, metric, format }: UsageCalenda
         </div>
       </div>
       <Legend />
+      <CellTooltip handle={handle} />
     </div>
   );
 }

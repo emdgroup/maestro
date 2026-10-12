@@ -5,7 +5,7 @@ interface HeroProps {
   working: number;
   needYou: number;
   toReview: number;
-  /** Beside the scoreboard: the tile into the Usage view. */
+  /** First on the scoreboard: the tile into the Usage view. */
   aside?: ReactNode;
 }
 
@@ -26,6 +26,7 @@ export function Hero({ working, needYou, toReview, aside }: HeroProps) {
         </div>
       </div>
       <div className="ml-auto flex gap-10">
+        {aside}
         {scores.map((score) => (
           <div key={score.label}>
             <div
@@ -39,7 +40,6 @@ export function Hero({ working, needYou, toReview, aside }: HeroProps) {
             <div className="mt-1 text-xs text-muted-foreground">{score.label}</div>
           </div>
         ))}
-        {aside}
       </div>
     </section>
   );

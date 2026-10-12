@@ -26,7 +26,6 @@ const report: UsageReport = {
     },
   ],
   models: [{ model: "claude-opus", agent_ids: ["claude-acp"], tokens: 100, by_type: split }],
-  model_ranking: ["claude-opus"],
   coverage: [
     { connection_key: "local", connection_name: "This computer", synced_at: null, removed: false },
     {
@@ -65,13 +64,13 @@ describe("the Usage view", () => {
   it("disables the tokens-only splits under Cost, and enables them under Tokens", async () => {
     renderView();
     await screen.findByText("gpu-rig");
-    const model = screen.getByRole("button", { name: "Model" }) as HTMLButtonElement;
-    expect(model.disabled).toBe(true);
+    const model = () => screen.getByRole("button", { name: "Model" }) as HTMLButtonElement;
+    expect(model().disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Token type" }) as HTMLButtonElement).disabled).toBe(
       true,
     );
     fireEvent.click(screen.getByRole("button", { name: /^Tokens/, pressed: false }));
-    expect(model.disabled).toBe(false);
+    expect(model().disabled).toBe(false);
   });
 
   it("hides the heatmap under 7 days, and shows days past 7", async () => {
@@ -85,9 +84,18 @@ describe("the Usage view", () => {
     expect(await screen.findByText(/Cost per day/)).toBeTruthy();
   });
 
-  it("filters by a clicked project", async () => {
+  it("expands a clicked row rather than filtering", async () => {
     renderView();
     fireEvent.click(await screen.findByText("maestro"));
+    expect(screen.getAllByText("Cache read").length).toBeGreaterThan(0);
+    expect(getUsageReport).toHaveBeenLastCalledWith(expect.objectContaining({ projects: [] }));
+  });
+
+  it("filters by a project picked in the Filter menu", async () => {
+    renderView();
+    await screen.findByText("maestro");
+    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
+    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: /maestro/ }));
     const filters = screen.getByText(/^Filters:/);
     expect(within(filters).getByText(/maestro · This computer/)).toBeTruthy();
     expect(getUsageReport).toHaveBeenLastCalledWith(
