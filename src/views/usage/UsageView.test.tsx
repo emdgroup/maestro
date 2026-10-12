@@ -24,7 +24,7 @@ const report: UsageReport = {
       by_type: split,
     },
   ],
-  models: [{ model: "claude-opus", agent_id: "claude-acp", tokens: 100, by_type: split }],
+  models: [{ model: "claude-opus", agent_ids: ["claude-acp"], tokens: 100, by_type: split }],
   coverage: [
     { connection_key: "local", connection_name: "This computer", synced_at: null, removed: false },
     {

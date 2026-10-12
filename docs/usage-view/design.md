@@ -98,8 +98,9 @@ finer than an hour.
 ## Colour
 
 Series take the categorical palette in fixed order and keep their colour when filters change the
-series count. A connection that is not attached draws at reduced opacity. The heatmap uses one
-sequential hue. Text never takes a series colour. Light and dark steps are in the mock.
+series count. The first slot, and the heatmap's one hue, is the user's accent colour; the other
+slots are fixed. A connection that is not attached draws at reduced opacity. Text never takes a
+series colour. Light and dark steps are in the mock.
 
 ## Data
 
@@ -139,8 +140,13 @@ time range, filters and a `GROUP BY`. A second view does the same for tokens per
 ### Rules
 
 - **Cost** is per turn. A turn that reported no cost counts as zero, with no note.
-- **Tokens per model** come from the per-model rows. A turn with none is credited to the model
-  selected in its session, with the turn's tokens.
+- **A model is one name**, the one agents report per turn (`claude-opus-5-5`), without the
+  context-window suffix (`[1m]`), across every agent that used it. A session's selected id
+  (`opus`) stands for the reported model it spent the most tokens on, learned from the turns and
+  hours that carry both.
+- **Tokens per model** come from the per-model rows. A turn with none is credited to its selected
+  id's model, with the turn's tokens. Filtering by a model keeps, for cost, the turns that used
+  it.
 - **Projects** are a connection and a path: the same path on two connections is two projects, each
   labelled with its connection. The name is the folder's.
 - **Agents** are named from the agent registry, falling back to the raw `agent_id`.

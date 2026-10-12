@@ -4353,7 +4353,11 @@ export type UsageHeatCell = {
  * 0 is Sunday.
  */
 weekday: number; hour: number; cost: number; tokens: number }
-export type UsageModelRow = { model: string; agent_id: string; 
+export type UsageModelRow = { model: string; 
+/**
+ * Every agent that used it.
+ */
+agent_ids: string[]; 
 /**
  * The five token types added up: a model's rows carry no total of their own.
  */

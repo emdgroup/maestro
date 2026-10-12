@@ -165,9 +165,9 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
     }))
     .sort((a, b) => b.value - a.value);
   const modelRows: BreakdownRow[] = (report?.models ?? []).map((m) => ({
-    id: `${m.model}|${m.agent_id}`,
+    id: m.model,
     name: m.model || "Unknown model",
-    qualifier: agentName(m.agent_id),
+    qualifier: m.agent_ids.map(agentName).join(", "),
     value: m.tokens,
     color: modelColors.get(m.model),
     byType: m.by_type,
@@ -358,8 +358,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
             rows={modelRows}
             format={formatTokens}
             onPick={(row) => {
-              const model = row.id.split("|")[0];
-              setModels((all) => (all.includes(model) ? all : [...all, model]));
+              setModels((all) => (all.includes(row.id) ? all : [...all, row.id]));
             }}
           />
         </div>

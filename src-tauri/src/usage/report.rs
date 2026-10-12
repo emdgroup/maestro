@@ -101,7 +101,8 @@ pub struct UsageProjectRow {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 pub struct UsageModelRow {
     pub model: String,
-    pub agent_id: String,
+    /// Every agent that used it.
+    pub agent_ids: Vec<String>,
     /// The five token types added up: a model's rows carry no total of their own.
     pub tokens: i64,
     pub by_type: UsageTokenSplit,
@@ -176,23 +177,17 @@ fn filters(query: &UsageQuery, models: ModelMatch) -> Result<(String, Vec<Value>
                 clauses.push(format!("f.model IN ({marks})"));
                 values.extend(model_values);
             }
+            // The same attribution as the Models panel, so a model's row and its filter agree.
             ModelMatch::Used => {
-                let turn = "FROM usage_turn_models m
-                            WHERE m.store_id = f.store_id AND m.turn_id = f.turn_id";
-                let hour = "FROM usage_hourly_models m
-                            WHERE m.store_id = f.store_id AND m.hour = f.at
-                              AND m.agent_id = f.agent_id AND m.project_path = f.project_path";
                 clauses.push(format!(
-                    "CASE WHEN f.turn_id IS NOT NULL
-                     THEN EXISTS (SELECT 1 {turn} AND m.model IN ({marks}))
-                          OR (f.model_id IN ({marks}) AND NOT EXISTS (SELECT 1 {turn}))
-                     ELSE EXISTS (SELECT 1 {hour} AND m.model IN ({marks}))
-                          OR (f.model_id IN ({marks}) AND NOT EXISTS (SELECT 1 {hour}))
-                     END"
+                    "EXISTS (SELECT 1 FROM usage_model_facts mf
+                             WHERE mf.store_id = f.store_id AND mf.model IN ({marks})
+                               AND CASE WHEN f.turn_id IS NOT NULL THEN mf.turn_id = f.turn_id
+                                   ELSE mf.turn_id IS NULL AND mf.at = f.at
+                                        AND mf.agent_id = f.agent_id
+                                        AND mf.project_path = f.project_path END)"
                 ));
-                for _ in 0..4 {
-                    values.extend(model_values.clone());
-                }
+                values.extend(model_values);
             }
         }
     }
@@ -387,15 +382,19 @@ pub fn report(conn: &Connection, query: &UsageQuery) -> Result<UsageReport, Stri
     let mut models = rows(
         conn,
         &format!(
-            "SELECT f.model, f.agent_id, {SPLIT_SUMS}
-             FROM {MODEL_FACTS} {models_where} GROUP BY 1, 2"
+            "SELECT f.model, GROUP_CONCAT(DISTINCT f.agent_id), {SPLIT_SUMS}
+             FROM {MODEL_FACTS} {models_where} GROUP BY 1"
         ),
         &models_values,
         |r| {
             let by_type = token_split(r, 2)?;
             Ok(UsageModelRow {
                 model: r.get(0)?,
-                agent_id: r.get(1)?,
+                agent_ids: r
+                    .get::<_, String>(1)?
+                    .split(',')
+                    .map(str::to_string)
+                    .collect(),
                 tokens: by_type.input
                     + by_type.output
                     + by_type.thought
@@ -499,7 +498,7 @@ mod tests {
                 ],
                 models: vec![UsageTurnModelRow {
                     turn_id: 1,
-                    model: "claude-opus".into(),
+                    model: "claude-opus[1m]".into(),
                     tokens: UsageTokens {
                         input_tokens: Some(80),
                         output_tokens: Some(20),
@@ -573,8 +572,10 @@ mod tests {
             .iter()
             .map(|m| (m.model.as_str(), m.tokens))
             .collect();
-        // Turn 1 has model rows; turns 2 and the SSH turn have none.
-        assert_eq!(models, [("claude-opus", 100), ("sonnet", 50), ("opus", 10)]);
+        // Turn 1 reported claude-opus[1m] with opus selected, so the SSH turn's opus is the same
+        // model; nothing says what sonnet is, so it keeps its name.
+        assert_eq!(models, [("claude-opus", 110), ("sonnet", 50)]);
+        assert_eq!(report.models[0].agent_ids, ["claude-acp"]);
         assert!(report.series.iter().all(|p| p.cost.is_none()));
     }
 
@@ -605,16 +606,15 @@ mod tests {
             ]
         );
 
-        // Turn 1 used claude-opus by its model rows, though opus was selected; the SSH turn has
-        // no model rows, so its selected opus is what it used.
+        // Turn 1 used claude-opus by its model rows, and the SSH turn by its selected opus.
         let mut q = query(UsageSplit::Agent);
         q.models = vec!["claude-opus".into()];
         let report = super::report(&conn, &q).unwrap();
-        assert_eq!((report.cost, report.tokens), (1.0, 100));
+        assert_eq!((report.cost, report.tokens), (3.0, 110));
         assert_eq!(report.models.len(), 1);
-        q.models = vec!["opus".into()];
+        q.models = vec!["sonnet".into()];
         let report = super::report(&conn, &q).unwrap();
-        assert_eq!((report.cost, report.tokens), (2.0, 10));
-        assert_eq!(report.heatmap.iter().map(|c| c.tokens).sum::<i64>(), 10);
+        assert_eq!((report.cost, report.tokens), (0.5, 50));
+        assert_eq!(report.heatmap.iter().map(|c| c.tokens).sum::<i64>(), 50);
     }
 }

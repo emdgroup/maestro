@@ -49,42 +49,38 @@
     </style>
     <style>
       .dark .viz {
-        --s1: #3987e5;
+        --s1: var(--accent);
         --s2: #d95926;
         --s3: #199e70;
         --s4: #c98500;
         --s5: #d55181;
-        --seq: 57, 135, 229;
       }
     </style>
   </head>
   <body>
     <style>
       .viz {
-        --s1: #2a78d6;
+        --s1: var(--accent);
         --s2: #eb6834;
         --s3: #1baf7a;
         --s4: #eda100;
         --s5: #e87ba4;
-        --seq: 42, 120, 214;
         --grid: color-mix(in oklab, currentColor 10%, transparent);
       }
       :root[data-theme="dark"] .viz {
-        --s1: #3987e5;
+        --s1: var(--accent);
         --s2: #d95926;
         --s3: #199e70;
         --s4: #c98500;
         --s5: #d55181;
-        --seq: 57, 135, 229;
       }
       @media (prefers-color-scheme: dark) {
         :root:where(:not([data-theme="light"])) .viz {
-          --s1: #3987e5;
+          --s1: var(--accent);
           --s2: #d95926;
           --s3: #199e70;
           --s4: #c98500;
           --s5: #d55181;
-          --seq: 57, 135, 229;
         }
       }
       .glass {
@@ -409,9 +405,9 @@
           ["gpu-rig (cached)", "--s4", 0.25],
         ],
         model: [
-          ["Claude 5 Sonnet", "--s1", 1],
-          ["GPT-5.6 Sol", "--s2", 0.6],
-          ["Claude 4.5 Haiku", "--s3", 0.3],
+          ["claude-sonnet-5-5", "--s1", 1],
+          ["gpt-5.6-sol", "--s2", 0.6],
+          ["claude-haiku-4-5", "--s3", 0.3],
         ],
         agent: [
           ["Claude", "--s1", 1.4],
@@ -696,9 +692,9 @@
             }
           const mx = Math.max(...cells.map((c) => c[2]));
           document.getElementById("heat-plot").innerHTML =
-            `<div class="flex gap-2"><div class="flex flex-col text-[11px] text-muted-foreground" style="gap:4px">${days.map((d) => `<span style="height:18px;line-height:18px">${d}</span>`).join("")}</div><svg class="flex-1" viewBox="0 0 624 154" preserveAspectRatio="none" style="height:154px">${cells.map(([d, x, v], i) => `<rect data-c="${i}" x="${x * 26}" y="${d * 22}" width="23" height="18" rx="4" fill="rgba(var(--seq),${(0.06 + (0.94 * v) / mx).toFixed(2)})"/>`).join("")}</svg></div>
+            `<div class="flex gap-2"><div class="flex flex-col text-[11px] text-muted-foreground" style="gap:4px">${days.map((d) => `<span style="height:18px;line-height:18px">${d}</span>`).join("")}</div><svg class="flex-1" viewBox="0 0 624 154" preserveAspectRatio="none" style="height:154px">${cells.map(([d, x, v], i) => `<rect data-c="${i}" x="${x * 26}" y="${d * 22}" width="23" height="18" rx="4" style="fill:color-mix(in oklab, var(--s1) ${(6 + (94 * v) / mx).toFixed(0)}%, transparent)"/>`).join("")}</svg></div>
   <div class="flex items-center mt-1 pl-9 text-[11px] text-muted-foreground"><div class="flex-1 flex justify-between">${[0, 3, 6, 9, 12, 15, 18, 21].map((h) => `<span>${String(h).padStart(2, "0")}:00</span>`).join("")}</div></div>
-  <div class="flex items-center gap-1.5 mt-2 text-[11px] text-muted-foreground"><span>less</span><span class="h-2 w-24 rounded" style="background:linear-gradient(90deg,rgba(var(--seq),.06),rgba(var(--seq),1))"></span><span>more</span></div>`;
+  <div class="flex items-center gap-1.5 mt-2 text-[11px] text-muted-foreground"><span>less</span><span class="h-2 w-24 rounded" style="background:linear-gradient(90deg,color-mix(in oklab, var(--s1) 6%, transparent),var(--s1))"></span><span>more</span></div>`;
           const ht = document.getElementById("htip");
           hm.querySelectorAll("rect[data-c]").forEach((el) => {
             el.onmouseenter = () => {
@@ -768,9 +764,9 @@
         list(
           "mdl",
           [
-            ["Claude 5 Sonnet", "Claude", 0.593, "--s1"],
-            ["GPT-5.6 Sol", "Codex", 0.374, "--s2"],
-            ["Claude 4.5 Haiku", "Claude", 0.033, "--s3"],
+            ["claude-sonnet-5-5", "Claude, Codex", 0.593, "--s1"],
+            ["gpt-5.6-sol", "Codex", 0.374, "--s2"],
+            ["claude-haiku-4-5", "Claude", 0.033, "--s3"],
           ],
           true,
           fmtt,

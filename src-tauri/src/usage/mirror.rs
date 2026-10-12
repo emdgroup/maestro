@@ -115,28 +115,71 @@ SELECT store_id, NULL, hour, agent_id, project_path, model_id, cost_currency, tu
        cost_amount
 FROM usage_hourly;
 
--- Tokens per model. A turn the agent gave no per-model rows for counts for the model selected in
--- its session, with the turn's own tokens; an hour with no model rows likewise. An hour that mixed
--- turns with and without model rows keeps only the model rows.
+-- Agents name models two ways: the session's selected id (`opus`) and, per turn, the models they
+-- report using (`claude-opus-5-5[1m]`). A model is one name: the reported one, without the
+-- context-window suffix. A selected id stands for the reported model it spent the most tokens on,
+-- learned from the turns and hours that carry both.
+CREATE VIEW IF NOT EXISTS usage_model_aliases AS
+SELECT agent_id, model_id, model FROM (
+    SELECT agent_id, model_id, model,
+           ROW_NUMBER() OVER (PARTITION BY agent_id, model_id
+                              ORDER BY SUM(tokens) DESC, model) AS rank
+    FROM (
+        SELECT t.agent_id, t.model_id,
+               CASE WHEN instr(m.model, '[') > 0 THEN rtrim(substr(m.model, 1, instr(m.model, '[') - 1))
+            ELSE m.model END AS model,
+               COALESCE(m.input_tokens, 0) + COALESCE(m.output_tokens, 0)
+           + COALESCE(m.thought_tokens, 0) + COALESCE(m.cached_read_tokens, 0)
+           + COALESCE(m.cached_write_tokens, 0) AS tokens
+        FROM usage_turn_models m
+        JOIN usage_turns t ON t.store_id = m.store_id AND t.id = m.turn_id
+        WHERE t.model_id IS NOT NULL
+        UNION ALL
+        SELECT h.agent_id, h.model_id,
+               CASE WHEN instr(m.model, '[') > 0 THEN rtrim(substr(m.model, 1, instr(m.model, '[') - 1))
+            ELSE m.model END,
+               COALESCE(m.input_tokens, 0) + COALESCE(m.output_tokens, 0)
+           + COALESCE(m.thought_tokens, 0) + COALESCE(m.cached_read_tokens, 0)
+           + COALESCE(m.cached_write_tokens, 0)
+        FROM usage_hourly_models m
+        JOIN usage_hourly h ON h.store_id = m.store_id AND h.hour = m.hour
+                           AND h.agent_id = m.agent_id AND h.project_path = m.project_path
+        WHERE h.model_id <> ''
+    )
+    GROUP BY agent_id, model_id, model
+)
+WHERE rank = 1;
+
+-- Tokens per model. A turn the agent gave no per-model rows for counts for its selected id's
+-- model, with the turn's own tokens; an hour with no model rows likewise. An hour that mixed
+-- turns with and without model rows keeps only the model rows. `turn_id` is null on an hour.
 CREATE VIEW IF NOT EXISTS usage_model_facts AS
-SELECT m.store_id, t.started_at AS at, t.agent_id, t.project_path, m.model, m.input_tokens,
-       m.output_tokens, m.thought_tokens, m.cached_read_tokens, m.cached_write_tokens
+SELECT m.store_id, m.turn_id, t.started_at AS at, t.agent_id, t.project_path,
+       CASE WHEN instr(m.model, '[') > 0 THEN rtrim(substr(m.model, 1, instr(m.model, '[') - 1))
+            ELSE m.model END AS model,
+       m.input_tokens, m.output_tokens, m.thought_tokens, m.cached_read_tokens,
+       m.cached_write_tokens
 FROM usage_turn_models m JOIN usage_turns t ON t.store_id = m.store_id AND t.id = m.turn_id
 UNION ALL
-SELECT t.store_id, t.started_at, t.agent_id, t.project_path, COALESCE(t.model_id, ''),
-       t.input_tokens, t.output_tokens, t.thought_tokens, t.cached_read_tokens,
-       t.cached_write_tokens
+SELECT t.store_id, t.id, t.started_at, t.agent_id, t.project_path,
+       COALESCE(a.model, t.model_id, ''), t.input_tokens, t.output_tokens, t.thought_tokens,
+       t.cached_read_tokens, t.cached_write_tokens
 FROM usage_turns t
+LEFT JOIN usage_model_aliases a ON a.agent_id = t.agent_id AND a.model_id = t.model_id
 WHERE NOT EXISTS (SELECT 1 FROM usage_turn_models m
                   WHERE m.store_id = t.store_id AND m.turn_id = t.id)
 UNION ALL
-SELECT store_id, hour, agent_id, project_path, model, input_tokens, output_tokens,
-       thought_tokens, cached_read_tokens, cached_write_tokens
+SELECT store_id, NULL, hour, agent_id, project_path,
+       CASE WHEN instr(model, '[') > 0 THEN rtrim(substr(model, 1, instr(model, '[') - 1))
+            ELSE model END,
+       input_tokens, output_tokens, thought_tokens, cached_read_tokens, cached_write_tokens
 FROM usage_hourly_models
 UNION ALL
-SELECT h.store_id, h.hour, h.agent_id, h.project_path, h.model_id, h.input_tokens,
-       h.output_tokens, h.thought_tokens, h.cached_read_tokens, h.cached_write_tokens
+SELECT h.store_id, NULL, h.hour, h.agent_id, h.project_path, COALESCE(a.model, h.model_id),
+       h.input_tokens, h.output_tokens, h.thought_tokens, h.cached_read_tokens,
+       h.cached_write_tokens
 FROM usage_hourly h
+LEFT JOIN usage_model_aliases a ON a.agent_id = h.agent_id AND a.model_id = h.model_id
 WHERE NOT EXISTS (SELECT 1 FROM usage_hourly_models m
                   WHERE m.store_id = h.store_id AND m.hour = h.hour
                     AND m.agent_id = h.agent_id AND m.project_path = h.project_path);
@@ -622,8 +665,8 @@ mod tests {
         let by_model = models(&conn);
         assert_eq!(
             by_model,
-            [("claude-opus".to_string(), 1100), ("opus".to_string(), 200)],
-            "turn 2 has no model rows, so it counts for its session's model"
+            [("claude-opus".to_string(), 1300)],
+            "turn 2 has no model rows: its selected opus is what opus turned out to be"
         );
 
         merge_old(&conn, now).unwrap();

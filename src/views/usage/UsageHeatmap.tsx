@@ -41,7 +41,9 @@ export function UsageHeatmap({ cells, metric, format }: UsageHeatmapProps) {
                     key={hour}
                     title={`${name} ${pad(hour)}:00–${pad(hour + 1)}:00 · ${format(v)}`}
                     className="h-[18px] rounded"
-                    style={{ background: `rgb(var(--usage-seq) / ${0.06 + (0.94 * v) / max})` }}
+                    style={{
+                      background: `color-mix(in oklab, var(--usage-1) ${6 + (94 * v) / max}%, transparent)`,
+                    }}
                   />
                 );
               })}
@@ -60,7 +62,7 @@ export function UsageHeatmap({ cells, metric, format }: UsageHeatmapProps) {
           className="h-2 w-24 rounded"
           style={{
             background:
-              "linear-gradient(90deg, rgb(var(--usage-seq) / 0.06), rgb(var(--usage-seq)))",
+              "linear-gradient(90deg, color-mix(in oklab, var(--usage-1) 6%, transparent), var(--usage-1))",
           }}
         />
         <span>more</span>
