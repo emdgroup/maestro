@@ -114,6 +114,18 @@ async getSessionUsage(connection: ConnectionKey, agentId: string, acpSessionId: 
 }
 },
 /**
+ * Bring the app's copy of a connection's usage up to date. Like Home's summary, this never starts
+ * a relay: a connection Home has not attached to answers "No connection server".
+ */
+async syncUsage(connection: ConnectionKey) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("sync_usage", { connection }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Ask whoever holds a project to give it up. `true` once it is this window's; the caller opens
  * it as usual after that.
  */

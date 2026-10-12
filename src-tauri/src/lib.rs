@@ -13,6 +13,7 @@ pub mod prompts;
 pub mod settings;
 pub mod task;
 pub mod templates;
+pub mod usage;
 
 pub use core::{
     get_git_connection, get_project_with_git_conn, init_db, AcpState, AppState, PtyState, SshState,
@@ -40,6 +41,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::list_project_locks,
         crate::ipc::get_home_summary,
         crate::ipc::get_session_usage,
+        crate::ipc::sync_usage,
         crate::ipc::request_project_takeover,
         crate::ipc::answer_project_takeover,
         crate::ipc::delete_project,

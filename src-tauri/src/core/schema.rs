@@ -1,7 +1,7 @@
 use rusqlite::{Connection, Result as SqlResult};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: u32 = 32;
+pub const SCHEMA_VERSION: u32 = 33;
 
 pub const SCHEMA_V32_FULL: &str = r#"
 -- Enable foreign keys
@@ -370,8 +370,9 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
     conn.execute("PRAGMA foreign_keys = ON;", [])?;
 
     if current_version == 0 {
-        // Fresh install: create full schema
+        // Fresh install: create full schema, then what came after it
         conn.execute_batch(SCHEMA_V32_FULL)?;
+        run_migrations(conn, 32)?;
     } else if current_version < 22 {
         // Legacy drop-recreate: no data to preserve before V22
         conn.execute_batch(
@@ -395,6 +396,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
         "#,
         )?;
         conn.execute_batch(SCHEMA_V32_FULL)?;
+        run_migrations(conn, 32)?;
     } else {
         // current_version >= 22: apply incremental migrations.
         // Committing the migrations and the version bump together means a failure part-way
@@ -444,7 +446,15 @@ fn run_migrations(conn: &Connection, from: u32) -> SqlResult<()> {
     if from < 32 {
         migrate_to_v32(conn)?;
     }
+    if from < 33 {
+        migrate_to_v33(conn)?;
+    }
     Ok(())
+}
+
+/// The mirror of every connection's usage, for the Usage view. See `usage::mirror`.
+fn migrate_to_v33(conn: &Connection) -> SqlResult<()> {
+    conn.execute_batch(crate::usage::mirror::V33_USAGE_MIRROR)
 }
 
 /// The stamp the phase 4 import leaves on a project, so it is sent to the daemon once.
@@ -789,7 +799,8 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 32);
+        assert_eq!(version, 33);
+        assert!(tables.contains(&"usage_stores".to_string()));
         assert!(tables.contains(&"docker_connections".to_string()));
         assert!(tables.contains(&"connection_settings".to_string()));
         assert!(tables.contains(&"templates".to_string()));

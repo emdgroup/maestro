@@ -30,6 +30,10 @@ export async function attach(connection: ConnectionKey, replace = false) {
     return;
   }
   useConfigStore.getState().setPreflightToolChecks(connection, response.data.tool_checks);
+  // Once per attach; the Usage view syncs again while it is open.
+  void commands.syncUsage(connection).then((result) => {
+    if (result.status === "error") console.warn("could not sync usage", result.error);
+  });
   setPhase(
     id,
     response.data.tool_checks.some((tool) => !tool.available)
