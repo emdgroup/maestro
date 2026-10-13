@@ -1,4 +1,4 @@
-import { FileWarning, Paperclip, Upload, X } from "lucide-react";
+import { Download, FileWarning, Paperclip, X } from "lucide-react";
 import { toast } from "sonner";
 import type { ConnectionKey, TaskAttachment } from "@/types/bindings";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
@@ -225,7 +225,7 @@ export function AttachmentSection({
               : "border-border hover:border-muted-foreground/50",
           )}
         >
-          <Upload className="mx-auto mb-2 size-5 text-muted-foreground/60" />
+          <Download className="mx-auto mb-2 size-5 text-muted-foreground/60" />
           <p>
             Drop files here or{" "}
             <button
