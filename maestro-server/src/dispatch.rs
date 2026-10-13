@@ -1145,7 +1145,8 @@ pub(crate) async fn dispatch_message(
         // Boxed and out of line: this function's frame is already most of the main thread's stack.
         request @ (ServerRequest::RerunLoopChecks(_)
         | ServerRequest::ReadLoopNotes(_)
-        | ServerRequest::AnswerLoopProposal(_)) => {
+        | ServerRequest::AnswerLoopProposal(_)
+        | ServerRequest::OpenAgentGate(_)) => {
             let (reply, pushes) =
                 Box::pin(crate::loop_engine::answer(request, project_store, stdout)).await;
             send_or_return!(send_response(stdout, &reply).await);
@@ -1819,16 +1820,18 @@ pub(crate) async fn dispatch_message(
                 crate::helpers::broadcast(stdout, push).await;
             }
             match begun {
-                Ok(crate::task_runner::Begun::Deferred) => send_or_return!(
-                    send_response(
-                        stdout,
-                        &ServerResponse::StartTaskOk(maestro_protocol::StartTaskResponse {
-                            session_id: None,
-                            skipped_attachments: vec![],
-                        },),
+                Ok(crate::task_runner::Begun::Deferred | crate::task_runner::Begun::Gated) => {
+                    send_or_return!(
+                        send_response(
+                            stdout,
+                            &ServerResponse::StartTaskOk(maestro_protocol::StartTaskResponse {
+                                session_id: None,
+                                skipped_attachments: vec![],
+                            },),
+                        )
+                        .await
                     )
-                    .await
-                ),
+                }
                 // Answered once the session is in the map, or once the start has failed.
                 Ok(crate::task_runner::Begun::Claimed(claimed)) => {
                     tokio::spawn(Box::pin(crate::task_runner::launch(

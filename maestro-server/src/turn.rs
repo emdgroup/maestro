@@ -313,6 +313,10 @@ pub struct TurnFacts {
     /// Every shell command it ran that mentions `git`, in order, which is what a loop reads for a
     /// worker looking at its sealed checks.
     pub git_commands: Vec<String>,
+    /// The agent refused the prompt for a usage limit.
+    pub usage_limited: bool,
+    /// The last plan-limit reading the turn carried.
+    pub plan_reading: Option<crate::agent_gate::PlanReading>,
 }
 
 #[derive(Default)]
@@ -323,6 +327,8 @@ struct TurnState {
     closing: ClosingMessage,
     /// By tool call id, since a call's input can arrive in its updates.
     git_commands: Vec<(String, String)>,
+    usage_limited: bool,
+    plan_reading: Option<crate::agent_gate::PlanReading>,
 }
 
 /// Enough for any turn; past it, the rest are not kept.
@@ -417,8 +423,18 @@ pub(crate) fn note_update(session_id: &str, payload: &serde_json::Value) {
         Some("user_message_chunk") => {
             with_state(session_id, |state| state.closing.reset());
         }
+        Some("usage_update") => {
+            if let Some(reading) = crate::agent_gate::reading(payload) {
+                with_state(session_id, |state| state.plan_reading = Some(reading));
+            }
+        }
         _ => {}
     }
+}
+
+/// The agent refused the prompt for a usage limit.
+pub(crate) fn note_usage_limited(session_id: &str) {
+    with_state(session_id, |state| state.usage_limited = true);
 }
 
 /// Read and forget what the session's current turn produced.
@@ -439,6 +455,8 @@ pub(crate) fn take_turn_facts(session_id: &str) -> TurnFacts {
             .into_iter()
             .map(|(_, command)| command)
             .collect(),
+        usage_limited: state.usage_limited,
+        plan_reading: state.plan_reading,
     }
 }
 
@@ -466,6 +484,28 @@ mod tests {
                 note_update(sid, &update(kind, *text));
             }
             take_turn_facts(sid)
+        }
+
+        #[test]
+        fn a_turn_keeps_its_last_plan_reading_and_its_refusal() {
+            let sid = "facts-plan-reading";
+            note_turn_started(sid);
+            note_update(
+                sid,
+                &serde_json::json!({
+                    "sessionUpdate": "usage_update", "used": 1, "size": 2,
+                    "_meta": {"_claude/rateLimit": {"status": "rejected", "resetsAt": 1234}}
+                }),
+            );
+            note_usage_limited(sid);
+            let facts = take_turn_facts(sid);
+            assert!(facts.usage_limited);
+            assert_eq!(
+                facts.plan_reading,
+                Some(crate::agent_gate::PlanReading {
+                    resets_at: Some(1234)
+                })
+            );
         }
 
         #[test]

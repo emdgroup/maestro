@@ -64,6 +64,8 @@ pub(crate) fn hold_turn_end(ended: crate::helpers::TurnEnd) -> Option<crate::hel
 /// What the loop decided: the task waits for a slot, or it is claimed and ready to launch.
 pub(crate) enum Begun {
     Deferred,
+    /// Unattended, and its agent's usage-limit gate is closed: the drain starts it once it opens.
+    Gated,
     Claimed(Box<Claimed>),
 }
 
@@ -281,6 +283,12 @@ pub(crate) fn begin(
         }
         return Err(NotBegun::NoAgent(reason));
     };
+    // A user's own start goes ahead: it is the probe they asked for.
+    if request.unattended
+        && crate::agent_gate::closed_until(conn, &agent_id, chrono::Utc::now()).is_some()
+    {
+        return Ok(Begun::Gated);
+    }
 
     // A retry of a failed spawn is still the start of the phase the first claim took it from.
     let prior_phase = match task.phase {
@@ -1125,6 +1133,25 @@ mod tests {
         };
         assert_eq!(claimed.agent_id, "other");
         assert_eq!(claimed.task.agent_id, None);
+    }
+
+    /// A closed gate holds the drain's starts on that agent; the user's own start goes ahead.
+    #[test]
+    fn a_closed_gate_holds_unattended_starts_only() {
+        let (_dir, project, mut conn, task) = setup(Some("fake"));
+        let refused = crate::turn::TurnFacts {
+            usage_limited: true,
+            ..Default::default()
+        };
+        crate::agent_gate::turn_ended(&conn, "fake", &refused, "error", chrono::Utc::now());
+        let mut start = request(&project, &task);
+        start.unattended = true;
+        let mut pushes = Vec::new();
+        let begun = begin(&mut conn, &start, 0, &[agent("fake")], &mut pushes).unwrap();
+        assert!(matches!(begun, Begun::Gated));
+        start.unattended = false;
+        let begun = begin(&mut conn, &start, 0, &[agent("fake")], &mut pushes).unwrap();
+        assert!(matches!(begun, Begun::Claimed(_)));
     }
 
     #[test]

@@ -253,6 +253,12 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
         TaskTransition::LoopResumed => {
             TaskState::active(InProgress, Iterating, Waiting, Ball::Agent)
         }
+
+        TaskTransition::UsageLimited => TaskState {
+            phase_status: Some(Waiting),
+            ball: Ball::Agent,
+            ..current
+        },
     }
 }
 
@@ -295,6 +301,7 @@ fn admit(
             // pins where the task is. `Approval` waits on a person, so it is not one.
             // A loop waiting between iterations is one too, whether its next iteration waits on the
             // drain or on the user starting it again after a stall.
+            // So is a stage a usage limit cut off, waiting on its agent in its own phase.
             let handoff = matches!(
                 (current.phase, current.phase_status),
                 (
@@ -306,6 +313,13 @@ fn admit(
                             | TaskPhase::Judging
                     ),
                     Some(PhaseStatus::Waiting)
+                )
+            ) || matches!(
+                (current.phase, current.phase_status, current.ball),
+                (
+                    Some(TaskPhase::Implementing | TaskPhase::Drafting | TaskPhase::Refining),
+                    Some(PhaseStatus::Waiting),
+                    TaskBall::Agent
                 )
             );
             // A stage that failed, or a start put back in the phase it was claimed from, is the
@@ -1303,6 +1317,37 @@ mod tests {
                     ..spawning(TaskStatus::InProgress)
                 }
             );
+        }
+
+        /// A stage a usage limit cut off waits on its agent in its own phase, and the drain claims
+        /// it as it does a hand-off. A refinement waiting on the user is not one.
+        #[test]
+        fn a_stage_a_usage_limit_cut_off_is_claimed_again_in_its_phase() {
+            for role in [AgentRole::Coder, AgentRole::Planner, AgentRole::Refiner] {
+                let (conn, task_id) = db_with_task();
+                claim(&conn, task_id, &USER_COLUMNS).expect("claim");
+                when_spawning(&conn, task_id, TaskTransition::SessionReady(role)).expect("ready");
+                let running = state(&conn, task_id);
+                always(&conn, task_id, TaskTransition::UsageLimited);
+                assert_eq!(
+                    state(&conn, task_id),
+                    TaskState {
+                        phase_status: Some(PhaseStatus::Waiting),
+                        ..running
+                    }
+                );
+                assert!(claim(&conn, task_id, &[]).is_some(), "{role:?}");
+            }
+            let (conn, task_id) = db_with_task();
+            claim(&conn, task_id, &USER_COLUMNS).expect("claim");
+            when_spawning(
+                &conn,
+                task_id,
+                TaskTransition::SessionReady(AgentRole::Refiner),
+            )
+            .expect("ready");
+            always(&conn, task_id, TaskTransition::ArtifactDelivered);
+            assert!(claim(&conn, task_id, &[]).is_none());
         }
 
         /// Every handoff is claimable from the column its role works in, which no caller lists.

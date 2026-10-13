@@ -316,6 +316,8 @@ pub enum ServerRequest {
     HoldTask(HoldTaskRequest),
     /// Drop a hold and let the scheduler look at the task again.
     ReleaseTaskHold(TaskRef),
+    /// Open an agent's usage-limit gate now, so the drain starts its waiting tasks ("Try now").
+    OpenAgentGate(OpenAgentGateRequest),
     StartTask(StartTaskRequest),
     /// Heartbeat acknowledgment sent by Tauri in response to a `Ping`.
     Pong {
@@ -1857,6 +1859,9 @@ pub enum TaskTransition {
     /// The user let a stopped loop, or one at sign-off, go on: the next iteration waits on the
     /// drain. Its stall streak counts from here.
     LoopResumed,
+    /// The agent refused the turn for a usage limit: the stage waits on its agent again, in the
+    /// same phase, and the drain starts it in a fresh session once the agent's gate opens.
+    UsageLimited,
 }
 
 /// What must hold, read under the store's lock, for a transition to apply. One per guarded
@@ -2016,6 +2021,11 @@ pub struct HoldTaskRequest {
     pub task_id: i32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ttl_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OpenAgentGateRequest {
+    pub agent_id: String,
 }
 
 /// Run one stage of a task: claim it, make or reuse its worktree, spawn the role's agent and send
@@ -2712,6 +2722,7 @@ pub enum ServerResponse {
     SetAutoModeOk,
     HoldTaskOk,
     ReleaseTaskHoldOk,
+    OpenAgentGateOk,
     StartTaskOk(StartTaskResponse),
     /// Pushed to every window, which re-reads what it shows and drains its queue.
     PipelineSettingsChanged(PipelineSettingsChanged),
@@ -2861,6 +2872,7 @@ impl ServerResponse {
             | Self::SetAutoModeOk
             | Self::HoldTaskOk
             | Self::ReleaseTaskHoldOk
+            | Self::OpenAgentGateOk
             | Self::StartTaskOk(_) => true,
         }
     }

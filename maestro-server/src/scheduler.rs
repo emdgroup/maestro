@@ -322,8 +322,8 @@ fn candidates(conn: &Connection, project_path: &str) -> Result<Vec<i32>, String>
 }
 
 /// The hand-offs a drain may start: tasks waiting on an agent, neither held nor refused, with no
-/// session of their own mid-turn. The flag marks a loop's next iteration or its judge, which wait
-/// for a slot.
+/// session of their own mid-turn. The flag marks the ones whose last session is closed, which wait
+/// for a slot: a loop's next iteration or its judge, and a first stage a usage limit cut off.
 fn handoffs(
     conn: &Connection,
     project_path: &str,
@@ -334,9 +334,10 @@ fn handoffs(
     Ok(tasks
         .iter()
         .filter_map(|task| {
+            use maestro_protocol::TaskPhase::*;
             let iterating = matches!(
                 task.phase,
-                Some(maestro_protocol::TaskPhase::Iterating | maestro_protocol::TaskPhase::Judging)
+                Some(Iterating | Judging | Implementing | Drafting | Refining)
             );
             Some((task.id, crate::task_turn::next_stage(task)?, iterating))
         })
@@ -423,7 +424,7 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
             };
             match crate::task_runner::begin(&mut conn, &request, used, &agents, &mut pushes) {
                 Ok(crate::task_runner::Begun::Claimed(task)) => claimed.push(task),
-                Ok(crate::task_runner::Begun::Deferred) => {}
+                Ok(crate::task_runner::Begun::Deferred | crate::task_runner::Begun::Gated) => {}
                 Err(e) => {
                     refuse(&conn, path, task_id, &e);
                     send_diag("info", format!("[queue] hand-off of task {task_id}: {e}"));
@@ -473,7 +474,7 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
                     free -= 1;
                     claimed.push(task);
                 }
-                Ok(crate::task_runner::Begun::Deferred) => {}
+                Ok(crate::task_runner::Begun::Deferred | crate::task_runner::Begun::Gated) => {}
                 Err(e) => {
                     refuse(&conn, path, task_id, &e);
                     send_diag("info", format!("[queue] task {task_id} not started: {e}"));

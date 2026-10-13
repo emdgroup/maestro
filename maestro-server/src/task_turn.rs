@@ -66,14 +66,8 @@ pub(crate) fn next_stage(task: &Task) -> Option<AgentRole> {
     if task.phase_status != Some(PhaseStatus::Waiting) || task.ball != TaskBall::Agent {
         return None;
     }
-    match task.phase {
-        Some(TaskPhase::SelfReview) => Some(AgentRole::Reviewer),
-        Some(TaskPhase::Rework | TaskPhase::AwaitingMerge | TaskPhase::Iterating) => {
-            Some(AgentRole::Coder)
-        }
-        Some(TaskPhase::Judging) => Some(AgentRole::Judge),
-        _ => None,
-    }
+    // Every working phase: a stage a usage limit cut off waits in its own phase.
+    crate::task_restart::role(task.phase)
 }
 
 /// Whether a reviewer looks before the user: the project has one, the task did not turn it off,
@@ -192,7 +186,8 @@ fn transition(
 }
 
 /// Resolve the turn and write it. Returns the stage to start next, if any, and the pushes owed.
-/// `role` is the one the session was started for.
+/// `role` is the one the session was started for. `limited_until` is set when the agent refused
+/// the turn for a usage limit, with when its gate opens.
 pub(crate) async fn resolve(
     store: &crate::project_store::Store,
     project_path: &str,
@@ -200,6 +195,7 @@ pub(crate) async fn resolve(
     role: Option<AgentRole>,
     stop_reason: &str,
     facts: TurnFacts,
+    limited_until: Option<chrono::DateTime<chrono::Utc>>,
 ) -> (Option<AgentRole>, Vec<ServerResponse>) {
     let mut pushes = Vec::new();
     // A window-loaded session's binding holds the app's spelling of the path.
@@ -227,6 +223,22 @@ pub(crate) async fn resolve(
             );
             return (None, pushes);
         }
+    }
+    // The stage starts again in a fresh session once the gate opens. The worktree keeps what this
+    // one wrote, and the next session never sees the refusal.
+    if let Some(until) = limited_until {
+        let request = transition(
+            project_path,
+            task_id,
+            TaskTransition::UsageLimited,
+            TransitionGuard::AgentRunning,
+            None,
+            Some(crate::agent_gate::note(until)),
+        );
+        if let Err(e) = store_write(&mut *store.lock().await, request, &mut pushes) {
+            send_diag("warn", format!("[task] usage limit of task {task_id}: {e}"));
+        }
+        return (None, pushes);
     }
 
     let has_changes = if !facts.user_interrupted
@@ -328,6 +340,7 @@ pub(crate) fn spawn(
     role: Option<AgentRole>,
     stop_reason: String,
     facts: TurnFacts,
+    limited: Option<crate::agent_gate::Limited>,
 ) {
     // Each step boxed, so the spawned future stays small: it is built on the main thread's stack.
     tokio::spawn(async move {
@@ -339,10 +352,19 @@ pub(crate) fn spawn(
             role,
             &stop_reason,
             facts,
+            limited.as_ref().map(|l| l.until),
         ))
         .await;
         for push in pushes {
             broadcast(&everyone, push).await;
+        }
+        // A refused session holds a slot for nothing while the gate is closed.
+        if let Some(limited) = limited {
+            Box::pin(crate::loop_engine::close(
+                &driver.stdout,
+                &limited.session_id,
+            ))
+            .await;
         }
         // The drain starts the hand-off, as it does after any write that leaves one: one driver,
         // so a stage is never started twice.
@@ -395,7 +417,7 @@ pub(crate) async fn start_next(
             ))
             .await;
         }
-        Ok(crate::task_runner::Begun::Deferred) => {}
+        Ok(crate::task_runner::Begun::Deferred | crate::task_runner::Begun::Gated) => {}
         Err(e) => send_diag("warn", format!("[task] next stage of task {task_id}: {e}")),
     }
 }
@@ -502,7 +524,7 @@ mod tests {
             declared_complete,
             user_interrupted: false,
             closing_message: Some(closing.to_string()),
-            git_commands: vec![],
+            ..TurnFacts::default()
         }
     }
 
@@ -659,8 +681,16 @@ mod tests {
     #[tokio::test]
     async fn a_coder_done_with_a_reviewer_profile_hands_to_the_reviewer() {
         let (_dir, project, store, id) = setup(true);
-        let (next, pushes) =
-            resolve(&store, &project, id, None, "end_turn", facts(true, "done")).await;
+        let (next, pushes) = resolve(
+            &store,
+            &project,
+            id,
+            None,
+            "end_turn",
+            facts(true, "done"),
+            None,
+        )
+        .await;
         assert_eq!(next, Some(AgentRole::Reviewer));
         assert!(!pushes.is_empty());
     }
@@ -668,7 +698,16 @@ mod tests {
     #[tokio::test]
     async fn a_coder_done_without_one_goes_to_the_user() {
         let (_dir, project, store, id) = setup(false);
-        let (next, _) = resolve(&store, &project, id, None, "end_turn", facts(true, "done")).await;
+        let (next, _) = resolve(
+            &store,
+            &project,
+            id,
+            None,
+            "end_turn",
+            facts(true, "done"),
+            None,
+        )
+        .await;
         assert_eq!(next, None);
     }
 
@@ -676,8 +715,43 @@ mod tests {
     async fn a_turn_end_resolves_the_path_a_window_spelled() {
         let (dir, _, store, id) = setup(true);
         let raw = format!("{}/", dir.path().to_string_lossy());
-        let (next, _) = resolve(&store, &raw, id, None, "end_turn", facts(true, "done")).await;
+        let (next, _) = resolve(
+            &store,
+            &raw,
+            id,
+            None,
+            "end_turn",
+            facts(true, "done"),
+            None,
+        )
+        .await;
         assert_eq!(next, Some(AgentRole::Reviewer));
+    }
+
+    #[tokio::test]
+    async fn a_stage_a_usage_limit_cut_off_waits_for_the_gate_in_its_phase() {
+        let (_dir, project, store, id) = setup(false);
+        let until = chrono::Utc::now() + chrono::Duration::hours(1);
+        let (next, _) = resolve(
+            &store,
+            &project,
+            id,
+            None,
+            "error",
+            TurnFacts::default(),
+            Some(until),
+        )
+        .await;
+        assert_eq!(next, None);
+        let conn = store.lock().await;
+        let task = crate::task_store::get(&conn, &project, id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (task.phase, task.phase_status),
+            (Some(TaskPhase::Implementing), Some(PhaseStatus::Waiting))
+        );
+        assert_eq!(next_stage(&task), Some(AgentRole::Coder));
     }
 
     #[tokio::test]
@@ -690,6 +764,7 @@ mod tests {
             Some(AgentRole::Reviewer),
             "end_turn",
             facts(true, "done"),
+            None,
         )
         .await;
         assert_eq!((next, pushes.len()), (None, 0));

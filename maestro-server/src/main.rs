@@ -12,6 +12,7 @@
 //! Architecture: Adapted from Zed's remote_server (GPL-3.0).
 
 mod agent;
+mod agent_gate;
 mod agent_restart;
 mod auth;
 mod automation_runner;
@@ -824,12 +825,22 @@ async fn run_server(
                 };
                 // A task's session: resolve the turn and start the next stage, off the loop.
                 let ending = sessions.get(&ended.session_id);
+                // Any session's refusal closes its agent's gate; the task it worked waits for it.
+                let mut limited_until = None;
                 if let (Some(store), Some(session)) = (project_store.as_ref(), ending) {
+                    let conn = store.lock().await;
                     project_store::report(usage_store::record(
-                        &*store.lock().await,
+                        &conn,
                         &usage_store::Turn::of(&ended.session_id, session, &ended),
                         chrono::Utc::now(),
                     ));
+                    limited_until = agent_gate::turn_ended(
+                        &conn,
+                        &session.agent_id,
+                        &ended.facts,
+                        &ended.stop_reason,
+                        chrono::Utc::now(),
+                    );
                 }
                 let task_binding = ending.and_then(task_turn::task_of);
                 let role = ending.and_then(task_turn::role_of);
@@ -847,6 +858,7 @@ async fn run_server(
                             session_id: ended.session_id.clone(),
                             stop_reason: ended.stop_reason.clone(),
                             facts: ended.facts.clone(),
+                            limited_until,
                         },
                     );
                 } else if let (Some(store), Some((project_path, task_id))) =
@@ -865,6 +877,10 @@ async fn run_server(
                         role,
                         ended.stop_reason.clone(),
                         ended.facts.clone(),
+                        limited_until.map(|until| agent_gate::Limited {
+                            session_id: ended.session_id.clone(),
+                            until,
+                        }),
                     );
                 }
                 if let Some(store) = automation_store.as_ref() {

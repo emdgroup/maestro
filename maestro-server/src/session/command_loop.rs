@@ -55,6 +55,9 @@ fn turn_ended(result: Result<PromptResponse, acp::Error>, session_id: String) ->
             let stop_reason = if e.code == acp::schema::v1::ErrorCode::AuthRequired {
                 "auth_required"
             } else {
+                if crate::agent_gate::is_limit(e.data.as_ref(), &e.message) {
+                    crate::turn::note_usage_limited(&session_id);
+                }
                 "error"
             };
             (stop_reason.to_string(), (None, None))

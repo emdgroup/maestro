@@ -535,8 +535,9 @@ pub fn set_hidden_files(
     Ok(files)
 }
 
-/// The number the next iteration takes: one past every iteration that ended. A `Running` row is
-/// the live iteration's, or a start's that never came up, which the next start replaces.
+/// The number the next iteration takes: one past every iteration that ended, so one a usage limit
+/// cut off runs again. A `Running` row is the live iteration's, or a start's that never came up,
+/// which the next start replaces.
 pub(crate) fn next_iteration(
     conn: &Connection,
     project_path: &str,
@@ -544,14 +545,14 @@ pub(crate) fn next_iteration(
 ) -> Result<i32, String> {
     conn.query_row(
         "SELECT COALESCE(MAX(n), 0) + 1 FROM loop_iterations
-         WHERE project_path = ?1 AND task_id = ?2 AND outcome != 'Running'",
+         WHERE project_path = ?1 AND task_id = ?2 AND outcome NOT IN ('Running', 'Interrupted')",
         params![project_path, task_id],
         |row| row.get(0),
     )
     .map_err(|e| e.to_string())
 }
 
-/// The row of an iteration whose session is up.
+/// The row of an iteration whose session is up, as the next attempt of its number.
 pub(crate) fn start_iteration(
     conn: &Connection,
     project_path: &str,
@@ -569,7 +570,10 @@ pub(crate) fn start_iteration(
         conn.execute(
             "INSERT INTO loop_iterations (project_path, task_id, n, attempt, acp_session_id,
                                           agent_id, started_at)
-             VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6)",
+             VALUES (?1, ?2, ?3,
+                     (SELECT COALESCE(MAX(attempt), 0) + 1 FROM loop_iterations
+                      WHERE project_path = ?1 AND task_id = ?2 AND n = ?3),
+                     ?4, ?5, ?6)",
             params![
                 project_path,
                 task_id,
@@ -652,7 +656,9 @@ pub(crate) fn record_outcome(
     check_output: Option<&str>,
 ) -> Result<(), String> {
     conn.execute(
-        "UPDATE loop_iterations SET outcome = ?5, check_output = ?6
+        "UPDATE loop_iterations
+         SET outcome = ?5, check_output = ?6,
+             counted = CASE WHEN ?5 = 'Interrupted' THEN 0 ELSE counted END
          WHERE project_path = ?1 AND task_id = ?2 AND n = ?3 AND attempt = ?4",
         params![
             project_path,

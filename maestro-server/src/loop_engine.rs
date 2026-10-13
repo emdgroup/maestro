@@ -63,6 +63,8 @@ pub(crate) struct LoopEnd {
     pub session_id: String,
     pub stop_reason: String,
     pub facts: TurnFacts,
+    /// The agent refused the turn for a usage limit; its gate opens then.
+    pub limited_until: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Finish the iteration, or read the judge, off the loop. What follows is the drain's to start.
@@ -130,6 +132,7 @@ async fn iteration_ended(
         summary: end.facts.closing_message.as_deref(),
         agent_failed: end.stop_reason != "end_turn",
         git_commands: &end.facts.git_commands,
+        limited_until: end.limited_until,
     };
     finish(store, everyone, path, &task, &iteration, ended).await;
 }
@@ -169,6 +172,22 @@ async fn judge_ended(
         return;
     }
     close(stdout, &end.session_id).await;
+    // Judged again in a fresh session once the gate opens.
+    if let Some(until) = end.limited_until {
+        let note = crate::agent_gate::note(until);
+        let guard = TransitionGuard::Phase(TaskPhase::Judging);
+        apply(
+            store,
+            everyone,
+            path,
+            task.id,
+            TaskTransition::UsageLimited,
+            guard,
+            Some(note),
+        )
+        .await;
+        return;
+    }
     if end.stop_reason != "end_turn" {
         let why = format!(
             "The judge stopped before it decided: its turn ended with \"{}\".",
@@ -302,7 +321,7 @@ fn running(iterations: &[LoopIteration]) -> Option<LoopIteration> {
 }
 
 /// Close the iteration's session and wait until it is closed.
-async fn close(stdout: &crate::ClientOut, session_id: &str) {
+pub(crate) async fn close(stdout: &crate::ClientOut, session_id: &str) {
     let Some(settle_tx) = crate::dispatch::SETTLE_TX.get() else {
         return;
     };
@@ -345,6 +364,9 @@ struct Ended<'a> {
     summary: Option<&'a str>,
     agent_failed: bool,
     git_commands: &'a [String],
+    /// Refused for a usage limit: what it wrote is kept, and the iteration runs again uncounted
+    /// once the gate opens.
+    limited_until: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Discard what the worker wrote where it may not, commit the rest, and check it.
@@ -376,9 +398,13 @@ async fn finish(
     let resealed = crate::worktree::seal(&dir, task).await;
     let committed = match resealed {
         Ok(()) => {
+            let message = match ended.limited_until {
+                Some(_) => format!("loop: iteration {}, cut off (WIP)", iteration.n),
+                None => format!("loop: iteration {}", iteration.n),
+            };
             commit(
                 &dir,
-                iteration.n,
+                &message,
                 Duration::from_secs(config.check_timeout_secs.into()),
             )
             .await
@@ -410,6 +436,33 @@ async fn finish(
         );
     }
 
+    if let Some(until) = ended.limited_until {
+        let interrupted = LoopIterationOutcome::Interrupted;
+        let recorded = loops::record_outcome(
+            &*store.lock().await,
+            path,
+            task_id,
+            iteration,
+            interrupted,
+            None,
+        );
+        if let Err(e) = recorded {
+            send_diag("warn", format!("[loop] task {task_id}: {e}"));
+        }
+        let note = crate::agent_gate::note(until);
+        let guard = TransitionGuard::Phase(TaskPhase::Iterating);
+        apply(
+            store,
+            everyone,
+            path,
+            task_id,
+            TaskTransition::UsageLimited,
+            guard,
+            Some(note),
+        )
+        .await;
+        return;
+    }
     let (outcome, output) = match committed {
         _ if ended.agent_failed => (LoopIterationOutcome::Failed, None),
         Err(e) => (
@@ -473,8 +526,8 @@ fn peeks(commands: &[String], sealed: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// `RerunLoopChecks`, `ReadLoopNotes` and `AnswerLoopProposal`: the reply, and the pushes owed
-/// after it.
+/// `RerunLoopChecks`, `ReadLoopNotes`, `AnswerLoopProposal` and `OpenAgentGate`: the reply, and the
+/// pushes owed after it.
 pub(crate) async fn answer(
     request: ServerRequest,
     store: Option<&Store>,
@@ -492,6 +545,12 @@ pub(crate) async fn answer(
                 Ok(answered) => answered,
                 Err(e) => (crate::helpers::error_response(e), Vec::new()),
             };
+        }
+        ServerRequest::OpenAgentGate(request) => {
+            return (
+                crate::agent_gate::answer_open(store, &request.agent_id).await,
+                Vec::new(),
+            );
         }
         _ => {
             return (
@@ -1089,7 +1148,7 @@ async fn remove_sealed(dir: &str, sealed: &[String]) -> bool {
 
 /// `git add -A` and commit, the repository's hooks included. `None` when there was nothing to
 /// commit; the error is git's output, a failing hook's included.
-async fn commit(dir: &str, n: i32, limit: Duration) -> Result<Option<Committed>, String> {
+async fn commit(dir: &str, message: &str, limit: Duration) -> Result<Option<Committed>, String> {
     git(dir, &["add", "-A"]).await?;
     if git(dir, &["diff", "--cached", "--name-only"])
         .await?
@@ -1098,8 +1157,7 @@ async fn commit(dir: &str, n: i32, limit: Duration) -> Result<Option<Committed>,
     {
         return Ok(None);
     }
-    let message = format!("loop: iteration {n}");
-    let mut command = crate::worktree::git_command(dir, &["commit", "-m", &message]);
+    let mut command = crate::worktree::git_command(dir, &["commit", "-m", message]);
     command
         .kill_on_drop(true)
         .stdin(std::process::Stdio::null());
@@ -1987,6 +2045,7 @@ Try the cache first."
                 closing_message: Some(reply.to_string()),
                 ..TurnFacts::default()
             },
+            limited_until: None,
         }
     }
 
@@ -2197,5 +2256,57 @@ Try the cache first."
         assert_eq!(row.outcome, LoopIterationOutcome::Empty);
         let check = &loops::list_checks(&conn, &path, task.id).unwrap()[0];
         assert_eq!(check.state, LoopCheckState::Pending);
+    }
+
+    #[tokio::test]
+    async fn a_usage_limit_keeps_the_work_and_runs_the_iteration_again_uncounted() {
+        let (_repo, store, task) = sealed_loop(SEES_THEM).await;
+        let path = task.project_path.clone();
+        let (dir, task, iteration) = start(&store, &task).await;
+        std::fs::write(Path::new(&dir).join("src/b.txt"), "half").unwrap();
+        let everyone = crate::client_sink::ClientSink::detached();
+        let until = chrono::Utc::now() + chrono::Duration::hours(2);
+        let ended = Ended {
+            agent_failed: true,
+            limited_until: Some(until),
+            ..Ended::default()
+        };
+        finish(&store, &everyone, &path, &task, &iteration, ended).await;
+
+        {
+            let conn = store.lock().await;
+            assert_eq!(
+                state(&conn, &task),
+                (Some(TaskPhase::Iterating), Some(PhaseStatus::Waiting))
+            );
+            let row = &loops::list_iterations(&conn, &path, task.id).unwrap()[0];
+            assert_eq!(row.outcome, LoopIterationOutcome::Interrupted);
+            assert!(!row.counted);
+            assert!(row.commit_sha.is_some(), "the cut-off work is committed");
+            assert_eq!(loops::next_iteration(&conn, &path, task.id).unwrap(), 1);
+            loops::start_iteration(&conn, &path, task.id, 1, "acp-2", "claude").unwrap();
+            let again = running(&loops::list_iterations(&conn, &path, task.id).unwrap()).unwrap();
+            assert_eq!((again.n, again.attempt), (1, 2));
+            let thread = crate::task_store::list_comments(&conn, &path, task.id).unwrap();
+            let note = thread
+                .last()
+                .and_then(|c| c.body.as_deref())
+                .unwrap_or_default();
+            assert!(note.contains("usage limit"), "{note}");
+        }
+        let log = git(&dir, &["log", "-1", "--format=%s"]).await.unwrap();
+        assert_eq!(log.trim(), "loop: iteration 1, cut off (WIP)");
+
+        // A judge cut off judges again: nothing is recorded against its checks.
+        let judging = "UPDATE tasks SET phase = 'Judging', phase_status = 'Running' WHERE id = ?1";
+        store.lock().await.execute(judging, [task.id]).unwrap();
+        let mut refused = judge_says(&task, &[], "sha", "");
+        refused.stop_reason = "error".to_string();
+        refused.limited_until = Some(until);
+        judge_ended(&store, &everyone, &everyone, &path, &[], "sha", refused).await;
+        assert_eq!(
+            state(&*store.lock().await, &task),
+            (Some(TaskPhase::Judging), Some(PhaseStatus::Waiting))
+        );
     }
 }
