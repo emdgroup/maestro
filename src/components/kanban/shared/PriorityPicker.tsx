@@ -19,12 +19,14 @@ function PriorityIcon({ priority }: { priority: TaskPriority }) {
   return <CircleSlash className="size-3 shrink-0 text-muted-foreground" />;
 }
 
+const label = (priority: TaskPriority) => (priority === "None" ? "No priority" : priority);
+
 export function PriorityPicker({ value, onChange }: PriorityPickerProps) {
   if (!onChange) {
     return (
       <span className={cn(PILL, "border-border text-muted-foreground cursor-default")}>
         <PriorityIcon priority={value} />
-        {value}
+        {label(value)}
       </span>
     );
   }
@@ -35,13 +37,13 @@ export function PriorityPicker({ value, onChange }: PriorityPickerProps) {
         className={cn(PILL, "border-border bg-transparent text-muted-foreground hover:bg-muted")}
       >
         <PriorityIcon priority={value} />
-        {value}
+        {label(value)}
       </PopoverTrigger>
       <PopoverContent className="w-36 p-1 gap-0" align="start">
         {PRIORITIES.map((p) => (
           <button key={p} type="button" onClick={() => onChange(p)} className={POPOVER_ITEM}>
             <PriorityIcon priority={p} />
-            {p}
+            {label(p)}
             {value === p && <Check className="size-3 ml-auto" />}
           </button>
         ))}
