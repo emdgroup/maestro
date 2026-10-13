@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import { useShortcuts } from "@/hooks/useShortcuts";
-import { Plus, Archive, Search, BellDot } from "lucide-react";
+import { Plus, Archive, Search, BellDot, Repeat } from "lucide-react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { BoardView } from "@/views/kanban/board-view/BoardView";
 import { useActiveTaskId } from "@/store/navigationStore";
@@ -17,7 +17,8 @@ import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { Checkbox } from "@/ui/checkbox";
 import { Button, buttonVariants } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import type { Task, TaskPriority } from "@/types/bindings";
+import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import type { RunMode, Task, TaskPriority } from "@/types/bindings";
 import { PRIORITIES } from "@/utils/constants/priority";
 import { CreateTaskModal } from "@/components/kanban/create-task-modal/CreateTaskModal";
 import { ArchiveModal } from "@/components/kanban/archive-modal/ArchiveModal";
@@ -46,6 +47,7 @@ export const KanbanView: React.FC = () => {
   const [selectedPriorities, setSelectedPriorities] = useState<TaskPriority[]>([]);
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [needsMeOnly, setNeedsMeOnly] = useState(false);
+  const [runMode, setRunMode] = useState<RunMode | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -74,7 +76,8 @@ export const KanbanView: React.FC = () => {
     const matchesLabel =
       selectedLabels.length === 0 || selectedLabels.some((l) => t.labels.includes(l));
     const matchesNeedsMe = !needsMeOnly || t.ball === "User";
-    return matchesQuery && matchesPriority && matchesLabel && matchesNeedsMe;
+    const matchesRunMode = runMode === null || t.run_mode === runMode;
+    return matchesQuery && matchesPriority && matchesLabel && matchesNeedsMe && matchesRunMode;
   });
 
   const reviewTask =
@@ -218,6 +221,32 @@ export const KanbanView: React.FC = () => {
             </div>
           </PopoverContent>
         </Popover>
+
+        {/* How each task runs. One choice, so the group always has exactly one pressed. */}
+        <ToggleGroup
+          aria-label="How tasks run"
+          value={[runMode ?? "All"]}
+          onValueChange={(values) => {
+            const picked = values.find((v) => v !== (runMode ?? "All"));
+            if (picked) setRunMode(picked === "All" ? null : (picked as RunMode));
+          }}
+        >
+          <ToggleGroupItem value="All" size="sm" variant="outline" className="h-8 px-2.5 text-xs">
+            All
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            value="Pipeline"
+            size="sm"
+            variant="outline"
+            className="h-8 px-2.5 text-xs"
+          >
+            Pipeline
+          </ToggleGroupItem>
+          <ToggleGroupItem value="Loop" size="sm" variant="outline" className="h-8 px-2.5 text-xs">
+            <Repeat className="size-3" />
+            Loops
+          </ToggleGroupItem>
+        </ToggleGroup>
 
         <QueueCapacityBadge projectId={projectId} />
 

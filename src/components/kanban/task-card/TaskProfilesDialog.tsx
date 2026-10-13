@@ -31,6 +31,12 @@ const ROLES: Array<{ role: AgentRole; label: string; optional: boolean }> = [
   { role: "Reviewer", label: "Review", optional: true },
 ];
 
+/** A loop runs a worker in fresh sessions and, for its judged checks, a judge. */
+const LOOP_ROLES: Array<{ role: AgentRole; label: string; optional: boolean }> = [
+  { role: "Coder", label: "Iterations", optional: false },
+  { role: "Judge", label: "Judging", optional: false },
+];
+
 const USE_PROJECT_DEFAULT = "";
 
 /**
@@ -121,7 +127,7 @@ export function TaskProfilesDialog({
           </p>
         ) : (
           <div className="space-y-3">
-            {ROLES.map(({ role, label, optional }) => {
+            {(task.run_mode === "Loop" ? LOOP_ROLES : ROLES).map(({ role, label, optional }) => {
               const forRole = profiles.filter((p) => p.role === role);
               const defaultName =
                 forRole.find((p) => p.id === defaults[role])?.name ?? forRole[0]?.name;
@@ -131,7 +137,9 @@ export function TaskProfilesDialog({
               const chosen = choice === null ? SKIP_STAGE : (choice ?? USE_PROJECT_DEFAULT);
               const fallbackLabel =
                 forRole.length === 0
-                  ? "No profile (stage skipped)"
+                  ? role === "Judge"
+                    ? "No profile: the loop's own agent judges"
+                    : "No profile (stage skipped)"
                   : `Project default${defaultName ? ` (${defaultName})` : ""}`;
               // A role the project has no profile for is already skipped, so there is nothing to
               // choose: the select stays disabled and says so, as it did before skipping existed.

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { concernsProject, taskQueryKeys } from "@/services/task.service";
+import { LOOP_QUERY_KINDS } from "@/services/loop.service";
 import { worktreeQueryKeys } from "@/services/worktree.service";
 import { executionQueryKeys } from "@/services/execution.service";
 import { automationQueryKeys } from "@/services/automation.service";
@@ -53,7 +54,13 @@ export function useServerEventSync(projectId: number | undefined) {
       (payload) => {
         void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
         const id = payload.project_id ?? null;
-        for (const kind of ["relationships", "instructions", "attachments", "commitMessage"]) {
+        for (const kind of [
+          "relationships",
+          "instructions",
+          "attachments",
+          "commitMessage",
+          ...LOOP_QUERY_KINDS,
+        ]) {
           const queryKey = [...taskQueryKeys.base, kind];
           void queryClient.invalidateQueries({
             queryKey: id === null ? queryKey : [...queryKey, id],

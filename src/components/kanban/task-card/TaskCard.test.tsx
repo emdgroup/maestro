@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TaskCard } from "./TaskCard";
 import type { Task, TaskPhase, PhaseStatus, TaskBall } from "@/types/bindings";
@@ -77,6 +77,18 @@ vi.mock("@/services/task.service", () => ({
     isPending: false,
   }),
   useEndSelfReviewMutation: () => ({ mutate: endSelfReview, isPending: false }),
+}));
+
+/** A loop's controls. Stop halts it in place, so it goes straight to the daemon. */
+const stopLoop = vi.hoisted(() => vi.fn());
+const openGate = vi.hoisted(() => vi.fn());
+
+vi.mock("@/services/loop.service", () => ({
+  usePauseLoopMutation: () => ({ mutate: vi.fn() }),
+  useStopLoopMutation: () => ({ mutate: stopLoop }),
+  useResumeLoopMutation: () => ({ mutate: vi.fn() }),
+  useRerunLoopChecksMutation: () => ({ mutate: vi.fn() }),
+  useOpenAgentGateMutation: () => ({ mutate: openGate }),
 }));
 
 /** Ending the agent's review closes its session as well as opening the human gate. */
@@ -1566,5 +1578,62 @@ describe("TaskCard when the agent needs credentials", () => {
 
     expect(clearAuthRequired).toHaveBeenCalledWith("7");
     expect(screen.queryByRole("button", { name: /finish auth/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("TaskCard as a loop", () => {
+  const loopTask: Partial<Task> = {
+    run_mode: "Loop",
+    phase: "Iterating",
+    phase_status: "Running",
+    ball: "Agent",
+    loop_config: {
+      max_iterations: 12,
+      max_agent_secs: 7200,
+      stall_limit: 2,
+      check_timeout_secs: 600,
+      sealed_paths: [],
+    },
+    loop_summary: {
+      iteration: 6,
+      counted: 5,
+      agent_secs: 3000,
+      no_change: 0,
+      last_summary: "Moving relationships.rs",
+      checks: ["Pass", "Fail", "Pending"],
+      proposals: 0,
+    },
+  };
+
+  it("carries the badge, the iteration line and the check bar", () => {
+    renderCard(loopTask);
+    expect(screen.getByText("Loop")).toBeInTheDocument();
+    expect(screen.getByText("Iteration 6/12")).toBeInTheDocument();
+    expect(screen.getByText("Moving relationships.rs")).toBeInTheDocument();
+    expect(screen.getByLabelText("1 of 3 checks pass")).toBeInTheDocument();
+  });
+
+  it("stops a loop in place, with no abandon confirmation", () => {
+    renderCard(loopTask);
+    fireEvent.click(screen.getByRole("button", { name: /Stop/ }));
+    expect(stopLoop).toHaveBeenCalledWith({ projectId: 1, taskId: 7 });
+    expect(interrupt.mutate).not.toHaveBeenCalled();
+  });
+
+  it("offers Try now while its agent's usage limit holds it", () => {
+    const card = renderCard({
+      ...loopTask,
+      phase_status: "Waiting",
+      gate: {
+        agent_id: "claude-code",
+        resume_at: new Date(Date.now() + 3_600_000).toISOString(),
+        window: "five_hour",
+        backoff: false,
+      },
+    });
+    expect(screen.getByText("5-hour limit")).toBeInTheDocument();
+    expect(card.className).toContain("border-dashed");
+    fireEvent.click(screen.getByRole("button", { name: /Try now/ }));
+    expect(openGate).toHaveBeenCalledWith({ projectId: 1, agentId: "claude-code" });
   });
 });

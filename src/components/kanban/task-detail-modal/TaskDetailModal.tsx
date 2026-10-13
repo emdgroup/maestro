@@ -1,5 +1,16 @@
 import { useState, useRef, useEffect, type SetStateAction } from "react";
-import { Ban, Trash2, X } from "lucide-react";
+import { Ban, Repeat, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
+import { LoopTab } from "@/components/kanban/loop/LoopTab";
+import { LoopSidePanel } from "@/components/kanban/loop/LoopSidePanel";
+import { LoopChangesTab, LoopNotesTab } from "@/components/kanban/loop/LoopWorkTabs";
+import { LoopActions } from "@/components/kanban/loop/LoopActions";
+import {
+  LoopDetailsSection,
+  type LoopDetailsHandle,
+} from "@/components/kanban/loop/LoopDetailsSection";
+import { CreateTaskModal } from "@/components/kanban/create-task-modal/CreateTaskModal";
+import { useNavigate } from "@/store/navigationStore";
 import type {
   BranchMode,
   Task,
@@ -10,6 +21,7 @@ import type {
 } from "@/types/bindings";
 import { MAESTRO_BRANCH_PREFIX, taskBranchName } from "@/lib/generateSessionName";
 import { Button } from "@/ui/button";
+import { cn } from "@/lib/utils";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Dialog, DialogContent, DialogTitle, DialogHeader } from "@/ui/dialog";
@@ -94,7 +106,7 @@ interface TaskDraft {
   labels: string[];
 }
 
-type Tab = "details" | "outcome";
+type Tab = "loop" | "details" | "changes" | "notes" | "outcome";
 
 interface TaskDetailModalProps {
   taskId: number | null;
@@ -121,11 +133,19 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
   const { data: comments = [] } = useTaskCommentsQuery(projectId, taskId ?? undefined);
 
   const [tab, setTab] = useState<Tab>("details");
+  const isLoop = task?.run_mode === "Loop";
 
-  // A different task opens onto Details, whatever tab the last one was left on.
+  // A different task opens onto its first tab, whatever tab the last one was left on: a loop's is
+  // the loop itself.
   useEffect(() => {
-    setTab("details");
+    setTab(isLoop ? "loop" : "details");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
+
+  const loopDetails = useRef<LoopDetailsHandle>(null);
+  const [loopDirty, setLoopDirty] = useState(false);
+  const [convertOpen, setConvertOpen] = useState(false);
+  const navigate = useNavigate();
 
   const { setActiveTaskId } = useNavigationActions();
 
@@ -196,7 +216,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
   const [discardOpen, setDiscardOpen] = useState(false);
 
   function handleRequestClose() {
-    if (isEditable && isDirty.current) {
+    if ((isEditable && isDirty.current) || loopDirty) {
       setDiscardOpen(true);
       return;
     }
@@ -213,7 +233,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
       if (task !== null && task.status !== "Done") setDeleteOpen(true);
     },
     "task-save": () => {
-      if (isEditable && task) handleSave();
+      if ((isEditable || loopDirty) && task) void handleSave();
     },
   });
 
@@ -233,8 +253,18 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
     });
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!task || draft.title.trim().length < 3) return;
+    try {
+      await loopDetails.current?.save();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    if (!isEditable) {
+      setActiveTaskId(null);
+      return;
+    }
     updateTask.mutate(
       {
         projectId: task.project_id,
@@ -294,6 +324,12 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
               <DialogTitle className="text-xs font-semibold tracking-widest uppercase text-foreground">
                 {isEditable ? "EDIT TASK" : "TASK DETAIL"}
               </DialogTitle>
+              {isLoop && (
+                <span className="flex items-center gap-1 rounded bg-accent/12 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+                  <Repeat className="size-3" />
+                  Loop
+                </span>
+              )}
               <div className="flex-1" />
               <Select
                 value={task.status}
@@ -325,128 +361,193 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
             </DialogHeader>
 
             {/* Body */}
-            <Tabs
-              value={tab}
-              onValueChange={(v) => setTab(v as Tab)}
-              className="flex-1 min-h-0 px-6 py-4 gap-4"
-            >
-              <TabsList variant="line" className="shrink-0">
-                <TabsTrigger value="details">Details</TabsTrigger>
-                <TabsTrigger value="outcome">
-                  Outcome{comments.length > 0 ? ` (${comments.length})` : ""}
-                </TabsTrigger>
-              </TabsList>
+            <div className="flex flex-1 min-h-0">
+              <Tabs
+                value={tab}
+                onValueChange={(v) => setTab(v as Tab)}
+                className="flex-1 min-w-0 min-h-0 px-6 py-4 gap-4"
+              >
+                <TabsList variant="line" className="shrink-0">
+                  {isLoop && <TabsTrigger value="loop">Loop</TabsTrigger>}
+                  <TabsTrigger value="details">Details</TabsTrigger>
+                  {isLoop && <TabsTrigger value="changes">Changes</TabsTrigger>}
+                  {isLoop && <TabsTrigger value="notes">Agent notes</TabsTrigger>}
+                  <TabsTrigger value="outcome">
+                    Outcome{comments.length > 0 ? ` (${comments.length})` : ""}
+                  </TabsTrigger>
+                </TabsList>
 
-              {/* `keepMounted`, on both panels, because the editors here commit on blur: an
+                {isLoop && (
+                  <TabsContent value="loop" className="min-h-0 overflow-y-auto pr-1">
+                    <LoopTab
+                      task={task}
+                      onEditChecks={() => setTab("details")}
+                      onJoin={() => {
+                        setActiveTaskId(null);
+                        navigate({ agentId: String(task.id) });
+                      }}
+                    />
+                  </TabsContent>
+                )}
+                {isLoop && (
+                  <TabsContent value="changes" className="min-h-0 overflow-y-auto pr-1">
+                    <LoopChangesTab task={task} />
+                  </TabsContent>
+                )}
+                {isLoop && (
+                  <TabsContent value="notes" className="min-h-0 overflow-y-auto pr-1">
+                    <LoopNotesTab task={task} />
+                  </TabsContent>
+                )}
+
+                {/* `keepMounted`, on both panels, because the editors here commit on blur: an
                   unmounted panel never blurs, so a tab click mid-edit would drop what was typed. */}
-              <TabsContent value="details" keepMounted className="flex flex-col min-h-0 gap-4">
-                <div className="shrink-0">
-                  <EditableField
-                    value={draft.title}
-                    onSave={(v) => markDirtySetDraft((d) => ({ ...d, title: v }))}
-                    isEditable={isEditable ?? false}
-                    placeholder="Add a title..."
-                    className="text-xl font-semibold"
-                  />
-                </div>
-
-                {/* Description + attachment */}
-                <DescriptionWithAttachments
-                  value={draft.description}
-                  onSave={(v) => markDirtySetDraft((d) => ({ ...d, description: v }))}
-                  isEditable={isEditable ?? false}
-                  isDragging={isDragging}
-                  placeholder="Add a description..."
-                />
-
-                {/* Attachments */}
-                {projectId !== null && (
+                <TabsContent
+                  value="details"
+                  keepMounted
+                  className={cn("flex flex-col min-h-0 gap-4", isLoop && "overflow-y-auto pr-1")}
+                >
+                  {/* A Planning pipeline task can still become a loop: nothing has run yet. */}
+                  {!isLoop && task.status === "Planning" && task.phase == null && (
+                    <div className="flex shrink-0 items-start gap-3 rounded-md border border-border bg-accent/8 p-3 text-xs">
+                      <Repeat className="mt-0.5 size-4 shrink-0 text-accent" />
+                      <div className="flex-1 space-y-1">
+                        <div className="font-medium">Run as a loop instead</div>
+                        <div className="text-muted-foreground">
+                          The agent iterates in fresh sessions until checks you define, and it
+                          cannot see, pass.
+                        </div>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => setConvertOpen(true)}>
+                        <Repeat className="size-3" />
+                        Make it a loop
+                      </Button>
+                    </div>
+                  )}
                   <div className="shrink-0">
-                    <AttachmentSection
-                      taskId={task.id}
-                      projectId={projectId}
+                    <EditableField
+                      value={draft.title}
+                      onSave={(v) => markDirtySetDraft((d) => ({ ...d, title: v }))}
                       isEditable={isEditable ?? false}
-                      onPickFiles={pickFiles}
-                      isDragging={isDragging}
+                      placeholder="Add a title..."
+                      className="text-xl font-semibold"
                     />
                   </div>
-                )}
 
-                {/* Labels */}
-                {draft.labels.length > 0 && (
-                  <div className="flex flex-wrap gap-1 shrink-0">
-                    {draft.labels.map((label) => (
-                      <IssueTypeChip
-                        key={label}
-                        type={label}
-                        onRemove={
-                          isEditable
-                            ? () =>
-                                markDirtySetDraft((d) => ({
-                                  ...d,
-                                  labels: d.labels.filter((l) => l !== label),
-                                }))
-                            : undefined
-                        }
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {/* Workspace */}
-                {isGitRepo && (
-                  <div className="shrink-0">
-                    <WorkspaceSelector
-                      mode={draft.workspaceMode}
-                      onModeChange={(m) => markDirtySetDraft((d) => ({ ...d, workspaceMode: m }))}
-                      baseBranch={draft.baseBranch}
-                      onBaseBranchChange={(b) =>
-                        markDirtySetDraft((d) => ({ ...d, baseBranch: b }))
-                      }
-                      branchMode={draft.branchMode}
-                      onBranchModeChange={(m) =>
-                        markDirtySetDraft((d) => ({ ...d, branchMode: m }))
-                      }
-                      branchSuffix={draft.branchSuffix}
-                      onBranchSuffixChange={(s) =>
-                        markDirtySetDraft((d) => ({ ...d, branchSuffix: s }))
-                      }
-                      generatedBranchSuffix={taskBranchName(task.id, task.title).replace(
-                        MAESTRO_BRANCH_PREFIX,
-                        "",
-                      )}
-                      worktrees={worktrees ?? []}
-                      repoPath={selectedProject?.path ?? ""}
-                      selectedWorktreeId={draft.workspaceWorktreeId}
-                      onSelectedWorktreeChange={(wt: WorktreeWithStatus | null) =>
-                        markDirtySetDraft((d) => ({ ...d, workspaceWorktreeId: wt?.id ?? null }))
-                      }
-                      claimsOwnership
-                      ownerTaskId={task.id}
-                      readOnly={!isEditable}
-                    />
-                  </div>
-                )}
-
-                {/* Metadata pills */}
-                <div className="shrink-0 space-y-3 pt-2 border-t border-border">
-                  <TaskMetadataPills
-                    priority={draft.priority}
-                    onPriorityChange={
-                      isEditable
-                        ? (p) => markDirtySetDraft((d) => ({ ...d, priority: p }))
-                        : undefined
-                    }
+                  {/* Description + attachment */}
+                  <DescriptionWithAttachments
+                    value={draft.description}
+                    onSave={(v) => markDirtySetDraft((d) => ({ ...d, description: v }))}
+                    isEditable={isEditable ?? false}
+                    isDragging={isDragging}
+                    placeholder="Add a description..."
                   />
-                </div>
-              </TabsContent>
 
-              {/* The only record a Done or archived task has: once the session closes, its
+                  {/* Attachments */}
+                  {projectId !== null && (
+                    <div className="shrink-0">
+                      <AttachmentSection
+                        taskId={task.id}
+                        projectId={projectId}
+                        isEditable={isEditable ?? false}
+                        onPickFiles={pickFiles}
+                        isDragging={isDragging}
+                      />
+                    </div>
+                  )}
+
+                  {/* Labels */}
+                  {draft.labels.length > 0 && (
+                    <div className="flex flex-wrap gap-1 shrink-0">
+                      {draft.labels.map((label) => (
+                        <IssueTypeChip
+                          key={label}
+                          type={label}
+                          onRemove={
+                            isEditable
+                              ? () =>
+                                  markDirtySetDraft((d) => ({
+                                    ...d,
+                                    labels: d.labels.filter((l) => l !== label),
+                                  }))
+                              : undefined
+                          }
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Workspace */}
+                  {isGitRepo && (
+                    <div className="shrink-0">
+                      <WorkspaceSelector
+                        mode={draft.workspaceMode}
+                        onModeChange={(m) => markDirtySetDraft((d) => ({ ...d, workspaceMode: m }))}
+                        baseBranch={draft.baseBranch}
+                        onBaseBranchChange={(b) =>
+                          markDirtySetDraft((d) => ({ ...d, baseBranch: b }))
+                        }
+                        branchMode={draft.branchMode}
+                        onBranchModeChange={(m) =>
+                          markDirtySetDraft((d) => ({ ...d, branchMode: m }))
+                        }
+                        branchSuffix={draft.branchSuffix}
+                        onBranchSuffixChange={(s) =>
+                          markDirtySetDraft((d) => ({ ...d, branchSuffix: s }))
+                        }
+                        generatedBranchSuffix={taskBranchName(task.id, task.title).replace(
+                          MAESTRO_BRANCH_PREFIX,
+                          "",
+                        )}
+                        worktrees={worktrees ?? []}
+                        repoPath={selectedProject?.path ?? ""}
+                        selectedWorktreeId={draft.workspaceWorktreeId}
+                        onSelectedWorktreeChange={(wt: WorktreeWithStatus | null) =>
+                          markDirtySetDraft((d) => ({ ...d, workspaceWorktreeId: wt?.id ?? null }))
+                        }
+                        claimsOwnership
+                        ownerTaskId={task.id}
+                        readOnly={!isEditable}
+                      />
+                    </div>
+                  )}
+
+                  {/* Metadata pills */}
+                  <div className="shrink-0 space-y-3 pt-2 border-t border-border">
+                    <TaskMetadataPills
+                      priority={draft.priority}
+                      onPriorityChange={
+                        isEditable
+                          ? (p) => markDirtySetDraft((d) => ({ ...d, priority: p }))
+                          : undefined
+                      }
+                    />
+                  </div>
+                  {isLoop && (
+                    <LoopDetailsSection
+                      ref={loopDetails}
+                      task={task}
+                      onDirtyChange={setLoopDirty}
+                    />
+                  )}
+                </TabsContent>
+
+                {/* The only record a Done or archived task has: once the session closes, its
                   transcript is gone and this is what remains. */}
-              <TabsContent value="outcome" keepMounted className="flex flex-col min-h-0">
-                <OutcomeThread projectId={task.project_id} taskId={task.id} />
-              </TabsContent>
-            </Tabs>
+                <TabsContent value="outcome" keepMounted className="flex flex-col min-h-0">
+                  <OutcomeThread projectId={task.project_id} taskId={task.id} />
+                </TabsContent>
+              </Tabs>
+              {isLoop && (tab === "loop" || tab === "changes") && (
+                <LoopSidePanel
+                  task={task}
+                  onJoin={() => {
+                    setActiveTaskId(null);
+                    navigate({ agentId: String(task.id) });
+                  }}
+                />
+              )}
+            </div>
 
             {/* Footer */}
             <div className="border-t border-border px-6 py-3 flex items-center gap-2 shrink-0">
@@ -564,10 +665,21 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
               <div className="flex-1" />
 
-              {isEditable && (
+              {isLoop && (
+                <LoopActions
+                  task={task}
+                  onEditChecks={() => setTab("details")}
+                  onJoin={() => {
+                    setActiveTaskId(null);
+                    navigate({ agentId: String(task.id) });
+                  }}
+                />
+              )}
+
+              {(isEditable || loopDirty) && (
                 <Button
                   size="sm"
-                  onClick={handleSave}
+                  onClick={() => void handleSave()}
                   disabled={updateTask.isPending || draft.title.trim().length < 3}
                 >
                   {updateTask.isPending ? "Saving..." : "Save"}
@@ -577,6 +689,14 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
           </>
         )}
       </DialogContent>
+      {task && !isLoop && projectId !== null && (
+        <CreateTaskModal
+          isOpen={convertOpen}
+          onClose={() => setConvertOpen(false)}
+          projectId={projectId}
+          convert={task}
+        />
+      )}
     </Dialog>
   );
 };

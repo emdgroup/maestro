@@ -19,6 +19,8 @@ const KIND_LABELS: Record<string, string> = {
   verdict: "Review verdict",
   outcome: "Outcome",
   note: "Note",
+  digest: "Review digest",
+  steer: "Note for the next iteration",
 };
 
 function entryLabel(comment: TaskComment): string {

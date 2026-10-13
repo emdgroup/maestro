@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import type { AgentRole, Task } from "@/types/bindings";
 import { Button } from "@/ui/button";
 import { cn } from "@/lib/utils";
+import { LoopFooter, type LoopFooterActions } from "@/components/kanban/loop/LoopFooter";
+import { gateLine } from "@/components/kanban/loop/loop-state";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -39,6 +41,10 @@ export interface FooterActions {
   onSendToReview: () => void;
   /** Start the stage a failed hand-off start was handing to, see `failedStartRole`. */
   onRetry: (role: AgentRole) => void;
+  /** Open the agent's usage-limit gate, for a task it holds. */
+  onTryNow: () => void;
+  /** A loop in progress has its own controls. */
+  loop: LoopFooterActions;
 }
 
 /**
@@ -113,6 +119,8 @@ export function FooterCTAs({
     onRecover,
     onSendToReview,
     onRetry,
+    onTryNow,
+    loop,
   },
 }: FooterCTAsProps & { actions: FooterActions }) {
   /**
@@ -195,6 +203,36 @@ export function FooterCTAs({
     const t = setTimeout(() => setSessionLostStable(true), 2000);
     return () => clearTimeout(t);
   }, [isSessionLost]);
+
+  // A task its agent's usage limit holds waits on nothing the user can do but not wait.
+  if (gateLine(task)) {
+    return (
+      <div className="flex gap-1 mt-1.5">
+        <Button
+          onClick={(e) => {
+            e.stopPropagation();
+            onTryNow();
+          }}
+          variant="ghost"
+          className={cn(base, "h-auto")}
+        >
+          <Play className="w-2.5 h-2.5 fill-current" />
+          Try now
+        </Button>
+      </div>
+    );
+  }
+
+  if (task.run_mode === "Loop" && task.status === "InProgress") {
+    return (
+      <LoopFooter
+        task={task}
+        hasActiveSession={hasActiveSession}
+        className={base}
+        actions={{ ...loop, onJoin }}
+      />
+    );
+  }
 
   // Ahead of the Planning branch, which returns Execute unconditionally and so made every other
   // control on a Planning card unreachable — a refiner blocked on a question would have pulsed

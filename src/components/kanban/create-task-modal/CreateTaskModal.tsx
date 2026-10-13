@@ -4,7 +4,13 @@ import type { SubmitHandler } from "react-hook-form";
 import { Dialog, DialogContent, DialogTitle, DialogClose } from "@/ui/dialog";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
-import { X } from "lucide-react";
+import { Repeat, Workflow, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { LoopEditor } from "@/components/kanban/loop/LoopEditor";
+import { emptyLoopDraft, loopFromDraft, type LoopDraft } from "@/components/kanban/loop/loop-draft";
+import { useSetLoopChecksMutation, useSetLoopHiddenFilesMutation } from "@/services/loop.service";
+import { useSetTaskProfileOverridesMutation, useUpdateTask } from "@/services/task.service";
+import { parseProfileOverrides } from "@/lib/profile-overrides";
 import { toast } from "sonner";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import {
@@ -27,7 +33,10 @@ import { MAESTRO_BRANCH_PREFIX, validateBranchSuffix } from "@/lib/generateSessi
 import { findBranchConflict } from "@/components/common/workspace-mode/branch-conflict";
 import type {
   BranchMode,
+  LoopCheckEntry,
+  LoopConfig,
   RemoteIssue,
+  RunMode,
   Task,
   TaskPriority,
   WorkspaceMode,
@@ -59,6 +68,8 @@ interface CreateTaskModalProps {
   initial?: { title: string; description: string };
   /** Called once the task exists, for callers that are not looking at the board. */
   onCreated?: (task: Task) => void;
+  /** A Planning pipeline task to make a loop of: the dialog opens in Loop mode and saves to it. */
+  convert?: Task;
 }
 
 export function CreateTaskModal({
@@ -67,6 +78,7 @@ export function CreateTaskModal({
   projectId,
   initial,
   onCreated,
+  convert,
 }: CreateTaskModalProps) {
   const isGitRepo = useIsGitRepo();
 
@@ -84,7 +96,15 @@ export function CreateTaskModal({
   const project = useSelectedProject();
   const { data: worktrees } = useWorktreesQuery(projectId, project?.path);
 
-  const { mutate: createTask, isPending } = useCreateTaskMutation();
+  const { mutate: createTask, isPending: isCreating } = useCreateTaskMutation();
+  const updateTask = useUpdateTask();
+  const setLoopChecks = useSetLoopChecksMutation();
+  const setHiddenFiles = useSetLoopHiddenFilesMutation();
+  const setOverrides = useSetTaskProfileOverridesMutation();
+  const [savingLoop, setSavingLoop] = useState(false);
+  const isPending = isCreating || updateTask.isPending || savingLoop;
+  const [runMode, setRunMode] = useState<RunMode>("Pipeline");
+  const [loopDraft, setLoopDraft] = useState<LoopDraft>(emptyLoopDraft);
   const addAttachment = useAddTaskAttachmentMutation();
   // Mirrored from an effect rather than assigned during render — read only by the
   // file-input callback below, which runs after commit.
@@ -154,8 +174,10 @@ export function CreateTaskModal({
   const [openState, setOpenState] = useState(isOpen);
   if (openState !== isOpen) {
     setOpenState(isOpen);
-    setTitle(isOpen ? (initial?.title ?? "") : "");
-    setDescription(isOpen ? (initial?.description ?? "") : "");
+    setTitle(isOpen ? (convert?.title ?? initial?.title ?? "") : "");
+    setDescription(isOpen ? (convert?.description ?? initial?.description ?? "") : "");
+    setRunMode(isOpen && convert ? "Loop" : "Pipeline");
+    setLoopDraft(emptyLoopDraft());
     if (!isOpen) {
       setError(null);
       setSelectedIssue(null);
@@ -223,6 +245,19 @@ export function CreateTaskModal({
         return;
       }
     }
+    let loop: { config: LoopConfig; checks: LoopCheckEntry[] } | null = null;
+    if (runMode === "Loop") {
+      const read = loopFromDraft(loopDraft);
+      if ("error" in read) {
+        setError(read.error);
+        return;
+      }
+      loop = read;
+    }
+    if (convert && loop) {
+      void saveLoop(convert, loop, { title: currentTitle, description: description.trim() });
+      return;
+    }
     const filesToAttach = [...pendingFiles];
     const reused =
       mode === "ReuseWorkspace"
@@ -253,11 +288,12 @@ export function CreateTaskModal({
           ? `${MAESTRO_BRANCH_PREFIX}${data.branchSuffix.trim()}`
           : null,
         model_override: null,
-        run_mode: null,
-        loop_config: null,
+        run_mode: loop ? "Loop" : null,
+        loop_config: loop?.config ?? null,
       },
       {
         onSuccess: (newTask: Task) => {
+          if (loop) void saveLoop(newTask, loop, null);
           for (const f of filesToAttach) {
             addAttachmentRef.current.mutate({
               projectId: newTask.project_id,
@@ -284,6 +320,50 @@ export function CreateTaskModal({
     );
   };
 
+  /**
+   * A loop's checks, hidden files and judge, written once the task is a loop. A conversion first
+   * makes the task one, with the title and description as edited here.
+   */
+  async function saveLoop(
+    task: Task,
+    loop: { config: LoopConfig; checks: LoopCheckEntry[] },
+    edits: { title: string; description: string } | null,
+  ) {
+    const key = { projectId: task.project_id, taskId: task.id };
+    setSavingLoop(true);
+    try {
+      if (edits) {
+        await updateTask.mutateAsync({
+          ...key,
+          updates: {
+            title: edits.title,
+            description: edits.description || null,
+            run_mode: "Loop",
+            loop_config: loop.config,
+          },
+        });
+      }
+      await setLoopChecks.mutateAsync({ ...key, checks: loop.checks });
+      if (loopDraft.hiddenFiles.length > 0) {
+        await setHiddenFiles.mutateAsync({ ...key, files: loopDraft.hiddenFiles });
+      }
+      if (loopDraft.judgeProfileId) {
+        await setOverrides.mutateAsync({
+          ...key,
+          overrides: {
+            ...parseProfileOverrides(task.profile_overrides),
+            Judge: loopDraft.judgeProfileId,
+          },
+        });
+      }
+      if (edits) onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingLoop(false);
+    }
+  }
+
   return (
     <Dialog
       open={isOpen}
@@ -305,7 +385,7 @@ export function CreateTaskModal({
             className="pointer-events-none absolute inset-x-6 bottom-0"
           />
           <DialogTitle className="text-xs font-semibold tracking-widest uppercase text-foreground">
-            CREATE TASK
+            {convert ? "MAKE IT A LOOP" : "CREATE TASK"}
           </DialogTitle>
           {hasProvider && issueConfig && (
             <IssueSearchCombobox
@@ -358,6 +438,58 @@ export function CreateTaskModal({
               onPickFiles={pickFiles}
               placeholder="Add description..."
             />
+
+            {/* How it runs. A conversion is a loop by definition. */}
+            {!convert && (
+              <div className="shrink-0 space-y-1.5">
+                <span className="text-[11px] text-muted-foreground">How it runs</span>
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      [
+                        "Pipeline",
+                        Workflow,
+                        "Plan, implement, self review, your approval. For work you will judge by reading it.",
+                      ],
+                      [
+                        "Loop",
+                        Repeat,
+                        "Fresh sessions until sealed checks pass. For work a command can verify.",
+                      ],
+                    ] as const
+                  ).map(([mode, Icon, blurb]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      aria-pressed={runMode === mode}
+                      onClick={() => setRunMode(mode)}
+                      className={cn(
+                        "flex items-start gap-2 rounded-md border p-2.5 text-left text-xs",
+                        runMode === mode ? "border-accent bg-accent/10" : "border-border",
+                      )}
+                    >
+                      <Icon className="mt-0.5 size-4 shrink-0 text-accent" />
+                      <span>
+                        <span className="font-medium">{mode}</span>
+                        <br />
+                        <span className="text-[11px] text-muted-foreground">{blurb}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {runMode === "Loop" && (
+              <div className="shrink-0">
+                <LoopEditor
+                  value={loopDraft}
+                  onChange={setLoopDraft}
+                  projectId={projectId}
+                  baseBranch={convert?.base_branch ?? baseBranch}
+                />
+              </div>
+            )}
 
             {/* Attachments, held until the task exists to hang them off */}
             {pendingFiles.length > 0 && (
@@ -463,7 +595,7 @@ export function CreateTaskModal({
             </label>
             <div className="flex-1" />
             <Button type="submit" size="sm" disabled={isPending}>
-              {isPending ? "Creating..." : "Create"}
+              {isPending ? "Saving..." : convert ? "Make it a loop" : "Create"}
             </Button>
           </div>
         </form>

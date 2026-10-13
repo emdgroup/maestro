@@ -51,6 +51,21 @@ import {
 } from "@/components/execution/shared/activityStatus";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { shortBranchName } from "@/lib/generateSessionName";
+import { Repeat } from "lucide-react";
+import {
+  CHECK_SEGMENT,
+  gateLine,
+  loopLine,
+  showsCheckBar,
+  type StateLine,
+} from "@/components/kanban/loop/loop-state";
+import {
+  useOpenAgentGateMutation,
+  usePauseLoopMutation,
+  useRerunLoopChecksMutation,
+  useResumeLoopMutation,
+  useStopLoopMutation,
+} from "@/services/loop.service";
 
 interface TaskCardProps {
   task: Task;
@@ -195,6 +210,53 @@ function PhaseLine({ task }: { task: Task }) {
         )}
       >
         {label}
+      </span>
+    </div>
+  );
+}
+
+const STATE_TONES: Record<StateLine["tone"], string> = {
+  brand: "text-accent",
+  warning: "text-warning",
+  muted: "text-muted-foreground",
+  success: "text-success",
+  destructive: "text-destructive",
+  amber: "text-amber-600",
+};
+
+/** A loop's own phase line, or the line of a task its agent's usage limit holds. */
+function StateLineView({ line }: { line: StateLine }) {
+  return (
+    <div className="flex items-center gap-1 mb-1.5 min-w-0 text-[10px]">
+      <span className={cn("font-bold shrink-0 uppercase tracking-wide", STATE_TONES[line.tone])}>
+        {line.label}
+      </span>
+      {line.detail && (
+        <>
+          <span className="text-muted-foreground/40 shrink-0">·</span>
+          <span className="text-muted-foreground truncate">{line.detail}</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** One segment per check, in list order, with how many pass. */
+function CheckBar({ task }: { task: Task }) {
+  const checks = task.loop_summary?.checks ?? [];
+  const passing = checks.filter((c) => c === "Pass").length;
+  return (
+    <div className="flex items-center gap-1.5 mb-1.5 text-[9.5px] text-muted-foreground">
+      <span
+        className="flex flex-1 gap-0.5"
+        aria-label={`${passing} of ${checks.length} checks pass`}
+      >
+        {checks.map((state, i) => (
+          <span key={i} className={cn("h-1 flex-1 rounded-full", CHECK_SEGMENT[state])} />
+        ))}
+      </span>
+      <span className="tabular-nums">
+        {passing}/{checks.length}
       </span>
     </div>
   );
@@ -367,6 +429,15 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
   const taskWorkspace = useTaskWorkspace(task);
   const recoverSession = useRecoverTaskSessionMutation();
   const cancelSession = useCancelActiveSessionMutation();
+  const pauseLoop = usePauseLoopMutation();
+  const stopLoop = useStopLoopMutation();
+  const resumeLoop = useResumeLoopMutation();
+  const rerunChecks = useRerunLoopChecksMutation();
+  const openGate = useOpenAgentGateMutation();
+  // What the card says of a loop, or of a task its agent's usage limit holds, in place of the
+  // phase line, with the border that goes with it.
+  const stateLine = gateLine(task) ?? loopLine(task);
+  const taskKey = { projectId: task.project_id, taskId: task.id };
   // Not gated on InProgress: a task keeps its session into Review, which is what the Join button
   // there is for — while this was gated that button could never render. Everything below that
   // should stay InProgress-only carries its own check.
@@ -433,7 +504,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
         className={cn(
           "rounded-lg border border-border bg-card shadow-xs p-2.5 mb-2 flex flex-col transition-all",
           "hover:shadow-md hover:border-foreground/40 hover:-translate-y-px",
-          task.phase_status && PHASE_STATUS_RING[task.phase_status],
+          stateLine?.ring ?? (task.phase_status && PHASE_STATUS_RING[task.phase_status]),
           isDragging && "opacity-30 border-dashed",
           isDraggable && !isDragging ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
         )}
@@ -454,6 +525,12 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
             {task.is_imported && task.external_url && (
               <ExternalIdLink externalId={task.external_id} url={task.external_url} />
             )}
+            {task.run_mode === "Loop" && (
+              <span className="flex items-center gap-0.5 rounded bg-accent/12 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-accent">
+                <Repeat className="size-2.5" />
+                Loop
+              </span>
+            )}
           </div>
           {task.agent_id && <AgentAvatar agentId={task.agent_id} />}
         </div>
@@ -464,7 +541,8 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
         </p>
 
         {/* Pipeline phase — persisted, so it renders with or without a live session */}
-        <PhaseLine task={task} />
+        {stateLine ? <StateLineView line={stateLine} /> : <PhaseLine task={task} />}
+        {showsCheckBar(task) && <CheckBar task={task} />}
 
         {/* Activity line — InProgress with active session only */}
         {task.status === "InProgress" && activeSession && (
@@ -542,6 +620,15 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
             onRecover: () => recoverSession.mutate({ taskId: task.id, projectId }),
             onSendToReview: handleSendToReview,
             onRetry: (role) => void handleExecute(task, { role, canPickAgent: true }),
+            onTryNow: () =>
+              task.gate &&
+              openGate.mutate({ projectId: task.project_id, agentId: task.gate.agent_id }),
+            loop: {
+              onPause: () => pauseLoop.mutate(taskKey),
+              onStop: () => stopLoop.mutate(taskKey),
+              onResume: () => resumeLoop.mutate({ ...taskKey, note: null }),
+              onRerunChecks: () => rerunChecks.mutate(taskKey),
+            },
           }}
         />
       </div>
