@@ -31,7 +31,8 @@ import type {
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Textarea } from "@/ui/textarea";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { useTaskCommentsQuery } from "@/services/task.service";
@@ -153,18 +154,18 @@ function AcceptForm({
   return (
     <div className="mt-2 space-y-1.5">
       <div className="grid grid-cols-[8rem_1fr] gap-1.5">
-        <NativeSelect
-          size="sm"
-          value={kind}
-          onChange={(e) => setKind(e.target.value as LoopCheckKind)}
-          className="text-xs"
-        >
-          {(Object.keys(CHECK_KINDS) as LoopCheckKind[]).map((k) => (
-            <NativeSelectOption key={k} value={k}>
-              {CHECK_KINDS[k].name}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
+        <Select value={kind} onValueChange={(v) => v && setKind(v as LoopCheckKind)}>
+          <SelectTrigger size="sm" className="w-full text-xs" aria-label="Kind">
+            <span className="truncate flex-1 text-left">{CHECK_KINDS[kind].name}</span>
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(CHECK_KINDS) as LoopCheckKind[]).map((k) => (
+              <SelectItem key={k} value={k} className="text-xs">
+                {CHECK_KINDS[k].name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Input value={label} onChange={(e) => setLabel(e.target.value)} className="h-8 text-xs" />
       </div>
       {kind === "Command" && (
@@ -333,13 +334,19 @@ function IterationRow({ iteration, onJoin }: { iteration: LoopIteration; onJoin:
             {running ? " so far" : ""}
           </span>
           {(iteration.touched_sealed || iteration.peeks.length > 0) && (
-            <span
-              className="flex items-center gap-0.5 rounded bg-amber-500/15 px-1 text-[10px] text-amber-600"
-              title={iteration.peeks.join("\n") || undefined}
-            >
-              <Lock className="size-2.5" />
-              {iteration.touched_sealed ? "touched a sealed path" : "looked at a sealed path"}
-            </span>
+            <Tooltip disabled={iteration.peeks.length === 0}>
+              <TooltipTrigger
+                render={
+                  <span className="flex items-center gap-0.5 rounded bg-amber-500/15 px-1 text-[10px] text-amber-600" />
+                }
+              >
+                <Lock className="size-2.5" />
+                {iteration.touched_sealed ? "touched a sealed path" : "looked at a sealed path"}
+              </TooltipTrigger>
+              <TooltipContent className="whitespace-pre-line">
+                {iteration.peeks.join("\n")}
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
         {iteration.summary && (

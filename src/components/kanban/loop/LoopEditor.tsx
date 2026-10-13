@@ -4,7 +4,8 @@ import type { LoopCheckKind, LoopHiddenFile } from "@/types/bindings";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Textarea } from "@/ui/textarea";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useAgentProfilesQuery } from "@/services/project.service";
 import { useMcpServersQuery } from "@/services/mcp.service";
@@ -14,6 +15,9 @@ import { useSelectedProject } from "@/store/projectStore";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { blankCheck, type CheckDraft, type LoopDraft } from "./loop-draft";
 import { pathsInCommand } from "./loop-state";
+
+/** The judge picker's value for "no profile of its own". */
+const SAME_AS_WORKER = "same-as-worker";
 
 export const CHECK_KINDS: Record<LoopCheckKind, { icon: typeof Terminal; name: string }> = {
   Command: { icon: Terminal, name: "Command" },
@@ -167,23 +171,28 @@ export function LoopEditor({
                 {(Object.keys(CHECK_KINDS) as LoopCheckKind[]).map((kind) => {
                   const { icon: Icon, name } = CHECK_KINDS[kind];
                   return (
-                    <button
-                      key={kind}
-                      type="button"
-                      title={name}
-                      aria-label={name}
-                      aria-pressed={check.kind === kind}
-                      disabled={readOnly}
-                      onClick={() => setCheck(check.key, { kind })}
-                      className={cn(
-                        "flex size-7 items-center justify-center",
-                        check.kind === kind
-                          ? "bg-accent/12 text-accent"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      <Icon className="size-3.5" />
-                    </button>
+                    <Tooltip key={kind}>
+                      <TooltipTrigger
+                        render={
+                          <button
+                            type="button"
+                            aria-label={name}
+                            aria-pressed={check.kind === kind}
+                            disabled={readOnly}
+                            onClick={() => !readOnly && setCheck(check.key, { kind })}
+                            className={cn(
+                              "flex size-7 items-center justify-center",
+                              check.kind === kind
+                                ? "bg-accent/12 text-accent"
+                                : "text-muted-foreground hover:text-foreground",
+                            )}
+                          />
+                        }
+                      >
+                        <Icon className="size-3.5" />
+                      </TooltipTrigger>
+                      <TooltipContent>{name}</TooltipContent>
+                    </Tooltip>
                   );
                 })}
               </div>
@@ -406,23 +415,31 @@ export function LoopEditor({
             className="h-8 text-xs"
           />
         </label>
-        <label className="col-span-3 space-y-1">
+        <div className="col-span-3 space-y-1">
           <span className="text-[11px] text-muted-foreground">Judge</span>
-          <NativeSelect
-            size="sm"
-            value={value.judgeProfileId ?? ""}
+          <Select
+            value={value.judgeProfileId ?? SAME_AS_WORKER}
             disabled={readOnly || judges.length === 0}
-            onChange={(e) => set({ judgeProfileId: e.target.value || null })}
-            className="text-xs"
+            onValueChange={(v) => set({ judgeProfileId: v && v !== SAME_AS_WORKER ? v : null })}
           >
-            <NativeSelectOption value="">Same as the worker</NativeSelectOption>
-            {judges.map((profile) => (
-              <NativeSelectOption key={profile.id} value={profile.id}>
-                {profile.name}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-        </label>
+            <SelectTrigger size="sm" className="w-full text-xs" aria-label="Judge">
+              <span className="truncate flex-1 text-left">
+                {judges.find((profile) => profile.id === value.judgeProfileId)?.name ??
+                  "Same as the worker"}
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={SAME_AS_WORKER} className="text-xs">
+                Same as the worker
+              </SelectItem>
+              {judges.map((profile) => (
+                <SelectItem key={profile.id} value={profile.id} className="text-xs">
+                  {profile.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
       <div className="flex items-start justify-between gap-4">
         <p className="text-[11px] text-muted-foreground/70">
