@@ -520,7 +520,7 @@ export function SidePanelContent({
                               />
                             }
                           >
-                            <Download className="w-3.5 h-3.5" />
+                            <Upload className="w-3.5 h-3.5" />
                           </TooltipTrigger>
                           <TooltipContent>Export as HTML</TooltipContent>
                         </Tooltip>
@@ -535,7 +535,7 @@ export function SidePanelContent({
                               />
                             }
                           >
-                            <Upload className="w-3.5 h-3.5" />
+                            <Download className="w-3.5 h-3.5" />
                           </TooltipTrigger>
                           <TooltipContent>Import a canvas</TooltipContent>
                         </Tooltip>
@@ -599,7 +599,7 @@ export function SidePanelContent({
                         : "border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground",
                     )}
                   >
-                    <Upload className="w-4 h-4" />
+                    <Download className="w-4 h-4" />
                     <span>Drop a canvas here, or browse</span>
                     <span className="text-[10px] opacity-70">
                       An exported canvas, or any HTML file
