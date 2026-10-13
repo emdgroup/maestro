@@ -560,13 +560,15 @@ Settled before phase 3 started:
 
 Visuals are the canvas mock `loops-app`.
 
-- **Create Task** gets "How it runs: Pipeline | Loop". Loop shows:
+- **Create Task** gets "How it runs: Pipeline | Loop", below the workspace. Choosing Loop turns the
+  footer into **Set up the loop**, which opens a second screen with a way back, ending in the usual
+  Create another and Create. That screen shows:
   - Done when: rows of command, judge and manual checks.
   - **Sealed from the agent:** the sealed paths, prefilled from the commands, and the hidden files.
   - Setup command, check timeout (10 minutes), iterations, agent time, stall limit, judge.
   - A read-only line of the skills and MCP servers the agent gets.
 
-  A Planning pipeline task's detail offers **Make it a loop**.
+  A Planning pipeline task's detail offers **Make it a loop**, which opens on the second screen.
 
 - **Card.** A `LOOP` badge, and a phase line per loop state:
   - `ITERATION 6/12` with the last note.
