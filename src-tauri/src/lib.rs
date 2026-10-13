@@ -86,6 +86,8 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::save_connection_capacity,
         crate::ipc::get_auto_mode,
         crate::ipc::set_auto_mode,
+        crate::ipc::get_loop_wait_cap,
+        crate::ipc::set_loop_wait_cap,
         crate::ipc::get_log_levels,
         crate::ipc::get_log_directory,
         crate::ipc::list_worktrees_with_status,

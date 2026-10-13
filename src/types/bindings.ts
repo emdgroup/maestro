@@ -613,6 +613,26 @@ async setAutoMode(projectId: number, enabled: boolean) : Promise<Result<null, st
 }
 },
 /**
+ * How many of the project's loops may wait on the user before the drain starts no more of its
+ * queued ones; 0 is no cap. The project's, kept by its daemon.
+ */
+async getLoopWaitCap(projectId: number) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_loop_wait_cap", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setLoopWaitCap(projectId: number, cap: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_loop_wait_cap", { projectId, cap }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * The levels the UI offers, quietest first.
  */
 async getLogLevels() : Promise<string[]> {
@@ -3978,7 +3998,7 @@ stall_limit: number; check_timeout_secs: number; setup_command?: string | null;
  * Relative paths kept out of the worker's worktree. A trailing `/` names a directory.
  */
 sealed_paths: string[] }
-export type LoopHalt = "Flaky" | "Failing" | "Stalled" | "OutOfIterations" | "OutOfTime" | "Paused" | "Stopped"
+export type LoopHalt = "Flaky" | "Failing" | "Stalled" | "OutOfIterations" | "OutOfTime" | "Paused" | "Stopped" | "Blocked"
 /**
  * An acceptance file that exists only in the loop's record, never in the repository.
  */
@@ -3986,8 +4006,12 @@ export type LoopHiddenFile = { path: string; content: string }
 /**
  * One attempt at one iteration.
  */
-export type LoopIteration = { n: number; attempt: number; acp_session_id?: string | null; agent_id?: string | null; started_at: string; ended_at?: string | null; outcome: LoopIterationOutcome; counted: boolean; touched_sealed: boolean; commit_sha?: string | null; files: number; added: number; removed: number; summary?: string | null; check_output?: string | null; peeks: string[]; tokens?: number | null }
-export type LoopIterationOutcome = "Running" | "Checked" | "Interrupted" | "Empty" | "Failed"
+export type LoopIteration = { n: number; attempt: number; acp_session_id?: string | null; agent_id?: string | null; started_at: string; ended_at?: string | null; outcome: LoopIterationOutcome; counted: boolean; touched_sealed: boolean; commit_sha?: string | null; files: number; added: number; removed: number; summary?: string | null; check_output?: string | null; peeks: string[]; tokens?: number | null; 
+/**
+ * Why the worker said it cannot go on.
+ */
+blocked?: string | null }
+export type LoopIterationOutcome = "Running" | "Checked" | "Interrupted" | "Empty" | "Failed" | "Blocked"
 /**
  * A loop as its card and its detail's meters show it, read with the task.
  */
@@ -4532,7 +4556,11 @@ loop_summary?: LoopSummary | null;
 /**
  * The usage-limit gate holding this task while it waits on its agent.
  */
-gate?: AgentGateState | null }
+gate?: AgentGateState | null; 
+/**
+ * The automation run that created this task, if one did.
+ */
+drafted_by?: TaskDraft | null }
 export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
 /**
  * Who the pipeline is blocked on — not who owns the ticket.
@@ -4571,6 +4599,10 @@ phase?: string | null; created_at: string }
  */
 export type TaskCompletion = "Merged" | "MergedViaPR" | "LocalOnly" | "NoChanges"
 export type TaskConfigRequest = { model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; permission_mode_override?: string | null }
+/**
+ * The automation run whose agent created a task.
+ */
+export type TaskDraft = { automation: string; run?: number | null }
 export type TaskInstruction = { id: number; task_id: number; content: string; source: string; created_at: string }
 /**
  * What the pipeline is doing to a task right now, independent of which column it sits in.

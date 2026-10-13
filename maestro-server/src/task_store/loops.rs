@@ -27,6 +27,11 @@ ALTER TABLE tasks ADD COLUMN loop_halt TEXT;
 ALTER TABLE tasks ADD COLUMN loop_hold TEXT;
 -- The agent whose usage limit last refused the task, any task: its gate is the one it waits on.
 ALTER TABLE tasks ADD COLUMN gated_agent_id TEXT;
+-- The automation, and the number of its run, whose agent created the task with `create_task`.
+ALTER TABLE tasks ADD COLUMN drafted_by TEXT;
+ALTER TABLE tasks ADD COLUMN drafted_run INTEGER;
+-- How many loops may wait on the user before the drain starts no more; 0 is no cap.
+ALTER TABLE project_settings ADD COLUMN loop_wait_cap INTEGER NOT NULL DEFAULT 2;
 
 CREATE TABLE IF NOT EXISTS loop_checks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,6 +71,8 @@ CREATE TABLE IF NOT EXISTS loop_iterations (
     check_output TEXT,
     -- JSON array of the git commands the worker ran that named a sealed path.
     peeks TEXT,
+    -- Why the worker said it cannot go on, through `loop_blocked`.
+    blocked TEXT,
     PRIMARY KEY (project_path, task_id, n, attempt),
     FOREIGN KEY (project_path, task_id) REFERENCES tasks(project_path, id) ON DELETE CASCADE
 );
@@ -154,7 +161,7 @@ pub(crate) fn relative_path(path: &str, directory: bool) -> Result<String, Strin
     }
 }
 
-fn spec(spec: &LoopCheckSpec) -> Result<LoopCheckSpec, String> {
+pub(crate) fn spec(spec: &LoopCheckSpec) -> Result<LoopCheckSpec, String> {
     let label = spec.label.trim();
     if label.is_empty() {
         return Err("A check needs a label".to_string());
@@ -479,6 +486,7 @@ pub fn list_iterations(
                     .and_then(|json| serde_json::from_str(&json).ok())
                     .unwrap_or_default(),
                 tokens: row.get("tokens")?,
+                blocked: row.get("blocked")?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -609,6 +617,77 @@ pub(crate) struct Committed {
     pub removed: i32,
     /// The `git` commands it ran that name a sealed path.
     pub peeks: Vec<String>,
+}
+
+/// How many proposals a loop may hold unanswered, so a worker cannot bury the list.
+pub(crate) const MAX_PENDING_PROPOSALS: usize = 3;
+
+/// The worker's `loop_propose_check`: a check waiting for the user's answer. Its reason is kept as
+/// the detail and its command, if any, prefills the user's Accept. The kind is the user's to pick,
+/// so it is only a guess here.
+pub(crate) fn propose_check(
+    conn: &mut Connection,
+    project_path: &str,
+    task_id: i32,
+    label: &str,
+    why: Option<&str>,
+    command: Option<&str>,
+) -> Result<i32, String> {
+    let tx = transaction(conn)?;
+    loop_task(&tx, project_path, task_id)?;
+    let pending = list_checks(&tx, project_path, task_id)?
+        .iter()
+        .filter(|c| is_pending_proposal(c))
+        .count();
+    if pending >= MAX_PENDING_PROPOSALS {
+        return Err(format!(
+            "This loop already has {pending} proposals waiting for the user. Carry on without \
+             this one, or mention it in your notes."
+        ));
+    }
+    let kind = if command.is_some() {
+        LoopCheckKind::Command
+    } else {
+        LoopCheckKind::Judge
+    };
+    tx.execute(
+        "INSERT INTO loop_checks (project_path, task_id, position, kind, label, command, detail,
+                                  proposed, updated_at)
+         VALUES (?1, ?2,
+                 (SELECT COALESCE(MAX(position), 0) + 1 FROM loop_checks
+                  WHERE project_path = ?1 AND task_id = ?2),
+                 ?3, ?4, ?5, ?6, 1, ?7)",
+        params![
+            project_path,
+            task_id,
+            text(kind),
+            label,
+            command,
+            why,
+            Utc::now().to_rfc3339()
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    let id = tx.last_insert_rowid() as i32;
+    commit(tx)?;
+    Ok(id)
+}
+
+/// The worker's `loop_blocked`, on iteration `n`. `false` when that is not the iteration running.
+pub(crate) fn set_blocked(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+    n: i32,
+    reason: &str,
+) -> Result<bool, String> {
+    conn.execute(
+        "UPDATE loop_iterations SET blocked = ?4
+         WHERE project_path = ?1 AND task_id = ?2 AND n = ?3 AND outcome = 'Running'",
+        params![project_path, task_id, n, reason],
+    )
+    .map(|changed| changed > 0)
+    .map_err(|e| e.to_string())
 }
 
 /// The iteration's session is over: when it ended, what it said and what was committed. It counts
@@ -957,16 +1036,8 @@ mod tests {
         )
     }
 
-    /// What the worker's `loop_propose_check` will write, until it exists.
-    fn propose(conn: &Connection, task_id: i32, label: &str) -> i32 {
-        conn.execute(
-            "INSERT INTO loop_checks (project_path, task_id, position, kind, label, proposed,
-                                      updated_at)
-             VALUES (?1, ?2, 99, 'Judge', ?3, 1, 'now')",
-            params![PROJECT, task_id, label],
-        )
-        .expect("propose");
-        conn.last_insert_rowid() as i32
+    fn propose(conn: &mut Connection, task_id: i32, label: &str) -> i32 {
+        propose_check(conn, PROJECT, task_id, label, None, None).expect("propose")
     }
 
     #[test]
@@ -1124,7 +1195,7 @@ mod tests {
     fn the_list_leaves_proposals_to_their_answer() {
         let mut conn = crate::project_store::open_in_memory();
         let task = create(&mut conn, RunMode::Loop, None);
-        let proposal = propose(&conn, task, "Handles an empty list");
+        let proposal = propose(&mut conn, task, "Handles an empty list");
 
         let refused = set(
             &mut conn,
@@ -1221,7 +1292,7 @@ mod tests {
     fn a_rejected_proposal_is_gone() {
         let mut conn = crate::project_store::open_in_memory();
         let task = create(&mut conn, RunMode::Loop, None);
-        let proposal = propose(&conn, task, "Something");
+        let proposal = propose(&mut conn, task, "Something");
         let checks = answer_proposal(
             &mut conn,
             &AnswerLoopProposalRequest {

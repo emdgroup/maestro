@@ -317,6 +317,10 @@ pub enum ServerRequest {
     /// Answered with `AutoModeOk`; `enabled` is ignored.
     GetAutoMode(ProjectRef),
     SetAutoMode(AutoModeSetting),
+    /// Answered with `LoopWaitCapOk`; `cap` is ignored.
+    GetLoopWaitCap(ProjectRef),
+    /// Answered with `LoopWaitCapOk`.
+    SetLoopWaitCap(LoopWaitCap),
     /// Take or renew a hold.
     HoldTask(HoldTaskRequest),
     /// Drop a hold and let the scheduler look at the task again.
@@ -1403,6 +1407,19 @@ pub struct Task {
     /// waiting.
     #[serde(default)]
     pub gate: Option<Box<AgentGateState>>,
+    /// The automation run that created this task through `create_task`, if one did.
+    #[serde(default)]
+    pub drafted_by: Option<Box<TaskDraft>>,
+}
+
+/// The automation run a task came from.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskDraft {
+    pub automation: String,
+    /// The run's number among its automation's runs, `None` for a run recorded before runs were
+    /// numbered.
+    #[serde(default)]
+    pub run: Option<u32>,
 }
 
 /// A loop as its card and its detail's meters show it.
@@ -1441,6 +1458,8 @@ pub enum LoopHalt {
     OutOfTime,
     Paused,
     Stopped,
+    /// The worker called `loop_blocked`.
+    Blocked,
 }
 
 /// An agent's closed usage-limit gate.
@@ -1561,6 +1580,8 @@ pub enum LoopIterationOutcome {
     Empty,
     /// The agent failed.
     Failed,
+    /// The worker called `loop_blocked`: committed, and its checks did not run.
+    Blocked,
 }
 
 /// One attempt at one iteration. An interrupted iteration runs again as the next `attempt` of the
@@ -1598,6 +1619,9 @@ pub struct LoopIteration {
     /// Tokens its session's turns used, from the usage record, while that still has them.
     #[serde(default)]
     pub tokens: Option<i64>,
+    /// Why the worker said it cannot go on, through `loop_blocked`.
+    #[serde(default)]
+    pub blocked: Option<String>,
 }
 
 /// What a loop's record says deserves a look before sign-off: the iterations that wrote at a sealed
@@ -2078,6 +2102,14 @@ pub struct CapacityStatus {
 pub struct AutoModeSetting {
     pub project_path: String,
     pub enabled: bool,
+}
+
+/// How many loops may wait on the user before the drain starts no more of the project's queued
+/// loops. 0 is no cap.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LoopWaitCap {
+    pub project_path: String,
+    pub cap: u32,
 }
 
 /// Keep the scheduler off a task a user is working with, renewed by the client while the
@@ -2789,6 +2821,7 @@ pub enum ServerResponse {
     SetCapacityOk,
     AutoModeOk(AutoModeSetting),
     SetAutoModeOk,
+    LoopWaitCapOk(LoopWaitCap),
     HoldTaskOk,
     ReleaseTaskHoldOk,
     OpenAgentGateOk,
@@ -2941,6 +2974,7 @@ impl ServerResponse {
             | Self::SetCapacityOk
             | Self::AutoModeOk(_)
             | Self::SetAutoModeOk
+            | Self::LoopWaitCapOk(_)
             | Self::HoldTaskOk
             | Self::ReleaseTaskHoldOk
             | Self::OpenAgentGateOk
@@ -3862,6 +3896,7 @@ mod tests {
             loop_sealed_sha: None,
             loop_summary: None,
             gate: None,
+            drafted_by: None,
             mcp_allowlist: Some(vec!["maestro".to_string()]),
             skills_override: None,
             labels: vec!["bug".to_string()],

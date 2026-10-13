@@ -296,7 +296,11 @@ fn candidates(conn: &Connection, project_path: &str) -> Result<Vec<i32>, String>
         project_path: project_path.to_string(),
         include_undeferred: crate::pipeline_settings::auto_mode(conn, project_path)?,
     };
-    let queued = crate::task_store::queue_candidates(conn, &request)?;
+    let queued = under_loop_cap(
+        conn,
+        project_path,
+        crate::task_store::queue_candidates(conn, &request)?,
+    )?;
     let mut refused = refused();
     // Any write changes the row, leaving the queue or a hand-off included, and a deleted task
     // drops its own. Only this project's are compared, since `conn` may not be the store another
@@ -318,6 +322,43 @@ fn candidates(conn: &Connection, project_path: &str) -> Result<Vec<i32>, String>
             !crate::pipeline_settings::is_held(project_path, id)
                 && !refused.contains_key(&(project_path.to_string(), id))
         })
+        .collect())
+}
+
+/// The waiting cap: while as many of the project's loops wait on the user as it allows, a queued
+/// loop starts only when the user asked for it, with Execute or Start anyway, never on its own.
+fn under_loop_cap(
+    conn: &Connection,
+    project_path: &str,
+    queued: Vec<i32>,
+) -> Result<Vec<i32>, String> {
+    let cap = crate::pipeline_settings::loop_wait_cap(conn, project_path)?;
+    let waiting: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM tasks
+             WHERE project_path = ?1 AND run_mode = 'Loop' AND ball = 'User'
+               AND status != 'Done' AND archived_at IS NULL",
+            [project_path],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Failed to count the loops waiting: {e}"))?;
+    if cap == 0 || waiting < cap {
+        return Ok(queued);
+    }
+    let mut statement = conn
+        .prepare(
+            "SELECT id FROM tasks
+             WHERE project_path = ?1 AND run_mode = 'Loop' AND execute_requested_at IS NULL",
+        )
+        .map_err(|e| format!("Failed to prepare query: {e}"))?;
+    let capped = statement
+        .query_map([project_path], |row| row.get(0))
+        .map_err(|e| format!("Failed to list queued loops: {e}"))?
+        .collect::<Result<HashSet<i32>, _>>()
+        .map_err(|e| format!("Failed to read queued loops: {e}"))?;
+    Ok(queued
+        .into_iter()
+        .filter(|id| !capped.contains(id))
         .collect())
 }
 
@@ -586,6 +627,62 @@ mod tests {
         assert_eq!(
             projects_with_candidates(&conn).unwrap(),
             vec![project.clone()]
+        );
+    }
+
+    #[test]
+    fn a_queued_loop_waits_while_the_cap_is_reached_unless_asked_for() {
+        let project = canonical_project_path("/srv/loop-cap-test");
+        let mut conn = crate::project_store::open_in_memory();
+        crate::pipeline_settings::answer(
+            &conn,
+            ServerRequest::SetAutoMode(AutoModeSetting {
+                project_path: project.clone(),
+                enabled: true,
+            }),
+        )
+        .unwrap();
+        let as_loop = |conn: &Connection, id: i32, set: &str| {
+            conn.execute(
+                &format!(
+                    "UPDATE tasks SET run_mode = 'Loop', {set} WHERE project_path = ?1 AND id = ?2"
+                ),
+                rusqlite::params![project, id],
+            )
+            .unwrap();
+        };
+        for title in ["one", "two"] {
+            let id = queued(&mut conn, &project, title, false);
+            as_loop(&conn, id, "status = 'Review', ball = 'User'");
+        }
+        let plain = queued(&mut conn, &project, "pipeline", false);
+        let waits = queued(&mut conn, &project, "loop", false);
+        as_loop(&conn, waits, "ball = 'None'");
+        let asked = queued(&mut conn, &project, "asked for", true);
+        as_loop(&conn, asked, "ball = 'None'");
+
+        // Two loops wait on the user, the default cap.
+        assert_eq!(candidates(&conn, &project).unwrap(), vec![asked, plain]);
+
+        let set = |cap| {
+            crate::pipeline_settings::answer(
+                &conn,
+                ServerRequest::SetLoopWaitCap(maestro_protocol::LoopWaitCap {
+                    project_path: project.clone(),
+                    cap,
+                }),
+            )
+            .unwrap();
+        };
+        set(3);
+        assert_eq!(
+            candidates(&conn, &project).unwrap(),
+            vec![asked, plain, waits]
+        );
+        set(0);
+        assert_eq!(
+            candidates(&conn, &project).unwrap(),
+            vec![asked, plain, waits]
         );
     }
 

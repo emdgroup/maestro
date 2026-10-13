@@ -877,6 +877,7 @@ mod tests {
             loop_sealed_sha: None,
             loop_summary: None,
             gate: None,
+            drafted_by: None,
         }
     }
 

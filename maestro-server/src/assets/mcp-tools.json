@@ -97,7 +97,7 @@
     },
     {
       "name": "create_task",
-      "description": "Create a Maestro task in the Planning column of the current project. Use when the user asks for work to be tracked, or when you find follow-up work worth recording. The task is created immediately — say what you created and quote the id.",
+      "description": "Create a Maestro task in the Planning column of the current project. Use when the user asks for work to be tracked, or when you find follow-up work worth recording. The task is created immediately — say what you created and quote the id. Pass `run_mode: \"Loop\"` with `checks` to draft a loop: it waits in Planning for the user to review and queue it, like any task.",
       "inputSchema": {
         "type": "object",
         "required": ["title"],
@@ -120,13 +120,70 @@
             "items": {
               "type": "string"
             }
+          },
+          "run_mode": {
+            "type": "string",
+            "enum": ["Pipeline", "Loop"],
+            "description": "Loop runs the task in fresh sessions until its checks pass, instead of the plan, code and review pipeline. A loop needs checks."
+          },
+          "checks": {
+            "type": "array",
+            "description": "A loop's done criteria, every one required. Command: a shell command run after every iteration, passing on exit 0. Judge: a statement another agent decides against the loop's diff. Manual: ticked by the user at the end. Replaces the whole list.",
+            "items": {
+              "type": "object",
+              "required": ["kind", "label"],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": ["Command", "Judge", "Manual"]
+                },
+                "label": {
+                  "type": "string"
+                },
+                "command": {
+                  "type": "string",
+                  "description": "What a Command check runs."
+                }
+              }
+            }
+          },
+          "max_iterations": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Iterations the loop may use. Default 10."
+          },
+          "max_agent_minutes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Agent time over the loop's iterations. Default 120."
+          },
+          "stall_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Iterations in a row with no progress before the loop stops. Default 3."
+          },
+          "check_timeout_minutes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Per check. Default 10."
+          },
+          "setup_command": {
+            "type": "string",
+            "description": "Run before the checks, for example installing dependencies. Empty clears it."
+          },
+          "sealed_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Paths kept out of the loop's worktree and written in only while the checks run, such as the tests a check runs, so the agent cannot read or change them. Each must exist on the base branch. A trailing / names a directory."
           }
         }
       }
     },
     {
       "name": "get_task",
-      "description": "Read a Maestro task: its description, status, labels, and the outcome thread of what previous sessions concluded about it. Omit `id` for the task this session was started for — the prompt you were given is a paraphrase of a card, and the card is where the user put the detail, the acceptance criteria and the history. Read it before assuming what the work is. The thread carries the last 20 entries, newest kept.",
+      "description": "Read a Maestro task: its description, status, labels, and the outcome thread of what previous sessions concluded about it. Omit `id` for the task this session was started for — the prompt you were given is a paraphrase of a card, and the card is where the user put the detail, the acceptance criteria and the history. Read it before assuming what the work is. The thread carries the last 20 entries, newest kept. A loop also carries its checks and budgets.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -139,7 +196,7 @@
     },
     {
       "name": "update_task",
-      "description": "Change a Maestro task. Only the fields you pass are touched; omit `id` for the task this session is working on.\n\nMoving `status` is the same move as the user dragging the card, so make it when the work has actually reached that state — `Review` when you are finished and want it looked at, not when you expect to be finished. The user is watching the board, so a wrong move is visible and misleading rather than harmless.",
+      "description": "Change a Maestro task. Only the fields you pass are touched; omit `id` for the task this session is working on.\n\nMoving `status` is the same move as the user dragging the card, so make it when the work has actually reached that state — `Review` when you are finished and want it looked at, not when you expect to be finished. The user is watching the board, so a wrong move is visible and misleading rather than harmless.\n\nThe loop fields turn a task that has not started into a loop, or change one. Once a loop has started only its budgets change here. A loop's own sessions cannot change their task.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -170,6 +227,63 @@
               "type": "string"
             },
             "description": "Replaces the whole list, so include the ones you are keeping."
+          },
+          "run_mode": {
+            "type": "string",
+            "enum": ["Pipeline", "Loop"],
+            "description": "Loop runs the task in fresh sessions until its checks pass, instead of the plan, code and review pipeline. A loop needs checks."
+          },
+          "checks": {
+            "type": "array",
+            "description": "A loop's done criteria, every one required. Command: a shell command run after every iteration, passing on exit 0. Judge: a statement another agent decides against the loop's diff. Manual: ticked by the user at the end. Replaces the whole list.",
+            "items": {
+              "type": "object",
+              "required": ["kind", "label"],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": ["Command", "Judge", "Manual"]
+                },
+                "label": {
+                  "type": "string"
+                },
+                "command": {
+                  "type": "string",
+                  "description": "What a Command check runs."
+                }
+              }
+            }
+          },
+          "max_iterations": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Iterations the loop may use. Default 10."
+          },
+          "max_agent_minutes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Agent time over the loop's iterations. Default 120."
+          },
+          "stall_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Iterations in a row with no progress before the loop stops. Default 3."
+          },
+          "check_timeout_minutes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Per check. Default 10."
+          },
+          "setup_command": {
+            "type": "string",
+            "description": "Run before the checks, for example installing dependencies. Empty clears it."
+          },
+          "sealed_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Paths kept out of the loop's worktree and written in only while the checks run, such as the tests a check runs, so the agent cannot read or change them. Each must exist on the base branch. A trailing / names a directory."
           }
         }
       }
@@ -202,6 +316,50 @@
             "type": "string",
             "enum": ["Planning", "Queue", "InProgress", "Review", "Done"],
             "description": "Only tasks in this column."
+          }
+        }
+      }
+    },
+    {
+      "name": "loop_status",
+      "description": "Where the loop this session iterates for stands: the goal, every check by label and state with the failing output and the judge's reasons, the iteration and the budget left, and the proposals waiting for the user. Only answers in a loop iteration.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "loop_propose_check",
+      "description": "Propose a check the loop's list lacks, when the goal needs something that no check verifies. The user decides whether to add it and of which kind, so carry on with your work meanwhile. At most 3 proposals wait at once. Only answers in a loop iteration.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["label"],
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "What the check verifies, as one statement."
+          },
+          "why": {
+            "type": "string",
+            "description": "Why the goal needs it, shown to the user under the label."
+          },
+          "command": {
+            "type": "string",
+            "description": "A shell command that would verify it, if one would."
+          }
+        }
+      }
+    },
+    {
+      "name": "loop_blocked",
+      "description": "Stop the loop for the user when you cannot go on without them: a decision only they can make, access you lack, or a goal that contradicts itself. Say exactly what you need. Your work so far is committed, the checks do not run, and the next iteration gets the user's answer. End your turn right after calling it. Only answers in a loop iteration.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["reason"],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "What you need from the user, and why you cannot go on without it."
           }
         }
       }

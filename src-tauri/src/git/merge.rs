@@ -1344,6 +1344,7 @@ mod loop_tests {
             check_output: None,
             peeks: vec![],
             tokens: None,
+            blocked: None,
         }
     }
 

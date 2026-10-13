@@ -389,6 +389,16 @@ async fn finish(
     ended: Ended<'_>,
 ) {
     let task_id = task.id;
+    // The worker said it is blocked: its turn ended as it meant to, whatever cut it after, unless
+    // the user stopped the loop.
+    let blocked = iteration
+        .blocked
+        .as_deref()
+        .filter(|_| !matches!(ended.cut, Some(Cut::Stopped)));
+    let ended = Ended {
+        cut: ended.cut.filter(|_| blocked.is_none()),
+        ..ended
+    };
     let Some(dir) = worktree_dir(store, path, task_id).await else {
         stop(
             store,
@@ -473,6 +483,35 @@ async fn finish(
             )
             .await;
         }
+        return;
+    }
+    if let Some(reason) = blocked {
+        let (outcome, halt) = (LoopIterationOutcome::Blocked, LoopHalt::Blocked);
+        let recorded = {
+            let conn = store.lock().await;
+            loops::record_outcome(&conn, path, task_id, iteration, outcome, None)
+                .and_then(|()| loops::set_halt(&conn, path, task_id, halt))
+        };
+        if let Err(e) = recorded {
+            send_diag("warn", format!("[loop] task {task_id}: {e}"));
+        }
+        let note = format!(
+            "Iteration {} is blocked and asks for you:
+
+{}",
+            iteration.n,
+            reason.trim()
+        );
+        apply(
+            store,
+            everyone,
+            path,
+            task_id,
+            TaskTransition::LoopHalted,
+            TransitionGuard::Phase(TaskPhase::Iterating),
+            Some(note_entry(note)),
+        )
+        .await;
         return;
     }
     let (outcome, output) = match committed {
@@ -741,25 +780,7 @@ async fn answer_proposal(
     }
     let mut sealing = Vec::new();
     for wanted in &request.seal {
-        let wanted = loops::relative_path(wanted, true)?;
-        let listed = git(
-            &path,
-            &[
-                "ls-tree",
-                "--name-only",
-                base,
-                "--",
-                wanted.trim_end_matches('/'),
-            ],
-        )
-        .await?;
-        if listed.trim().is_empty() {
-            return Err(format!(
-                "\"{wanted}\" is not on {base}, so it cannot be sealed: the checks take sealed files \
-                 from there. Commit it to {base} first, or add it as a hidden file."
-            ));
-        }
-        sealing.push(wanted);
+        sealing.push(sealable(&path, base, wanted).await?);
     }
     request.seal = sealing;
     let sealed = !request.seal.is_empty();
@@ -784,6 +805,29 @@ async fn answer_proposal(
         }
     }
     Ok(answered)
+}
+
+/// `wanted` as a sealed path, which has to be on `base`: the checks take sealed files from there.
+pub(crate) async fn sealable(path: &str, base: &str, wanted: &str) -> Result<String, String> {
+    let wanted = loops::relative_path(wanted, true)?;
+    let listed = git(
+        path,
+        &[
+            "ls-tree",
+            "--name-only",
+            base,
+            "--",
+            wanted.trim_end_matches('/'),
+        ],
+    )
+    .await?;
+    if listed.trim().is_empty() {
+        return Err(format!(
+            "\"{wanted}\" is not on {base}, so it cannot be sealed: the checks take sealed files \
+             from there. Commit it to {base} first, or add it as a hidden file."
+        ));
+    }
+    Ok(wanted)
 }
 
 /// After a restart: checks that died with the daemon run again.
@@ -1727,6 +1771,7 @@ mod tests {
             check_output: output.map(str::to_string),
             peeks: vec![],
             tokens: None,
+            blocked: None,
         }
     }
 
@@ -2518,6 +2563,72 @@ Try the cache first."
             state(&*store.lock().await, &task),
             (Some(TaskPhase::Judging), Some(PhaseStatus::Waiting))
         );
+    }
+
+    #[tokio::test]
+    async fn a_blocked_worker_halts_the_loop_with_its_work_committed_and_unchecked() {
+        let (_repo, store, task) = sealed_loop(SEES_THEM).await;
+        let path = task.project_path.clone();
+        let (dir, task, _) = start(&store, &task).await;
+        std::fs::write(Path::new(&dir).join("src/b.txt"), "so far").unwrap();
+        let everyone = crate::client_sink::ClientSink::detached();
+        let iteration = {
+            let conn = store.lock().await;
+            assert!(loops::set_blocked(&conn, &path, task.id, 1, "Which API key?").unwrap());
+            running(&loops::list_iterations(&conn, &path, task.id).unwrap()).unwrap()
+        };
+        // Refused for a usage limit after the call: the worker had already said it is blocked.
+        let until = chrono::Utc::now() + chrono::Duration::hours(2);
+        let ended = Ended {
+            cut: Some(Cut::Limit(until)),
+            ..Ended::default()
+        };
+        finish(&store, &everyone, &path, &task, &iteration, ended).await;
+
+        let conn = store.lock().await;
+        let row = &loops::list_iterations(&conn, &path, task.id).unwrap()[0];
+        assert_eq!(row.outcome, LoopIterationOutcome::Blocked);
+        assert!(row.counted);
+        let check = &loops::list_checks(&conn, &path, task.id).unwrap()[0];
+        assert_eq!(
+            check.state,
+            LoopCheckState::Pending,
+            "the checks did not run"
+        );
+        assert_eq!(
+            loops::halt_and_hold(&conn, &path, task.id).unwrap(),
+            (Some(LoopHalt::Blocked), None)
+        );
+        let stored = crate::task_store::get(&conn, &path, task.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.ball, TaskBall::User);
+        let thread = crate::task_store::list_comments(&conn, &path, task.id).unwrap();
+        let note = thread
+            .last()
+            .and_then(|c| c.body.as_deref())
+            .unwrap_or_default();
+        assert!(note.contains("Which API key?"), "{note}");
+        // The next iteration is told what the user's answer is about.
+        let prompt = crate::task_prompt::compose(
+            &conn,
+            &path,
+            &stored,
+            Some(TaskPhase::Iterating),
+            maestro_protocol::AgentRole::Coder,
+            None,
+            None,
+        )
+        .unwrap()
+        .embed();
+        let text = prompt.blocks[1]["text"].as_str().unwrap();
+        assert!(
+            text.contains("## The last iteration was blocked") && text.contains("Which API key?"),
+            "{text}"
+        );
+        drop(conn);
+        let log = git(&dir, &["log", "-1", "--format=%s"]).await.unwrap();
+        assert_eq!(log.trim(), "loop: iteration 1");
     }
 
     #[tokio::test]

@@ -746,6 +746,7 @@ async fn run_server(
                         reply_tx,
                         &sessions,
                         project_store.as_ref(),
+                        automation_store.as_ref(),
                         &mut pending_host_tools,
                         &stdout,
                     ))

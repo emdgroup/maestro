@@ -316,6 +316,7 @@ fn task_from_row(row: &Row, project_path: &str) -> rusqlite::Result<Task> {
         loop_sealed_sha: None,
         loop_summary: None,
         gate: None,
+        drafted_by: None,
     })
 }
 

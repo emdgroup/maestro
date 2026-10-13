@@ -114,6 +114,9 @@ pub struct Task {
     /// The usage-limit gate holding this task while it waits on its agent.
     #[specta(optional)]
     pub gate: Option<super::loops::AgentGateState>,
+    /// The automation run that created this task, if one did.
+    #[specta(optional)]
+    pub drafted_by: Option<super::loops::TaskDraft>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -536,6 +539,9 @@ impl Task {
                 .loop_summary
                 .and_then(|summary| super::loops::mirror(*summary).ok()),
             gate: task.gate.and_then(|gate| super::loops::mirror(*gate).ok()),
+            drafted_by: task
+                .drafted_by
+                .and_then(|draft| super::loops::mirror(*draft).ok()),
         }
     }
 }

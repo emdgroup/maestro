@@ -84,6 +84,7 @@ pub enum LoopIterationOutcome {
     Interrupted,
     Empty,
     Failed,
+    Blocked,
 }
 
 /// One attempt at one iteration.
@@ -114,6 +115,9 @@ pub struct LoopIteration {
     pub peeks: Vec<String>,
     #[specta(optional)]
     pub tokens: Option<i64>,
+    /// Why the worker said it cannot go on.
+    #[specta(optional)]
+    pub blocked: Option<String>,
 }
 
 /// An acceptance file that exists only in the loop's record, never in the repository.
@@ -134,6 +138,16 @@ pub enum LoopHalt {
     OutOfTime,
     Paused,
     Stopped,
+    Blocked,
+}
+
+/// The automation run whose agent created a task.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct TaskDraft {
+    pub automation: String,
+    #[specta(optional)]
+    pub run: Option<u32>,
 }
 
 /// A loop as its card and its detail's meters show it, read with the task.

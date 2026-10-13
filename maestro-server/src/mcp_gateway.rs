@@ -16,9 +16,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use maestro_protocol::{
-    CreateTaskRequest, GatewayRequest, HostToolCall, HostToolResult, NewTaskComment, ProjectRef,
-    ServerRequest, ServerResponse, SessionUpdate, TaskPriority, TaskRef, TaskStatus, TaskUpdate,
-    UpdateTaskRequest, WorkspaceMode,
+    CreateTaskRequest, GatewayRequest, HostToolCall, HostToolResult, LoopCheck, LoopCheckEntry,
+    LoopCheckKind, LoopCheckSpec, LoopCheckState, LoopConfig, NewTaskComment, ProjectRef, RunMode,
+    ServerRequest, ServerResponse, SessionUpdate, TaskDraft, TaskPriority, TaskRef, TaskStatus,
+    TaskUpdate, UpdateTaskRequest, WorkspaceMode,
 };
 use rusqlite::Connection;
 use serde_json::{json, Value};
@@ -166,6 +167,7 @@ pub(crate) async fn handle_host_tool_call(
     reply_tx: oneshot::Sender<HostToolResult>,
     sessions: &SessionMap,
     project_store: Option<&Store>,
+    automation_store: Option<&crate::automation_runner::Store>,
     pending_host_tools: &mut PendingHostTools,
     stdout: &crate::ClientOut,
 ) {
@@ -198,11 +200,27 @@ pub(crate) async fn handle_host_tool_call(
         let binding = session.project.as_ref().map(|project| SessionTask {
             project_path: project.project_path.clone(),
             task_id: project.meta.task_id,
+            loop_session: crate::loop_engine::session_of(session),
         });
         let store = project_store.cloned();
+        let automations = automation_store.cloned();
         let stdout = Arc::clone(stdout);
         tokio::spawn(async move {
-            let result = match task_tool(store, binding, &call.name, &call.arguments).await {
+            // A task an automation's agent creates says which run it came from.
+            let draft = match (&automations, call.name.as_str()) {
+                (Some(automations), "create_task") => {
+                    let conn = automations.lock().await;
+                    crate::automations::run_for_session(&conn, &call.session_id).map(|run| {
+                        maestro_protocol::TaskDraft {
+                            automation: run.automation_name,
+                            run: run.ordinal,
+                        }
+                    })
+                }
+                _ => None,
+            };
+            let answered = task_tool(store, binding, &call.name, &call.arguments, draft).await;
+            let result = match answered {
                 Ok((result, pushes)) => {
                     for push in pushes {
                         crate::helpers::broadcast(&stdout, push).await;
@@ -679,12 +697,15 @@ fn tags_argument(arguments: &Value) -> Result<Option<Vec<String>>, String> {
     }
 }
 
-const TASK_TOOLS: [&str; 5] = [
+const TASK_TOOLS: [&str; 8] = [
     "create_task",
     "list_tasks",
     "get_task",
     "update_task",
     "comment_task",
+    "loop_status",
+    "loop_propose_check",
+    "loop_blocked",
 ];
 
 /// Mirrors the `priority` enum in the `create_task` tool schema and `TaskPriority`.
@@ -704,7 +725,147 @@ const MAX_THREAD_ENTRIES: usize = 20;
 struct SessionTask {
     project_path: String,
     task_id: Option<i32>,
+    /// What the session is to its task's loop, when it is one of the loop's own.
+    loop_session: Option<crate::loop_engine::LoopSession>,
 }
+
+impl SessionTask {
+    /// Whether `task_id` is the loop this session works for: it may not see that loop's commands
+    /// or sealed paths, which would let it game the checks, nor change its task.
+    fn owns_loop(&self, task_id: i32) -> bool {
+        self.loop_session.is_some() && self.task_id == Some(task_id)
+    }
+}
+
+/// The loop fields of `create_task` and `update_task`, each `None` when the agent left it out.
+#[derive(Default)]
+struct LoopFields {
+    run_mode: Option<RunMode>,
+    checks: Option<Vec<LoopCheckSpec>>,
+    max_iterations: Option<u32>,
+    max_agent_minutes: Option<u32>,
+    stall_limit: Option<u32>,
+    check_timeout_minutes: Option<u32>,
+    setup_command: Option<String>,
+    sealed_paths: Option<Vec<String>>,
+}
+
+impl LoopFields {
+    fn parse(arguments: &Value) -> Result<LoopFields, String> {
+        let number = |key: &str| -> Result<Option<u32>, String> {
+            match arguments.get(key) {
+                None | Some(Value::Null) => Ok(None),
+                Some(value) => value
+                    .as_u64()
+                    .filter(|n| *n >= 1)
+                    .and_then(|n| u32::try_from(n).ok())
+                    .map(Some)
+                    .ok_or_else(|| format!("{key} must be a whole number of at least 1")),
+            }
+        };
+        let checks = match arguments.get("checks") {
+            None | Some(Value::Null) => None,
+            Some(value) => {
+                let specs: Vec<LoopCheckSpec> =
+                    serde_json::from_value(value.clone()).map_err(|_| {
+                        "checks must be a list of {kind, label, command}, kind one of Command, \
+                         Judge or Manual"
+                            .to_string()
+                    })?;
+                Some(
+                    specs
+                        .iter()
+                        .map(crate::task_store::loops::spec)
+                        .collect::<Result<_, _>>()?,
+                )
+            }
+        };
+        Ok(LoopFields {
+            run_mode: parse_enum(arguments, "run_mode", &["Pipeline", "Loop"])?
+                .map(|name| serde_json::from_value(Value::String(name)))
+                .transpose()
+                .map_err(|e| e.to_string())?,
+            checks,
+            max_iterations: number("max_iterations")?,
+            max_agent_minutes: number("max_agent_minutes")?,
+            stall_limit: number("stall_limit")?,
+            check_timeout_minutes: number("check_timeout_minutes")?,
+            setup_command: string_argument(arguments, "setup_command")?,
+            sealed_paths: arguments
+                .get("sealed_paths")
+                .filter(|value| !value.is_null())
+                .map(|value| string_list(Some(value))),
+        })
+    }
+
+    fn budgets(&self) -> bool {
+        self.max_iterations.is_some()
+            || self.max_agent_minutes.is_some()
+            || self.stall_limit.is_some()
+            || self.check_timeout_minutes.is_some()
+    }
+
+    /// What a loop that has started no longer takes from an agent.
+    fn shape(&self) -> bool {
+        self.run_mode.is_some()
+            || self.checks.is_some()
+            || self.setup_command.is_some()
+            || self.sealed_paths.is_some()
+    }
+
+    fn any(&self) -> bool {
+        self.budgets() || self.shape()
+    }
+
+    /// Fields only a loop has.
+    fn loop_only(&self) -> bool {
+        self.budgets()
+            || self.checks.is_some()
+            || self.setup_command.is_some()
+            || self.sealed_paths.is_some()
+    }
+
+    /// `config` with these fields over it. The sealed paths are the ones `sealable` returned.
+    fn over(&self, mut config: LoopConfig, sealed: Option<Vec<String>>) -> LoopConfig {
+        if let Some(n) = self.max_iterations {
+            config.max_iterations = n;
+        }
+        if let Some(minutes) = self.max_agent_minutes {
+            config.max_agent_secs = minutes.saturating_mul(60);
+        }
+        if let Some(n) = self.stall_limit {
+            config.stall_limit = n;
+        }
+        if let Some(minutes) = self.check_timeout_minutes {
+            config.check_timeout_secs = minutes.saturating_mul(60);
+        }
+        if let Some(setup) = &self.setup_command {
+            config.setup_command = Some(setup.clone());
+        }
+        if let Some(sealed) = sealed {
+            config.sealed_paths = sealed;
+        }
+        config
+    }
+
+    /// The sealed paths named, each checked against `base` the way the app's are.
+    async fn sealed(&self, project_path: &str, base: &str) -> Result<Option<Vec<String>>, String> {
+        let Some(paths) = &self.sealed_paths else {
+            return Ok(None);
+        };
+        let base = match base.trim() {
+            "" => "HEAD",
+            base => base,
+        };
+        let mut sealed = Vec::new();
+        for path in paths {
+            sealed.push(crate::loop_engine::sealable(project_path, base, path).await?);
+        }
+        Ok(Some(sealed))
+    }
+}
+
+const NOT_A_LOOP: &str = "checks and budgets are a loop's: pass run_mode \"Loop\" with them";
 
 /// The keys of `.maestro/settings.json` a new task's defaults come from. The app owns the file.
 #[derive(Default, serde::Deserialize)]
@@ -724,6 +885,7 @@ async fn task_tool(
     binding: Option<SessionTask>,
     name: &str,
     arguments: &Value,
+    draft: Option<TaskDraft>,
 ) -> Result<(Value, Vec<ServerResponse>), String> {
     let binding =
         binding.ok_or_else(|| "this session is not attached to a Maestro project".to_string())?;
@@ -732,12 +894,27 @@ async fn task_tool(
     let mut pushes = Vec::new();
 
     let result = match name {
+        "loop_status" | "loop_propose_check" | "loop_blocked" => {
+            loop_tool(&store, &binding, name, arguments, &mut pushes).await?
+        }
         "create_task" => {
             let title = parse_title(arguments)?;
             let priority = parse_priority(arguments)?;
+            let fields = LoopFields::parse(arguments)?;
+            let looping = fields.run_mode == Some(RunMode::Loop);
+            if fields.loop_only() && !looping {
+                return Err(NOT_A_LOOP.to_string());
+            }
             let (base_branch, workspace_mode) = task_defaults(&project_path).await;
+            let (workspace_mode, loop_config) = if looping {
+                let sealed = fields.sealed(&project_path, &base_branch).await?;
+                let config = fields.over(LoopConfig::default(), sealed);
+                (WorkspaceMode::NewWorktree, Some(config))
+            } else {
+                (workspace_mode, None)
+            };
             let request = ServerRequest::CreateTask(CreateTaskRequest {
-                project_path,
+                project_path: project_path.clone(),
                 title,
                 description: arguments
                     .get("description")
@@ -754,15 +931,49 @@ async fn task_tool(
                 workspace_branch_mode: maestro_protocol::BranchMode::Create,
                 workspace_branch: None,
                 model_override: None,
-                run_mode: maestro_protocol::RunMode::Pipeline,
-                loop_config: None,
+                run_mode: fields.run_mode.unwrap_or_default(),
+                loop_config,
             });
-            let ServerResponse::CreateTaskOk(task) =
-                ask(&mut *store.lock().await, request, &mut pushes)?
-            else {
+            let mut conn = store.lock().await;
+            let ServerResponse::CreateTaskOk(task) = ask(&mut conn, request, &mut pushes)? else {
                 return Err(UNEXPECTED.to_string());
             };
-            json!({ "id": task.id, "title": task.title, "status": task.status })
+            if let Some(checks) = fields.checks.filter(|_| looping) {
+                let request =
+                    ServerRequest::SetLoopChecks(maestro_protocol::SetLoopChecksRequest {
+                        project_path: project_path.clone(),
+                        task_id: task.id,
+                        checks: checks
+                            .into_iter()
+                            .map(|spec| LoopCheckEntry { id: None, spec })
+                            .collect(),
+                    });
+                ask(&mut conn, request, &mut pushes)?;
+            }
+            if let Some(draft) = draft {
+                crate::task_store::set_drafted_by(&conn, &task.project_path, task.id, &draft)?;
+                let run = draft.run.map(|n| format!(", run #{n}")).unwrap_or_default();
+                let body = format!("Drafted by the automation \"{}\"{run}.", draft.automation);
+                let request =
+                    ServerRequest::AddTaskComment(maestro_protocol::AddTaskCommentRequest {
+                        project_path,
+                        task_id: task.id,
+                        comment: NewTaskComment {
+                            kind: "note".to_string(),
+                            author: "maestro".to_string(),
+                            body: Some(body),
+                            external_ref: None,
+                            phase: None,
+                        },
+                    });
+                ask(&mut conn, request, &mut pushes)?;
+            }
+            json!({
+                "id": task.id,
+                "title": task.title,
+                "status": task.status,
+                "runMode": task.run_mode,
+            })
         }
         "list_tasks" => {
             let wanted: Option<TaskStatus> = match arguments.get("status") {
@@ -791,6 +1002,12 @@ async fn task_tool(
             let task_id = parse_task_id(&binding, arguments)?;
             let mut conn = store.lock().await;
             let task = task_in_project(&mut conn, &project_path, task_id)?;
+            let checks = match task.run_mode {
+                RunMode::Loop => {
+                    crate::task_store::loops::list_checks(&conn, &task.project_path, task_id)?
+                }
+                RunMode::Pipeline => Vec::new(),
+            };
             let request = ServerRequest::ListTaskComments(TaskRef {
                 project_path,
                 task_id,
@@ -822,6 +1039,11 @@ async fn task_tool(
             object.insert("description".into(), json!(task.description));
             object.insert("baseBranch".into(), json!(task.base_branch));
             object.insert("createdAt".into(), json!(task.created_at));
+            object.insert("runMode".into(), json!(task.run_mode));
+            if task.run_mode == RunMode::Loop {
+                let own = binding.owns_loop(task_id);
+                object.insert("loop".into(), loop_json(&task, &checks, own));
+            }
             object.insert("thread".into(), Value::Array(entries));
             if total > MAX_THREAD_ENTRIES {
                 object.insert("threadTruncated".into(), json!(total - MAX_THREAD_ENTRIES));
@@ -851,33 +1073,76 @@ async fn task_tool(
             let labels = arguments
                 .get("labels")
                 .map(|_| string_list(arguments.get("labels")));
+            let fields = LoopFields::parse(arguments)?;
             if status.is_none()
                 && priority.is_none()
                 && title.is_none()
                 && description.is_none()
                 && labels.is_none()
+                && !fields.any()
             {
                 return Err("nothing to update".to_string());
             }
+            if binding.owns_loop(task_id) {
+                return Err("a loop's own session cannot change its task".to_string());
+            }
+
+            let task = task_in_project(&mut *store.lock().await, &project_path, task_id)?;
+            let mut update = TaskUpdate {
+                status,
+                title,
+                description: description.map(Some),
+                priority,
+                labels,
+                ..TaskUpdate::default()
+            };
+            if fields.any() {
+                let looping = fields.run_mode.unwrap_or(task.run_mode) == RunMode::Loop;
+                if fields.loop_only() && !looping {
+                    return Err(NOT_A_LOOP.to_string());
+                }
+                let started = task.phase.is_some()
+                    || !matches!(task.status, TaskStatus::Planning | TaskStatus::Queue);
+                if started && fields.shape() {
+                    return Err("once a loop has started only its budgets change here; its \
+                                checks, setup command and sealed paths change in the app"
+                        .to_string());
+                }
+                if let Some(mode) = fields.run_mode.filter(|mode| *mode != task.run_mode) {
+                    update.run_mode = Some(mode);
+                    if mode == RunMode::Loop {
+                        update.workspace_mode = Some(WorkspaceMode::NewWorktree);
+                    }
+                }
+                if looping {
+                    let sealed = fields.sealed(&project_path, &task.base_branch).await?;
+                    let config = task.loop_config.clone().unwrap_or_default();
+                    update.loop_config = Some(fields.over(config, sealed));
+                }
+            }
 
             let mut conn = store.lock().await;
-            task_in_project(&mut conn, &project_path, task_id)?;
             // A status is a manual move, the same as the user dragging the card.
             let request = ServerRequest::UpdateTask(UpdateTaskRequest {
-                project_path,
+                project_path: project_path.clone(),
                 task_id,
-                update: TaskUpdate {
-                    status,
-                    title,
-                    description: description.map(Some),
-                    priority,
-                    labels,
-                    ..TaskUpdate::default()
-                },
+                update,
             });
             let ServerResponse::UpdateTaskOk(task) = ask(&mut conn, request, &mut pushes)? else {
                 return Err(UNEXPECTED.to_string());
             };
+            if let Some(checks) = fields.checks {
+                let request =
+                    ServerRequest::SetLoopChecks(maestro_protocol::SetLoopChecksRequest {
+                        project_path,
+                        task_id,
+                        checks: checks
+                            .into_iter()
+                            .map(|spec| LoopCheckEntry { id: None, spec })
+                            .collect(),
+                    });
+                ask(&mut conn, request, &mut pushes)?;
+            }
             task_summary(&task)
         }
         // Always a `note`, and always authored `agent`: the typed kinds are the pipeline's own
@@ -953,6 +1218,182 @@ fn task_summary(task: &maestro_protocol::Task) -> Value {
         "priority": task.priority,
         "labels": task.labels,
     })
+}
+
+/// A loop as `get_task` shows it. The loop's own sessions get its checks without their commands,
+/// and neither the setup command nor the sealed paths: those would say what to game.
+fn loop_json(task: &maestro_protocol::Task, checks: &[LoopCheck], own: bool) -> Value {
+    let config = task.loop_config.clone().unwrap_or_default();
+    let summary = task.loop_summary.as_deref();
+    let checks: Vec<Value> = checks
+        .iter()
+        .map(|check| {
+            let mut value = json!({
+                "label": check.label,
+                "kind": check.kind,
+                "state": check.state,
+            });
+            if check.proposed && !check.accepted {
+                value["proposed"] = json!(true);
+            }
+            if let Some(command) = check.command.as_ref().filter(|_| !own) {
+                value["command"] = json!(command);
+            }
+            value
+        })
+        .collect();
+    let mut value = json!({
+        "checks": checks,
+        "maxIterations": config.max_iterations,
+        "maxAgentMinutes": config.max_agent_secs / 60,
+        "stallLimit": config.stall_limit,
+        "checkTimeoutMinutes": config.check_timeout_secs / 60,
+        "iteration": summary.map_or(0, |s| s.iteration),
+        "halt": summary
+            .and_then(|s| s.halt)
+            .filter(|_| task.ball == maestro_protocol::TaskBall::User),
+    });
+    if !own {
+        value["setupCommand"] = json!(config.setup_command);
+        value["sealedPaths"] = json!(config.sealed_paths);
+    }
+    value
+}
+
+/// The worker's loop tools, answered only for the iteration that is running: a session the loop
+/// has moved on from no longer acts for it.
+async fn loop_tool(
+    store: &Store,
+    binding: &SessionTask,
+    name: &str,
+    arguments: &Value,
+    pushes: &mut Vec<ServerResponse>,
+) -> Result<Value, String> {
+    use crate::task_store::loops;
+    use maestro_protocol::LoopIterationOutcome;
+
+    let (Some(crate::loop_engine::LoopSession::Iteration(n)), Some(task_id)) =
+        (&binding.loop_session, binding.task_id)
+    else {
+        return Err("this session is not a loop iteration".to_string());
+    };
+    let n = *n;
+    let path = crate::automations::canonical_project_path(&binding.project_path);
+    let mut conn = store.lock().await;
+    let task = task_in_project(&mut conn, &path, task_id)?;
+    let iterations = loops::list_iterations(&conn, &path, task_id)?;
+    let running = task.phase == Some(maestro_protocol::TaskPhase::Iterating)
+        && iterations
+            .iter()
+            .any(|i| i.n == n && i.outcome == LoopIterationOutcome::Running);
+    if !running {
+        return Err(format!(
+            "iteration {n} is over, so this session no longer acts for the loop"
+        ));
+    }
+    match name {
+        "loop_status" => {
+            let checks = loops::list_checks(&conn, &path, task_id)?;
+            Ok(loop_status(&task, n, &checks, &iterations))
+        }
+        "loop_propose_check" => {
+            let label = required_text(arguments, "label")?;
+            let why = string_argument(arguments, "why")?.filter(|s| !s.trim().is_empty());
+            let command = string_argument(arguments, "command")?.filter(|s| !s.trim().is_empty());
+            let id = loops::propose_check(
+                &mut conn,
+                &path,
+                task_id,
+                &label,
+                why.as_deref().map(str::trim),
+                command.as_deref().map(str::trim),
+            )?;
+            pushes.push(ServerResponse::TasksChanged(ProjectRef {
+                project_path: path,
+            }));
+            Ok(json!({
+                "id": id,
+                "proposed": label,
+                "note": "The user decides whether to add it. Carry on meanwhile.",
+            }))
+        }
+        "loop_blocked" => {
+            let reason = required_text(arguments, "reason")?;
+            loops::set_blocked(&conn, &path, task_id, n, &reason)?;
+            Ok(json!({
+                "blocked": true,
+                "next": "End your turn now. Your work is committed, the checks do not run, and \
+                         the loop waits for the user's answer.",
+            }))
+        }
+        other => Err(format!("unknown Maestro tool: {other}")),
+    }
+}
+
+/// Where the loop stands, for its worker: never a check's command, and the output it is shown is
+/// the output its prompt carried.
+fn loop_status(
+    task: &maestro_protocol::Task,
+    n: i32,
+    checks: &[LoopCheck],
+    iterations: &[maestro_protocol::LoopIteration],
+) -> Value {
+    use maestro_protocol::LoopIterationOutcome;
+
+    let config = task.loop_config.clone().unwrap_or_default();
+    let summary = task.loop_summary.as_deref();
+    let counted = summary.map_or(0, |s| s.counted).max(0) as u32;
+    let agent_secs = summary.map_or(0, |s| s.agent_secs);
+    let rows: Vec<Value> = checks
+        .iter()
+        .filter(|c| !c.proposed || c.accepted)
+        .map(|c| {
+            let mut value = json!({ "label": c.label, "kind": c.kind, "state": c.state });
+            match (c.kind, c.state, c.detail.as_deref()) {
+                (LoopCheckKind::Command, LoopCheckState::Fail | LoopCheckState::Flaky, Some(d)) => {
+                    value["output"] = json!(d)
+                }
+                (LoopCheckKind::Judge, _, Some(d)) => value["reason"] = json!(d),
+                _ => {}
+            }
+            value
+        })
+        .collect();
+    let proposals: Vec<&str> = checks
+        .iter()
+        .filter(|c| c.proposed && !c.accepted)
+        .map(|c| c.label.as_str())
+        .collect();
+    let mut value = json!({
+        "goal": task.description,
+        "iteration": n,
+        "maxIterations": config.max_iterations,
+        "budget": {
+            "iterationsAfterThis": config.max_iterations.saturating_sub(counted + 1),
+            "agentMinutesLeft": (i64::from(config.max_agent_secs) - agent_secs).max(0) / 60,
+        },
+        "checks": rows,
+        "proposals": proposals,
+    });
+    let last = iterations
+        .iter()
+        .rev()
+        .find(|i| i.outcome != LoopIterationOutcome::Running);
+    if let Some(error) = last
+        .filter(|i| i.outcome == LoopIterationOutcome::Failed)
+        .and_then(|i| i.check_output.as_deref())
+    {
+        value["lastError"] = json!(error);
+    }
+    value
+}
+
+/// A string argument that must be there and not blank, trimmed.
+fn required_text(arguments: &Value, key: &str) -> Result<String, String> {
+    string_argument(arguments, key)?
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("{key} is required"))
 }
 
 /// Which task the agent means. An absent `id` is the task this session was started for, which is
@@ -1129,7 +1570,7 @@ mod tests {
             arguments,
         };
         let sink = crate::client_sink::ClientSink::detached();
-        handle_host_tool_call(call, reply_tx, sessions, store, &mut pending, &sink).await;
+        handle_host_tool_call(call, reply_tx, sessions, store, None, &mut pending, &sink).await;
         assert!(pending.is_empty(), "{name} was forwarded to the host");
         reply_rx.await.expect("an answer")
     }
@@ -1166,7 +1607,7 @@ mod tests {
         .await);
         assert_eq!(
             created,
-            json!({ "id": 1, "title": "Fix the thing", "status": "Planning" })
+            json!({ "id": 1, "title": "Fix the thing", "status": "Planning", "runMode": "Pipeline" })
         );
 
         let listed = ok(call(&sessions, answered_by, "list_tasks", json!({})).await);
@@ -1220,6 +1661,132 @@ mod tests {
         )
         .expect("list");
         assert_eq!(stored[0].workspace_mode, WorkspaceMode::RepositoryDirectory);
+    }
+
+    #[tokio::test]
+    async fn a_loop_is_drafted_and_its_worker_gets_the_loop_tools_only() {
+        let project = tempfile::tempdir().expect("project dir");
+        let project_path = project.path().to_string_lossy().into_owned();
+        let canonical = crate::automations::canonical_project_path(&project_path);
+        let store: Store = Arc::new(tokio::sync::Mutex::new(
+            crate::project_store::open_in_memory(),
+        ));
+        let mut plain = SessionMap::new();
+        plain.insert("session".to_string(), session_in(&project_path, None));
+        let mut worker = SessionMap::new();
+        let mut session = session_in(&project_path, Some(1));
+        if let Some(binding) = session.project.as_mut() {
+            let role = json!({ "loop": crate::loop_engine::LoopSession::Iteration(1) });
+            binding.meta.role = Some(role.to_string());
+        }
+        worker.insert("session".to_string(), session);
+        let shared = store.clone();
+        let store = Some(&store);
+        let error = |result: HostToolResult| result.error.expect("an error");
+
+        assert_eq!(
+            error(
+                call(
+                    &plain,
+                    store,
+                    "create_task",
+                    json!({ "title": "x", "max_iterations": 3 })
+                )
+                .await
+            ),
+            NOT_A_LOOP
+        );
+        let created = ok(call(
+            &plain,
+            store,
+            "create_task",
+            json!({
+                "title": "Make it pass",
+                "run_mode": "Loop",
+                "checks": [
+                    { "kind": "Command", "label": "Tests pass", "command": "cargo test" },
+                    { "kind": "Judge", "label": "Empty lists are handled" },
+                ],
+                "max_iterations": 5,
+            }),
+        )
+        .await);
+        assert_eq!(created["runMode"], "Loop");
+        let task = crate::task_store::get(&*shared.lock().await, &canonical, 1)
+            .unwrap()
+            .unwrap();
+        assert_eq!(task.workspace_mode, WorkspaceMode::NewWorktree);
+        assert_eq!(task.loop_config.as_ref().unwrap().max_iterations, 5);
+
+        // Not running yet: the worker's session acts for no iteration.
+        assert_eq!(
+            error(call(&worker, store, "loop_status", json!({})).await),
+            "iteration 1 is over, so this session no longer acts for the loop"
+        );
+        {
+            let conn = shared.lock().await;
+            conn.execute(
+                "UPDATE tasks SET status = 'InProgress', phase = 'Iterating',
+                    phase_status = 'Running', ball = 'Agent' WHERE project_path = ?1 AND id = 1",
+                [&canonical],
+            )
+            .unwrap();
+            crate::task_store::loops::start_iteration(&conn, &canonical, 1, 1, "acp", "agent")
+                .unwrap();
+        }
+
+        let status = ok(call(&worker, store, "loop_status", json!({})).await);
+        assert_eq!(status["iteration"], 1);
+        assert_eq!(status["budget"]["iterationsAfterThis"], 4);
+        assert_eq!(status["checks"][0]["label"], "Tests pass");
+        assert!(status["checks"][0].get("command").is_none());
+
+        let own = ok(call(&worker, store, "get_task", json!({})).await);
+        assert!(own["loop"]["checks"][0].get("command").is_none());
+        assert!(own["loop"].get("sealedPaths").is_none());
+        let seen = ok(call(&plain, store, "get_task", json!({ "id": 1 })).await);
+        assert_eq!(seen["loop"]["checks"][0]["command"], "cargo test");
+        assert_eq!(
+            error(call(&worker, store, "update_task", json!({ "status": "Done" })).await),
+            "a loop's own session cannot change its task"
+        );
+
+        for n in 0..3 {
+            ok(call(
+                &worker,
+                store,
+                "loop_propose_check",
+                json!({ "label": format!("Check {n}"), "why": "because" }),
+            )
+            .await);
+        }
+        assert!(error(
+            call(
+                &worker,
+                store,
+                "loop_propose_check",
+                json!({ "label": "One more" })
+            )
+            .await
+        )
+        .contains("3 proposals"));
+
+        ok(call(
+            &worker,
+            store,
+            "loop_blocked",
+            json!({ "reason": " Which API key? " }),
+        )
+        .await);
+        let iterations =
+            crate::task_store::loops::list_iterations(&*shared.lock().await, &canonical, 1)
+                .unwrap();
+        assert_eq!(iterations[0].blocked.as_deref(), Some("Which API key?"));
+
+        assert_eq!(
+            error(call(&plain, store, "loop_status", json!({})).await),
+            "this session is not a loop iteration"
+        );
     }
 
     #[tokio::test]
@@ -1516,7 +2083,7 @@ mod tests {
             name: "get_prompt".to_string(),
             arguments: json!({ "id": "shared-1" }),
         };
-        handle_host_tool_call(call, reply_tx, &sessions, None, &mut pending, &sink).await;
+        handle_host_tool_call(call, reply_tx, &sessions, None, None, &mut pending, &sink).await;
         assert_eq!(pending.len(), 1);
 
         let mut received = 0;
@@ -1557,8 +2124,16 @@ mod tests {
                 name: name.to_string(),
                 arguments,
             };
-            handle_host_tool_call(call, reply_tx, &sessions, Some(&store), &mut pending, &sink)
-                .await;
+            handle_host_tool_call(
+                call,
+                reply_tx,
+                &sessions,
+                Some(&store),
+                None,
+                &mut pending,
+                &sink,
+            )
+            .await;
             reply_rx
         };
         let next = async |window: &mut tokio::io::DuplexStream| -> ServerResponse {

@@ -1768,7 +1768,9 @@ pub(crate) async fn dispatch_message(
         request @ (ServerRequest::GetCapacity
         | ServerRequest::SetCapacity(_)
         | ServerRequest::GetAutoMode(_)
-        | ServerRequest::SetAutoMode(_)) => {
+        | ServerRequest::SetAutoMode(_)
+        | ServerRequest::GetLoopWaitCap(_)
+        | ServerRequest::SetLoopWaitCap(_)) => {
             let answered = match project_store {
                 Some(store) => crate::pipeline_settings::answer(&*store.lock().await, request),
                 None => Err(crate::project_store::UNAVAILABLE.to_string()),

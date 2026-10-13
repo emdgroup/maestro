@@ -230,6 +230,12 @@ fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         loop_sealed_sha: row.get("loop_sealed_sha")?,
         loop_summary: None,
         gate: None,
+        drafted_by: optional_text("drafted_by")?.map(|automation| {
+            Box::new(maestro_protocol::TaskDraft {
+                automation,
+                run: row.get("drafted_run").ok().flatten(),
+            })
+        }),
     })
 }
 
@@ -282,6 +288,21 @@ pub fn get(conn: &Connection, project_path: &str, task_id: i32) -> Result<Option
     .optional()
     .map(|task| task.map(|task| filled(conn, task)))
     .map_err(|e| format!("Failed to read task {task_id}: {e}"))
+}
+
+/// Record the automation run whose agent created the task. `project_path` is canonical.
+pub fn set_drafted_by(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+    draft: &maestro_protocol::TaskDraft,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE tasks SET drafted_by = ?3, drafted_run = ?4 WHERE project_path = ?1 AND id = ?2",
+        params![project_path, task_id, draft.automation, draft.run],
+    )
+    .map(|_| ())
+    .map_err(|e| format!("Failed to record where task {task_id} came from: {e}"))
 }
 
 /// The project's next task id. Counted from what the project ever minted, not from what is left.
