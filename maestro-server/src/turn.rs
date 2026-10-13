@@ -503,7 +503,8 @@ mod tests {
             assert_eq!(
                 facts.plan_reading,
                 Some(crate::agent_gate::PlanReading {
-                    resets_at: Some(1234)
+                    resets_at: Some(1234),
+                    window: None,
                 })
             );
         }

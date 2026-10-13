@@ -1343,6 +1343,7 @@ mod loop_tests {
             summary: None,
             check_output: None,
             peeks: vec![],
+            tokens: None,
         }
     }
 

@@ -117,6 +117,12 @@ pub async fn interrupt_task(
     project_id: i32,
     task_id: i32,
 ) -> Result<(), String> {
+    // A loop is halted where it is, keeping its iterations and worktree; the daemon cuts its
+    // session.
+    let task = crate::task::crud::get_task_on_server(&app_state, project_id, task_id).await?;
+    if task.is_some_and(|t| t.run_mode == crate::task::models::RunMode::Loop) {
+        return crate::task::loops::stop_loop_on_server(&app_state, project_id, task_id).await;
+    }
     // Search ACP sessions by task — release lock immediately in scoped block. Task ids are per
     // project, so the project has to match too.
     let task = crate::acp::TaskKey {

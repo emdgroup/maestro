@@ -108,6 +108,12 @@ pub struct Task {
     /// The base commit a loop's sealed snapshot was taken from.
     #[specta(optional)]
     pub loop_sealed_sha: Option<String>,
+    /// What the board shows of a loop. Set on every loop task.
+    #[specta(optional)]
+    pub loop_summary: Option<super::loops::LoopSummary>,
+    /// The usage-limit gate holding this task while it waits on its agent.
+    #[specta(optional)]
+    pub gate: Option<super::loops::AgentGateState>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -133,6 +139,19 @@ pub struct LoopConfig {
     pub setup_command: Option<String>,
     /// Relative paths kept out of the worker's worktree. A trailing `/` names a directory.
     pub sealed_paths: Vec<String>,
+}
+
+impl From<LoopConfig> for wire::LoopConfig {
+    fn from(config: LoopConfig) -> Self {
+        wire::LoopConfig {
+            max_iterations: config.max_iterations,
+            max_agent_secs: config.max_agent_secs,
+            stall_limit: config.stall_limit,
+            check_timeout_secs: config.check_timeout_secs,
+            setup_command: config.setup_command,
+            sealed_paths: config.sealed_paths,
+        }
+    }
 }
 
 impl From<wire::LoopConfig> for LoopConfig {
@@ -513,6 +532,10 @@ impl Task {
             run_mode: task.run_mode.into(),
             loop_config: task.loop_config.map(Into::into),
             loop_sealed_sha: task.loop_sealed_sha,
+            loop_summary: task
+                .loop_summary
+                .and_then(|summary| super::loops::mirror(*summary).ok()),
+            gate: task.gate.and_then(|gate| super::loops::mirror(*gate).ok()),
         }
     }
 }

@@ -253,6 +253,8 @@ export function CreateTaskModal({
           ? `${MAESTRO_BRANCH_PREFIX}${data.branchSuffix.trim()}`
           : null,
         model_override: null,
+        run_mode: null,
+        loop_config: null,
       },
       {
         onSuccess: (newTask: Task) => {

@@ -12,9 +12,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use maestro_protocol::{
-    ApplyTaskTransitionRequest, LoopCheck, LoopCheckState, LoopConfig, LoopHiddenFile,
-    LoopIteration, LoopIterationOutcome, NewTaskComment, PhaseStatus, ServerRequest,
-    ServerResponse, Task, TaskPhase, TaskTransition, TransitionGuard,
+    ApplyTaskTransitionRequest, LoopCheck, LoopCheckState, LoopConfig, LoopHalt, LoopHiddenFile,
+    LoopIteration, LoopIterationOutcome, LoopSummary, NewTaskComment, PhaseStatus, RunMode,
+    ServerRequest, ServerResponse, Task, TaskBall, TaskPhase, TaskRef, TaskTransition,
+    TransitionGuard,
 };
 
 use crate::command_ext::NoConsoleWindow;
@@ -132,7 +133,7 @@ async fn iteration_ended(
         summary: end.facts.closing_message.as_deref(),
         agent_failed: end.stop_reason != "end_turn",
         git_commands: &end.facts.git_commands,
-        limited_until: end.limited_until,
+        cut: end.limited_until.map(Cut::Limit),
     };
     finish(store, everyone, path, &task, &iteration, ended).await;
 }
@@ -364,9 +365,18 @@ struct Ended<'a> {
     summary: Option<&'a str>,
     agent_failed: bool,
     git_commands: &'a [String],
-    /// Refused for a usage limit: what it wrote is kept, and the iteration runs again uncounted
-    /// once the gate opens.
-    limited_until: Option<chrono::DateTime<chrono::Utc>>,
+    /// Cut off before it ended: what it wrote is kept as a WIP commit, and the iteration runs
+    /// again uncounted.
+    cut: Option<Cut>,
+}
+
+/// Why an iteration was cut off.
+#[derive(Clone, Copy)]
+enum Cut {
+    /// A usage limit refused it; the gate opens then.
+    Limit(chrono::DateTime<chrono::Utc>),
+    /// The user stopped the loop, which has halted already.
+    Stopped,
 }
 
 /// Discard what the worker wrote where it may not, commit the rest, and check it.
@@ -398,7 +408,7 @@ async fn finish(
     let resealed = crate::worktree::seal(&dir, task).await;
     let committed = match resealed {
         Ok(()) => {
-            let message = match ended.limited_until {
+            let message = match ended.cut {
                 Some(_) => format!("loop: iteration {}, cut off (WIP)", iteration.n),
                 None => format!("loop: iteration {}", iteration.n),
             };
@@ -436,7 +446,7 @@ async fn finish(
         );
     }
 
-    if let Some(until) = ended.limited_until {
+    if let Some(cut) = ended.cut {
         let interrupted = LoopIterationOutcome::Interrupted;
         let recorded = loops::record_outcome(
             &*store.lock().await,
@@ -449,18 +459,20 @@ async fn finish(
         if let Err(e) = recorded {
             send_diag("warn", format!("[loop] task {task_id}: {e}"));
         }
-        let note = crate::agent_gate::note(until);
-        let guard = TransitionGuard::Phase(TaskPhase::Iterating);
-        apply(
-            store,
-            everyone,
-            path,
-            task_id,
-            TaskTransition::UsageLimited,
-            guard,
-            Some(note),
-        )
-        .await;
+        if let Cut::Limit(until) = cut {
+            let note = crate::agent_gate::note(until);
+            let guard = TransitionGuard::Phase(TaskPhase::Iterating);
+            apply(
+                store,
+                everyone,
+                path,
+                task_id,
+                TaskTransition::UsageLimited,
+                guard,
+                Some(note),
+            )
+            .await;
+        }
         return;
     }
     let (outcome, output) = match committed {
@@ -526,8 +538,8 @@ fn peeks(commands: &[String], sealed: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// `RerunLoopChecks`, `ReadLoopNotes`, `AnswerLoopProposal` and `OpenAgentGate`: the reply, and the
-/// pushes owed after it.
+/// `RerunLoopChecks`, `ReadLoopNotes`, `AnswerLoopProposal`, `OpenAgentGate`, `PauseLoop` and
+/// `StopLoop`: the reply, and the pushes owed after it.
 pub(crate) async fn answer(
     request: ServerRequest,
     store: Option<&Store>,
@@ -551,6 +563,18 @@ pub(crate) async fn answer(
                 crate::agent_gate::answer_open(store, &request.agent_id).await,
                 Vec::new(),
             );
+        }
+        ServerRequest::PauseLoop(task) => {
+            return match Box::pin(hold_loop(store, stdout, task, LoopHalt::Paused)).await {
+                Ok(pushes) => (ServerResponse::PauseLoopOk, pushes),
+                Err(e) => (crate::helpers::error_response(e), Vec::new()),
+            };
+        }
+        ServerRequest::StopLoop(task) => {
+            return match Box::pin(hold_loop(store, stdout, task, LoopHalt::Stopped)).await {
+                Ok(pushes) => (ServerResponse::StopLoopOk, pushes),
+                Err(e) => (crate::helpers::error_response(e), Vec::new()),
+            };
         }
         _ => {
             return (
@@ -586,6 +610,107 @@ pub(crate) async fn answer(
     };
     let notes = maestro_protocol::LoopNotes { content };
     (ServerResponse::ReadLoopNotesOk(notes), Vec::new())
+}
+
+/// `PauseLoop` and `StopLoop`. A loop waiting on the drain halts now. Stop cuts a running iteration
+/// or judge, keeping the iteration's work as a WIP commit. A pause, and a stop while the checks
+/// run, is taken once the running step ends.
+async fn hold_loop(
+    store: &Store,
+    stdout: &crate::ClientOut,
+    task: TaskRef,
+    halt: LoopHalt,
+) -> Result<Vec<ServerResponse>, String> {
+    let path = crate::automations::canonical_project_path(&task.project_path);
+    let task_id = task.task_id;
+    let (task, iteration) = {
+        let conn = store.lock().await;
+        let task = crate::task_store::get(&conn, &path, task_id)?
+            .ok_or_else(|| format!("Task {task_id} not found"))?;
+        (
+            task,
+            running(&loops::list_iterations(&conn, &path, task_id)?),
+        )
+    };
+    if task.run_mode != RunMode::Loop {
+        return Err("Only a loop can be paused or stopped this way".to_string());
+    }
+    let everyone = crate::client_sink::ClientSink::everyone(stdout).await;
+    let live = matches!(
+        task.phase_status,
+        Some(PhaseStatus::Running | PhaseStatus::Blocked)
+    );
+    let waiting = task.phase_status == Some(PhaseStatus::Waiting) && task.ball == TaskBall::Agent;
+    let note = Some(note_entry(format!(
+        "{}, as you asked.",
+        halted_words(Some(halt))
+    )));
+    match task.phase {
+        Some(TaskPhase::Iterating | TaskPhase::Judging) if waiting => {
+            loops::set_halt(&*store.lock().await, &path, task_id, halt)?;
+            let guard = TransitionGuard::Ball(TaskBall::Agent);
+            apply(
+                store,
+                &everyone,
+                &path,
+                task_id,
+                TaskTransition::LoopHalted,
+                guard,
+                note,
+            )
+            .await;
+            Ok(Vec::new())
+        }
+        Some(phase @ (TaskPhase::Iterating | TaskPhase::Judging))
+            if live && halt == LoopHalt::Stopped =>
+        {
+            // Halted first, so the end of the turn the close cuts finds nothing running.
+            loops::set_halt(&*store.lock().await, &path, task_id, halt)?;
+            let guard = TransitionGuard::AgentRunning;
+            let event = TaskTransition::LoopHalted;
+            if !apply(store, &everyone, &path, task_id, event, guard, note).await {
+                return Ok(Vec::new());
+            }
+            for session_id in live_sessions(store, &path, task_id).await {
+                close(stdout, &session_id).await;
+            }
+            if let (TaskPhase::Iterating, Some(iteration)) = (phase, iteration) {
+                let ended = Ended {
+                    cut: Some(Cut::Stopped),
+                    ..Ended::default()
+                };
+                Box::pin(finish(store, &everyone, &path, &task, &iteration, ended)).await;
+            }
+            Ok(Vec::new())
+        }
+        Some(TaskPhase::Iterating | TaskPhase::Checking | TaskPhase::Judging) if live => {
+            loops::set_hold(&*store.lock().await, &path, task_id, Some(halt))?;
+            let changed =
+                ServerResponse::TasksChanged(maestro_protocol::ProjectRef { project_path: path });
+            Ok(vec![changed])
+        }
+        _ => Err("This loop is not running".to_string()),
+    }
+}
+
+/// The routing ids of the task's sessions that are up.
+async fn live_sessions(store: &Store, path: &str, task_id: i32) -> Vec<String> {
+    let conn = store.lock().await;
+    let found = conn
+        .prepare(
+            "SELECT session_id FROM sessions
+             WHERE project_path = ?1 AND task_id = ?2 AND closed_at IS NULL
+               AND session_id IS NOT NULL",
+        )
+        .and_then(|mut statement| {
+            statement
+                .query_map(rusqlite::params![path, task_id], |row| row.get(0))?
+                .collect::<Result<Vec<String>, _>>()
+        });
+    found.unwrap_or_else(|e| {
+        send_diag("warn", format!("[loop] sessions of task {task_id}: {e}"));
+        Vec::new()
+    })
 }
 
 /// Accept or reject a proposed check. Accepting seals the paths it names, each of which has to be on
@@ -806,10 +931,11 @@ async fn conclude(
             let iterations = loops::list_iterations(&conn, path, task_id)?;
             let resumed = loops::resumed_at(&conn, path, task_id)?;
             let (judge, _) = loops::to_judge(&conn, path, task_id)?;
-            Ok(Some((task, iterations, resumed, !judge.is_empty())))
+            let (_, hold) = loops::halt_and_hold(&conn, path, task_id)?;
+            Ok(Some((task, iterations, resumed, !judge.is_empty(), hold)))
         })()
     };
-    let (task, iterations, resumed, judge) = match read {
+    let (task, iterations, resumed, judge, hold) = match read {
         Ok(Some(found)) => found,
         Ok(None) => return,
         Err(e) => {
@@ -824,7 +950,35 @@ async fn conclude(
     };
     let verdict = verdict(&config, &iterations, run, resumed.as_deref());
     let n = iterations.last().map_or(0, |i| i.n);
+    // A pause or stop asked for while this step ran is taken before the next one starts.
+    let held = match (&verdict, hold) {
+        (Verdict::Iterate, Some(hold)) => Some(hold),
+        (Verdict::Passed, Some(hold)) if judge => Some(hold),
+        _ => None,
+    };
+    let halt = held.or(match &verdict {
+        Verdict::Flaky(_) => Some(LoopHalt::Flaky),
+        Verdict::Failing => Some(LoopHalt::Failing),
+        Verdict::Stalled => Some(LoopHalt::Stalled),
+        Verdict::OutOfIterations => Some(LoopHalt::OutOfIterations),
+        Verdict::OutOfTime => Some(LoopHalt::OutOfTime),
+        Verdict::Passed | Verdict::Iterate => None,
+    });
+    {
+        let conn = store.lock().await;
+        let written = match halt {
+            Some(halt) => loops::set_halt(&conn, path, task_id, halt),
+            None => loops::set_hold(&conn, path, task_id, None),
+        };
+        if let Err(e) = written {
+            send_diag("warn", format!("[loop] task {task_id}: {e}"));
+        }
+    }
     let (event, note) = match &verdict {
+        _ if held.is_some() => (
+            TaskTransition::LoopHalted,
+            format!("{} after iteration {n}, as you asked.", halted_words(held)),
+        ),
         Verdict::Flaky(labels) => (
             TaskTransition::PhaseFailed,
             format!(
@@ -944,20 +1098,7 @@ fn verdict(
             return Verdict::Passed;
         }
     }
-    let ended: Vec<&LoopIteration> = iterations
-        .iter()
-        .filter(|i| {
-            !matches!(
-                i.outcome,
-                LoopIterationOutcome::Running | LoopIterationOutcome::Interrupted
-            )
-        })
-        .collect();
-    let recent: Vec<&LoopIteration> = ended
-        .iter()
-        .copied()
-        .filter(|i| resumed.is_none_or(|at| i.started_at.as_str() > at))
-        .collect();
+    let (ended, recent) = ended_and_recent(iterations, resumed);
     let failing = recent
         .iter()
         .rev()
@@ -966,19 +1107,7 @@ fn verdict(
     if failing >= FAILURES_IN_A_ROW {
         return Verdict::Failing;
     }
-    let stalled = (0..recent.len())
-        .rev()
-        .take_while(|&k| {
-            // Measured against the last iteration that was checked: an empty one in between
-            // changed nothing to compare.
-            let checked = recent[..k]
-                .iter()
-                .rev()
-                .find(|i| i.outcome == LoopIterationOutcome::Checked);
-            no_progress(checked.copied(), recent[k])
-        })
-        .count();
-    if stalled >= config.stall_limit as usize {
+    if stall_streak(&recent) >= config.stall_limit as usize {
         return Verdict::Stalled;
     }
     let counted: Vec<&&LoopIteration> = ended.iter().filter(|i| i.counted).collect();
@@ -1014,6 +1143,79 @@ fn same_output(a: Option<&str>, b: Option<&str>) -> bool {
     match (a, b) {
         (Some(a), Some(b)) => strip(a) == strip(b),
         _ => false,
+    }
+}
+
+/// The iterations that ended, and of those the ones started since the user last let the loop go
+/// on, oldest first.
+fn ended_and_recent<'a>(
+    iterations: &'a [LoopIteration],
+    resumed: Option<&str>,
+) -> (Vec<&'a LoopIteration>, Vec<&'a LoopIteration>) {
+    let ended: Vec<&LoopIteration> = iterations
+        .iter()
+        .filter(|i| {
+            !matches!(
+                i.outcome,
+                LoopIterationOutcome::Running | LoopIterationOutcome::Interrupted
+            )
+        })
+        .collect();
+    let recent = ended
+        .iter()
+        .copied()
+        .filter(|i| resumed.is_none_or(|at| i.started_at.as_str() > at))
+        .collect();
+    (ended, recent)
+}
+
+/// The latest iterations in a row that made no progress, as the stall limit counts them.
+fn stall_streak(recent: &[&LoopIteration]) -> usize {
+    (0..recent.len())
+        .rev()
+        .take_while(|&k| {
+            // Measured against the last iteration that was checked: an empty one in between
+            // changed nothing to compare.
+            let checked = recent[..k]
+                .iter()
+                .rev()
+                .find(|i| i.outcome == LoopIterationOutcome::Checked);
+            no_progress(checked.copied(), recent[k])
+        })
+        .count()
+}
+
+/// What the board shows of a loop, read with its task.
+pub(crate) fn summary(conn: &rusqlite::Connection, task: &Task) -> Result<LoopSummary, String> {
+    let (path, id) = (task.project_path.as_str(), task.id);
+    let iterations = loops::list_iterations(conn, path, id)?;
+    let checks = loops::list_checks(conn, path, id)?;
+    let resumed = loops::resumed_at(conn, path, id)?;
+    let (halt, hold) = loops::halt_and_hold(conn, path, id)?;
+    let (ended, recent) = ended_and_recent(&iterations, resumed.as_deref());
+    let counted: Vec<&LoopIteration> = ended.into_iter().filter(|i| i.counted).collect();
+    let waiting = |c: &&LoopCheck| c.proposed && !c.accepted;
+    Ok(LoopSummary {
+        iteration: iterations.last().map_or(0, |i| i.n),
+        counted: counted.len() as i32,
+        agent_secs: counted.iter().map(|i| agent_seconds(i)).sum(),
+        no_change: stall_streak(&recent) as i32,
+        last_summary: iterations.iter().rev().find_map(|i| i.summary.clone()),
+        checks: checks
+            .iter()
+            .filter(|c| !waiting(c))
+            .map(|c| c.state)
+            .collect(),
+        proposals: checks.iter().filter(waiting).count() as i32,
+        halt,
+        hold,
+    })
+}
+
+fn halted_words(halt: Option<LoopHalt>) -> &'static str {
+    match halt {
+        Some(LoopHalt::Stopped) => "Stopped",
+        _ => "Paused",
     }
 }
 
@@ -1517,6 +1719,7 @@ mod tests {
             summary: None,
             check_output: output.map(str::to_string),
             peeks: vec![],
+            tokens: None,
         }
     }
 
@@ -2268,7 +2471,7 @@ Try the cache first."
         let until = chrono::Utc::now() + chrono::Duration::hours(2);
         let ended = Ended {
             agent_failed: true,
-            limited_until: Some(until),
+            cut: Some(Cut::Limit(until)),
             ..Ended::default()
         };
         finish(&store, &everyone, &path, &task, &iteration, ended).await;
@@ -2308,5 +2511,114 @@ Try the cache first."
             state(&*store.lock().await, &task),
             (Some(TaskPhase::Judging), Some(PhaseStatus::Waiting))
         );
+    }
+
+    #[tokio::test]
+    async fn a_pause_waits_for_the_checks_and_a_stop_cuts_the_iteration() {
+        let (_repo, store, task) = sealed_loop("git rev-parse --verify --quiet no-such-ref").await;
+        let path = task.project_path.clone();
+        let everyone = crate::client_sink::ClientSink::detached();
+        let (dir, task, iteration) = start(&store, &task).await;
+        let task_ref = |task: &Task| TaskRef {
+            project_path: path.clone(),
+            task_id: task.id,
+        };
+        let summary = |conn: &rusqlite::Connection| {
+            crate::task_store::get(conn, &path, task.id)
+                .unwrap()
+                .unwrap()
+                .loop_summary
+                .unwrap()
+        };
+
+        // Paused while it runs: the iteration ends and its checks run, then it holds.
+        let pushes = hold_loop(&store, &everyone, task_ref(&task), LoopHalt::Paused)
+            .await
+            .unwrap();
+        assert_eq!(pushes.len(), 1);
+        assert_eq!(summary(&*store.lock().await).hold, Some(LoopHalt::Paused));
+        std::fs::write(Path::new(&dir).join("src/b.txt"), "b").unwrap();
+        finish(
+            &store,
+            &everyone,
+            &path,
+            &task,
+            &iteration,
+            Ended::default(),
+        )
+        .await;
+        {
+            let conn = store.lock().await;
+            let held = crate::task_store::get(&conn, &path, task.id)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                (held.phase, held.phase_status, held.ball),
+                (
+                    Some(TaskPhase::Iterating),
+                    Some(PhaseStatus::Waiting),
+                    TaskBall::User
+                )
+            );
+            let summary = held.loop_summary.unwrap();
+            assert_eq!((summary.halt, summary.hold), (Some(LoopHalt::Paused), None));
+            assert_eq!((summary.iteration, summary.counted), (1, 1));
+            assert_eq!(summary.checks, [LoopCheckState::Fail]);
+        }
+        assert!(
+            hold_loop(&store, &everyone, task_ref(&task), LoopHalt::Stopped)
+                .await
+                .is_err(),
+            "a held loop is not running"
+        );
+
+        // Stopped while the next iteration runs: cut now, its work kept and not counted.
+        {
+            let conn = store.lock().await;
+            loops::start_iteration(&conn, &path, task.id, 2, "acp-2", "claude").unwrap();
+            conn.execute(
+                "UPDATE tasks SET phase_status = 'Running', ball = 'Agent' WHERE id = ?1",
+                [task.id],
+            )
+            .unwrap();
+        }
+        std::fs::write(Path::new(&dir).join("src/c.txt"), "half").unwrap();
+        hold_loop(&store, &everyone, task_ref(&task), LoopHalt::Stopped)
+            .await
+            .unwrap();
+        let conn = store.lock().await;
+        let stopped = crate::task_store::get(&conn, &path, task.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (stopped.phase_status, stopped.ball),
+            (Some(PhaseStatus::Waiting), TaskBall::User)
+        );
+        let summary = stopped.loop_summary.unwrap();
+        assert_eq!(
+            (summary.halt, summary.counted),
+            (Some(LoopHalt::Stopped), 1)
+        );
+        let rows = loops::list_iterations(&conn, &path, task.id).unwrap();
+        assert_eq!(rows[1].outcome, LoopIterationOutcome::Interrupted);
+        assert!(rows[1].commit_sha.is_some());
+    }
+
+    #[tokio::test]
+    async fn an_iteration_reads_its_tokens_from_the_usage_record() {
+        let (_repo, store, task) = sealed_loop(SEES_THEM).await;
+        let path = task.project_path.clone();
+        let (_dir, task, _) = start(&store, &task).await;
+        let conn = store.lock().await;
+        conn.execute(
+            "INSERT INTO usage_turns (agent_id, acp_session_id, project_path, started_at, ended_at,
+                                      stop_reason, total_tokens)
+             VALUES ('claude', 'acp-1', ?1, 'now', 'now', 'end_turn', 1200),
+                    ('claude', 'acp-1', ?1, 'now', 'now', 'end_turn', 300)",
+            [&path],
+        )
+        .unwrap();
+        let rows = loops::list_iterations(&conn, &path, task.id).unwrap();
+        assert_eq!(rows[0].tokens, Some(1500));
     }
 }

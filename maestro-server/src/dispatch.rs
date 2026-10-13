@@ -1146,7 +1146,9 @@ pub(crate) async fn dispatch_message(
         request @ (ServerRequest::RerunLoopChecks(_)
         | ServerRequest::ReadLoopNotes(_)
         | ServerRequest::AnswerLoopProposal(_)
-        | ServerRequest::OpenAgentGate(_)) => {
+        | ServerRequest::OpenAgentGate(_)
+        | ServerRequest::PauseLoop(_)
+        | ServerRequest::StopLoop(_)) => {
             let (reply, pushes) =
                 Box::pin(crate::loop_engine::answer(request, project_store, stdout)).await;
             send_or_return!(send_response(stdout, &reply).await);

@@ -289,6 +289,11 @@ pub enum ServerRequest {
     /// Take the sealed snapshot again and run the checks on the loop's current commit. Not an
     /// iteration. Answered once the checks have started.
     RerunLoopChecks(TaskRef),
+    /// Hold the loop for the user once the running iteration and its checks end, or now if
+    /// nothing runs.
+    PauseLoop(TaskRef),
+    /// Halt the loop now: a running session is cut, its work kept as an uncounted WIP commit.
+    StopLoop(TaskRef),
     /// The worker's `.maestro/loop/PROGRESS.md`, as it stands in the loop's worktree.
     ReadLoopNotes(TaskRef),
     /// The project's prompt collection, favorites first, then most recently edited.
@@ -1390,6 +1395,65 @@ pub struct Task {
     /// The base commit a loop's sealed snapshot was taken from.
     #[serde(default)]
     pub loop_sealed_sha: Option<String>,
+    /// What the board shows of a loop, read with it. Set on every loop task the daemon lists.
+    /// Boxed, like `gate`: a `Task` rides in many of the daemon's futures, on a stack at its limit.
+    #[serde(default)]
+    pub loop_summary: Option<Box<LoopSummary>>,
+    /// The usage-limit gate of the agent that last refused this task, while it holds the task
+    /// waiting.
+    #[serde(default)]
+    pub gate: Option<Box<AgentGateState>>,
+}
+
+/// A loop as its card and its detail's meters show it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct LoopSummary {
+    /// The number of the latest iteration, running or ended; 0 before the first.
+    pub iteration: i32,
+    /// Iterations that count against `max_iterations`.
+    pub counted: i32,
+    /// The agent time those iterations took, in seconds.
+    pub agent_secs: i64,
+    /// Iterations in a row with no progress, as the stall limit counts them.
+    pub no_change: i32,
+    /// The latest iteration's closing words.
+    #[serde(default)]
+    pub last_summary: Option<String>,
+    /// Every check's state in list order, proposals still waiting left out.
+    pub checks: Vec<LoopCheckState>,
+    /// Proposals waiting for the user's answer.
+    pub proposals: i32,
+    /// Why the loop last stopped for the user. Read only while it waits on the user.
+    #[serde(default)]
+    pub halt: Option<LoopHalt>,
+    /// A pause or stop the user asked for, which takes effect once the current step ends.
+    #[serde(default)]
+    pub hold: Option<LoopHalt>,
+}
+
+/// Why a loop stopped for the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LoopHalt {
+    Flaky,
+    Failing,
+    Stalled,
+    OutOfIterations,
+    OutOfTime,
+    Paused,
+    Stopped,
+}
+
+/// An agent's closed usage-limit gate.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentGateState {
+    pub agent_id: String,
+    /// RFC 3339.
+    pub resume_at: String,
+    /// The window the limit belongs to, `five_hour` or `seven_day...`, when the agent named it.
+    #[serde(default)]
+    pub window: Option<String>,
+    /// No reset time was known: the gate backs off and tries again at `resume_at`.
+    pub backoff: bool,
 }
 
 /// How a task runs once it is started: the stage pipeline, or a loop of fresh coder sessions that
@@ -1531,6 +1595,9 @@ pub struct LoopIteration {
     /// The `git` commands the worker ran that name a sealed path.
     #[serde(default)]
     pub peeks: Vec<String>,
+    /// Tokens its session's turns used, from the usage record, while that still has them.
+    #[serde(default)]
+    pub tokens: Option<i64>,
 }
 
 /// What a loop's record says deserves a look before sign-off: the iterations that wrote at a sealed
@@ -2697,6 +2764,8 @@ pub enum ServerResponse {
     ListLoopHiddenFilesOk(LoopHiddenFileList),
     SetLoopHiddenFilesOk(LoopHiddenFileList),
     RerunLoopChecksOk,
+    PauseLoopOk,
+    StopLoopOk,
     ReadLoopNotesOk(LoopNotes),
     ListPromptsOk(PromptList),
     GetPromptOk(OptionalPrompt),
@@ -2856,6 +2925,8 @@ impl ServerResponse {
             | Self::ListLoopHiddenFilesOk(_)
             | Self::SetLoopHiddenFilesOk(_)
             | Self::RerunLoopChecksOk
+            | Self::PauseLoopOk
+            | Self::StopLoopOk
             | Self::ReadLoopNotesOk(_)
             | Self::ListPromptsOk(_)
             | Self::GetPromptOk(_)
@@ -3789,6 +3860,8 @@ mod tests {
             run_mode: RunMode::Pipeline,
             loop_config: None,
             loop_sealed_sha: None,
+            loop_summary: None,
+            gate: None,
             mcp_allowlist: Some(vec!["maestro".to_string()]),
             skills_override: None,
             labels: vec!["bug".to_string()],

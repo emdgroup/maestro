@@ -22,11 +22,13 @@ use crate::helpers::send_diag;
 const BACKOFF_MINUTES: [i64; 5] = [5, 15, 30, 60, 120];
 
 /// What a `_claude/rateLimit` reading says about the account's spent limit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlanReading {
     /// When the latest-resetting window that is rejected or full resets, in unix seconds. `None`
     /// when the reading names no such window.
     pub resets_at: Option<i64>,
+    /// That window, `five_hour` or `seven_day...`, when the reading names it.
+    pub window: Option<String>,
 }
 
 /// The agent's latest reading, from whichever of its sessions sent it.
@@ -43,16 +45,25 @@ pub(crate) fn reading(payload: &Value) -> Option<PlanReading> {
     let info = payload.get("_meta")?.get("_claude/rateLimit")?;
     let seconds = |v: &Value| v.as_f64().map(|s| s as i64);
     let named = (info.get("status")?.as_str()? == "rejected")
-        .then(|| seconds(&info["resetsAt"]))
+        .then(|| {
+            let window = info["rateLimitType"].as_str().map(str::to_string);
+            seconds(&info["resetsAt"]).map(|at| (at, window))
+        })
         .flatten();
     let full = info["unifiedWindows"]
         .as_object()
         .into_iter()
-        .flat_map(|windows| windows.values())
-        .filter(|w| w["utilization"].as_f64().is_some_and(|u| u >= 1.0))
-        .filter_map(|w| seconds(&w["resetsAt"]));
+        .flat_map(|windows| windows.iter())
+        .filter(|(_, w)| w["utilization"].as_f64().is_some_and(|u| u >= 1.0))
+        .filter_map(|(name, w)| seconds(&w["resetsAt"]).map(|at| (at, Some(name.clone()))));
+    let (resets_at, window) = named
+        .into_iter()
+        .chain(full)
+        .max_by_key(|(at, _)| *at)
+        .unzip();
     Some(PlanReading {
-        resets_at: named.into_iter().chain(full).max(),
+        resets_at,
+        window: window.flatten(),
     })
 }
 
@@ -80,28 +91,42 @@ pub(crate) fn is_limit(data: Option<&Value>, message: &str) -> bool {
             .any(|word| word == "429")
 }
 
-/// A turn of `agent_id` ended. Keeps its plan reading. A refusal closes the gate and returns when
-/// it opens; a turn that ended normally opens it, since the account answers again.
+/// A turn of `agent_id` ended, of `task`'s session if it is one. Keeps its plan reading. A refusal
+/// closes the gate, marks the task as waiting on it, and returns when it opens; a turn that ended
+/// normally opens it, since the account answers again.
 pub(crate) fn turn_ended(
     conn: &Connection,
     agent_id: &str,
+    task: Option<(&str, i32)>,
     facts: &crate::turn::TurnFacts,
     stop_reason: &str,
     now: DateTime<Utc>,
 ) -> Option<DateTime<Utc>> {
     let known = {
         let mut readings = READINGS.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(reading) = facts.plan_reading {
-            readings.insert(agent_id.to_string(), reading);
+        if let Some(reading) = &facts.plan_reading {
+            readings.insert(agent_id.to_string(), reading.clone());
         }
-        readings
-            .get(agent_id)
-            .and_then(|r| r.resets_at)
-            .and_then(|s| DateTime::from_timestamp(s, 0))
-            .filter(|at| *at > now)
+        readings.get(agent_id).and_then(|r| {
+            let at = DateTime::from_timestamp(r.resets_at?, 0).filter(|at| *at > now)?;
+            Some((at, r.window.clone()))
+        })
     };
     let written = if facts.usage_limited {
-        close(conn, agent_id, known, now).map(Some)
+        close(conn, agent_id, known, now).and_then(|until| {
+            if let Some((path, task_id)) = task {
+                conn.execute(
+                    "UPDATE tasks SET gated_agent_id = ?3 WHERE project_path = ?1 AND id = ?2",
+                    params![
+                        crate::automations::canonical_project_path(path),
+                        task_id,
+                        agent_id
+                    ],
+                )
+                .map_err(|e| format!("cannot mark the task: {e}"))?;
+            }
+            Ok(Some(until))
+        })
     } else if stop_reason == "end_turn" {
         open(conn, agent_id).map(|()| None)
     } else {
@@ -114,11 +139,13 @@ pub(crate) fn turn_ended(
 }
 
 /// Close the gate until `known`, or with no reset time until the next backoff. A gate already
-/// closed by another session's refusal stays as it is: that refusal was the same limit.
+/// closed by another session's refusal stays as it is: that refusal was the same limit. `reason`
+/// is the window when the reading named one, `reset` when it did not, and `backoff` with no
+/// reset time.
 fn close(
     conn: &Connection,
     agent_id: &str,
-    known: Option<DateTime<Utc>>,
+    known: Option<(DateTime<Utc>, Option<String>)>,
     now: DateTime<Utc>,
 ) -> Result<DateTime<Utc>, String> {
     let fail = |e: rusqlite::Error| format!("cannot close the gate: {e}");
@@ -137,11 +164,15 @@ fn close(
     let step = row.map_or(0, |(_, step)| step);
     // `backoff_step` counts the refusals in a row that came with no reset time.
     let (resume_at, step, reason) = match (known, closed) {
-        (Some(at), _) => (at, step, "reset"),
+        (Some((at, window)), _) => (at, step, window.unwrap_or_else(|| "reset".to_string())),
         (None, Some(at)) => return Ok(at),
         (None, None) => {
             let minutes = BACKOFF_MINUTES[(step.max(0) as usize).min(BACKOFF_MINUTES.len() - 1)];
-            (now + Duration::minutes(minutes), step + 1, "backoff")
+            (
+                now + Duration::minutes(minutes),
+                step + 1,
+                "backoff".to_string(),
+            )
         }
     };
     conn.execute(
@@ -183,6 +214,37 @@ pub(crate) fn closed_until(
     .ok()
     .and_then(|at| parse(&at))
     .filter(|at| *at > now)
+}
+
+/// The closed gate a task waits on: the one of the agent that last refused it.
+pub(crate) fn of_task(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+    now: DateTime<Utc>,
+) -> Option<maestro_protocol::AgentGateState> {
+    let (agent_id, resume_at, reason) = conn
+        .query_row(
+            "SELECT g.agent_id, g.resume_at, g.reason FROM tasks t
+             JOIN agent_gates g ON g.agent_id = t.gated_agent_id
+             WHERE t.project_path = ?1 AND t.id = ?2",
+            params![project_path, task_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )
+        .ok()?;
+    parse(&resume_at).filter(|at| *at > now)?;
+    Some(maestro_protocol::AgentGateState {
+        agent_id,
+        resume_at,
+        backoff: reason.as_deref() == Some("backoff"),
+        window: reason.filter(|r| r != "backoff" && r != "reset"),
+    })
 }
 
 fn parse(at: &str) -> Option<DateTime<Utc>> {
@@ -248,7 +310,9 @@ mod tests {
                 }
             }}
         });
-        assert_eq!(reading(&update).unwrap().resets_at, Some(9000));
+        let read = reading(&update).unwrap();
+        assert_eq!(read.resets_at, Some(9000));
+        assert_eq!(read.window.as_deref(), Some("seven_day"));
         let warning = serde_json::json!({"_meta": {"_claude/rateLimit": {
             "status": "allowed_warning", "resetsAt": 1000,
             "unifiedWindows": {"five_hour": {"utilization": 0.9, "resetsAt": 1000}}
@@ -280,7 +344,7 @@ mod tests {
 
         // No reading: 5 minutes, then 15 once the first has passed and the next turn is refused.
         assert_eq!(
-            turn_ended(&conn, agent, &refused(None), "error", now),
+            turn_ended(&conn, agent, None, &refused(None), "error", now),
             Some(now + Duration::minutes(5))
         );
         assert!(closed_until(&conn, agent, now).is_some());
@@ -289,6 +353,7 @@ mod tests {
             turn_ended(
                 &conn,
                 agent,
+                None,
                 &refused(None),
                 "error",
                 now + Duration::minutes(1)
@@ -298,15 +363,15 @@ mod tests {
         let later = now + Duration::minutes(6);
         assert_eq!(closed_until(&conn, agent, later), None);
         assert_eq!(
-            turn_ended(&conn, agent, &refused(None), "error", later),
+            turn_ended(&conn, agent, None, &refused(None), "error", later),
             Some(later + Duration::minutes(15))
         );
 
         // A turn that ends normally opens it and starts the backoff over.
-        turn_ended(&conn, agent, &TurnFacts::default(), "end_turn", later);
+        turn_ended(&conn, agent, None, &TurnFacts::default(), "end_turn", later);
         assert_eq!(closed_until(&conn, agent, later), None);
         assert_eq!(
-            turn_ended(&conn, agent, &refused(None), "error", later),
+            turn_ended(&conn, agent, None, &refused(None), "error", later),
             Some(later + Duration::minutes(5))
         );
         open(&conn, agent).unwrap();
@@ -316,14 +381,23 @@ mod tests {
         let earlier = TurnFacts {
             plan_reading: Some(PlanReading {
                 resets_at: Some(reset.timestamp()),
+                window: Some("five_hour".to_string()),
             }),
             ..Default::default()
         };
-        turn_ended(&conn, agent, &earlier, "end_turn", now);
+        turn_ended(&conn, agent, None, &earlier, "end_turn", now);
         assert_eq!(closed_until(&conn, agent, now), None);
         assert_eq!(
-            turn_ended(&conn, agent, &refused(None), "error", now),
+            turn_ended(&conn, agent, None, &refused(None), "error", now),
             Some(reset)
         );
+        let gates: (String, String) = conn
+            .query_row(
+                "SELECT reason, resume_at FROM agent_gates WHERE agent_id = ?1",
+                [agent],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(gates.0, "five_hour");
     }
 }

@@ -228,7 +228,26 @@ fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Task> {
             .unwrap_or_default(),
         loop_config: optional_text("loop_config")?.and_then(|s| serde_json::from_str(&s).ok()),
         loop_sealed_sha: row.get("loop_sealed_sha")?,
+        loop_summary: None,
+        gate: None,
     })
+}
+
+/// What a task's row does not hold: a loop's summary, and the gate holding a task that waits.
+fn filled(conn: &Connection, mut task: Task) -> Task {
+    if task.run_mode == RunMode::Loop {
+        match crate::loop_engine::summary(conn, &task) {
+            Ok(summary) => task.loop_summary = Some(Box::new(summary)),
+            Err(e) => crate::helpers::send_diag("warn", format!("[loop] task {}: {e}", task.id)),
+        }
+    }
+    if task.phase_status == Some(maestro_protocol::PhaseStatus::Waiting)
+        && task.ball == maestro_protocol::TaskBall::Agent
+    {
+        task.gate =
+            crate::agent_gate::of_task(conn, &task.project_path, task.id, Utc::now()).map(Box::new);
+    }
+    task
 }
 
 fn read(conn: &Connection, project_path: &str, task_id: i32) -> Result<Task, String> {
@@ -251,7 +270,7 @@ fn query(conn: &Connection, sql: &str, args: impl rusqlite::Params) -> Result<Ve
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
-    Ok(tasks)
+    Ok(tasks.into_iter().map(|task| filled(conn, task)).collect())
 }
 
 pub fn get(conn: &Connection, project_path: &str, task_id: i32) -> Result<Option<Task>, String> {
@@ -261,6 +280,7 @@ pub fn get(conn: &Connection, project_path: &str, task_id: i32) -> Result<Option
         from_row,
     )
     .optional()
+    .map(|task| task.map(|task| filled(conn, task)))
     .map_err(|e| format!("Failed to read task {task_id}: {e}"))
 }
 
@@ -435,28 +455,37 @@ fn write_update(
     if let Some(v) = &update.external_updated_at {
         sets.push(("external_updated_at", Box::new(v.clone())));
     }
+    // A started task has a worktree and sessions made for the mode it started in, and a started
+    // loop's worktree is sealed to its paths.
+    let started = || -> Result<Option<(bool, Option<String>)>, String> {
+        conn.query_row(
+            "SELECT phase IS NOT NULL OR status NOT IN ('Planning', 'Queue'), loop_config
+             FROM tasks WHERE project_path = ?1 AND id = ?2",
+            params![project_path, task_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())
+    };
     if let Some(mode) = update.run_mode {
-        // A started task has a worktree and sessions made for the mode it started in.
-        let started: bool = conn
-            .query_row(
-                "SELECT phase IS NOT NULL OR status NOT IN ('Planning', 'Queue') FROM tasks
-                 WHERE project_path = ?1 AND id = ?2",
-                params![project_path, task_id],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|e| e.to_string())?
-            .unwrap_or(false);
-        if started {
+        if started()?.is_some_and(|(started, _)| started) {
             return Err("A task's run mode can only change before it starts".to_string());
         }
         sets.push(("run_mode", Box::new(text(mode))));
     }
     if let Some(config) = &update.loop_config {
-        sets.push((
-            "loop_config",
-            Box::new(json(&loops::normalize_config(config)?)?),
-        ));
+        let config = loops::normalize_config(config)?;
+        if let Some((true, Some(before))) = started()? {
+            let before: LoopConfig = serde_json::from_str(&before).unwrap_or_default();
+            if before.sealed_paths != config.sealed_paths {
+                return Err(
+                    "A loop's sealed paths can only change before it starts, or through \
+                            an accepted proposal"
+                        .to_string(),
+                );
+            }
+        }
+        sets.push(("loop_config", Box::new(json(&config)?)));
     }
     let edits = sets.len();
     let edited = edits > 0 || update.status.is_some();

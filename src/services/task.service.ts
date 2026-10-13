@@ -121,6 +121,8 @@ export function useUpdateTask() {
         workspace_worktree_id: updates.workspace_worktree_id ?? null,
         workspace_branch_mode: updates.workspace_branch_mode ?? null,
         workspace_branch: updates.workspace_branch ?? null,
+        run_mode: updates.run_mode ?? null,
+        loop_config: updates.loop_config ?? null,
       };
       return api.updateTask(projectId, taskId, request);
     },

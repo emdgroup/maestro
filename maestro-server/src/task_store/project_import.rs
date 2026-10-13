@@ -875,6 +875,8 @@ mod tests {
             run_mode: maestro_protocol::RunMode::Pipeline,
             loop_config: None,
             loop_sealed_sha: None,
+            loop_summary: None,
+            gate: None,
         }
     }
 

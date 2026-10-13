@@ -1143,7 +1143,7 @@ mod tests {
             usage_limited: true,
             ..Default::default()
         };
-        crate::agent_gate::turn_ended(&conn, "fake", &refused, "error", chrono::Utc::now());
+        crate::agent_gate::turn_ended(&conn, "fake", None, &refused, "error", chrono::Utc::now());
         let mut start = request(&project, &task);
         start.unattended = true;
         let mut pushes = Vec::new();

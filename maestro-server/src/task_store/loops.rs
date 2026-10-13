@@ -5,7 +5,7 @@
 use chrono::Utc;
 use maestro_protocol::{
     AnswerLoopProposalRequest, LoopCheck, LoopCheckKind, LoopCheckSpec, LoopCheckState, LoopConfig,
-    LoopHiddenFile, LoopIteration, LoopIterationOutcome, RunMode, SetLoopChecksRequest,
+    LoopHalt, LoopHiddenFile, LoopIteration, LoopIterationOutcome, RunMode, SetLoopChecksRequest,
     SetLoopHiddenFilesRequest, TickLoopCheckRequest, WorkspaceMode,
 };
 use rusqlite::{params, Connection, OptionalExtension};
@@ -21,6 +21,12 @@ ALTER TABLE tasks ADD COLUMN loop_config TEXT;
 ALTER TABLE tasks ADD COLUMN loop_sealed_sha TEXT;
 -- When the user last let a stopped loop go on: its streaks count from there.
 ALTER TABLE tasks ADD COLUMN loop_resumed_at TEXT;
+-- Why the loop last stopped for the user, a `LoopHalt`.
+ALTER TABLE tasks ADD COLUMN loop_halt TEXT;
+-- A pause or stop the user asked for, taken once the running step ends.
+ALTER TABLE tasks ADD COLUMN loop_hold TEXT;
+-- The agent whose usage limit last refused the task, any task: its gate is the one it waits on.
+ALTER TABLE tasks ADD COLUMN gated_agent_id TEXT;
 
 CREATE TABLE IF NOT EXISTS loop_checks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -442,8 +448,11 @@ pub fn list_iterations(
 ) -> Result<Vec<LoopIteration>, String> {
     let mut statement = conn
         .prepare(
-            "SELECT * FROM loop_iterations WHERE project_path = ?1 AND task_id = ?2
-             ORDER BY n, attempt",
+            "SELECT i.*,
+                    (SELECT SUM(u.total_tokens) FROM usage_turns u
+                     WHERE u.acp_session_id = i.acp_session_id) AS tokens
+             FROM loop_iterations i WHERE i.project_path = ?1 AND i.task_id = ?2
+             ORDER BY i.n, i.attempt",
         )
         .map_err(|e| e.to_string())?;
     let iterations = statement
@@ -469,6 +478,7 @@ pub fn list_iterations(
                     .get::<_, Option<String>>("peeks")?
                     .and_then(|json| serde_json::from_str(&json).ok())
                     .unwrap_or_default(),
+                tokens: row.get("tokens")?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -753,6 +763,58 @@ pub(crate) fn to_judge(
 }
 
 /// When the user last let the loop go on, if ever.
+/// The loop stopped for the user, and why. Any hold asked for is spent.
+pub(crate) fn set_halt(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+    halt: LoopHalt,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE tasks SET loop_halt = ?3, loop_hold = NULL WHERE project_path = ?1 AND id = ?2",
+        params![project_path, task_id, text(halt)],
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
+/// Ask for a pause or a stop once the running step ends, or drop the request.
+pub(crate) fn set_hold(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+    hold: Option<LoopHalt>,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE tasks SET loop_hold = ?3 WHERE project_path = ?1 AND id = ?2",
+        params![project_path, task_id, hold.map(text)],
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
+/// `(loop_halt, loop_hold)`.
+pub(crate) fn halt_and_hold(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+) -> Result<(Option<LoopHalt>, Option<LoopHalt>), String> {
+    conn.query_row(
+        "SELECT loop_halt, loop_hold FROM tasks WHERE project_path = ?1 AND id = ?2",
+        params![project_path, task_id],
+        |row| {
+            let read = |i: usize| row.get::<_, Option<String>>(i);
+            Ok((
+                read(0)?.and_then(|s| parse(&s)),
+                read(1)?.and_then(|s| parse(&s)),
+            ))
+        },
+    )
+    .optional()
+    .map(Option::unwrap_or_default)
+    .map_err(|e| e.to_string())
+}
+
 pub(crate) fn resumed_at(
     conn: &Connection,
     project_path: &str,
@@ -981,8 +1043,18 @@ mod tests {
             }),
             ..TaskUpdate::default()
         };
-        let task = super::super::update(&mut conn, PROJECT, task, &longer).unwrap();
+        let id = task;
+        let task = super::super::update(&mut conn, PROJECT, id, &longer).unwrap();
         assert_eq!(task.loop_config.unwrap().max_iterations, 20);
+        // Its sealed paths are not: the worktree is sealed to them.
+        let resealed = TaskUpdate {
+            loop_config: Some(LoopConfig {
+                sealed_paths: vec!["tests/".to_string()],
+                ..LoopConfig::default()
+            }),
+            ..TaskUpdate::default()
+        };
+        assert!(super::super::update(&mut conn, PROJECT, id, &resealed).is_err());
     }
 
     #[test]

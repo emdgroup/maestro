@@ -78,7 +78,23 @@ use sessions::{
 pub(crate) use client_sink::ClientOut;
 pub(crate) use helpers::{send_diag, send_response, DIAG_TX};
 
+/// The stack every mode runs on. The server's loop is one large state machine, and in a Windows
+/// debug build it outgrew the main thread's 1 MB, which overflows with no hint of where.
+const STACK_BYTES: usize = 8 * 1024 * 1024;
+
 fn main() {
+    let ran = std::thread::Builder::new()
+        .name("maestro-server".to_string())
+        .stack_size(STACK_BYTES)
+        .spawn(run)
+        .expect("Failed to start the main thread")
+        .join();
+    if let Err(panic) = ran {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+fn run() {
     if std::env::args().any(|a| a == "--protocol-version") {
         println!("{}", PROTOCOL_VERSION);
         return;
@@ -834,9 +850,11 @@ async fn run_server(
                         &usage_store::Turn::of(&ended.session_id, session, &ended),
                         chrono::Utc::now(),
                     ));
+                    let task = task_turn::task_of(session);
                     limited_until = agent_gate::turn_ended(
                         &conn,
                         &session.agent_id,
+                        task.as_ref().map(|(path, id)| (path.as_str(), *id)),
                         &ended.facts,
                         &ended.stop_reason,
                         chrono::Utc::now(),
