@@ -205,7 +205,7 @@ Gaps the survey found, which the phases below close:
 | 0     | Data model and protocol                                    | Done        |
 | 1     | The iteration engine and sealed checks                     | Done        |
 | 2     | Judge, digest, proposals, steering, sign-off, pull request | Done        |
-| 3     | Usage-limit gate, for every task                           | Not started |
+| 3     | Usage-limit gate, for every task                           | Done        |
 | 4     | The board: create, card, loop view                         | Not started |
 | 5     | MCP tools, drafts from automations, the waiting cap        | Not started |
 | 6     | Docs                                                       | Not started |
@@ -509,6 +509,52 @@ resume_at)`. With no reset time, the gate backs off 5, 15, 30, then 60 minutes, 
 - Reading the reset time is Claude-specific, since only `claude-agent-acp` reports it. Every other
   agent gets the backoff.
 - The gate applies to every task, not only loops.
+
+Settled before phase 3 started:
+
+- **A refused turn rarely carries its reset time.** `claude-agent-acp` 0.86 fails the prompt with a
+  JSON-RPC error whose data is `{errorKind: "rate_limit"}` and whose message is the CLI's "You've hit
+  your limit · resets 8pm". It sends `_claude/rateLimit` only once the turn has had a real model
+  reply, so a fresh session refused on its first prompt, which is every new iteration and stage,
+  gets none. The daemon therefore keeps the latest reading per agent from any of its sessions, and
+  on a refusal uses that reading's `resetsAt` for a rejected or full window. With none usable, it
+  backs off. The text is not parsed: it has no date and the daemon may run in another time zone.
+- **What closes the gate.** For Claude, an error whose `errorKind` is `rate_limit` or
+  `billing_error`; a transient 429 matches too, and the first 5-minute backoff absorbs it. For any
+  agent, an error whose message names a usage limit, a rate limit, a quota or a 429. Any other
+  error fails the stage as before. Any session's refusal closes the gate, tasks or not.
+- **A refused pipeline stage starts again in a fresh session.** It goes back to waiting on its
+  agent in the same phase, `Implementing`, `Drafting` and `Refining` included, and the drain starts
+  it once the gate opens. The worktree keeps what the cut-off session wrote.
+- **Tasks only.** Automation runs on a gated agent fail as they do today.
+- **The user sees one note** in the task's thread when its turn is refused, saying when it goes on.
+  Nothing is written when the gate opens.
+- **Try now** is a daemon request in this phase. The app command and its button come with phase 4.
+- **The backoff steps up**, 5, 15, 30, 60, then 120 minutes for each refusal in a row with no reset
+  time, and any turn of that agent that ends normally resets it.
+- **The gate survives a restart**, in phase 0's `agent_gates`, whose `reason` is `reset` or
+  `backoff`, so a restart does not start a burst of refused sessions.
+
+**As built** (`maestro-server/src/agent_gate.rs`, `task_turn.rs`, `loop_engine.rs`, `task_runner.rs`):
+
+- A refusal is noted where the prompt fails (`session/command_loop.rs`) and reaches the turn end as
+  `TurnFacts.usage_limited`; the turn's last reading is `TurnFacts.plan_reading`. The main loop's
+  turn end keeps the reading per agent, in memory, and closes or opens the gate for every session.
+- A gate closed by one refusal is not moved by another session's refusal while it is still
+  closed, so several sessions cut off at once count as one step of the backoff.
+- `task_runner::begin` holds only unattended starts (`Begun::Gated`): the drain and a turn's
+  next stage. A user's own Execute goes ahead, as the probe they asked for.
+- `UsageLimited` puts a running stage back to `Waiting` with ball Agent in its own phase, and
+  `next_stage` now asks for the role of any working phase waiting on an agent. A first stage
+  (`Implementing`, `Drafting`, `Refining`) cut off this way waits for a free slot, like a loop's
+  next iteration, since its session is closed.
+- A cut-off iteration is committed as `loop: iteration N, cut off (WIP)`, recorded `Interrupted`
+  and uncounted, and runs again as the next attempt of the same number. A cut-off judge judges
+  again; nothing is recorded against its checks.
+- The note reads "The agent hit its usage limit, so this task waits until Tue 20:00 and then goes
+  on.", in the daemon's local time.
+- `OpenAgentGate` is answered from `loop_engine::answer`: a new arm in `dispatch_message`, even a
+  boxed one, overflows the main thread's stack in a debug build.
 
 ## Phase 4: the board
 
