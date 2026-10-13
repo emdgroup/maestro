@@ -613,6 +613,7 @@ export function SidePanelContent({
                 onClose={() => onCollapsedChange(true)}
                 compact
                 isActive={isActive}
+                baseBranch={ship.baseBranch}
                 onSendAnnotations={onSendAnnotations}
                 annotationSendDisabled={isProcessing}
                 onOpenFile={onOpenFile}

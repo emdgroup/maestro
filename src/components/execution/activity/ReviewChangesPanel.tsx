@@ -6,6 +6,7 @@ import { toPanelFiles } from "@/components/execution/diff/useReviewItems";
 import { useViewedFiles } from "@/components/execution/diff/useViewedFiles";
 import { displayItemPath } from "@/types/review";
 import type { Annotation } from "@/store/annotationStore";
+import type { DiffScope } from "@/components/execution/diff/scope";
 
 interface ReviewChangesPanelProps {
   sessionId: string;
@@ -13,6 +14,8 @@ interface ReviewChangesPanelProps {
   initialFile?: string;
   compact?: boolean;
   isActive?: boolean;
+  /** The session worktree's base branch: what "All changes" compares against without a start sha. */
+  baseBranch?: string | null;
   onDiffStats?: (stats: { insertions: number; deletions: number } | null) => void;
   onSendAnnotations: (annotations: Annotation[]) => void;
   annotationSendDisabled?: boolean;
@@ -25,6 +28,7 @@ export function ReviewChangesPanel({
   initialFile,
   compact = false,
   isActive = true,
+  baseBranch = null,
   onDiffStats,
   onSendAnnotations,
   annotationSendDisabled,
@@ -32,6 +36,9 @@ export function ReviewChangesPanel({
 }: ReviewChangesPanelProps) {
   const [diffViewMode, setDiffViewMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
   const [selectedFileIndex, setSelectedFileIndex] = useState<number | null>(null);
+  // Opens on everything the session did, committed or not: the agent committing is not the user
+  // having reviewed it.
+  const [scope, setScope] = useState<DiffScope>({ type: "all" });
 
   const {
     projectId,
@@ -42,8 +49,17 @@ export function ReviewChangesPanel({
     totalFileCount,
     diffError,
     truncationInfo,
-    scope,
-  } = useReviewChangesData({ sessionId, isActive, onDiffStats });
+    commits,
+    commitsLoading,
+    uncommittedFileCount,
+    allChangesFileCount,
+  } = useReviewChangesData({ sessionId, isActive, scope, baseBranch, onDiffStats });
+
+  // A selection points at a file of the previous scope's list, which the new one may not have.
+  function changeScope(next: DiffScope) {
+    setScope(next);
+    setSelectedFileIndex(null);
+  }
 
   const { viewedFiles, toggleViewed } = useViewedFiles(allDisplayItems);
 
@@ -85,6 +101,11 @@ export function ReviewChangesPanel({
         diffTarget={diffTarget}
         truncationInfo={truncationInfo}
         scope={scope}
+        onScopeChange={changeScope}
+        commits={commits}
+        commitsLoading={commitsLoading}
+        uncommittedFileCount={uncommittedFileCount}
+        allChangesFileCount={allChangesFileCount}
         diffViewMode={diffViewMode}
         setDiffViewMode={setDiffViewMode}
         selectedFileIndex={selectedFileIndex}
