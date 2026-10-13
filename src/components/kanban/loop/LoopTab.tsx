@@ -312,7 +312,7 @@ function IterationRow({ iteration, onJoin }: { iteration: LoopIteration; onJoin:
           </span>
           {(iteration.touched_sealed || iteration.peeks.length > 0) && (
             <span
-              className="flex items-center gap-0.5 rounded bg-amber-500/15 px-1 text-[10px] text-amber-700"
+              className="flex items-center gap-0.5 rounded bg-amber-500/15 px-1 text-[10px] text-amber-600"
               title={iteration.peeks.join("\n") || undefined}
             >
               <Lock className="size-2.5" />
@@ -387,7 +387,9 @@ export function LoopTab({
   const started = (summary?.iteration ?? 0) > 0;
   const real = checks.filter((c) => !c.proposed || c.accepted);
   const passing = real.filter((c) => c.state === "Pass").length;
-  const digest = latest(comments, "digest");
+  // The digest describes the work that reached sign-off; while the loop works again it is stale.
+  const reviewing = signoff || task.phase === "AwaitingMerge" || task.status === "Done";
+  const digest = reviewing ? latest(comments, "digest") : undefined;
   const lastStart = iterations[iterations.length - 1]?.started_at;
   const pendingNotes = comments.filter(
     (c) => c.kind === "steer" && (!lastStart || c.created_at > lastStart),
@@ -616,7 +618,7 @@ export function LoopTab({
               by the judge, from the notes, iterations and diff
             </span>
           </h3>
-          <div className="rounded-lg border border-border bg-card p-3 text-xs leading-relaxed">
+          <div className="rounded-lg border border-border bg-card p-3 text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_h3]:font-semibold">
             <MarkdownBlock text={digest.body} projectId={task.project_id} />
           </div>
         </section>

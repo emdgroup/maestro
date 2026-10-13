@@ -73,7 +73,7 @@ function ConnectionToolsLine() {
   const skillCount = (skills?.skills.length ?? 0) + (skills?.project.length ?? 0);
   const mcpCount = (mcp?.servers.length ?? 0) + (mcp?.project.length ?? 0);
   return (
-    <span className="text-[11px] text-muted-foreground">
+    <span className="shrink-0 whitespace-nowrap text-[11px] text-muted-foreground">
       {skillCount} skill{skillCount === 1 ? "" : "s"} · {mcpCount} MCP server
       {mcpCount === 1 ? "" : "s"} from this connection
     </span>
@@ -367,7 +367,7 @@ export function LoopEditor({
           />
         </label>
         <label className="space-y-1">
-          <span className="text-[11px] text-muted-foreground">Check timeout, minutes</span>
+          <span className="text-[11px] text-muted-foreground">Timeout (min)</span>
           <Input
             value={value.timeoutMinutes}
             disabled={readOnly}

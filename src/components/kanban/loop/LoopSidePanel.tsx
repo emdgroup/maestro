@@ -18,11 +18,16 @@ export function LoopSidePanel({ task, onJoin }: { task: Task; onJoin: () => void
   const running = task.phase === "Iterating" && task.phase_status === "Running";
   const last = [...iterations].reverse().find((i) => i.check_output);
   const failing = checks.filter((c) => c.state === "Fail" || c.state === "Flaky");
+  const passing = checks.filter((c) => c.kind === "Command" && c.state === "Pass");
+  // The failing output while anything fails; once nothing does, the commands that pass, since an
+  // older failure would read as the current state.
   const output =
-    last?.check_output ??
-    (failing.length > 0
-      ? failing.map((c) => `✗ ${c.command ?? c.label}\n${c.detail ?? ""}`).join("\n\n")
-      : null);
+    failing.length > 0
+      ? (last?.check_output ??
+        failing.map((c) => `✗ ${c.command ?? c.label}\n${c.detail ?? ""}`).join("\n\n"))
+      : passing.length > 0
+        ? passing.map((c) => `✓ ${c.command ?? c.label}`).join("\n")
+        : null;
 
   return (
     <aside className="flex w-72 shrink-0 flex-col border-l border-border bg-card">

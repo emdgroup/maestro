@@ -671,16 +671,23 @@ async fn hold_loop(
             if !apply(store, &everyone, &path, task_id, event, guard, note).await {
                 return Ok(Vec::new());
             }
-            for session_id in live_sessions(store, &path, task_id).await {
-                close(stdout, &session_id).await;
-            }
-            if let (TaskPhase::Iterating, Some(iteration)) = (phase, iteration) {
-                let ended = Ended {
-                    cut: Some(Cut::Stopped),
-                    ..Ended::default()
-                };
-                Box::pin(finish(store, &everyone, &path, &task, &iteration, ended)).await;
-            }
+            // Off the loop: this is answered inside the main loop's dispatch, and a close is
+            // settled by that same loop, so awaiting it here would wait on itself.
+            let sessions = live_sessions(store, &path, task_id).await;
+            let (store, stdout) = (Arc::clone(store), Arc::clone(stdout));
+            tokio::spawn(Box::pin(async move {
+                for session_id in sessions {
+                    close(&stdout, &session_id).await;
+                }
+                if let (TaskPhase::Iterating, Some(iteration)) = (phase, iteration) {
+                    let ended = Ended {
+                        cut: Some(Cut::Stopped),
+                        ..Ended::default()
+                    };
+                    let everyone = crate::client_sink::ClientSink::everyone(&stdout).await;
+                    Box::pin(finish(&store, &everyone, &path, &task, &iteration, ended)).await;
+                }
+            }));
             Ok(Vec::new())
         }
         Some(TaskPhase::Iterating | TaskPhase::Checking | TaskPhase::Judging) if live => {
@@ -2586,6 +2593,14 @@ Try the cache first."
         hold_loop(&store, &everyone, task_ref(&task), LoopHalt::Stopped)
             .await
             .unwrap();
+        // The cut work is committed off the loop, after the answer.
+        for _ in 0..200 {
+            let rows = loops::list_iterations(&*store.lock().await, &path, task.id).unwrap();
+            if rows[1].outcome == LoopIterationOutcome::Interrupted {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
         let conn = store.lock().await;
         let stopped = crate::task_store::get(&conn, &path, task.id)
             .unwrap()

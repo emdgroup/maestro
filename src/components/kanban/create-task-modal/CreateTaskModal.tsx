@@ -411,7 +411,7 @@ export function CreateTaskModal({
           className="flex flex-col flex-1 min-h-0 overflow-hidden"
         >
           {/* Body */}
-          <div className="flex-1 flex flex-col min-h-0 px-6 py-4 gap-4">
+          <div className="flex-1 flex flex-col min-h-0 overflow-y-auto px-6 py-4 gap-4">
             {error && (
               <div className="shrink-0 bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded text-sm">
                 {error}
