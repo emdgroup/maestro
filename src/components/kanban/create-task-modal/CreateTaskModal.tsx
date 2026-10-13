@@ -536,7 +536,9 @@ export function CreateTaskModal({
               {/* How it runs. A conversion is a loop by definition. */}
               {!convert && (
                 <div className="shrink-0 space-y-1.5">
-                  <span className="text-[11px] text-muted-foreground">How it runs</span>
+                  <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
+                    How it runs
+                  </span>
                   <div className="grid grid-cols-2 gap-2">
                     {(
                       [
