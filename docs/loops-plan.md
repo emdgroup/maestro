@@ -207,7 +207,7 @@ Gaps the survey found, which the phases below close:
 | 2     | Judge, digest, proposals, steering, sign-off, pull request | Done        |
 | 3     | Usage-limit gate, for every task                           | Done        |
 | 4     | The board: create, card, loop view                         | Done        |
-| 5     | MCP tools, drafts from automations, the waiting cap        | Not started |
+| 5     | MCP tools, drafts from automations, the waiting cap        | Done        |
 | 6     | Docs                                                       | Not started |
 
 Phases 0 to 2 are the engine and can be exercised through MCP and tests before any UI exists. Phase 3
@@ -711,6 +711,38 @@ Settled before phase 5 started:
   which runs already keep frozen (`ordinal`). The card reads `DRAFT · from <automation> #n` while
   the task is in Planning, for any task an automation created, pipeline tasks too. The thread gets
   a note.
+
+**As built** (`mcp_gateway.rs`, `assets/mcp-tools.json`, `scheduler.rs`, `pipeline_settings.rs`,
+`loop_engine.rs`; the board in `src/components/kanban/loop/` and the task card):
+
+- The three worker tools are task tools in the gateway, answered from the store with no window.
+  A session is a loop's worker when its role meta says `LoopSession::Iteration(n)`, and the tools
+  answer only while iteration `n` is the one running, so a session the loop has moved on from gets
+  "iteration n is over". Any session of a loop, the judge's included, is that loop's own for
+  `get_task` and `update_task`.
+- `loop_blocked` writes its reason on the running iteration's row (`loop_iterations.blocked`).
+  `finish` reads it: the work is committed as `loop: iteration n`, the iteration's outcome is
+  `Blocked` (counted, and neither a failure nor a stall), the loop halts as `LoopHalt::Blocked`, and
+  the thread gets the question. A stop by the user still wins over it; a usage limit after the call
+  does not. The next iteration's prompt carries the question above the user's answer.
+- `loop_propose_check` stores the reason in the check's `detail` and the command in `command`; the
+  kind is a guess (`Command` with a command, else `Judge`) that the Accept form lets the user
+  change. The LOOP_PROTOCOL prompt names all three tools.
+- The MCP loop fields take minutes, not seconds: `max_agent_minutes`, `check_timeout_minutes`.
+  Checks given to `create_task` or `update_task` replace the list, pending proposals kept. A
+  pipeline task becomes a loop through `update_task` with `run_mode: "Loop"`, which also sets its
+  workspace to a new worktree.
+- The daemon looks a creating session up in `automations.db` (`run_for_session`), so
+  `handle_host_tool_call` takes the automation store too. The task records the automation's name
+  and run number in `tasks.drafted_by` and `tasks.drafted_run`.
+- The cap is `project_settings.loop_wait_cap` (default 2), read and written through
+  `GetLoopWaitCap` and `SetLoopWaitCap`. While that many loops wait on the user, the drain drops
+  queued loops without `execute_requested_at`; Execute, labelled Start anyway on such a card,
+  stamps it or starts it at once. The board works out the same condition from the task list, auto
+  mode and the cap (`loopsHeldBack` in `BoardActionsContext`), so the card's line needs no
+  protocol field.
+- The draft banner sits above the detail's tabs, so a loop draft, which opens on Loop, shows it
+  too.
 
 ## Phase 6: docs
 
