@@ -3,6 +3,7 @@ import { ChevronDown } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { cn } from "@/lib/utils";
 import { usePreviewScheduleQuery } from "@/services/automation.service";
+import { useNow } from "@/hooks/useNow";
 import { describeNextRun } from "../schedule";
 import { describeExpression } from "./describe";
 import { FIELD_DOCS } from "./docs";
@@ -39,6 +40,7 @@ export function CronEditor({
   onChange: (cron: string) => void;
 }) {
   const [focused, setFocused] = useState<number | null>(null);
+  const now = useNow();
   const tokens = tokensOf(cron);
   const reading = describeExpression(cron);
   const broken = "error" in reading;
@@ -195,7 +197,7 @@ export function CronEditor({
           {broken ? (
             <span className="text-muted-foreground">nothing while a field is wrong</span>
           ) : next ? (
-            describeNextRun(new Date(next), new Date())
+            describeNextRun(new Date(next), new Date(now))
           ) : next === null ? (
             <span className="text-muted-foreground">never, as written</span>
           ) : (

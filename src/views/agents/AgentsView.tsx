@@ -90,7 +90,6 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
     saveSettings.mutate({
       ...settings,
       thinking_visibility: value,
-      updated_at: new Date().toISOString(),
     });
   }
 
@@ -99,7 +98,6 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
     saveSettings.mutate({
       ...settings,
       tool_call_visibility: checked ? "show" : "hide",
-      updated_at: new Date().toISOString(),
     });
   }
 
@@ -108,7 +106,6 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
     saveSettings.mutate({
       ...settings,
       agent_stream_width: checked ? "compact" : "full",
-      updated_at: new Date().toISOString(),
     });
   }
 

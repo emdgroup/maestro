@@ -108,7 +108,6 @@ export function AppearanceSection() {
     saveAppSettings.mutate({
       ...appSettings,
       terminal_color_mode: (checked ? "follow_theme" : "default") satisfies TerminalColorMode,
-      updated_at: new Date().toISOString(),
     });
   }
 
@@ -117,7 +116,6 @@ export function AppearanceSection() {
     saveAppSettings.mutate({
       ...appSettings,
       new_project_color: value as NewProjectColor,
-      updated_at: new Date().toISOString(),
     });
   }
 
@@ -126,7 +124,6 @@ export function AppearanceSection() {
     saveAppSettings.mutate({
       ...appSettings,
       native_window_frame: checked,
-      updated_at: new Date().toISOString(),
     });
   }
 
@@ -135,7 +132,6 @@ export function AppearanceSection() {
     saveAppSettings.mutate({
       ...appSettings,
       enter_key_behavior: value,
-      updated_at: new Date().toISOString(),
     });
   }
 

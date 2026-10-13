@@ -152,7 +152,9 @@ export function useSaveSettings({ successToast = true }: { successToast: boolean
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (settings: AppSettings) => api.saveSettings(settings),
+    // Stamped once here rather than by every caller.
+    mutationFn: (settings: AppSettings) =>
+      api.saveSettings({ ...settings, updated_at: new Date().toISOString() }),
     onSuccess: () => {
       if (successToast) {
         toast.success("Settings saved");

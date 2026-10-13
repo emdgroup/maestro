@@ -53,7 +53,6 @@ export function UpdateCard() {
     saveAppSettings.mutate({
       ...appSettings,
       auto_update: checked,
-      updated_at: new Date().toISOString(),
     });
   }
 
