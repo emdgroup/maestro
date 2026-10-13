@@ -594,6 +594,33 @@ Visuals are the canvas mock `loops-app`.
 - **Action bar.** An All / Pipeline / Loops filter. Needs me already counts loops, since a loop
   waiting on the user has ball User.
 
+### Decisions (locked)
+
+Settled before phase 4 started:
+
+- **The board reads one summary per loop.** The daemon fills `Task.loop_summary` on every loop task
+  it lists: the iteration number, counted iterations and agent time, the no-change streak, the last
+  summary, the check states, open proposals and why the loop halted (`tasks.loop_halt`). No card
+  queries the loop's checks or iterations itself.
+- **The limit line names the window.** The gate keeps the window the reading named (5-hour or
+  weekly), so a card reads `5-HOUR LIMIT · resumes 15:00`, or `USAGE LIMIT · tries again 14:35` on a
+  backoff. A task records the agent that refused it, and any task, pipeline or loop, waiting on a
+  gated agent shows the line.
+- **Pause is built.** It lets the running iteration finish and its checks run, then holds the loop
+  for the user instead of starting the next one. Execute or Send back goes on.
+- **Stop halts a loop in place.** It cuts the session, keeps its work as an uncounted WIP commit,
+  and leaves the loop In Progress with ball User, its iterations and checks intact. Dragging the
+  card to Planning still parks it.
+- **Budgets change any time.** Iterations, agent time, stall limit, check timeout and the setup
+  command may be edited after the start; the checks already could. Sealed paths change only before
+  the start or through an accepted proposal.
+- **Make it a loop** is the mock's "Run as a loop instead" banner on a Planning pipeline task's
+  Details tab. It opens Create Task in Loop mode, prefilled. No check is guessed for it.
+- **A loop is edited on its Details tab**, with the same loop editor Create Task uses. "Edit checks"
+  on the Loop tab goes there.
+- **Phase 5's pieces wait for phase 5**: the `QUEUED · N loops already wait on you` line and Start
+  anyway, and the automation draft line and banner.
+
 ## Phase 5: MCP tools, drafts from automations, the waiting cap
 
 **Tools**, answered by the daemon beside the task tools in `mcp_gateway.rs`:
