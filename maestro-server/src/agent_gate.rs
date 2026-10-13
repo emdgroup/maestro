@@ -6,7 +6,7 @@
 //! Only `claude-agent-acp` says when a limit resets, as `_claude/rateLimit` on `usage_update`, and
 //! only once a turn has had a real model reply, so a fresh session refused on its first prompt
 //! carries none. The latest reading from any session of the agent is kept for that, and with no
-//! usable reading the gate backs off. The gates are `agent_gates`, made by `V11_LOOPS`.
+//! usable reading the gate backs off. The gates are `agent_gates`, made by `V12_LOOPS`.
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};

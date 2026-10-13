@@ -12,10 +12,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use super::{commit, parse, text, transaction};
 
-/// Version 11 of `projects.db`: the Loop run mode, every table and column the whole feature uses.
+/// Version 12 of `projects.db`: the Loop run mode, every table and column the whole feature uses.
 ///
 /// Not shipped yet, so it may still be rewritten. Frozen once a release carries it.
-pub const V11_LOOPS: &str = "
+pub const V12_LOOPS: &str = "
 ALTER TABLE tasks ADD COLUMN run_mode TEXT NOT NULL DEFAULT 'Pipeline';
 ALTER TABLE tasks ADD COLUMN loop_config TEXT;
 ALTER TABLE tasks ADD COLUMN loop_sealed_sha TEXT;
