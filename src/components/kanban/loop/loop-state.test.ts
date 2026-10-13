@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { LoopSummary, Task } from "@/types/bindings";
 import {
+  draftLine,
   gateLine,
   loopLine,
+  loopsWaiting,
+  queuedLine,
   NEEDS_YOU_RING,
   parseDuration,
   formatDuration,
@@ -160,5 +163,46 @@ describe("the loop's helpers", () => {
     ]);
     expect(pathsInCommand("cargo test -p maestro-server --features x")).toEqual([]);
     expect(pathsInCommand("curl https://x.io/a.json > /tmp/out.txt")).toEqual([]);
+  });
+});
+
+describe("the waiting cap and drafts", () => {
+  const queued = loop({ status: "Queue", phase: null, phase_status: null, ball: "None" });
+
+  it("counts the loops waiting on the user, and nothing else", () => {
+    const waiting = loop({ phase: "Approval", phase_status: "Waiting", ball: "User" });
+    expect(
+      loopsWaiting([
+        waiting,
+        waiting,
+        loop({ ball: "User", status: "Done" }),
+        loop({ ball: "User", archived_at: "2026-10-13T10:00:00Z" }),
+        loop({ ball: "User", run_mode: "Pipeline" }),
+        queued,
+      ]),
+    ).toBe(2);
+  });
+
+  it("says why a queued loop waits, only while the cap holds it and the user did not ask", () => {
+    expect(queuedLine(queued, 2)).toEqual({
+      label: "Queued",
+      detail: "2 loops already wait on you",
+      tone: "muted",
+    });
+    expect(queuedLine(queued, 1)?.detail).toBe("1 loop already waits on you");
+    expect(queuedLine(queued, null)).toBeNull();
+    expect(queuedLine({ ...queued, execute_requested_at: "2026-10-13T10:00:00Z" }, 2)).toBeNull();
+    expect(queuedLine({ ...queued, run_mode: "Pipeline" }, 2)).toBeNull();
+  });
+
+  it("names the automation run a draft came from while it is in Planning", () => {
+    const drafted = loop({
+      status: "Planning",
+      drafted_by: { automation: "Nightly triage", run: 12 },
+    });
+    expect(draftLine(drafted)?.detail).toBe("from Nightly triage #12");
+    expect(draftLine({ ...drafted, drafted_by: { automation: "Old" } })?.detail).toBe("from Old");
+    expect(draftLine({ ...drafted, status: "Queue" })).toBeNull();
+    expect(draftLine(loop())).toBeNull();
   });
 });

@@ -4,6 +4,9 @@ import { useExecuteTask } from "@/hooks/useExecuteTask";
 import { useActiveSessionsQuery } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useAgentProfilesQuery, useProjectSettings } from "@/services/project.service";
+import { useTasksQuery } from "@/services/task.service";
+import { useAutoMode, useLoopWaitCap } from "@/services/settings.service";
+import { loopsWaiting } from "@/components/kanban/loop/loop-state";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
 import { MissingAttachmentsDialog } from "@/components/execution/MissingAttachmentsDialog";
 import { AgentPickerModal } from "@/components/execution/AgentPickerModal";
@@ -24,6 +27,11 @@ interface BoardActionsValue {
    * not at all.
    */
   worktreeById: Map<number, WorktreeWithStatus>;
+  /**
+   * How many loops wait on the user while the waiting cap keeps the queued ones from starting on
+   * their own, or `null` while it does not.
+   */
+  loopsHeldBack: number | null;
 }
 
 const BoardActionsContext = createContext<BoardActionsValue | null>(null);
@@ -71,6 +79,12 @@ export function BoardActionsProvider({ children }: { children: ReactNode }) {
   const canRefine =
     (profilesDocument?.profiles ?? []).some((p) => p.role === "Refiner") || !!defaultAgent;
 
+  const { data: tasks } = useTasksQuery(projectId);
+  const autoMode = useAutoMode(projectId).data ?? false;
+  const cap = useLoopWaitCap(projectId).data ?? 0;
+  const waiting = useMemo(() => loopsWaiting(tasks ?? []), [tasks]);
+  const loopsHeldBack = autoMode && cap > 0 && waiting >= cap ? waiting : null;
+
   const sessionByTaskId = useMemo(() => {
     const byTask = new Map<number, ActiveSessionInfo>();
     for (const session of sessions ?? []) {
@@ -105,8 +119,17 @@ export function BoardActionsProvider({ children }: { children: ReactNode }) {
       sessionByTaskId,
       worktreeByTaskId,
       worktreeById,
+      loopsHeldBack,
     }),
-    [execute, executingTaskId, canRefine, sessionByTaskId, worktreeByTaskId, worktreeById],
+    [
+      execute,
+      executingTaskId,
+      canRefine,
+      sessionByTaskId,
+      worktreeByTaskId,
+      worktreeById,
+      loopsHeldBack,
+    ],
   );
 
   return (

@@ -29,6 +29,8 @@ const taskWorktree = vi.hoisted(() => ({
  * rather than recomputed per card.
  */
 const canRefine = vi.hoisted(() => ({ current: true }));
+/** Loops waiting on the user while the waiting cap holds the queued ones back, or `null`. */
+const loopsHeldBack = vi.hoisted(() => ({ current: null as number | null }));
 
 /**
  * The board's shared state. Everything here used to be mounted inside the card itself; the mocks
@@ -40,6 +42,7 @@ vi.mock("@/contexts/BoardActionsContext", () => ({
     execute,
     executingTaskId: null,
     canRefine: canRefine.current,
+    loopsHeldBack: loopsHeldBack.current,
   }),
   useTaskSession: (taskId: number | null) => (taskId === null ? null : activeSession.current),
   useTaskWorktree: (taskId: number | null) => (taskId === null ? null : taskWorktree.current),
@@ -208,6 +211,7 @@ beforeEach(() => {
   activeSession.current = null;
   taskWorktree.current = null;
   canRefine.current = true;
+  loopsHeldBack.current = null;
   authRequired.current = null;
   clearAuthRequired.mockClear();
   comments.current = [];
@@ -1635,5 +1639,18 @@ describe("TaskCard as a loop", () => {
     expect(card.className).toContain("border-dashed");
     fireEvent.click(screen.getByRole("button", { name: /Try now/ }));
     expect(openGate).toHaveBeenCalledWith({ projectId: 1, agentId: "claude-code" });
+  });
+
+  it("says why a queued loop waits while the cap holds it, and starts it anyway", () => {
+    loopsHeldBack.current = 2;
+    renderCard({ run_mode: "Loop", status: "Queue", phase: null, phase_status: null });
+    expect(screen.getByText("2 loops already wait on you")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Start anyway/ }));
+    expect(execute).toHaveBeenCalled();
+  });
+
+  it("names the automation run that drafted it", () => {
+    renderCard({ status: "Planning", drafted_by: { automation: "Nightly triage", run: 12 } });
+    expect(screen.getByText("from Nightly triage #12")).toBeInTheDocument();
   });
 });

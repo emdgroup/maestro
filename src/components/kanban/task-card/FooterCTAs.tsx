@@ -93,12 +93,15 @@ interface FooterCTAsProps {
   isRecovering: boolean;
   isSendingToReview: boolean;
   isEndingSelfReview: boolean;
+  /** A queued loop the waiting cap holds back: Execute starts it regardless. */
+  startAnyway?: boolean;
 }
 
 export function FooterCTAs({
   task,
   hasActiveSession,
   isExecuting,
+  startAnyway = false,
   canRefine,
   isAuthRequired,
   isRecovering,
@@ -368,7 +371,9 @@ export function FooterCTAs({
         ? "Try starting this task again"
         : task.execute_requested_at
           ? "Waiting for a free agent, press to try now"
-          : null;
+          : startAnyway
+            ? "Loops already wait on you, so this one does not start on its own"
+            : null;
 
     const executeButton = (
       <Button
@@ -385,7 +390,9 @@ export function FooterCTAs({
           ? "Starting…"
           : task.phase_status === "Failed"
             ? "Retry"
-            : "Execute"}
+            : startAnyway
+              ? "Start anyway"
+              : "Execute"}
       </Button>
     );
 

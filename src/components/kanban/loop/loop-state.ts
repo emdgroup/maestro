@@ -21,6 +21,7 @@ const HALTS: Record<LoopHalt, { label: string; urgent: boolean }> = {
   OutOfTime: { label: "Out of agent time, needs you", urgent: true },
   Paused: { label: "Paused", urgent: false },
   Stopped: { label: "Stopped by you", urgent: false },
+  Blocked: { label: "Blocked, needs your answer", urgent: true },
 };
 
 /** `15:00`, or `Tue 15:00` once it is not today. */
@@ -77,7 +78,8 @@ export function loopLine(task: Task): StateLine | null {
       label,
       tone: urgent ? "warning" : "brand",
       ring: urgent ? NEEDS_YOU_RING : undefined,
-      detail: halt === "Stalled" ? (summary?.last_summary ?? undefined) : undefined,
+      detail:
+        halt === "Stalled" || halt === "Blocked" ? (summary?.last_summary ?? undefined) : undefined,
     };
   }
   const live = task.phase_status === "Running" || task.phase_status === "Blocked";
@@ -130,6 +132,46 @@ export function loopLine(task: Task): StateLine | null {
     default:
       return null;
   }
+}
+
+/** The loops waiting on the user, as the waiting cap counts them. */
+export function loopsWaiting(tasks: Task[]): number {
+  return tasks.filter(
+    (t) => t.run_mode === "Loop" && t.ball === "User" && t.status !== "Done" && !t.archived_at,
+  ).length;
+}
+
+/**
+ * The line of a queued loop the waiting cap holds back, which the drain will not start on its own.
+ * `heldBack` is how many loops wait on the user while the cap holds, `null` while it does not.
+ */
+export function queuedLine(task: Task, heldBack: number | null): StateLine | null {
+  if (
+    heldBack === null ||
+    task.run_mode !== "Loop" ||
+    task.status !== "Queue" ||
+    task.phase ||
+    task.execute_requested_at
+  ) {
+    return null;
+  }
+  return {
+    label: "Queued",
+    detail:
+      heldBack === 1 ? "1 loop already waits on you" : `${heldBack} loops already wait on you`,
+    tone: "muted",
+  };
+}
+
+/** `from Nightly triage #12`, for a task an automation's agent created, while it is a draft. */
+export function draftLine(task: Task): StateLine | null {
+  const draft = task.drafted_by;
+  if (!draft || task.status !== "Planning") return null;
+  return {
+    label: "Draft",
+    detail: `from ${draft.automation}${draft.run != null ? ` #${draft.run}` : ""}`,
+    tone: "muted",
+  };
 }
 
 /** Whether a card shows the check bar: once the loop has run, and never for a draft. */

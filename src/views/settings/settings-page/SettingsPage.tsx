@@ -19,6 +19,7 @@ import { BackgroundServerSection } from "./BackgroundServerSection";
 import { WebhooksSection } from "./WebhooksSection";
 import { DiagnosticsSection } from "./DiagnosticsSection";
 import { AgentProfilesSection } from "./AgentProfilesSection";
+import { LoopWaitCapSection } from "./LoopWaitCapSection";
 import { IssueTrackingSection } from "./IssueTrackingSection";
 import { SettingsSidebar } from "./SettingsSidebar";
 import { resolveDeepLinkedPage, visiblePages } from "./settings-registry";
@@ -240,6 +241,7 @@ function ProjectScopePane({
             agents={discovery?.agents ?? []}
             connection={connection}
           />
+          <LoopWaitCapSection projectId={projectId} />
         </>
       )}
       {pageId === "git" && (

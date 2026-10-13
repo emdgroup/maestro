@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type SetStateAction } from "react";
-import { Ban, Repeat, Trash2, X } from "lucide-react";
+import { Ban, Bot, Repeat, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { LoopTab } from "@/components/kanban/loop/LoopTab";
 import { LoopSidePanel } from "@/components/kanban/loop/LoopSidePanel";
@@ -376,6 +376,23 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                     Outcome{comments.length > 0 ? ` (${comments.length})` : ""}
                   </TabsTrigger>
                 </TabsList>
+
+                {/* An automation's agent drafted it: nothing runs until the user has read it. */}
+                {task.drafted_by && task.status === "Planning" && (
+                  <div className="flex shrink-0 items-start gap-3 rounded-md border border-border bg-muted/40 p-3 text-xs">
+                    <Bot className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                    <div className="flex-1 space-y-1">
+                      <div className="font-medium">
+                        Drafted by the automation “{task.drafted_by.automation}”
+                        {task.drafted_by.run != null && <> #{task.drafted_by.run}</>}
+                      </div>
+                      <div className="text-muted-foreground">
+                        Check the goal{isLoop ? ", the checks and the budgets" : ""}, then queue it
+                        to run it. Nothing runs before that.
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {isLoop && (
                   <TabsContent value="loop" className="min-h-0 overflow-y-auto pr-1">

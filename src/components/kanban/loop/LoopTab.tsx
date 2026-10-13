@@ -6,6 +6,7 @@ import {
   Dice5,
   Hourglass,
   Lock,
+  MessageCircleQuestion,
   OctagonX,
   Pause,
   Play,
@@ -61,6 +62,7 @@ const OUTCOME_DOT: Record<LoopIteration["outcome"], string> = {
   Interrupted: "bg-amber-500",
   Empty: "bg-muted-foreground/30",
   Failed: "bg-destructive",
+  Blocked: "bg-warning",
 };
 
 const time = (iso: string) =>
@@ -217,20 +219,30 @@ function CheckRow({ task, check, onEdit }: { task: Task; check: LoopCheck; onEdi
   const { icon: KindIcon, name } = proposal
     ? { icon: Sparkles, name: "Proposed" }
     : CHECK_KINDS[check.kind];
-  const sub =
-    check.kind === "Command" && check.command ? (
-      <>
-        <span className="font-mono">{check.command}</span>
-        {check.detail && (
-          <span className={cn(check.state === "Fail" && "text-destructive")}>
-            {" "}
-            · {check.detail.split("\n").filter(Boolean).pop()}
-          </span>
-        )}
-      </>
-    ) : (
-      check.detail?.split("\n")[0]
-    );
+  // A proposal's detail is the worker's reason, and its command only a suggestion.
+  const sub = proposal ? (
+    <>
+      {check.detail}
+      {check.command && (
+        <span className="font-mono">
+          {check.detail ? " · " : ""}
+          {check.command}
+        </span>
+      )}
+    </>
+  ) : check.kind === "Command" && check.command ? (
+    <>
+      <span className="font-mono">{check.command}</span>
+      {check.detail && (
+        <span className={cn(check.state === "Fail" && "text-destructive")}>
+          {" "}
+          · {check.detail.split("\n").filter(Boolean).pop()}
+        </span>
+      )}
+    </>
+  ) : (
+    check.detail?.split("\n")[0]
+  );
   return (
     <li
       className={cn(
@@ -323,6 +335,11 @@ function IterationRow({ iteration, onJoin }: { iteration: LoopIteration; onJoin:
         {iteration.summary && (
           <div className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">
             {iteration.summary}
+          </div>
+        )}
+        {iteration.blocked && (
+          <div className="mt-0.5 line-clamp-2 text-[11px] text-warning">
+            Blocked: {iteration.blocked}
           </div>
         )}
       </div>
@@ -448,6 +465,19 @@ export function LoopTab({
         would spend iterations on nothing, so the loop waits for you. Fix the test on{" "}
         {task.base_branch} or remove the check, then re-run checks. Re-running takes the sealed
         files from {task.base_branch} again and costs no iteration.
+      </Banner>
+    );
+  } else if (halt === "Blocked") {
+    const asked = [...iterations].reverse().find((i) => i.blocked)?.blocked;
+    banner = (
+      <Banner
+        tone="amber"
+        icon={MessageCircleQuestion}
+        title="Blocked: the agent needs your answer"
+      >
+        {asked && <>It asked: “{asked}” </>}
+        Its work so far is committed and the checks did not run. Answer below and resume: the next
+        iteration gets your answer with its question.
       </Banner>
     );
   } else if (halt === "Paused" || halt === "Stopped") {

@@ -54,8 +54,10 @@ import { shortBranchName } from "@/lib/generateSessionName";
 import { Repeat } from "lucide-react";
 import {
   CHECK_SEGMENT,
+  draftLine,
   gateLine,
   loopLine,
+  queuedLine,
   showsCheckBar,
   type StateLine,
 } from "@/components/kanban/loop/loop-state";
@@ -415,7 +417,12 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
   const [profilesOpen, setProfilesOpen] = useState(false);
   // The board's, not the card's: one instance of `useExecuteTask` and one of each list query serve
   // every card, and the two dialogs `execute` drives are mounted once by the provider.
-  const { execute: handleExecute, executingTaskId, canRefine } = useBoardActionsContext();
+  const {
+    execute: handleExecute,
+    executingTaskId,
+    canRefine,
+    loopsHeldBack,
+  } = useBoardActionsContext();
   const isExecuting = executingTaskId === task.id;
   const interruptTask = useInterruptTaskMutation();
   const sendToReview = useSendTaskToReviewMutation();
@@ -434,9 +441,11 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
   const resumeLoop = useResumeLoopMutation();
   const rerunChecks = useRerunLoopChecksMutation();
   const openGate = useOpenAgentGateMutation();
-  // What the card says of a loop, or of a task its agent's usage limit holds, in place of the
-  // phase line, with the border that goes with it.
-  const stateLine = gateLine(task) ?? loopLine(task);
+  // What the card says of a loop, of a task its agent's usage limit holds, of a queued loop the
+  // waiting cap holds back, or of an automation's draft, in place of the phase line, with the
+  // border that goes with it.
+  const queued = queuedLine(task, loopsHeldBack);
+  const stateLine = gateLine(task) ?? loopLine(task) ?? queued ?? draftLine(task);
   const taskKey = { projectId: task.project_id, taskId: task.id };
   // Not gated on InProgress: a task keeps its session into Review, which is what the Join button
   // there is for — while this was gated that button could never render. Everything below that
@@ -579,6 +588,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
           task={task}
           hasActiveSession={!!activeSession}
           isExecuting={isExecuting}
+          startAnyway={queued !== null}
           canRefine={canRefine}
           isAuthRequired={!!authRequired}
           isRecovering={recoverSession.isPending}

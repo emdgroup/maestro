@@ -117,6 +117,8 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
       "reviewer",
       "skills",
       "mcp servers",
+      "loops",
+      "loops waiting",
     ],
   },
   {
