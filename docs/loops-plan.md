@@ -206,7 +206,7 @@ Gaps the survey found, which the phases below close:
 | 1     | The iteration engine and sealed checks                     | Done        |
 | 2     | Judge, digest, proposals, steering, sign-off, pull request | Done        |
 | 3     | Usage-limit gate, for every task                           | Done        |
-| 4     | The board: create, card, loop view                         | Not started |
+| 4     | The board: create, card, loop view                         | Done        |
 | 5     | MCP tools, drafts from automations, the waiting cap        | Not started |
 | 6     | Docs                                                       | Not started |
 
@@ -620,6 +620,39 @@ Settled before phase 4 started:
   on the Loop tab goes there.
 - **Phase 5's pieces wait for phase 5**: the `QUEUED · N loops already wait on you` line and Start
   anyway, and the automation draft line and banner.
+- **The daemon's loop runs on an 8 MB thread.** Every task-path change had started to overflow the
+  1 MB main thread of a Windows debug build, so `main` now runs everything on a spawned thread with
+  room (`STACK_BYTES`).
+
+**As built** (`src/components/kanban/loop/`, `src/services/loop.service.ts`,
+`src-tauri/src/task/loops.rs`):
+
+- The app has a command per loop request, plus `resume_loop` (`LoopResumed` with an optional
+  `steer` note, which is Send back and Answer and resume), `add_loop_note`, `pause_loop`,
+  `stop_loop`, `open_agent_gate` and `loop_sealable_paths`. Its loop types mirror the protocol's
+  through one JSON round trip (`loops::mirror`) rather than a `From` per field. `interrupt_task`
+  on a loop stops it in place instead of discarding its run.
+- `Task.loop_summary` and `Task.gate` are boxed in the protocol: a `Task` rides in many of the
+  daemon's futures. A task records the agent that refused it in `tasks.gated_agent_id`, and the
+  gate's `reason` holds the window (`five_hour`, `seven_day...`), `reset` or `backoff`.
+- Pause sets `tasks.loop_hold`; the next verdict that would start another iteration, or the judge,
+  halts instead. `tasks.loop_halt` says why a loop stopped for the user. Stop on a running
+  iteration halts it first, then closes the session and commits its work as an uncounted WIP on a
+  task of its own: the request is answered inside the main loop's dispatch, which also settles the
+  close.
+- Each iteration's tokens are summed from `usage_turns` by its ACP session id.
+- The sealed paths are prefilled from each command's tokens that look like paths and exist on the
+  base branch. That can include a file the agent must edit; the user removes its chip.
+- The card's footer for a loop in progress is Pause, Stop and Join; a halted loop offers Resume,
+  or Re-run checks when flaky; a task a gate holds offers Try now.
+- The detail's side column shows the live session's activity line, not the agent's prose, and the
+  last failing check output, or the passing commands once nothing fails. The digest shows only from
+  sign-off on. The gate banner names the agent by its id.
+- The Changes tab lists files and line counts parsed from the worktree's diff against its base;
+  Review changes opens the review sheet.
+- The judge is a per-task `Judge` profile override, picked in the loop editor. The agents dialog
+  shows Iterations and Judging for a loop.
+- The skills and MCP line counts the connection's library and the project's entries, not per agent.
 
 ## Phase 5: MCP tools, drafts from automations, the waiting cap
 
