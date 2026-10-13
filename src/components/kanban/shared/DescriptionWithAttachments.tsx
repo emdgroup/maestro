@@ -1,4 +1,4 @@
-import { Paperclip, Upload } from "lucide-react";
+import { Download, Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { MarkdownEditor } from "@/components/kanban/shared/MarkdownEditor";
@@ -46,7 +46,7 @@ export function DescriptionWithAttachments({
       )}
       {isDragging && (
         <div className="absolute inset-0 flex items-center justify-center rounded-lg border-2 border-dashed border-ring bg-muted/20 text-sm text-muted-foreground gap-1.5">
-          <Upload className="size-3" />
+          <Download className="size-3" />
           Drop files here
         </div>
       )}
