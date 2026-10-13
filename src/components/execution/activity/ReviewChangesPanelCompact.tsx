@@ -17,7 +17,9 @@ import {
   type DiffReviewApi,
 } from "@/components/execution/diff/DiffFileStack";
 import { displayItemPath, type DisplayItem, type FileStatus } from "@/types/review";
-import type { DiffTarget } from "@/types/bindings";
+import type { CommitInfo, DiffTarget } from "@/types/bindings";
+import { ScopeSelector } from "@/components/execution/diff/ScopeSelector";
+import type { DiffScope } from "@/components/execution/diff/scope";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { AnnotationBar } from "@/components/execution/side-panel/annotations/AnnotationBar";
 import { useAnnotationStore, useSessionAnnotations } from "@/store/annotationStore";
@@ -43,7 +45,12 @@ interface ReviewChangesPanelCompactProps {
   /** What the diff compares against — the base revision a hunk expansion reads its context from. */
   diffTarget: DiffTarget;
   truncationInfo?: TruncationInfo | null;
-  scope: "session" | "uncommitted";
+  scope: DiffScope;
+  onScopeChange: (scope: DiffScope) => void;
+  commits: CommitInfo[];
+  commitsLoading: boolean;
+  uncommittedFileCount: number;
+  allChangesFileCount: number;
   diffViewMode: DiffModeEnum;
   setDiffViewMode: (mode: DiffModeEnum) => void;
   /** Null until the reader picks a file — the tab opens with nothing selected. */
@@ -71,6 +78,11 @@ export function ReviewChangesPanelCompact({
   diffTarget,
   truncationInfo,
   scope,
+  onScopeChange,
+  commits,
+  commitsLoading,
+  uncommittedFileCount,
+  allChangesFileCount,
   diffViewMode,
   setDiffViewMode,
   selectedFileIndex,
@@ -82,7 +94,6 @@ export function ReviewChangesPanelCompact({
   focusedBasename,
   onOpenFile,
 }: ReviewChangesPanelCompactProps) {
-  const scopeLabel = scope === "session" ? "since session start" : "uncommitted changes only";
   const annotations = useSessionAnnotations(sessionId, "diff");
   const { addAnnotation, updateAnnotation, removeAnnotations } = useAnnotationStore();
   const stackRef = useRef<DiffFileStackHandle>(null);
@@ -171,8 +182,16 @@ export function ReviewChangesPanelCompact({
           >
             <PanelLeft className="w-4 h-4" />
           </TooltipTrigger>
-          <TooltipContent>File list: {scopeLabel}</TooltipContent>
+          <TooltipContent>{panel.panelOpen ? "Hide file list" : "Show file list"}</TooltipContent>
         </Tooltip>
+        <ScopeSelector
+          selectedScope={scope}
+          onScopeChange={onScopeChange}
+          commits={commits}
+          uncommittedFileCount={uncommittedFileCount}
+          allChangesFileCount={allChangesFileCount}
+          isLoading={commitsLoading}
+        />
         <div className="w-px h-4 bg-border shrink-0 mx-1" />
         <div className="flex-1 flex items-center justify-center gap-0.5 min-w-0 overflow-hidden">
           <button
@@ -281,7 +300,7 @@ export function ReviewChangesPanelCompact({
           // resolves relative paths — hand it an absolute path and let it work out the prefix.
           onOpenFile={onOpenFile ? (path) => onOpenFile(cwd ? `${cwd}/${path}` : path) : undefined}
           loading={loading}
-          emptyMessage={totalFileCount === 0 && !diffError ? `No changes ${scopeLabel}` : undefined}
+          emptyMessage={totalFileCount === 0 && !diffError ? "No changes in this scope" : undefined}
         />
       </ReviewLayout>
     </div>

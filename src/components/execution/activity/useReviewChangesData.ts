@@ -1,16 +1,29 @@
 import { useMemo, useEffect, useRef } from "react";
 import { parseDiffString, computeFileStats } from "@/lib/diff-utils";
-import { useWorktreeDiffQuery } from "@/services/worktree.service";
+import {
+  useWorktreeDiffQuery,
+  useWorktreeDiffStatsQuery,
+  useWorktreeCommitsQuery,
+} from "@/services/worktree.service";
 import { useAcpSessionMeta } from "@/services/execution.service";
-import { buildDisplayItems } from "@/components/execution/diff/useReviewItems";
+import { buildDisplayItems, fileCountFrom } from "@/components/execution/diff/useReviewItems";
+import { scopeToDiffTarget, type DiffScope } from "@/components/execution/diff/scope";
+import type { DiffTarget } from "@/types/bindings";
+
+const UNCOMMITTED_TARGET: DiffTarget = { type: "Head" };
 
 export function useReviewChangesData({
   sessionId,
   isActive,
+  scope,
+  baseBranch,
   onDiffStats,
 }: {
   sessionId: string;
   isActive: boolean;
+  scope: DiffScope;
+  /** The session worktree's base branch, which anchors "All changes" when there is no start sha. */
+  baseBranch: string | null;
   onDiffStats?: (stats: { insertions: number; deletions: number } | null) => void;
 }) {
   const { data: sessionMeta, isError: metaError } = useAcpSessionMeta(sessionId ?? null);
@@ -18,9 +31,14 @@ export function useReviewChangesData({
   const cwd = sessionMeta?.cwd ?? null;
   const startSha = sessionMeta?.session_start_sha ?? null;
 
-  const diffTarget = useMemo(
-    () => (startSha ? ({ type: "Commit", sha: startSha } as const) : ({ type: "Head" } as const)),
-    [startSha],
+  // The start sha comes first so "All changes" means this session's work, as it always has. The
+  // base branch only stands in when the session has none, which otherwise left the tab showing
+  // uncommitted changes alone — empty the moment the agent committed.
+  const scopeAnchors = useMemo(() => ({ startSha, baseBranch }), [startSha, baseBranch]);
+  const diffTarget = useMemo(() => scopeToDiffTarget(scope, scopeAnchors), [scope, scopeAnchors]);
+  const allChangesTarget = useMemo(
+    () => scopeToDiffTarget({ type: "all" }, scopeAnchors),
+    [scopeAnchors],
   );
 
   const {
@@ -31,6 +49,25 @@ export function useReviewChangesData({
   } = useWorktreeDiffQuery(projectId, cwd, diffTarget, {
     refetchInterval: isActive ? 5000 : false,
   });
+
+  // The selector's fixed rows describe scopes other than the one on screen, so their counts come
+  // from their own `--stat` queries. Same targets as `useSessionDiffStats`, so they share its fetch.
+  const statsPolling = { refetchInterval: isActive ? 10000 : (false as const) };
+  const { data: uncommittedStats } = useWorktreeDiffStatsQuery(
+    projectId,
+    cwd,
+    UNCOMMITTED_TARGET,
+    statsPolling,
+  );
+  const { data: allChangesStats } = useWorktreeDiffStatsQuery(
+    projectId,
+    cwd,
+    allChangesTarget,
+    statsPolling,
+  );
+  // `get_worktree_commits` lists `merge-base(anchor, HEAD)..HEAD`, which for a start sha on the
+  // branch is the start sha itself: exactly the commits this session made.
+  const commitsQuery = useWorktreeCommitsQuery(projectId, cwd, startSha ?? baseBranch);
 
   // Polling stops while the tab is off screen, so re-entering it would otherwise show
   // the diff as of the last time it was visible until the next interval fires.
@@ -95,8 +132,9 @@ export function useReviewChangesData({
     totalFileCount,
     diffError,
     truncationInfo,
-    // The diff is anchored at the session's start commit; without one it degrades to
-    // uncommitted-only, which silently hides the agent's commits unless the UI says so.
-    scope: startSha ? ("session" as const) : ("uncommitted" as const),
+    commits: commitsQuery.data ?? [],
+    commitsLoading: commitsQuery.isLoading,
+    uncommittedFileCount: fileCountFrom(uncommittedStats),
+    allChangesFileCount: fileCountFrom(allChangesStats),
   };
 }
