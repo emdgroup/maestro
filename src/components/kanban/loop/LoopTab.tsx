@@ -255,7 +255,17 @@ function CheckRow({ task, check, onEdit }: { task: Task; check: LoopCheck; onEdi
         <Mark className={cn("mt-0.5 size-4 shrink-0", tone)} />
         <div className="min-w-0 flex-1">
           <div className="text-xs">{check.label}</div>
-          {sub && <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{sub}</div>}
+          {sub && (
+            <div
+              className={cn(
+                "mt-0.5 text-[11px] text-muted-foreground",
+                // A proposal's reason is what the user decides on, so it is not cut to one line.
+                proposal ? "line-clamp-3" : "truncate",
+              )}
+            >
+              {sub}
+            </div>
+          )}
         </div>
         <span className="flex shrink-0 items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">
           <KindIcon className="size-2.5" />
