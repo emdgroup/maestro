@@ -707,9 +707,10 @@ Settled before phase 5 started:
 - **The waiting cap** is a number on the project's Agents settings page, default 2, 0 for no cap.
   It counts loop tasks with ball User; a gated loop has ball Agent and does not count. Only the
   drain obeys it: Start anyway on the queued card starts that loop now.
-- **Drafts.** A task stores the automation run that created it and the automation's name. The card
-  reads `DRAFT · from <automation> · <run date>` while the task is in Planning, for any task an
-  automation created, pipeline tasks too. The thread gets a note.
+- **Drafts.** A task stores the name of the automation that created it and the run's number,
+  which runs already keep frozen (`ordinal`). The card reads `DRAFT · from <automation> #n` while
+  the task is in Planning, for any task an automation created, pipeline tasks too. The thread gets
+  a note.
 
 ## Phase 6: docs
 
