@@ -6,6 +6,7 @@ import { Button, buttonVariants } from "@/ui/button";
 import { Separator } from "@/ui/separator";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Calendar } from "@/ui/calendar";
+import { useNow } from "@/hooks/useNow";
 import type { Preset } from "./useSessionHistory";
 
 interface Props {
@@ -37,6 +38,7 @@ export function SessionHistorySidebar({
   calendarOpen,
   onCalendarOpenChange,
 }: Props) {
+  const now = useNow();
   return (
     <div className="w-44 border-r border-border flex flex-col shrink-0 py-2">
       <div className="flex flex-col gap-0.5 px-2">
@@ -108,7 +110,7 @@ export function SessionHistorySidebar({
                 mode="range"
                 selected={stagingRange}
                 onSelect={(range) => onStagingRangeChange(range ?? { from: undefined })}
-                disabled={{ after: new Date() }}
+                disabled={{ after: new Date(now) }}
                 numberOfMonths={1}
               />
             </div>

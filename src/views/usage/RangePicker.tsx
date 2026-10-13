@@ -4,6 +4,7 @@ import type { DateRange } from "react-day-picker";
 import { Calendar } from "@/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { cn } from "@/lib/utils";
+import { useNow } from "@/hooks/useNow";
 import { PRESETS, rangeTitle, type RangeChoice } from "./range";
 
 interface RangePickerProps {
@@ -18,6 +19,7 @@ interface RangePickerProps {
 export function RangePicker({ choice, onChange }: RangePickerProps) {
   const [open, setOpen] = useState(false);
   const [days, setDays] = useState<DateRange | undefined>(undefined);
+  const today = new Date(useNow());
 
   const openChange = (next: boolean) => {
     setOpen(next);
@@ -70,9 +72,9 @@ export function RangePicker({ choice, onChange }: RangePickerProps) {
             numberOfMonths={2}
             selected={days}
             onSelect={setDays}
-            disabled={{ after: new Date() }}
-            defaultMonth={subMonths(new Date(), 1)}
-            endMonth={new Date()}
+            disabled={{ after: today }}
+            defaultMonth={subMonths(today, 1)}
+            endMonth={today}
             className="bg-transparent p-0"
           />
           <div className="mt-3 flex justify-end gap-2 text-xs">

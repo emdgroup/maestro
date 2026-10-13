@@ -65,7 +65,6 @@ export function DiagnosticsSection() {
     saveAppSettings.mutate({
       ...appSettings,
       ...changes,
-      updated_at: new Date().toISOString(),
     });
   }
 

@@ -34,7 +34,6 @@ export function NotificationsSection() {
     saveAppSettings.mutate({
       ...appSettings,
       [key]: checked,
-      updated_at: new Date().toISOString(),
     } as AppSettings);
   }
 

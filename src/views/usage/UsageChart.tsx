@@ -182,10 +182,13 @@ export function UsageChart({ buckets, bucket, series, cumulative, format }: Usag
             <span key={key}>{bucketLabel(key, bucket)}</span>
           ))}
       </div>
-      {/* Portalled out of the view, so the content carries the series colours itself. */}
+      {/* Portalled out of the view, so the content carries the series colours itself. The payload
+       * outlives the hover, and this renders even closed: a range with fewer buckets leaves the
+       * last hovered index past the end. */}
       <Tooltip handle={handle}>
         {({ payload: index }) =>
-          typeof index === "number" && (
+          typeof index === "number" &&
+          index < n && (
             <TooltipContent className="usage-viz flex-col items-stretch gap-0.5">
               <div className="font-medium">
                 {cumulative ? "Total up to " : ""}

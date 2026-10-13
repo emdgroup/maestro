@@ -49,7 +49,6 @@ export function UpdateStrip({ padEnd = false }: { padEnd?: boolean }) {
     saveAppSettings.mutate({
       ...appSettings,
       auto_update: checked,
-      updated_at: new Date().toISOString(),
     });
   }
 

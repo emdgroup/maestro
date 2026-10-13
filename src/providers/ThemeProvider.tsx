@@ -232,7 +232,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const updatedSettings: AppSettings = {
       ...currentSettings,
       theme_preference: newTheme,
-      updated_at: new Date().toISOString(),
     };
     try {
       await saveSettings.mutateAsync(updatedSettings);
@@ -251,7 +250,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const updatedSettings: AppSettings = {
       ...currentSettings,
       accent_color: hue != null ? String(hue) : null,
-      updated_at: new Date().toISOString(),
     };
     await saveSettings.mutateAsync(updatedSettings);
   }
@@ -292,7 +290,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const updatedSettings: AppSettings = {
       ...currentSettings,
       ui_scale: scale,
-      updated_at: new Date().toISOString(),
     };
     await saveSettings.mutateAsync(updatedSettings);
   }
@@ -308,7 +305,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const updatedSettings: AppSettings = {
       ...currentSettings,
       reduce_motion: on,
-      updated_at: new Date().toISOString(),
     };
     try {
       await saveSettings.mutateAsync(updatedSettings);
