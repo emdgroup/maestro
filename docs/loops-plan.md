@@ -687,6 +687,30 @@ it.
 - No notes tool. The notes are a file in the worktree the agent edits like any other.
 - `create_task` stays as it is: it never starts anything, so it needs no permission prompt.
 
+Settled before phase 5 started:
+
+- **`loop_blocked` halts after the turn.** The call records the reason. When the turn ends the
+  daemon commits the work as a counted iteration, skips the checks, and halts the loop as
+  `Blocked` with ball User and the reason in the thread. Answer and resume runs the next iteration
+  with the user's answer as its steering note.
+- **A loop's worker cannot edit its own task.** `get_task` from the worker leaves out the commands,
+  sealed paths and hidden files, whatever id it names, and `update_task` on its own loop is
+  refused, since it could move the card or edit the checks. `comment_task` still works.
+- **`loop_propose_check` takes a label, a reason and an optional command.** The reason shows under
+  the proposal, and the command prefills the Accept form. The user still picks the kind. A loop
+  holds at most 3 pending proposals.
+- **`loop_status` returns** the goal, the checks by label and state, iteration n of N, the budget
+  left, the last failing output (cut as the prompt's is), and each judge check's last reason.
+- **The MCP task tools carry** `run_mode`, the checks, the budgets, the setup command and the sealed
+  paths, each sealed path checked against the base branch. The judge and the hidden files stay in
+  the app. On a started loop `update_task` changes the budgets only, as in the app.
+- **The waiting cap** is a number on the project's Agents settings page, default 2, 0 for no cap.
+  It counts loop tasks with ball User; a gated loop has ball Agent and does not count. Only the
+  drain obeys it: Start anyway on the queued card starts that loop now.
+- **Drafts.** A task stores the automation run that created it and the automation's name. The card
+  reads `DRAFT · from <automation> · <run date>` while the task is in Planning, for any task an
+  automation created, pipeline tasks too. The thread gets a note.
+
 ## Phase 6: docs
 
 - `maestro-server/AGENTS.md`: a "Loops" section next to the pipeline's, covering the phases, the
