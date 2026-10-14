@@ -208,6 +208,7 @@ Gaps the survey found, which the phases below close:
 | 3     | Usage-limit gate, for every task                           | Done        |
 | 4     | The board: create, card, loop view                         | Done        |
 | 5     | MCP tools, drafts from automations, the waiting cap        | Done        |
+| 5b    | Context and sandbox worktrees, Prepare loop                | Not started |
 | 6     | Docs                                                       | Not started |
 
 Phases 0 to 2 are the engine and can be exercised through MCP and tests before any UI exists. Phase 3
@@ -746,13 +747,68 @@ Settled before phase 5 started:
 - The draft banner sits above the detail's tabs, so a loop draft, which opens on Loop, shows it
   too.
 
+## Phase 5b: context and sandbox worktrees, Prepare loop
+
+Decided on 2026-10-14, after phase 5, from trying loops in a dev instance. It replaces how a loop
+uses git: the worker no longer works in the loop's own worktree, and the sealed files no longer go in
+and out of it. The sections above describe phases 0 to 5 as built; this one supersedes them where
+they differ, and "Sealed checks" is rewritten to match once it is built.
+
+### Decisions (locked)
+
+**Two worktrees per loop.**
+
+- The **context** is the task's worktree, made by `prepare_task_workspace` like any task's. It holds
+  the real branch, sealed files included, and is what is approved, merged or opened as a pull
+  request.
+- The **sandbox** is a second worktree the loop owns, with a non-cone sparse checkout that leaves the
+  sealed paths out. The worker works only there. It is hidden from the Workspaces view and deleted
+  when the loop ends.
+- Each iteration resets the sandbox to the context's HEAD, the worker commits there, and the commit
+  is fast-forwarded into the context. A reset keeps what git ignores, so build caches,
+  `node_modules` and `.maestro/loop/PROGRESS.md` survive from one iteration to the next.
+- The checks run in the context, where the sealed files simply exist. There is no sealed snapshot
+  any more: the tests are the context's. Hidden files stay in the context, out of git.
+- A merge back that fails (the context moved, or holds edits in the way) halts the loop with a new
+  halt, `Conflict`, naming the files. The iteration's commit stays on the sandbox's branch.
+- The peek check stays as it is: `git` commands naming a sealed path. The worker is never told the
+  context exists, so every shell command is not scanned.
+
+**A loop is new-worktree only, and its run mode is fixed at creation.**
+
+- Create Task asks "How it runs" first, then the workspace. A loop offers only "Create new worktree",
+  from a base branch or by checking out an existing branch. The repository directory and an
+  existing worktree are not offered.
+- "Make it a loop" goes away from pipeline tasks, and so does `update_task` with `run_mode` through
+  MCP. A task's run mode is the one it was created with.
+
+**Where the tests come from: a branch.**
+
+- The normal way is to prepare the tests on a branch first, then create the loop from it, as its
+  base branch or by checking it out. The UI says so where the branch is picked: the checks run
+  against that branch's files.
+- Sealed paths that do not exist on the chosen branch are flagged in the loop editor.
+
+**Prepare loop replaces Refine on a Planning loop.**
+
+- An interactive session, like Refine, on the Refiner profile with a loop-specific prompt. No new
+  role.
+- It creates the loop's context worktree on demand and works in it, where the tests are visible. It
+  may write and commit test files there, and it sets the checks, sealed paths and budgets through
+  MCP `update_task`.
+- The context it prepared is the loop's: iteration 1 starts from it, with its tests sealed out of
+  the sandbox.
+- The user ends it, reviews the loop editor, and queues the loop.
+
 ## Phase 6: docs
 
 - `maestro-server/AGENTS.md`: a "Loops" section next to the pipeline's, covering the phases, the
-  sealed snapshot, the commit, the check runner and the gate.
+  context and the sandbox, the merge back, the check runner and the gate.
 - `src/AGENTS.md`: the loop card and view.
 - The user docs on the website:
   - what a loop is, and when to use a pipeline instead,
+  - where its tests come from: prepare them on a branch and start the loop from it, or use Prepare
+    loop,
   - how to write checks: seal them, keep them deterministic, give them a setup command,
   - what to do with a flaky check.
 
