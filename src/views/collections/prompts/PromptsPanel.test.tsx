@@ -202,9 +202,10 @@ describe("PromptsPanel", () => {
       "aria-pressed",
       "true",
     );
-    await user.type(within(dialog).getByLabelText("Title"), "Explain module");
+    await user.click(within(dialog).getByLabelText("Title"));
+    await user.paste("Explain module");
     await user.click(within(dialog).getByText("Write the prompt…"));
-    await user.keyboard("Explain how it works");
+    await user.paste("Explain how it works");
     await user.type(within(dialog).getByLabelText("Tags"), "Onboarding{Enter}docs,");
     await user.click(within(dialog).getByRole("button", { name: "Create prompt" }));
 

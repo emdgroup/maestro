@@ -105,7 +105,8 @@ describe("DiffFileStack", () => {
   it("submits a file comment as line 0", async () => {
     renderStack([diffItem("a.ts")], emptyReview());
     await userEvent.click(screen.getByRole("button", { name: "Add file comment" }));
-    await userEvent.type(screen.getByPlaceholderText("Add a comment..."), "rename this");
+    await userEvent.click(screen.getByPlaceholderText("Add a comment..."));
+    await userEvent.paste("rename this");
     await userEvent.click(screen.getByRole("button", { name: "Add" }));
     expect(onSubmitComment).toHaveBeenCalledWith("a.ts", 0, 0, "new", "rename this");
   });
@@ -360,7 +361,8 @@ describe("DiffReviewApi against a real store", () => {
     renderStack([diffItem("src/acp/manager.rs")], annotationReview());
 
     await userEvent.click(screen.getByRole("button", { name: "Add file comment" }));
-    await userEvent.type(screen.getByPlaceholderText("Add a comment..."), "split this up");
+    await userEvent.click(screen.getByPlaceholderText("Add a comment..."));
+    await userEvent.paste("split this up");
     await userEvent.click(screen.getByRole("button", { name: "Add" }));
 
     const stored = useAnnotationStore

@@ -1246,7 +1246,9 @@ describe("TaskCard plan gate", () => {
 
     expect(screen.getByRole("button", { name: /start implementing/i })).toBeInTheDocument();
 
-    await userEvent.type(screen.getByRole("textbox", { name: "" }), "Use the existing helper");
+    await userEvent.click(screen.getByRole("textbox", { name: "" }));
+
+    await userEvent.paste("Use the existing helper");
     await userEvent.click(screen.getByRole("button", { name: /refine plan/i }));
 
     expect(screen.queryByRole("button", { name: /start implementing/i })).not.toBeInTheDocument();

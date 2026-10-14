@@ -8,6 +8,9 @@ const getUsageReport = vi.hoisted(() => vi.fn());
 const syncUsage = vi.hoisted(() => vi.fn());
 const discoverAgents = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/tauri-utils", () => ({ api: { getUsageReport, syncUsage, discoverAgents } }));
+// The range picker draws two months of day buttons every time it opens, and no test here picks a
+// day from it.
+vi.mock("@/ui/calendar", () => ({ Calendar: () => null }));
 
 const split = { input: 60, output: 10, thought: 0, cached_read: 30, cached_write: 0 };
 const report: UsageReport = {

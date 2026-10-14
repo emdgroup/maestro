@@ -45,7 +45,8 @@ describe("PlanGate", () => {
     };
 
     const { rerender } = render(<PlanGate {...props} open={true} />);
-    await user.type(notes(), "use the existing helper");
+    await user.click(notes());
+    await user.paste("use the existing helper");
     expect(notes()).toHaveValue("use the existing helper");
 
     rerender(<PlanGate {...props} open={false} />);
@@ -71,7 +72,9 @@ describe("PlanGate", () => {
     render(<PlanGate {...props} />);
     expect(screen.getByRole("button", { name: "Start implementing" })).toBeInTheDocument();
 
-    await user.type(notes(), "not this way");
+    await user.click(notes());
+
+    await user.paste("not this way");
 
     expect(screen.getByRole("button", { name: "Refine plan" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Refine plan" }));

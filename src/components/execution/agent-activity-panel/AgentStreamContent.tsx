@@ -41,6 +41,14 @@ function isAtEnd(viewport: HTMLElement) {
 const MemoAgentStreamItem = memo(AgentStreamItem);
 
 /*
+  A user message is a standalone section, rendered straight from the `.map()` below rather than
+  through `AgentSectionRow`, so without its own boundary every one of them re-rendered on each
+  chunk. Its props are already stable: the reducer keeps the message object, and the panel hands
+  down `onOpenFile` from a `useCallback`.
+*/
+const MemoActivityUserMessage = memo(ActivityUserMessage);
+
+/*
   The stream's bail-out boundary. `groupIntoAgentSections` hands back the *same* section object
   for a section nothing changed in, so a shallow compare here skips the whole subtree: the
   `visibleItems` filter, the key derivation, and every row below. Without it a one-token chunk
@@ -222,7 +230,7 @@ export function AgentStreamContent({
                       const msgId = gi.item.item.id;
                       return (
                         <MessageScrollerItem key={msgId} messageId={msgId} className="px-3">
-                          <ActivityUserMessage message={gi.item.item} onOpenFile={onOpenFile} />
+                          <MemoActivityUserMessage message={gi.item.item} onOpenFile={onOpenFile} />
                         </MessageScrollerItem>
                       );
                     }
