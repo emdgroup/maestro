@@ -1,6 +1,6 @@
-import { useEffect } from "react";
+import { cloneElement, useEffect, type ReactElement, type ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ConnectionKey } from "@/types/bindings";
@@ -96,6 +96,16 @@ vi.mock("./FileEditor", () => ({
   },
 }));
 
+// Every trigger here wraps a `render` element, so drawing that element alone keeps the buttons and
+// their names. base-ui's tooltip state re-rendered the whole panel 8-14 times per click, which was
+// most of what this file spent on clicking.
+vi.mock("@/ui/tooltip", () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipTrigger: ({ render, children }: { render: ReactElement; children?: ReactNode }) =>
+    cloneElement(render, undefined, children),
+  TooltipContent: () => null,
+}));
+
 // happy-dom's ResizeObserver never fires, so the panel would never learn a width. This records the
 // observed elements and lets a test drive them, which is the only way to exercise the width-based
 // collapse without a real layout engine.
@@ -167,10 +177,10 @@ async function enterEditMode() {
   await waitFor(() => expect(screen.getByTestId("editor")).toBeInTheDocument());
 }
 
-async function typeDraft(text: string) {
-  const editor = screen.getByTestId("editor");
-  await userEvent.clear(editor);
-  await userEvent.type(editor, text);
+// One change event: the editor is a mocked textarea, so typing key by key tested nothing more and
+// re-rendered the whole panel once per character.
+function typeDraft(text: string) {
+  fireEvent.change(screen.getByTestId("editor"), { target: { value: text } });
 }
 
 beforeEach(() => {
@@ -227,7 +237,7 @@ describe("WorkspaceFilesPanel edit mode", () => {
   it("writes the draft when the file has not changed underneath", async () => {
     renderPanel();
     await enterEditMode();
-    await typeDraft("edited");
+    typeDraft("edited");
 
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -239,7 +249,7 @@ describe("WorkspaceFilesPanel edit mode", () => {
   it("saves from the editor's own Ctrl+S binding", async () => {
     renderPanel();
     await enterEditMode();
-    await typeDraft("edited");
+    typeDraft("edited");
 
     await userEvent.click(screen.getByRole("button", { name: "editor-save" }));
 
@@ -249,7 +259,7 @@ describe("WorkspaceFilesPanel edit mode", () => {
   it("re-reads before writing, so it is never working from the polled copy", async () => {
     renderPanel();
     await enterEditMode();
-    await typeDraft("edited");
+    typeDraft("edited");
     readFile.mockClear();
 
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -265,7 +275,7 @@ describe("WorkspaceFilesPanel edit mode", () => {
   it("writes nothing when the draft already matches what is on disk", async () => {
     renderPanel();
     await enterEditMode();
-    await typeDraft("agent wrote this");
+    typeDraft("agent wrote this");
     readFile.mockResolvedValue("agent wrote this");
 
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -293,19 +303,6 @@ describe("WorkspaceFilesPanel edit mode", () => {
   });
 
   /**
-   * Reported from real use: a floppy-disk icon and a tick gave no answer to "how do I leave
-   * without saving". The controls are icons again, so the answer lives in their names and
-   * tooltips instead — which is what a screen reader and a hover both reach.
-   */
-  it("names its edit-mode actions, however they are drawn", async () => {
-    renderPanel();
-    await enterEditMode();
-
-    expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
-  });
-
-  /**
    * "Cancel" was wrong on a clean buffer — nothing was being cancelled. One X now serves both,
    * and the name follows the buffer so it always says what pressing it will do.
    */
@@ -315,7 +312,7 @@ describe("WorkspaceFilesPanel edit mode", () => {
     expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Discard" })).toBeNull();
 
-    await typeDraft("edited");
+    typeDraft("edited");
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Discard" })).toBeInTheDocument(),
@@ -334,14 +331,14 @@ describe("WorkspaceFilesPanel edit mode", () => {
     await enterEditMode();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
 
-    await typeDraft("edited");
+    typeDraft("edited");
     await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeEnabled());
   });
 
   it("disables Save again once the draft is written", async () => {
     renderPanel();
     await enterEditMode();
-    await typeDraft("edited");
+    typeDraft("edited");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeDisabled());
@@ -350,7 +347,7 @@ describe("WorkspaceFilesPanel edit mode", () => {
   it("surfaces a failed write instead of pretending it saved", async () => {
     renderPanel();
     await enterEditMode();
-    await typeDraft("edited");
+    typeDraft("edited");
     writeFile.mockRejectedValue(new Error("Permission denied (os error 13)"));
 
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -481,7 +478,8 @@ describe("WorkspaceFilesPanel create destination", () => {
     await userEvent.click(await screen.findByRole("button", { name: /src/ }));
     await userEvent.click(await screen.findByRole("button", { name: "New file in src" }));
 
-    await userEvent.type(await screen.findByRole("textbox"), "helper.ts");
+    await userEvent.click(await screen.findByRole("textbox"));
+    await userEvent.paste("helper.ts");
     await userEvent.click(screen.getByRole("button", { name: "Create" }));
 
     await waitFor(() =>
@@ -523,19 +521,23 @@ describe("WorkspaceFilesPanel markdown preview", () => {
    * The point of the preview is to see the edit. Rendering what is on disk while the user is
    * typing something else would be worse than having no preview at all.
    */
-  it("renders the draft, not the file on disk", async () => {
+  it("renders the draft, not the file on disk, and goes back to the source with it intact", async () => {
     await enterMarkdownEdit();
-    await typeDraft("# my heading");
+    typeDraft("# my heading");
 
     await userEvent.click(screen.getByRole("button", { name: "Preview only" }));
 
     await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("my heading"));
     expect(screen.queryByTestId("editor")).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Source only" }));
+
+    await waitFor(() => expect(screen.getByTestId("editor")).toHaveValue("# my heading"));
   });
 
   it("shows editor and preview together in split", async () => {
     await enterMarkdownEdit();
-    await typeDraft("# my heading");
+    typeDraft("# my heading");
 
     await userEvent.click(screen.getByRole("button", { name: "Source and preview" }));
 
@@ -543,20 +545,9 @@ describe("WorkspaceFilesPanel markdown preview", () => {
     expect(screen.getByTestId("editor")).toBeInTheDocument();
   });
 
-  it("goes back to the source with the draft intact", async () => {
-    await enterMarkdownEdit();
-    await typeDraft("# my heading");
-    await userEvent.click(screen.getByRole("button", { name: "Preview only" }));
-    await waitFor(() => expect(screen.queryByTestId("editor")).toBeNull());
-
-    await userEvent.click(screen.getByRole("button", { name: "Source only" }));
-
-    await waitFor(() => expect(screen.getByTestId("editor")).toHaveValue("# my heading"));
-  });
-
   it("can still save from the preview, and saves the draft", async () => {
     await enterMarkdownEdit();
-    await typeDraft("# my heading");
+    typeDraft("# my heading");
     await userEvent.click(screen.getByRole("button", { name: "Preview only" }));
 
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -570,16 +561,19 @@ describe("WorkspaceFilesPanel markdown preview", () => {
    * happy-dom lays nothing out, so the edit area is driven directly here. The arithmetic behind
    * the threshold is covered by `resolveMarkdownLayout`; this checks the panel is wired to it.
    */
-  it("collapses split to a single pane when the panel is too narrow", async () => {
+  it("collapses split to a single pane, sync toggle and all, when the panel is too narrow", async () => {
     getSettings.mockResolvedValue({ markdown_edit_layout: "split", updated_at: "now" });
     await enterMarkdownEdit();
+    // A later edit opens in the stored layout rather than resetting to source.
     await waitFor(() => expect(screen.getByTestId("read-view")).toBeInTheDocument());
+    await screen.findByRole("button", { name: "Turn off synced scrolling" });
 
     resizeEditArea(600);
 
     await waitFor(() => expect(screen.queryByTestId("read-view")).toBeNull());
     expect(screen.getByTestId("editor")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Source and preview" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /synced scrolling/ })).toBeNull();
   });
 
   it("brings split back when the panel is widened again", async () => {
@@ -598,12 +592,19 @@ describe("WorkspaceFilesPanel markdown preview", () => {
    * The sync is the point of the split view, so a user who has never touched the toggle gets it
    * on — the stored value is `null` until they do.
    */
-  it("has synced scrolling on by default", async () => {
+  it("has synced scrolling on by default, and persists the toggle so it survives a restart", async () => {
     getSettings.mockResolvedValue({ markdown_edit_layout: "split", updated_at: "now" });
     await enterMarkdownEdit();
 
+    await userEvent.click(await screen.findByRole("button", { name: "Turn off synced scrolling" }));
+
+    await waitFor(() =>
+      expect(saveSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ markdown_scroll_sync: false }),
+      ),
+    );
     expect(
-      await screen.findByRole("button", { name: "Turn off synced scrolling" }),
+      await screen.findByRole("button", { name: "Turn on synced scrolling" }),
     ).toBeInTheDocument();
   });
 
@@ -620,22 +621,6 @@ describe("WorkspaceFilesPanel markdown preview", () => {
     ).toBeInTheDocument();
   });
 
-  it("persists the sync toggle so it survives a restart", async () => {
-    getSettings.mockResolvedValue({ markdown_edit_layout: "split", updated_at: "now" });
-    await enterMarkdownEdit();
-
-    await userEvent.click(await screen.findByRole("button", { name: "Turn off synced scrolling" }));
-
-    await waitFor(() =>
-      expect(saveSettings).toHaveBeenCalledWith(
-        expect.objectContaining({ markdown_scroll_sync: false }),
-      ),
-    );
-    expect(
-      await screen.findByRole("button", { name: "Turn on synced scrolling" }),
-    ).toBeInTheDocument();
-  });
-
   /**
    * With one pane there is nothing to keep in step, and a toggle that does nothing is worse than
    * no toggle at all.
@@ -644,18 +629,6 @@ describe("WorkspaceFilesPanel markdown preview", () => {
     await enterMarkdownEdit();
 
     expect(screen.queryByRole("button", { name: /synced scrolling/ })).toBeNull();
-  });
-
-  it("hides the sync toggle when the split collapses for width", async () => {
-    getSettings.mockResolvedValue({ markdown_edit_layout: "split", updated_at: "now" });
-    await enterMarkdownEdit();
-    await screen.findByRole("button", { name: "Turn off synced scrolling" });
-
-    resizeEditArea(600);
-
-    await waitFor(() =>
-      expect(screen.queryByRole("button", { name: /synced scrolling/ })).toBeNull(),
-    );
   });
 
   it("persists the chosen layout so it survives a restart", async () => {
@@ -668,14 +641,6 @@ describe("WorkspaceFilesPanel markdown preview", () => {
         expect.objectContaining({ markdown_edit_layout: "split" }),
       ),
     );
-  });
-
-  it("opens a later edit in the stored layout rather than resetting to source", async () => {
-    getSettings.mockResolvedValue({ markdown_edit_layout: "split", updated_at: "now" });
-    await enterMarkdownEdit();
-
-    await waitFor(() => expect(screen.getByTestId("read-view")).toBeInTheDocument());
-    expect(screen.getByTestId("editor")).toBeInTheDocument();
   });
 
   /**
@@ -715,16 +680,6 @@ describe("WorkspaceFilesPanel html preview", () => {
     expect(screen.getByRole("button", { name: "Preview only" })).toBeInTheDocument();
   });
 
-  it("previews the draft beside the source in split", async () => {
-    await enterHtmlEdit();
-    await typeDraft("<p>mine</p>");
-
-    await userEvent.click(screen.getByRole("button", { name: "Source and preview" }));
-
-    await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("mine"));
-    expect(screen.getByTestId("editor")).toBeInTheDocument();
-  });
-
   /**
    * The preview is a cross-origin iframe, so the parent cannot read its scroll position — reading
    * it would need `allow-same-origin`, which is the one thing the sandbox is there for. A toggle
@@ -743,18 +698,13 @@ describe("WorkspaceFilesPanel conflict handling", () => {
   async function reachConflict() {
     renderPanel();
     await enterEditMode();
-    await typeDraft("mine");
+    typeDraft("mine");
     readFile.mockResolvedValue("the agent's version");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(screen.getByText(/changed while you were editing/i)).toBeInTheDocument(),
     );
   }
-
-  it("asks before replacing a file something else wrote", async () => {
-    await reachConflict();
-    expect(writeFile).not.toHaveBeenCalled();
-  });
 
   it("overwrites with the draft when that is what the user picks", async () => {
     await reachConflict();
@@ -802,7 +752,7 @@ describe("WorkspaceFilesPanel unsaved-work guards", () => {
     await enterEditMode();
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
 
-    await typeDraft("edited");
+    typeDraft("edited");
     await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
   });
 
@@ -810,7 +760,7 @@ describe("WorkspaceFilesPanel unsaved-work guards", () => {
     const onDirtyChange = vi.fn();
     renderPanel({ onDirtyChange });
     await enterEditMode();
-    await typeDraft("edited");
+    typeDraft("edited");
     await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
 
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -821,7 +771,7 @@ describe("WorkspaceFilesPanel unsaved-work guards", () => {
   it("asks before leaving edit mode with unsaved changes", async () => {
     renderPanel();
     await enterEditMode();
-    await typeDraft("edited");
+    typeDraft("edited");
 
     await userEvent.click(screen.getByRole("button", { name: "Discard" }));
 

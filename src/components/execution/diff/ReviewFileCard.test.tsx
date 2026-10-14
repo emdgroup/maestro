@@ -133,7 +133,8 @@ describe("ReviewFileCard", () => {
   it("writes a file comment through onSubmit", async () => {
     renderCard();
     await userEvent.click(screen.getByRole("button", { name: "Add file comment" }));
-    await userEvent.type(screen.getByPlaceholderText("Add a comment..."), "needs a test");
+    await userEvent.click(screen.getByPlaceholderText("Add a comment..."));
+    await userEvent.paste("needs a test");
     await userEvent.click(screen.getByRole("button", { name: "Add" }));
     expect(onSubmit).toHaveBeenCalledWith("needs a test");
   });

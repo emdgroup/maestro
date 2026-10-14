@@ -42,6 +42,15 @@ vi.mock("./AgentStreamItem", () => ({
   },
 }));
 
+// The real rows are markdown, an action bar and icons, about a second of rendering per test, and
+// neither module holds a memo boundary under test.
+vi.mock("../activity/ActivityUserMessage", () => ({
+  ActivityUserMessage: () => <div />,
+}));
+vi.mock("../activity/AgentResponseSection", () => ({
+  AgentResponseSection: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+}));
+
 vi.mock("@/services/settings.service", () => ({
   useSettings: () => ({ data: undefined }),
 }));

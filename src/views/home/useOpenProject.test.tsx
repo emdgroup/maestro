@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor as rtlWaitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useOpenProject } from "./useOpenProject";
 import type { OpenProjectOptions } from "./useOpenProject";
+
+// Every wait here is on a mock call, which no DOM change wakes early, so the default 50ms interval
+// was always waited out in full.
+const waitFor = (callback: () => void) => rtlWaitFor(callback, { interval: 1 });
 
 const requestTakeover = vi.hoisted(() => vi.fn());
 const openProject = vi.hoisted(() => vi.fn());

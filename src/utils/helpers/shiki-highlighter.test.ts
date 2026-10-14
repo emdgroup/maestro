@@ -2,6 +2,9 @@ import { describe, it, expect, vi } from "vitest";
 import { DiffFile, highlighter as bundledDefault } from "@git-diff-view/core";
 import { getDiffHighlighter } from "./shiki-highlighter";
 
+// `src/test/setup.ts` stubs the highlighter for every other suite; this one is about the real one.
+vi.unmock("@/lib/shiki-highlighter");
+
 const HUNK =
   "--- a/a.ts\n+++ b/a.ts\n@@ -1,2 +1,2 @@\n const a = 1;\n-const b = 2;\n+const b = 3;\n";
 

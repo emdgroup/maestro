@@ -1,7 +1,33 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
-import { afterEach } from "vitest";
+import { afterEach, vi } from "vitest";
 import { installIntersectionObserver, resetIntersectionObserver } from "./intersection-observer";
+
+// user-event's default `delay: 0` still awaits a `setTimeout` after every pointer step and every
+// key, and on Windows that is a whole ~15ms timer tick: typing a sentence cost a third of a second
+// in waits alone. `delay: null` skips the wait. A suite that wants a real delay can still pass one.
+vi.mock("@testing-library/user-event", async (importOriginal) => {
+  const { userEvent } = await importOriginal<typeof import("@testing-library/user-event")>();
+  const setup: typeof userEvent.setup = (options) => userEvent.setup({ delay: null, ...options });
+  // The direct API (`userEvent.click(el)`) sets up a fresh instance per call, as this does.
+  const direct = Object.fromEntries(
+    Object.keys(userEvent)
+      .filter((name) => name !== "setup")
+      .map((name) => [
+        name,
+        (...args: unknown[]) =>
+          (setup() as unknown as Record<string, (...a: unknown[]) => unknown>)[name](...args),
+      ]),
+  );
+  const fast = { ...direct, setup } as typeof userEvent;
+  return { default: fast, userEvent: fast };
+});
+
+// The real highlighter loads 38 grammars in the background the first time anything renders code
+// or a diff. In a full run that took one to two seconds, and whichever test was still going when it
+// landed absorbed them, a different one each time. Nothing but its own suite asserts on
+// highlighting, and that suite unmocks it.
+vi.mock("@/lib/shiki-highlighter", () => ({ getDiffHighlighter: () => new Promise(() => {}) }));
 
 // JSDOM doesn't implement Web Animations API; base-ui ScrollArea calls this in async timers
 if (!Element.prototype.getAnimations) {

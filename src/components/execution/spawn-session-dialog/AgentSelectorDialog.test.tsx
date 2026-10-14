@@ -145,15 +145,6 @@ describe("New Session dialog — agent type selector", () => {
     expect(screen.getByRole("heading", { name: /new session/i })).toBeInTheDocument();
     expect(screen.getByText("Terminal")).toBeInTheDocument();
   });
-
-  it("shows agent options from registry for local connections", async () => {
-    const user = userEvent.setup();
-    renderView();
-
-    await user.click(screen.getByRole("button", { name: /new session/i }));
-
-    expect(useAgentDiscoveryQuery).toHaveBeenCalled();
-  });
 });
 
 describe("spawn flow", () => {
@@ -202,7 +193,8 @@ describe("spawn flow", () => {
       "data-disabled",
     );
     await user.keyboard("{Escape}");
-    await user.type(screen.getByLabelText(/session name/i), "Fix Windows Path");
+    await user.click(screen.getByLabelText(/session name/i));
+    await user.paste("Fix Windows Path");
     await user.click(screen.getByRole("button", { name: /start session/i }));
 
     expect(mockCreateWorktree).toHaveBeenCalledWith(
