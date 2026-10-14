@@ -43,9 +43,12 @@ vi.mock("./AgentStreamItem", () => ({
 }));
 
 // The real rows are markdown, an action bar and icons, about a second of rendering per test, and
-// neither module holds a memo boundary under test.
+// neither module holds a memo boundary under test. User messages are counted like the rows above.
 vi.mock("../activity/ActivityUserMessage", () => ({
-  ActivityUserMessage: () => <div />,
+  ActivityUserMessage: ({ message }: { message: { id: string } }) => {
+    renderedKeys.push(message.id);
+    return <div />;
+  },
 }));
 vi.mock("../activity/AgentResponseSection", () => ({
   AgentResponseSection: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -154,16 +157,17 @@ describe("AgentStreamContent re-render cost", () => {
       <AgentStreamContent {...streamProps} agentSections={sectionsOf(before)} />,
     );
 
-    // Three rows per turn: the thinking block, the two-call tool group, and the message. The
-    // user message opens a standalone section rendered by `ActivityUserMessage` instead.
-    expect(renderedKeys).toHaveLength(TURNS * 3);
-    expect(renderedKeys.slice(0, 3)).toEqual(["t-0", "tg-tc-0a", "m-0"]);
+    // Four rows per turn: the user message, which opens a standalone section, then the thinking
+    // block, the two-call tool group, and the message.
+    expect(renderedKeys).toHaveLength(TURNS * 4);
+    expect(renderedKeys.slice(0, 4)).toEqual(["u-0", "t-0", "tg-tc-0a", "m-0"]);
 
     renderedKeys.length = 0;
     rerender(<AgentStreamContent {...streamProps} agentSections={sectionsOf(after)} />);
 
-    // The number this test exists to move: it was TURNS * 3 — every row in the session, for a
-    // chunk that changed one of them. O(1) now, and independent of TURNS.
+    // The number this test exists to move: it was TURNS * 4 — every row in the session, for a
+    // chunk that changed one of them. O(1) now, and independent of TURNS. User messages were the
+    // last to go: they sat outside every memo boundary and re-rendered on each chunk.
     expect(renderedKeys).toEqual([`m-${LAST}`]);
   });
 
