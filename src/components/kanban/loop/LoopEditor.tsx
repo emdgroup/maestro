@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { useAgentProfilesQuery } from "@/services/project.service";
 import { useMcpServersQuery } from "@/services/mcp.service";
 import { useSkillsQuery } from "@/services/skill.service";
-import { sealablePaths } from "@/services/loop.service";
+import { sealablePaths, useSealablePathsQuery } from "@/services/loop.service";
 import { useSelectedProject } from "@/store/projectStore";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { blankCheck, type CheckDraft, type LoopDraft } from "./loop-draft";
@@ -34,17 +34,25 @@ const SECOND_FIELD: Record<Exclude<LoopCheckKind, "Command">, string> = {
 function PathChip({
   path,
   hidden,
+  missing,
   onOpen,
   onRemove,
 }: {
   path: string;
   hidden?: boolean;
+  /** Why the path is a problem: it is not committed where the checks will look. */
+  missing?: string;
   onOpen?: () => void;
   onRemove?: () => void;
 }) {
   const Icon = hidden ? FileText : Lock;
-  return (
-    <span className="flex items-center gap-1 rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[10px]">
+  const chip = (
+    <span
+      className={cn(
+        "flex items-center gap-1 rounded border bg-card px-1.5 py-0.5 font-mono text-[10px]",
+        missing ? "border-amber-500/60 text-amber-600" : "border-border",
+      )}
+    >
       <Icon className="size-2.5 text-muted-foreground" />
       {onOpen ? (
         <button type="button" className="hover:underline" onClick={onOpen}>
@@ -64,6 +72,13 @@ function PathChip({
         </button>
       )}
     </span>
+  );
+  if (!missing) return chip;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="inline-flex" />}>{chip}</TooltipTrigger>
+      <TooltipContent>{missing}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -113,6 +128,12 @@ export function LoopEditor({
   } | null>(null);
 
   const set = (patch: Partial<LoopDraft>) => onChange({ ...value, ...patch });
+  // A sealed path has to be committed where the checks run, or they will not find it.
+  const { data: committed } = useSealablePathsQuery(projectId, baseBranch, value.sealedPaths);
+  const missing = (path: string) =>
+    committed && !committed.includes(path)
+      ? `Not committed on ${baseBranch}, where the checks will look for it. Commit it there, or write it as a hidden file.`
+      : undefined;
   const setCheck = (key: string, patch: Partial<CheckDraft>) =>
     set({ checks: value.checks.map((c) => (c.key === key ? { ...c, ...patch } : c)) });
 
@@ -250,7 +271,7 @@ export function LoopEditor({
             Sealed from the agent
           </span>
           <span className="text-right text-[11px] text-muted-foreground/70">
-            Not in its worktree. Restored only while the checks run, with no session live.
+            Left out of the agent's sandbox. The checks run where they are.
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-1">
@@ -258,6 +279,7 @@ export function LoopEditor({
             <PathChip
               key={path}
               path={path}
+              missing={missing(path)}
               onRemove={
                 sealedLocked || readOnly
                   ? undefined
@@ -299,8 +321,8 @@ export function LoopEditor({
         </div>
         <p className="text-[11px] text-muted-foreground">
           {sealedLocked
-            ? "Fixed once the loop has started: its worktree is sealed to them. Accepting a proposal adds one."
-            : "Prefilled from the files your commands name. Add the tests the agent must not see or change."}
+            ? "Fixed once the loop has started: its sandbox is sealed to them. Accepting a proposal adds one."
+            : `Prefilled from the files your commands name. Add the tests the agent must not see or change. Each must be committed on ${baseBranch || "the branch the loop starts from"}.`}
         </p>
         <div className="flex flex-wrap items-center gap-1 pt-1">
           <span className="text-[11px] text-muted-foreground">Hidden files</span>

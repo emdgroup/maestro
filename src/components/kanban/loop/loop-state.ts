@@ -22,6 +22,7 @@ const HALTS: Record<LoopHalt, { label: string; urgent: boolean }> = {
   Paused: { label: "Paused", urgent: false },
   Stopped: { label: "Stopped by you", urgent: false },
   Blocked: { label: "Blocked, needs your answer", urgent: true },
+  Conflict: { label: "Merge conflict, needs you", urgent: true },
 };
 
 /** `15:00`, or `Tue 15:00` once it is not today. */
@@ -91,6 +92,8 @@ export function loopLine(task: Task): StateLine | null {
         : undefined;
   switch (task.phase) {
     case "Spawning":
+      if (task.status === "Planning")
+        return { label: "Preparing", detail: "starting", tone: "brand" };
       return {
         label: `Iteration ${(summary?.counted ?? 0) + 1}/${max}`,
         detail: "starting",
@@ -108,6 +111,11 @@ export function loopLine(task: Task): StateLine | null {
             detail: "waiting for a slot",
             tone: "muted",
           };
+    case "Refining":
+      if (task.phase_status === "Failed") return { label: "Preparing failed", tone: "destructive" };
+      return task.ball === "User" && task.phase_status === "Waiting"
+        ? { label: "Loop prepared", detail: "read its summary", tone: "warning" }
+        : { label: "Preparing", tone: "brand" };
     case "Checking":
       return {
         label: "Checking",

@@ -45,6 +45,8 @@ interface WorkspaceModeSelectProps {
    * second workspace, so the option stays on screen and says so.
    */
   hasReusableWorkspace?: boolean;
+  /** Only a new worktree may be picked; the other modes stay on screen, disabled. */
+  newWorktreeOnly?: boolean;
   /** Why an unavailable option is unavailable, shown in place of its description. */
   unavailableReason?: Partial<Record<WorkspaceMode, string>>;
   id?: string;
@@ -56,10 +58,12 @@ export function WorkspaceModeSelect({
   allowNewWorktree = true,
   allowReuse = true,
   hasReusableWorkspace = true,
+  newWorktreeOnly = false,
   unavailableReason,
   id,
 }: WorkspaceModeSelectProps) {
   const isAllowed = (mode: WorkspaceMode) =>
+    (!newWorktreeOnly || mode === "NewWorktree") &&
     (mode !== "NewWorktree" || allowNewWorktree) &&
     (mode !== "ReuseWorkspace" || (allowReuse && hasReusableWorkspace));
 

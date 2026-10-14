@@ -168,11 +168,20 @@ export function useOpenAgentGateMutation() {
   });
 }
 
-/** Which of `candidates`, paths a check command names, exist on the base branch and can be sealed. */
+/** Which of `candidates`, paths a check command names, are committed on `branch` and can be sealed. */
 export function sealablePaths(
   projectId: number,
-  baseBranch: string,
+  branch: string,
   candidates: string[],
 ): Promise<string[]> {
-  return api.loopSealablePaths(projectId, baseBranch, candidates);
+  return api.loopSealablePaths(projectId, branch, candidates);
+}
+
+/** Which of a loop's sealed paths are committed on `branch`, where its checks will find them. */
+export function useSealablePathsQuery(projectId: number, branch: string, paths: string[]) {
+  return useQuery({
+    queryKey: [...taskQueryKeys.base, "loopSealable", projectId, branch, paths] as const,
+    queryFn: () => sealablePaths(projectId, branch, paths),
+    enabled: paths.length > 0 && branch !== "",
+  });
 }

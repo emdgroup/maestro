@@ -8,6 +8,8 @@ import {
 } from "@/services/loop.service";
 import { useSetTaskProfileOverridesMutation, useUpdateTask } from "@/services/task.service";
 import { parseProfileOverrides } from "@/lib/profile-overrides";
+import { useWorktreesQuery } from "@/services/worktree.service";
+import { useSelectedProject } from "@/store/projectStore";
 import { LoopEditor } from "./LoopEditor";
 import { emptyLoopDraft, loopDraftFrom, loopFromDraft, type LoopDraft } from "./loop-draft";
 
@@ -37,6 +39,11 @@ export const LoopDetailsSection = forwardRef<
   const setOverrides = useSetTaskProfileOverridesMutation();
   const overrides = parseProfileOverrides(task.profile_overrides);
   const storedJudge = overrides.Judge ?? null;
+  // Once the loop has its worktree, its branch is where the sealed paths have to be committed.
+  const project = useSelectedProject();
+  const { data: worktrees } = useWorktreesQuery(task.project_id, project?.path);
+  const branch =
+    worktrees?.find((worktree) => worktree.task_id === task.id)?.branch_name ?? task.base_branch;
 
   const [draft, setDraft] = useState<LoopDraft>(emptyLoopDraft);
   const dirty = useRef(false);
@@ -79,7 +86,7 @@ export const LoopDetailsSection = forwardRef<
           setDraft(next);
         }}
         projectId={task.project_id}
-        baseBranch={task.base_branch}
+        baseBranch={branch}
         sealedLocked={loopStarted(task)}
         readOnly={task.status === "Done" || task.status === "Cancelled"}
       />

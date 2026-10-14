@@ -255,7 +255,7 @@ export function FooterCTAs({
             className={cn(base, "h-auto")}
           >
             <MessageSquare className="w-2.5 h-2.5" />
-            Read proposal
+            {task.run_mode === "Loop" ? "Read summary" : "Read proposal"}
           </Button>
           {hasActiveSession && (
             <Button
@@ -346,13 +346,15 @@ export function FooterCTAs({
               className={cn(base, "h-auto")}
             >
               <Sparkles className="w-2.5 h-2.5" />
-              Refine
+              {task.run_mode === "Loop" ? "Prepare loop" : "Refine"}
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            {canRefine
-              ? "Ask an agent to sharpen this task's description"
-              : "No agent can refine this task. Add a Refinement profile in Settings."}
+            {!canRefine
+              ? "No agent can do this. Add a Refinement profile in Settings."
+              : task.run_mode === "Loop"
+                ? "Talk the loop through with an agent: it writes the tests in the loop's worktree and sets the checks"
+                : "Ask an agent to sharpen this task's description"}
           </TooltipContent>
         </Tooltip>
       </div>

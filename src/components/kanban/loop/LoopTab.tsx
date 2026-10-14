@@ -497,6 +497,14 @@ export function LoopTab({
         iteration gets your answer with its question.
       </Banner>
     );
+  } else if (halt === "Conflict") {
+    banner = (
+      <Banner tone="red" icon={OctagonX} title="Stopped: an iteration could not be merged back">
+        The loop's worktree has changes in the way of the last iteration's commit, which is kept.
+        Commit or revert them there, then resume: the next iteration merges it first. Git's reason
+        is in the Outcome thread.
+      </Banner>
+    );
   } else if (halt === "Paused" || halt === "Stopped") {
     banner = (
       <Banner

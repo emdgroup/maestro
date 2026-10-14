@@ -9,7 +9,6 @@ import {
   LoopDetailsSection,
   type LoopDetailsHandle,
 } from "@/components/kanban/loop/LoopDetailsSection";
-import { CreateTaskModal } from "@/components/kanban/create-task-modal/CreateTaskModal";
 import { useNavigate } from "@/store/navigationStore";
 import type {
   BranchMode,
@@ -144,7 +143,6 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
   const loopDetails = useRef<LoopDetailsHandle>(null);
   const [loopDirty, setLoopDirty] = useState(false);
-  const [convertOpen, setConvertOpen] = useState(false);
   const navigate = useNavigate();
 
   const { setActiveTaskId } = useNavigationActions();
@@ -424,23 +422,6 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                   keepMounted
                   className={cn("flex flex-col min-h-0 gap-4", isLoop && "overflow-y-auto pr-1")}
                 >
-                  {/* A Planning pipeline task can still become a loop: nothing has run yet. */}
-                  {!isLoop && task.status === "Planning" && task.phase == null && (
-                    <div className="flex shrink-0 items-start gap-3 rounded-md border border-border bg-accent/8 p-3 text-xs">
-                      <Repeat className="mt-0.5 size-4 shrink-0 text-accent" />
-                      <div className="flex-1 space-y-1">
-                        <div className="font-medium">Run as a loop instead</div>
-                        <div className="text-muted-foreground">
-                          The agent iterates in fresh sessions until checks you define, and it
-                          cannot see, pass.
-                        </div>
-                      </div>
-                      <Button size="sm" variant="outline" onClick={() => setConvertOpen(true)}>
-                        <Repeat className="size-3" />
-                        Make it a loop
-                      </Button>
-                    </div>
-                  )}
                   <div className="shrink-0">
                     <EditableField
                       value={draft.title}
@@ -706,14 +687,6 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
           </>
         )}
       </DialogContent>
-      {task && !isLoop && projectId !== null && (
-        <CreateTaskModal
-          isOpen={convertOpen}
-          onClose={() => setConvertOpen(false)}
-          projectId={projectId}
-          convert={task}
-        />
-      )}
     </Dialog>
   );
 };

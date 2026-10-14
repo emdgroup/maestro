@@ -101,6 +101,20 @@ describe("loopLine", () => {
     ).toMatchObject({ label: "Needs your check", detail: "digest ready" });
   });
 
+  it("says a loop is being prepared, and when its summary waits on the user", () => {
+    const preparing = { status: "Planning" as const, phase: "Refining" as const };
+    expect(loopLine(loop({ status: "Planning", phase: "Spawning" }))).toMatchObject({
+      label: "Preparing",
+    });
+    expect(loopLine(loop({ ...preparing, phase_status: "Running", ball: "Agent" }))).toMatchObject({
+      label: "Preparing",
+    });
+    expect(loopLine(loop({ ...preparing, phase_status: "Waiting", ball: "User" }))).toMatchObject({
+      label: "Loop prepared",
+      detail: "read its summary",
+    });
+  });
+
   it("leaves a pipeline task to the board's own line", () => {
     expect(loopLine(loop({ run_mode: "Pipeline" }))).toBeNull();
   });

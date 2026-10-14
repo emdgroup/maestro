@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { LoopEditor } from "@/components/kanban/loop/LoopEditor";
 import { emptyLoopDraft, loopFromDraft, type LoopDraft } from "@/components/kanban/loop/loop-draft";
 import { useSetLoopChecksMutation, useSetLoopHiddenFilesMutation } from "@/services/loop.service";
-import { useSetTaskProfileOverridesMutation, useUpdateTask } from "@/services/task.service";
+import { useSetTaskProfileOverridesMutation } from "@/services/task.service";
 import { parseProfileOverrides } from "@/lib/profile-overrides";
 import { toast } from "sonner";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
@@ -68,8 +68,6 @@ interface CreateTaskModalProps {
   initial?: { title: string; description: string };
   /** Called once the task exists, for callers that are not looking at the board. */
   onCreated?: (task: Task) => void;
-  /** A Planning pipeline task to make a loop of: the dialog opens in Loop mode and saves to it. */
-  convert?: Task;
 }
 
 export function CreateTaskModal({
@@ -78,7 +76,6 @@ export function CreateTaskModal({
   projectId,
   initial,
   onCreated,
-  convert,
 }: CreateTaskModalProps) {
   const isGitRepo = useIsGitRepo();
 
@@ -97,15 +94,14 @@ export function CreateTaskModal({
   const { data: worktrees } = useWorktreesQuery(projectId, project?.path);
 
   const { mutate: createTask, isPending: isCreating } = useCreateTaskMutation();
-  const updateTask = useUpdateTask();
   const setLoopChecks = useSetLoopChecksMutation();
   const setHiddenFiles = useSetLoopHiddenFilesMutation();
   const setOverrides = useSetTaskProfileOverridesMutation();
   const [savingLoop, setSavingLoop] = useState(false);
-  const isPending = isCreating || updateTask.isPending || savingLoop;
+  const isPending = isCreating || savingLoop;
   const [runMode, setRunMode] = useState<RunMode>("Pipeline");
   const [loopDraft, setLoopDraft] = useState<LoopDraft>(emptyLoopDraft);
-  /** A loop is created in two screens: the task, then its loop. A conversion opens on the loop. */
+  /** A loop is created in two screens: the task, then its loop. */
   const [step, setStep] = useState<"task" | "loop">("task");
   const addAttachment = useAddTaskAttachmentMutation();
   // Mirrored from an effect rather than assigned during render — read only by the
@@ -176,11 +172,11 @@ export function CreateTaskModal({
   const [openState, setOpenState] = useState(isOpen);
   if (openState !== isOpen) {
     setOpenState(isOpen);
-    setTitle(isOpen ? (convert?.title ?? initial?.title ?? "") : "");
-    setDescription(isOpen ? (convert?.description ?? initial?.description ?? "") : "");
-    setRunMode(isOpen && convert ? "Loop" : "Pipeline");
+    setTitle(isOpen ? (initial?.title ?? "") : "");
+    setDescription(isOpen ? (initial?.description ?? "") : "");
+    setRunMode("Pipeline");
     setLoopDraft(emptyLoopDraft());
-    setStep(isOpen && convert ? "loop" : "task");
+    setStep("task");
     if (!isOpen) {
       setError(null);
       setSelectedIssue(null);
@@ -238,8 +234,13 @@ export function CreateTaskModal({
       setError("Title must be at least 3 characters");
       return;
     }
-    // A non-git project offers no workspace choice, so it can only be the project directory.
-    const mode: WorkspaceMode = isGitRepo ? data.workspaceMode : "RepositoryDirectory";
+    // A non-git project offers no workspace choice, so it can only be the project directory. A
+    // loop always gets a worktree of its own.
+    const mode: WorkspaceMode = !isGitRepo
+      ? "RepositoryDirectory"
+      : runMode === "Loop"
+        ? "NewWorktree"
+        : data.workspaceMode;
     // The field shows this inline too; repeated here because nothing else stops the submit.
     if (mode === "NewWorktree" && data.branchMode === "Create") {
       const invalid = validateBranchSuffix(data.branchSuffix.trim());
@@ -260,10 +261,6 @@ export function CreateTaskModal({
         return;
       }
       loop = read;
-    }
-    if (convert && loop) {
-      void saveLoop(convert, loop, { title: currentTitle, description: description.trim() });
-      return;
     }
     const filesToAttach = [...pendingFiles];
     const reused =
@@ -300,7 +297,7 @@ export function CreateTaskModal({
       },
       {
         onSuccess: (newTask: Task) => {
-          if (loop) void saveLoop(newTask, loop, null);
+          if (loop) void saveLoop(newTask, loop);
           for (const f of filesToAttach) {
             addAttachmentRef.current.mutate({
               projectId: newTask.project_id,
@@ -329,29 +326,11 @@ export function CreateTaskModal({
     );
   };
 
-  /**
-   * A loop's checks, hidden files and judge, written once the task is a loop. A conversion first
-   * makes the task one, with the title and description as edited here.
-   */
-  async function saveLoop(
-    task: Task,
-    loop: { config: LoopConfig; checks: LoopCheckEntry[] },
-    edits: { title: string; description: string } | null,
-  ) {
+  /** A new loop's checks, hidden files and judge, written once the task exists. */
+  async function saveLoop(task: Task, loop: { config: LoopConfig; checks: LoopCheckEntry[] }) {
     const key = { projectId: task.project_id, taskId: task.id };
     setSavingLoop(true);
     try {
-      if (edits) {
-        await updateTask.mutateAsync({
-          ...key,
-          updates: {
-            title: edits.title,
-            description: edits.description || null,
-            run_mode: "Loop",
-            loop_config: loop.config,
-          },
-        });
-      }
       await setLoopChecks.mutateAsync({ ...key, checks: loop.checks });
       if (loopDraft.hiddenFiles.length > 0) {
         await setHiddenFiles.mutateAsync({ ...key, files: loopDraft.hiddenFiles });
@@ -365,7 +344,6 @@ export function CreateTaskModal({
           },
         });
       }
-      if (edits) onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -394,7 +372,7 @@ export function CreateTaskModal({
             className="pointer-events-none absolute inset-x-6 bottom-0"
           />
           <DialogTitle className="text-xs font-semibold tracking-widest uppercase text-foreground">
-            {convert ? "MAKE IT A LOOP" : "CREATE TASK"}
+            CREATE TASK
           </DialogTitle>
           {hasProvider && issueConfig && (
             <IssueSearchCombobox
@@ -489,6 +467,53 @@ export function CreateTaskModal({
                 </div>
               )}
 
+              {/* How it runs, first: it decides which workspaces there are to pick. */}
+              <div className="shrink-0 space-y-1.5">
+                <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
+                  How it runs
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      [
+                        "Pipeline",
+                        Workflow,
+                        "Plan, implement, self review, your approval. For work you will judge by reading it.",
+                      ],
+                      [
+                        "Loop",
+                        Repeat,
+                        isGitRepo
+                          ? "Fresh sessions until sealed checks pass. For work a command can verify."
+                          : "Needs a git repository: a loop runs in a worktree of its own.",
+                      ],
+                    ] as const
+                  ).map(([mode, Icon, blurb]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      aria-pressed={runMode === mode}
+                      disabled={mode === "Loop" && !isGitRepo}
+                      onClick={() => {
+                        setRunMode(mode);
+                        if (mode === "Loop") setValue("workspaceMode", "NewWorktree");
+                      }}
+                      className={cn(
+                        "flex items-start gap-2 rounded-md border p-2.5 text-left text-xs disabled:opacity-50",
+                        runMode === mode ? "border-accent bg-accent/10" : "border-border",
+                      )}
+                    >
+                      <Icon className="mt-0.5 size-4 shrink-0 text-accent" />
+                      <span>
+                        <span className="font-medium">{mode}</span>
+                        <br />
+                        <span className="text-[11px] text-muted-foreground">{blurb}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Workspace: where the agent will work, and whatever that choice needs */}
               {isGitRepo && (
                 <div className="shrink-0">
@@ -527,52 +552,20 @@ export function CreateTaskModal({
                           setValue("workspaceWorktreeId", wt?.id ?? null)
                         }
                         claimsOwnership
+                        newWorktreeOnly={
+                          runMode === "Loop"
+                            ? "A loop always gets a worktree of its own, so its checks can be sealed from the agent"
+                            : null
+                        }
                       />
                     )}
                   />
-                </div>
-              )}
-
-              {/* How it runs. A conversion is a loop by definition. */}
-              {!convert && (
-                <div className="shrink-0 space-y-1.5">
-                  <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
-                    How it runs
-                  </span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(
-                      [
-                        [
-                          "Pipeline",
-                          Workflow,
-                          "Plan, implement, self review, your approval. For work you will judge by reading it.",
-                        ],
-                        [
-                          "Loop",
-                          Repeat,
-                          "Fresh sessions until sealed checks pass. For work a command can verify.",
-                        ],
-                      ] as const
-                    ).map(([mode, Icon, blurb]) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        aria-pressed={runMode === mode}
-                        onClick={() => setRunMode(mode)}
-                        className={cn(
-                          "flex items-start gap-2 rounded-md border p-2.5 text-left text-xs",
-                          runMode === mode ? "border-accent bg-accent/10" : "border-border",
-                        )}
-                      >
-                        <Icon className="mt-0.5 size-4 shrink-0 text-accent" />
-                        <span>
-                          <span className="font-medium">{mode}</span>
-                          <br />
-                          <span className="text-[11px] text-muted-foreground">{blurb}</span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
+                  {runMode === "Loop" && (
+                    <p className="mt-1.5 text-[11px] text-muted-foreground">
+                      The checks run against this branch's files. Prepare the tests on a branch
+                      first and start from it, or use Prepare loop once the task exists.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -605,7 +598,7 @@ export function CreateTaskModal({
                     value={loopDraft}
                     onChange={setLoopDraft}
                     projectId={projectId}
-                    baseBranch={convert?.base_branch ?? baseBranch}
+                    baseBranch={baseBranch}
                   />
                 </div>
               </>
@@ -635,7 +628,7 @@ export function CreateTaskModal({
                 </label>
                 <div className="flex-1" />
                 <Button type="submit" size="sm" disabled={isPending}>
-                  {isPending ? "Saving..." : convert ? "Make it a loop" : "Create"}
+                  {isPending ? "Saving..." : "Create"}
                 </Button>
               </>
             )}

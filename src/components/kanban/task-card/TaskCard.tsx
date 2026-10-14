@@ -600,8 +600,8 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
             // passed that gate.
             onExecute: () =>
               void handleExecute(task, { respectCapacity: true, canPickAgent: true }),
-            // Refinement runs in the project root and writes nothing, so it does not compete for a
-            // slot the way an implementation does and is not deferred against the limit.
+            // A refinement, or a loop's preparation, is a conversation the user is having, so it
+            // does not compete for a slot the way an implementation does and is not deferred.
             onRefine: () => void handleExecute(task, { role: "Refiner", canPickAgent: true }),
             onOpenProposal: () => setProposalOpen(true),
             onOpenPlan: () => setPlanOpen(true),

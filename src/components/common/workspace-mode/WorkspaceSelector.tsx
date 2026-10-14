@@ -41,6 +41,8 @@ interface WorkspaceSelectorProps {
   ownerTaskId?: number | null;
   /** A task that can no longer be edited still has to show where it runs. */
   readOnly?: boolean;
+  /** Why only a new worktree may be picked, as for a loop, or null when any mode may. */
+  newWorktreeOnly?: string | null;
 }
 
 export function WorkspaceSelector({
@@ -62,6 +64,7 @@ export function WorkspaceSelector({
   claimsOwnership = false,
   ownerTaskId = null,
   readOnly = false,
+  newWorktreeOnly = null,
 }: WorkspaceSelectorProps) {
   // One ticker for the whole list rather than one per card, so the relative ages stay live without
   // a timer per row.
@@ -137,9 +140,11 @@ export function WorkspaceSelector({
         onChange={onModeChange}
         allowNewWorktree={allowNewWorktree}
         hasReusableWorkspace={reusable.length > 0}
+        newWorktreeOnly={newWorktreeOnly != null}
         unavailableReason={{
           NewWorktree: "A terminal attaches to a checkout that already exists",
-          ReuseWorkspace: "This project has no other worktree yet",
+          RepositoryDirectory: newWorktreeOnly ?? undefined,
+          ReuseWorkspace: newWorktreeOnly ?? "This project has no other worktree yet",
         }}
       />
 
@@ -167,6 +172,7 @@ export function WorkspaceSelector({
             onModeChange("ReuseWorkspace");
           }}
           useExistingBlockedReason={(conflict) => {
+            if (newWorktreeOnly) return newWorktreeOnly;
             if (conflict.kind === "repositoryDirectory") return null;
             if (conflict.worktree.id == null) {
               return "That worktree is not one Maestro tracks, so it cannot be reused here.";
