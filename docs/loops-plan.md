@@ -208,7 +208,7 @@ Gaps the survey found, which the phases below close:
 | 3     | Usage-limit gate, for every task                           | Done        |
 | 4     | The board: create, card, loop view                         | Done        |
 | 5     | MCP tools, drafts from automations, the waiting cap        | Done        |
-| 5b    | Context and sandbox worktrees, Prepare loop                | Not started |
+| 5b    | Context and sandbox worktrees, Prepare loop                | Done        |
 | 6     | Docs                                                       | Not started |
 
 Phases 0 to 2 are the engine and can be exercised through MCP and tests before any UI exists. Phase 3
@@ -799,6 +799,28 @@ they differ, and "Sealed checks" is rewritten to match once it is built.
 - The context it prepared is the loop's: iteration 1 starts from it, with its tests sealed out of
   the sandbox.
 - The user ends it, reviews the loop editor, and queues the loop.
+
+**As built** (`worktree.rs`, `loop_engine.rs`, `profiles.rs`, `task_prompt.rs`, the create dialog and
+the card):
+
+- The sandbox is `.maestro/worktrees/loop-<id>`, a detached worktree with no row, so the app's
+  sweeps never take it and the Workspaces view filters it out (`is_loop_sandbox`).
+  `prepare_task_workspace` brings it to the context's HEAD for the worker and the judge: work it
+  holds that the context lacks is merged back first, then it is reset and sealed.
+- `merge_back` tries a fast-forward, then a merge, and aborts a merge that fails. The iteration that
+  hits one is recorded `Failed` with git's reason, and the loop halts as `Conflict`.
+- The checks run in the context with the hidden files written under `.maestro/loop/sealed/` for the
+  run. `loop_sealed_sha` and its column are gone; Re-run checks reads the context as it is.
+- A sealed path, from the app, MCP or an accepted proposal, has to be committed in the context, or
+  on the base branch before the context exists. The editor flags one that is not.
+- The scheduler's one-minute tick removes every sandbox whose loop is not In Progress, which covers
+  a loop that passed, was moved, or was deleted.
+- Prepare loop is the Refiner role on a loop: the context instead of the repository directory, a
+  writable permission mode (a read-only one from the profile is dropped), and `PREPARE_PROTOCOL`
+  with the loop as it stands. Its summary is the refinement's proposal, closed with Done preparing,
+  which leaves the description alone.
+- `TaskUpdate.run_mode` is gone from the protocol and the app; MCP `update_task` refuses a different
+  run mode.
 
 ## Phase 6: docs
 
