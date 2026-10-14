@@ -176,8 +176,6 @@ pub struct UpdateTaskRequest {
     /// `Checkout` must not leave the name of a branch nobody is going to create.
     pub workspace_branch_mode: Option<BranchMode>,
     pub workspace_branch: Option<String>,
-    /// Refused once the task has started.
-    pub run_mode: Option<super::models::RunMode>,
     /// A started loop's sealed paths cannot change; its budgets can.
     pub loop_config: Option<super::models::LoopConfig>,
 }
@@ -214,7 +212,6 @@ pub async fn update_task(
         workspace_worktree_id: updates.workspace_worktree_id,
         workspace_branch_mode: updates.workspace_branch_mode.map(Into::into),
         workspace_branch: updates.workspace_branch,
-        run_mode: updates.run_mode.map(Into::into),
         loop_config: updates.loop_config.map(Into::into),
         ..TaskUpdate::default()
     };

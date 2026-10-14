@@ -139,6 +139,7 @@ pub enum LoopHalt {
     Paused,
     Stopped,
     Blocked,
+    Conflict,
 }
 
 /// The automation run whose agent created a task.

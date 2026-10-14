@@ -1393,12 +1393,9 @@ pub struct Task {
     pub claimed_from: Option<TaskPhase>,
     #[serde(default)]
     pub run_mode: RunMode,
-    /// Set on every loop task. A task switched back to the pipeline keeps the one it had.
+    /// Set on every loop task.
     #[serde(default)]
     pub loop_config: Option<LoopConfig>,
-    /// The base commit a loop's sealed snapshot was taken from.
-    #[serde(default)]
-    pub loop_sealed_sha: Option<String>,
     /// What the board shows of a loop, read with it. Set on every loop task the daemon lists.
     /// Boxed, like `gate`: a `Task` rides in many of the daemon's futures, on a stack at its limit.
     #[serde(default)]
@@ -1460,6 +1457,8 @@ pub enum LoopHalt {
     Stopped,
     /// The worker called `loop_blocked`.
     Blocked,
+    /// An iteration's commit could not be merged back into the loop's worktree.
+    Conflict,
 }
 
 /// An agent's closed usage-limit gate.
@@ -1868,10 +1867,6 @@ pub struct TaskUpdate {
         skip_serializing_if = "Option::is_none"
     )]
     pub external_updated_at: Option<Option<String>>,
-    /// Refused once the task has started. Switching to `Loop` gives a task with no config the
-    /// default one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub run_mode: Option<RunMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub loop_config: Option<LoopConfig>,
     #[serde(
@@ -3893,7 +3888,6 @@ mod tests {
             model_override: None,
             run_mode: RunMode::Pipeline,
             loop_config: None,
-            loop_sealed_sha: None,
             loop_summary: None,
             gate: None,
             drafted_by: None,

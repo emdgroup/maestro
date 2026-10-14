@@ -304,7 +304,7 @@ fn digest_of(reply: &str) -> Option<String> {
 /// The judge's view of the loop's work, as its prompt shows it: `git diff --stat` from the base.
 pub(crate) async fn diff_stat(dir: &str, task: &Task) -> Option<String> {
     let base = match task.base_branch.trim() {
-        "" => task.loop_sealed_sha.clone()?,
+        "" => task.execution_start_sha.clone()?,
         base => base.to_string(),
     };
     git(dir, &["diff", "--stat", &format!("{base}...HEAD")])
@@ -399,14 +399,16 @@ async fn finish(
         cut: ended.cut.filter(|_| blocked.is_none()),
         ..ended
     };
-    let Some(dir) = worktree_dir(store, path, task_id).await else {
+    let context = worktree_dir(store, path, task_id).await;
+    let dir = crate::worktree::sandbox_dir(path, task_id);
+    let Some(context) = context.filter(|_| Path::new(&dir).exists()) else {
         stop(
             store,
             everyone,
             path,
             task_id,
             TaskPhase::Iterating,
-            "The loop's worktree is gone.",
+            "The loop's worktree or its sandbox is gone.",
         )
         .await;
         return;
@@ -431,6 +433,18 @@ async fn finish(
         }
         Err(e) => Err(e),
     };
+    // Into the loop's worktree, where the checks run and the work is reviewed. A failure halts the
+    // loop with the commit kept in the sandbox, merged again when the next iteration starts.
+    if let Ok(Some(Committed {
+        commit_sha: Some(sha),
+        ..
+    })) = &committed
+    {
+        if let Err(e) = crate::worktree::merge_back(&context, sha).await {
+            conflict(store, everyone, path, task_id, iteration, &e).await;
+            return;
+        }
+    }
     let row = Committed {
         touched_sealed,
         peeks: peeks(ended.git_commands, &config.sealed_paths),
@@ -562,6 +576,46 @@ async fn finish(
     .await;
 }
 
+/// The iteration's commit could not be merged back: the loop halts for the user, with git's reason.
+async fn conflict(
+    store: &Store,
+    everyone: &crate::ClientOut,
+    path: &str,
+    task_id: i32,
+    iteration: &LoopIteration,
+    why: &str,
+) {
+    let output = format!(
+        "The iteration's commit could not be merged into the loop's worktree:\n{}",
+        tail_chars(why, OUTPUT_CHARS)
+    );
+    let recorded = {
+        let conn = store.lock().await;
+        let failed = LoopIterationOutcome::Failed;
+        loops::record_outcome(&conn, path, task_id, iteration, failed, Some(&output))
+            .and_then(|()| loops::set_halt(&conn, path, task_id, LoopHalt::Conflict))
+    };
+    if let Err(e) = recorded {
+        send_diag("warn", format!("[loop] task {task_id}: {e}"));
+    }
+    let note = format!(
+        "Iteration {} could not be merged into the loop's worktree:\n\n{}\n\nCommit or revert what \
+         is in the way there, then resume. The iteration's work is kept and merged first.",
+        iteration.n,
+        why.trim()
+    );
+    apply(
+        store,
+        everyone,
+        path,
+        task_id,
+        TaskTransition::LoopHalted,
+        TransitionGuard::Phase(TaskPhase::Iterating),
+        Some(note_entry(note)),
+    )
+    .await;
+}
+
 // ponytail: a substring match, so a sealed `tests` also matches `git log -- latests.rs`. Parse the
 // command's paths if the false hits get in the way.
 /// The commands that name a sealed path.
@@ -641,12 +695,9 @@ pub(crate) async fn answer(
             Err(e) => (crate::helpers::error_response(e), Vec::new()),
         };
     }
-    let content = match worktree_dir(store, &path, task.task_id).await {
-        Some(dir) => tokio::fs::read_to_string(Path::new(&dir).join(".maestro/loop/PROGRESS.md"))
-            .await
-            .ok(),
-        None => None,
-    };
+    let notes = Path::new(&crate::worktree::sandbox_dir(&path, task.task_id))
+        .join(".maestro/loop/PROGRESS.md");
+    let content = tokio::fs::read_to_string(notes).await.ok();
     let notes = maestro_protocol::LoopNotes { content };
     (ServerResponse::ReadLoopNotesOk(notes), Vec::new())
 }
@@ -759,9 +810,8 @@ async fn live_sessions(store: &Store, path: &str, task_id: i32) -> Vec<String> {
     })
 }
 
-/// Accept or reject a proposed check. Accepting seals the paths it names, each of which has to be on
-/// the base branch, since the checks take sealed files from there: the snapshot is taken again so
-/// they are in it, and the worktree drops them at once, unless the checks are running in it.
+/// Accept or reject a proposed check. Accepting seals the paths it names, each of which has to be in
+/// the loop's worktree, where the checks run, and the sandbox drops them at once.
 async fn answer_proposal(
     store: &Store,
     mut request: maestro_protocol::AnswerLoopProposalRequest,
@@ -771,16 +821,12 @@ async fn answer_proposal(
     let task_id = request.task_id;
     let task = crate::task_store::get(&*store.lock().await, &path, task_id)?
         .ok_or_else(|| format!("Task {task_id} not found"))?;
-    let base = match task.base_branch.trim() {
-        "" => "HEAD",
-        base => base,
-    };
     if request.accept.is_none() {
         request.seal.clear();
     }
     let mut sealing = Vec::new();
     for wanted in &request.seal {
-        sealing.push(sealable(&path, base, wanted).await?);
+        sealing.push(sealable(store, &path, Some(task_id), &task.base_branch, wanted).await?);
     }
     request.seal = sealing;
     let sealed = !request.seal.is_empty();
@@ -788,43 +834,61 @@ async fn answer_proposal(
         &mut *store.lock().await,
         ServerRequest::AnswerLoopProposal(request),
     )?;
-    if sealed {
-        let tip = git(&path, &["rev-parse", "--verify", base]).await?;
-        let task = {
-            let conn = store.lock().await;
-            loops::set_sealed_sha(&conn, &path, task_id, tip.trim())?;
-            crate::task_store::get(&conn, &path, task_id)?
-        };
-        let dir = worktree_dir(store, &path, task_id).await;
-        if let (Some(task), Some(dir)) = (task, dir) {
-            if task.phase != Some(TaskPhase::Checking) {
-                if let Err(e) = crate::worktree::seal(&dir, &task).await {
-                    send_diag("warn", format!("[loop] task {task_id}: {e}"));
-                }
+    let sandbox = crate::worktree::sandbox_dir(&path, task_id);
+    if sealed && Path::new(&sandbox).exists() {
+        let task = crate::task_store::get(&*store.lock().await, &path, task_id)?;
+        if let Some(task) = task {
+            if let Err(e) = crate::worktree::seal(&sandbox, &task).await {
+                send_diag("warn", format!("[loop] task {task_id}: {e}"));
             }
         }
     }
     Ok(answered)
 }
 
-/// `wanted` as a sealed path, which has to be on `base`: the checks take sealed files from there.
-pub(crate) async fn sealable(path: &str, base: &str, wanted: &str) -> Result<String, String> {
+/// `wanted` as a sealed path, which has to be committed where the checks run: in the loop's
+/// worktree, or before it exists, on `base_branch`, which it starts from.
+pub(crate) async fn sealable(
+    store: &Store,
+    path: &str,
+    task_id: Option<i32>,
+    base_branch: &str,
+    wanted: &str,
+) -> Result<String, String> {
     let wanted = loops::relative_path(wanted, true)?;
+    let context = match task_id {
+        Some(task_id) => worktree_dir(store, path, task_id).await,
+        None => None,
+    };
+    let (dir, at) = match context {
+        Some(dir) => (dir, "HEAD"),
+        None => (
+            path.to_string(),
+            match base_branch.trim() {
+                "" => "HEAD",
+                base => base,
+            },
+        ),
+    };
     let listed = git(
-        path,
+        &dir,
         &[
             "ls-tree",
             "--name-only",
-            base,
+            at,
             "--",
             wanted.trim_end_matches('/'),
         ],
     )
     .await?;
     if listed.trim().is_empty() {
+        let place = match at {
+            "HEAD" => "the loop's branch",
+            base => base,
+        };
         return Err(format!(
-            "\"{wanted}\" is not on {base}, so it cannot be sealed: the checks take sealed files \
-             from there. Commit it to {base} first, or add it as a hidden file."
+            "\"{wanted}\" is not committed on {place}, so it cannot be sealed: the checks run \
+             against that branch's files. Commit it there first, or add it as a hidden file."
         ));
     }
     Ok(wanted)
@@ -835,41 +899,11 @@ pub(crate) async fn recheck(store: &Store, everyone: &crate::ClientOut, path: &s
     Box::pin(check(store, everyone, path, task_id)).await;
 }
 
-/// The user's Re-run checks, once the task is `Checking`: a new snapshot of the base, then the
-/// checks on the commit the loop is at.
+/// The user's Re-run checks, once the task is `Checking`: the checks again, on the loop's worktree
+/// as it is now, a test the user fixed there included.
 pub(crate) fn rerun(store: Store, stdout: crate::ClientOut, path: String, task_id: i32) {
     tokio::spawn(Box::pin(async move {
         let everyone = crate::client_sink::ClientSink::everyone(&stdout).await;
-        let task = crate::task_store::get(&*store.lock().await, &path, task_id);
-        if let Ok(Some(task)) = task {
-            let base = match task.base_branch.trim() {
-                "" => "HEAD",
-                base => base,
-            };
-            match git(&path, &["rev-parse", "--verify", base]).await {
-                Ok(sha) => {
-                    if let Err(e) =
-                        loops::set_sealed_sha(&*store.lock().await, &path, task_id, sha.trim())
-                    {
-                        send_diag("warn", format!("[loop] task {task_id}: {e}"));
-                    }
-                }
-                Err(e) => {
-                    let note =
-                        format!("The checks could not run: the base branch is unreadable. {e}");
-                    stop(
-                        &store,
-                        &everyone,
-                        &path,
-                        task_id,
-                        TaskPhase::Checking,
-                        &note,
-                    )
-                    .await;
-                    return;
-                }
-            }
-        }
         Box::pin(check(&store, &everyone, &path, task_id)).await;
         crate::scheduler::request_drain(&path);
     }));
@@ -1469,7 +1503,8 @@ struct CheckRun {
     output: String,
 }
 
-/// The sealed files in, the setup and every command check run, the sealed files out again.
+/// The setup and every command check run in the loop's worktree, where the sealed files simply are,
+/// with the hidden files written in for the run.
 async fn run_checks(
     dir: &str,
     task: &Task,
@@ -1477,45 +1512,14 @@ async fn run_checks(
     hidden: &[LoopHiddenFile],
 ) -> Result<CheckRun, String> {
     let config = task.loop_config.clone().unwrap_or_default();
-    let sha = task
-        .loop_sealed_sha
-        .as_deref()
-        .ok_or("the loop has no sealed snapshot yet")?;
-    remove_sealed(dir, &config.sealed_paths).await;
+    remove_sealed(dir, &[]).await;
     let ran = async {
-        write_sealed(dir, sha, &config.sealed_paths).await?;
         write_hidden(dir, hidden).await?;
         Ok::<_, String>(run_commands(dir, &config, checks).await)
     }
     .await;
-    remove_sealed(dir, &config.sealed_paths).await;
+    remove_sealed(dir, &[]).await;
     ran
-}
-
-/// The sealed paths as the snapshot has them, written to the worktree only: the index keeps the
-/// branch's, so nothing here is ever committed. A path the snapshot lacks is skipped.
-async fn write_sealed(dir: &str, sha: &str, sealed: &[String]) -> Result<(), String> {
-    let wanted: Vec<&str> = sealed.iter().map(|p| p.trim_end_matches('/')).collect();
-    if wanted.is_empty() {
-        return Ok(());
-    }
-    let mut args = vec!["ls-tree", "-z", "--name-only", sha, "--"];
-    args.extend(&wanted);
-    let listed = git(dir, &args).await?;
-    let present: Vec<&str> = listed.split('\0').filter(|p| !p.is_empty()).collect();
-    if present.is_empty() {
-        return Ok(());
-    }
-    let source = format!("--source={sha}");
-    let mut args = vec![
-        "restore",
-        source.as_str(),
-        "--worktree",
-        "--ignore-skip-worktree-bits",
-        "--",
-    ];
-    args.extend(&present);
-    git(dir, &args).await.map(|_| ())
 }
 
 async fn write_hidden(dir: &str, hidden: &[LoopHiddenFile]) -> Result<(), String> {
@@ -1739,6 +1743,57 @@ async fn collect(pipe: impl tokio::io::AsyncRead + Unpin, lines: Arc<Mutex<VecDe
                 if lines.len() > TAIL_LINES {
                     lines.pop_front();
                 }
+            }
+        }
+    }
+}
+
+/// Remove the sandboxes no loop in progress needs: their loop passed, left In Progress, or was
+/// deleted. Run on the scheduler's tick, so a sandbox is given back within a minute.
+pub(crate) async fn sweep_sandboxes(store: &Store) {
+    let read = {
+        let conn = store.lock().await;
+        let rows = |sql: &str| -> rusqlite::Result<Vec<(String, i32)>> {
+            let mut statement = conn.prepare(sql)?;
+            let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+            rows.collect()
+        };
+        rows("SELECT DISTINCT project_path, 0 FROM tasks").and_then(|projects| {
+            let running = rows(
+                "SELECT project_path, id FROM tasks
+                 WHERE run_mode = 'Loop' AND status = 'InProgress'",
+            )?;
+            Ok((projects, running))
+        })
+    };
+    let (projects, running) = match read {
+        Ok(found) => found,
+        Err(e) => {
+            send_diag("warn", format!("[loop] cannot list the loops: {e}"));
+            return;
+        }
+    };
+    for (project, _) in projects {
+        let root = Path::new(&project).join(".maestro/worktrees");
+        let Ok(mut entries) = tokio::fs::read_dir(&root).await else {
+            continue;
+        };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Some(task_id) = name
+                .strip_prefix("loop-")
+                .and_then(|id| id.parse::<i32>().ok())
+            else {
+                continue;
+            };
+            if running.contains(&(project.clone(), task_id)) {
+                continue;
+            }
+            if let Err(e) = crate::worktree::remove_sandbox(&project, task_id).await {
+                send_diag(
+                    "warn",
+                    format!("[loop] cannot remove the sandbox of task {task_id}: {e}"),
+                );
             }
         }
     }
@@ -2096,11 +2151,18 @@ mod tests {
         let (_repo, store, task) = sealed_loop(SEES_THEM).await;
         let (dir, task, iteration) = start(&store, &task).await;
         let dir_path = Path::new(&dir);
+        assert_eq!(
+            dir,
+            crate::worktree::sandbox_dir(&task.project_path, task.id)
+        );
         assert!(
             !dir_path.join("tests").exists(),
             "the worker never sees the tests"
         );
-        assert!(task.loop_sealed_sha.is_some());
+        let context = worktree_dir(&store, &task.project_path, task.id)
+            .await
+            .unwrap();
+        assert!(Path::new(&context).join("tests/t.txt").exists());
 
         // The worker's turn: real work, and a try at the tests.
         std::fs::write(dir_path.join("src/b.txt"), "b").unwrap();
@@ -2145,13 +2207,74 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(committed.trim(), "src/b.txt");
-        assert!(
-            !dir_path.join("tests").exists(),
-            "the sealed files are gone again"
+        let head = |dir: String| async move { git(&dir, &["rev-parse", "HEAD"]).await.unwrap() };
+        assert_eq!(
+            head(context.clone()).await,
+            head(dir.clone()).await,
+            "merged back"
         );
-        assert!(!dir_path.join(SEALED_DIR).exists());
-        let status = git(&dir, &["status", "--porcelain"]).await.unwrap();
-        assert!(status.trim().is_empty(), "nothing left over: {status}");
+        assert_eq!(
+            std::fs::read_to_string(Path::new(&context).join("tests/t.txt")).unwrap(),
+            "the test",
+            "the worker's write to a sealed path never reaches the loop's worktree"
+        );
+        assert!(!dir_path.join("tests").exists());
+        assert!(!Path::new(&context).join(SEALED_DIR).exists());
+        for dir in [&dir, &context] {
+            let status = git(dir, &["status", "--porcelain"]).await.unwrap();
+            assert!(status.trim().is_empty(), "nothing left over: {status}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_commit_the_loops_worktree_cannot_take_halts_the_loop_and_is_merged_later() {
+        let (_repo, store, task) = sealed_loop(SEES_THEM).await;
+        let (dir, task, iteration) = start(&store, &task).await;
+        let context = worktree_dir(&store, &task.project_path, task.id)
+            .await
+            .unwrap();
+        // The user edits the same file in the loop's worktree, uncommitted.
+        std::fs::write(Path::new(&dir).join("src/a.txt"), "the worker's").unwrap();
+        std::fs::write(Path::new(&context).join("src/a.txt"), "the user's").unwrap();
+
+        let everyone = crate::client_sink::ClientSink::detached();
+        let path = task.project_path.clone();
+        finish(
+            &store,
+            &everyone,
+            &path,
+            &task,
+            &iteration,
+            Ended::default(),
+        )
+        .await;
+        {
+            let conn = store.lock().await;
+            let halted = crate::task_store::get(&conn, &path, task.id)
+                .unwrap()
+                .unwrap();
+            assert_eq!(halted.ball, maestro_protocol::TaskBall::User);
+            let (halt, _) = loops::halt_and_hold(&conn, &path, task.id).unwrap();
+            assert_eq!(halt, Some(LoopHalt::Conflict));
+        }
+
+        // The user commits theirs; the next iteration's start merges the kept work first.
+        git_in(&context, &["commit", "-qam", "the user's"]).await;
+        let merged = crate::worktree::prepare_task_workspace(
+            &store,
+            &task,
+            maestro_protocol::AgentRole::Coder,
+        )
+        .await;
+        assert!(merged.is_err(), "the same lines conflict: {merged:?}");
+        git_in(&context, &["reset", "-q", "--hard", "HEAD~1"]).await;
+        crate::worktree::prepare_task_workspace(&store, &task, maestro_protocol::AgentRole::Coder)
+            .await
+            .expect("merged once nothing is in the way");
+        assert_eq!(
+            std::fs::read_to_string(Path::new(&context).join("src/a.txt")).unwrap(),
+            "the worker's"
+        );
     }
 
     #[tokio::test]
@@ -2440,7 +2563,46 @@ Try the cache first."
     }
 
     #[tokio::test]
-    async fn accepting_a_proposal_seals_only_what_the_base_branch_has() {
+    async fn a_sandbox_goes_once_its_loop_is_no_longer_in_progress() {
+        let (_repo, store, task) = sealed_loop(SEES_THEM).await;
+        let (dir, task, _) = start(&store, &task).await;
+        sweep_sandboxes(&store).await;
+        assert!(Path::new(&dir).exists(), "kept while the loop runs");
+        store
+            .lock()
+            .await
+            .execute(
+                "UPDATE tasks SET status = 'Review' WHERE id = ?1",
+                [task.id],
+            )
+            .unwrap();
+        sweep_sandboxes(&store).await;
+        assert!(!Path::new(&dir).exists());
+        let listed = git(&task.project_path, &["worktree", "list"])
+            .await
+            .unwrap();
+        assert!(!listed.contains("loop-"), "{listed}");
+    }
+
+    #[tokio::test]
+    async fn a_loops_preparer_works_in_the_loops_worktree_with_the_tests() {
+        let (_repo, store, task) = sealed_loop(SEES_THEM).await;
+        let workspace = crate::worktree::prepare_task_workspace(
+            &store,
+            &task,
+            maestro_protocol::AgentRole::Refiner,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            Some(workspace.cwd.clone()),
+            worktree_dir(&store, &task.project_path, task.id).await
+        );
+        assert!(Path::new(&workspace.cwd).join("tests/t.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn accepting_a_proposal_seals_only_what_the_loops_branch_has() {
         let (_repo, store, task) = sealed_loop(SEES_THEM).await;
         let path = task.project_path.clone();
         let proposal = {
@@ -2470,7 +2632,7 @@ Try the cache first."
         let stdout = crate::client_sink::ClientSink::detached();
         let (refused, _) = answer(ask(&["nowhere/"]), Some(&store), &stdout).await;
         assert!(
-            matches!(&refused, ServerResponse::Error(e) if e.message.contains("not on main")),
+            matches!(&refused, ServerResponse::Error(e) if e.message.contains("not committed on main")),
             "{refused:?}"
         );
         let (accepted, pushes) = answer(ask(&["src/a.txt"]), Some(&store), &stdout).await;
@@ -2487,7 +2649,6 @@ Try the cache first."
             task.loop_config.unwrap().sealed_paths,
             ["tests/", "src/a.txt"]
         );
-        assert!(task.loop_sealed_sha.is_some(), "the snapshot is taken");
     }
 
     #[tokio::test]

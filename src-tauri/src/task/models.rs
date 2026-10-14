@@ -102,12 +102,9 @@ pub struct Task {
     /// The stage pipeline, or a loop that iterates until its checks pass. See
     /// `docs/loops-plan.md`.
     pub run_mode: RunMode,
-    /// Set on every loop task. A task switched back to the pipeline keeps the one it had.
+    /// Set on every loop task.
     #[specta(optional)]
     pub loop_config: Option<LoopConfig>,
-    /// The base commit a loop's sealed snapshot was taken from.
-    #[specta(optional)]
-    pub loop_sealed_sha: Option<String>,
     /// What the board shows of a loop. Set on every loop task.
     #[specta(optional)]
     pub loop_summary: Option<super::loops::LoopSummary>,
@@ -534,7 +531,6 @@ impl Task {
             claimed_from: task.claimed_from.map(Into::into),
             run_mode: task.run_mode.into(),
             loop_config: task.loop_config.map(Into::into),
-            loop_sealed_sha: task.loop_sealed_sha,
             loop_summary: task
                 .loop_summary
                 .and_then(|summary| super::loops::mirror(*summary).ok()),

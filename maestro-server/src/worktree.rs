@@ -365,7 +365,94 @@ async fn verify(project_path: &str, reference: &str) -> bool {
     .is_ok_and(|out| !out.trim().is_empty())
 }
 
-/// Leave a loop's sealed paths out of its worktree, as its config lists them now. A non-cone
+/// Where a loop's sandbox goes: a second worktree of the task's, where its worker and its judge work
+/// without the sealed files. Not named `task-`, so the app's sweeps never take it for a task's.
+pub fn sandbox_relative_path(task_id: i32) -> String {
+    format!("{WORKTREE_DIR}/loop-{task_id}")
+}
+
+/// The loop's sandbox directory, whether or not it exists yet.
+pub(crate) fn sandbox_dir(project_path: &str, task_id: i32) -> String {
+    absolute(project_path, &sandbox_relative_path(task_id))
+}
+
+/// Bring the loop's sandbox to the context's HEAD, making it the first time, and return it.
+///
+/// Work the sandbox holds that the context lacks, an iteration whose merge back failed, is merged
+/// back first, so a reset never throws it away. A reset keeps what git ignores, so build output,
+/// installed dependencies and `.maestro/loop/PROGRESS.md` carry over from one iteration to the
+/// next. Detached: the sandbox's commits reach a branch only by being merged into the context.
+async fn sync_sandbox(
+    project_path: &str,
+    context: &str,
+    task: &maestro_protocol::Task,
+) -> Result<String, String> {
+    let sandbox = sandbox_dir(project_path, task.id);
+    if Path::new(&sandbox).exists() {
+        let held = git(&sandbox, &["rev-parse", "HEAD"]).await?;
+        merge_back(context, held.trim()).await?;
+        let head = git(context, &["rev-parse", "HEAD"]).await?;
+        git(&sandbox, &["reset", "-q", "--hard", head.trim()]).await?;
+    } else {
+        let head = git(context, &["rev-parse", "HEAD"]).await?;
+        let relative = sandbox_relative_path(task.id);
+        let _adding = adding(project_path).await;
+        git(
+            project_path,
+            &["worktree", "add", "-q", "--detach", &relative, head.trim()],
+        )
+        .await?;
+    }
+    seal(&sandbox, task).await?;
+    Ok(sandbox)
+}
+
+/// Bring `sha`, a commit made in the loop's sandbox, into the context: a fast-forward when the
+/// context has not moved, else a merge. Nothing to do when the context has it already. A merge
+/// that fails is aborted, and git's reason returned.
+pub(crate) async fn merge_back(context: &str, sha: &str) -> Result<(), String> {
+    if git(context, &["merge-base", "--is-ancestor", sha, "HEAD"])
+        .await
+        .is_ok()
+    {
+        return Ok(());
+    }
+    if git(context, &["merge", "-q", "--ff-only", sha])
+        .await
+        .is_ok()
+    {
+        return Ok(());
+    }
+    match git(context, &["merge", "-q", "--no-edit", sha]).await {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            let _ = git(context, &["merge", "--abort"]).await;
+            Err(e)
+        }
+    }
+}
+
+/// Remove a loop's sandbox, tolerating it being gone already.
+pub(crate) async fn remove_sandbox(project_path: &str, task_id: i32) -> Result<(), String> {
+    let _adding = adding(project_path).await;
+    if Path::new(&sandbox_dir(project_path, task_id)).exists() {
+        git(
+            project_path,
+            &[
+                "worktree",
+                "remove",
+                "--force",
+                &sandbox_relative_path(task_id),
+            ],
+        )
+        .await?;
+    } else {
+        git(project_path, &["worktree", "prune"]).await?;
+    }
+    Ok(())
+}
+
+/// Leave a loop's sealed paths out of its sandbox, as its config lists them now. A non-cone
 /// sparse checkout: the files are gone from disk and git does not read their absence as a
 /// deletion, so nothing the worker commits removes them. Run before every iteration and again at
 /// its end, which also undoes a worker that turned the sparse checkout off.
@@ -384,7 +471,8 @@ pub(crate) async fn seal(cwd: &str, task: &maestro_protocol::Task) -> Result<(),
 /// Find or make the workspace a task's session runs in, and anchor the task's start sha.
 ///
 /// As the app's `useExecuteTask` chooses: a refiner reads the repository and writes nothing, so it
-/// runs there whatever the task says; every other role follows `workspace_mode`. The repository and
+/// runs there whatever the task says, except a loop's, which prepares the loop in its worktree;
+/// every other role follows `workspace_mode`. A loop's worker and judge work in its sandbox. The repository and
 /// a pinned workspace create nothing on disk; a pinned one is claimed, so every "where does task N
 /// work" query finds it through `task_id`. A new worktree is reused when the task already owns one.
 ///
@@ -404,7 +492,8 @@ pub async fn prepare_task_workspace(
     };
 
     let project_path = task.project_path.as_str();
-    let mode = if role == AgentRole::Refiner {
+    let looping = task.run_mode == maestro_protocol::RunMode::Loop;
+    let mode = if role == AgentRole::Refiner && !looping {
         WorkspaceMode::RepositoryDirectory
     } else {
         task.workspace_mode
@@ -496,22 +585,12 @@ pub async fn prepare_task_workspace(
         }
     };
 
-    if task.run_mode == maestro_protocol::RunMode::Loop {
-        seal(&cwd, task).await?;
-        if task.loop_sealed_sha.is_none() {
-            let base = match task.base_branch.trim() {
-                "" => "HEAD",
-                base => base,
-            };
-            let sha = git(project_path, &["rev-parse", "--verify", base]).await?;
-            crate::task_store::loops::set_sealed_sha(
-                &*store.lock().await,
-                project_path,
-                task.id,
-                sha.trim(),
-            )?;
+    let cwd = match role {
+        AgentRole::Coder | AgentRole::Judge if looping => {
+            sync_sandbox(project_path, &cwd, task).await?
         }
-    }
+        _ => cwd,
+    };
 
     // Best effort, as in the app: a session starts even when HEAD cannot be read. A task that
     // already has a sha keeps it, or a resumed run would hide everything the earlier one changed.

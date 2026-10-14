@@ -320,7 +320,9 @@ fn stage_settings(
     role: AgentRole,
     capabilities: &AgentCapabilities,
 ) -> Result<StageSettings, String> {
-    let read_only = is_read_only(role);
+    // A loop's refiner prepares the loop: it writes and commits the tests in the loop's worktree.
+    let preparing = role == AgentRole::Refiner && task.run_mode == maestro_protocol::RunMode::Loop;
+    let read_only = is_read_only(role) && !preparing;
     let agent_id = choose_agent(document, default_agent, task, role);
     let resolved = document
         .resolve(role, profile_id_for(task, role).as_deref())
@@ -340,7 +342,9 @@ fn stage_settings(
     let mut permission_mode = coder
         .then(|| task.permission_mode_override.clone())
         .flatten()
-        .or_else(|| resolved.as_ref().and_then(|r| r.permission_mode.clone()));
+        .or_else(|| resolved.as_ref().and_then(|r| r.permission_mode.clone()))
+        // The refiner profile's read-only mode would keep the preparer from writing its tests.
+        .filter(|mode| !(preparing && READ_ONLY_MODES.contains(&mode.as_str())));
     if permission_mode.is_none() && !capabilities.mode_ids.is_empty() {
         permission_mode = resolve_automatic_mode(&capabilities.mode_ids, read_only);
         if permission_mode.is_none() && read_only {

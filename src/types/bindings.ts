@@ -3998,7 +3998,7 @@ stall_limit: number; check_timeout_secs: number; setup_command?: string | null;
  * Relative paths kept out of the worker's worktree. A trailing `/` names a directory.
  */
 sealed_paths: string[] }
-export type LoopHalt = "Flaky" | "Failing" | "Stalled" | "OutOfIterations" | "OutOfTime" | "Paused" | "Stopped" | "Blocked"
+export type LoopHalt = "Flaky" | "Failing" | "Stalled" | "OutOfIterations" | "OutOfTime" | "Paused" | "Stopped" | "Blocked" | "Conflict"
 /**
  * An acceptance file that exists only in the loop's record, never in the repository.
  */
@@ -4542,13 +4542,9 @@ claimed_from?: TaskPhase | null;
  */
 run_mode: RunMode; 
 /**
- * Set on every loop task. A task switched back to the pipeline keeps the one it had.
+ * Set on every loop task.
  */
 loop_config?: LoopConfig | null; 
-/**
- * The base commit a loop's sealed snapshot was taken from.
- */
-loop_sealed_sha?: string | null; 
 /**
  * What the board shows of a loop. Set on every loop task.
  */
@@ -4654,10 +4650,6 @@ workspace_mode: WorkspaceMode | null; workspace_worktree_id: number | null;
  * `Checkout` must not leave the name of a branch nobody is going to create.
  */
 workspace_branch_mode: BranchMode | null; workspace_branch: string | null; 
-/**
- * Refused once the task has started.
- */
-run_mode: RunMode | null; 
 /**
  * A started loop's sealed paths cannot change; its budgets can.
  */

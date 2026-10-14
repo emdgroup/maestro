@@ -176,7 +176,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Paths kept out of the loop's worktree and written in only while the checks run, such as the tests a check runs, so the agent cannot read or change them. Each must exist on the base branch. A trailing / names a directory."
+            "description": "Paths kept out of the agent's sandbox, such as the tests a check runs, so it cannot read or change them. The checks run in the loop's worktree, where they are. Each must be committed there, or on the base branch before the loop's worktree exists. A trailing / names a directory."
           }
         }
       }
@@ -196,7 +196,7 @@
     },
     {
       "name": "update_task",
-      "description": "Change a Maestro task. Only the fields you pass are touched; omit `id` for the task this session is working on.\n\nMoving `status` is the same move as the user dragging the card, so make it when the work has actually reached that state — `Review` when you are finished and want it looked at, not when you expect to be finished. The user is watching the board, so a wrong move is visible and misleading rather than harmless.\n\nThe loop fields turn a task that has not started into a loop, or change one. Once a loop has started only its budgets change here. A loop's own sessions cannot change their task.",
+      "description": "Change a Maestro task. Only the fields you pass are touched; omit `id` for the task this session is working on.\n\nMoving `status` is the same move as the user dragging the card, so make it when the work has actually reached that state — `Review` when you are finished and want it looked at, not when you expect to be finished. The user is watching the board, so a wrong move is visible and misleading rather than harmless.\n\nThe loop fields change a loop that has not started; once it has started only its budgets change here. A task's run mode is fixed when it is created. A loop's own iterations and judge cannot change their task.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -227,11 +227,6 @@
               "type": "string"
             },
             "description": "Replaces the whole list, so include the ones you are keeping."
-          },
-          "run_mode": {
-            "type": "string",
-            "enum": ["Pipeline", "Loop"],
-            "description": "Loop runs the task in fresh sessions until its checks pass, instead of the plan, code and review pipeline. A loop needs checks."
           },
           "checks": {
             "type": "array",
@@ -283,7 +278,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Paths kept out of the loop's worktree and written in only while the checks run, such as the tests a check runs, so the agent cannot read or change them. Each must exist on the base branch. A trailing / names a directory."
+            "description": "Paths kept out of the agent's sandbox, such as the tests a check runs, so it cannot read or change them. The checks run in the loop's worktree, where they are. Each must be committed there, or on the base branch before the loop's worktree exists. A trailing / names a directory."
           }
         }
       }

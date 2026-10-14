@@ -3,10 +3,10 @@ pub use crate::connectivity::models as connection;
 pub use crate::connectivity::{ConnectionStatus, GitConnection};
 pub use crate::execution::models as worktree;
 pub use crate::execution::{
-    is_maestro_created_worktree, worktree_path_for_session, worktree_path_for_task,
-    ActiveSessionInfo, AheadBehind, ExecutionMode, PtySessionMeta, SessionListEntryDto,
-    SessionListResult, Worktree, WorktreeWithStatus, WORKTREE_DIR, WORKTREE_PATH_PREFIX,
-    WORKTREE_SESSION_PATH_PREFIX,
+    is_loop_sandbox, is_maestro_created_worktree, worktree_path_for_session,
+    worktree_path_for_task, ActiveSessionInfo, AheadBehind, ExecutionMode, PtySessionMeta,
+    SessionListEntryDto, SessionListResult, Worktree, WorktreeWithStatus, WORKTREE_DIR,
+    WORKTREE_PATH_PREFIX, WORKTREE_SESSION_PATH_PREFIX,
 };
 pub use crate::git::diff_models as diff;
 pub use crate::git::review_models as review;

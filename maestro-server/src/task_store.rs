@@ -227,7 +227,6 @@ fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Task> {
             .and_then(|s| parse(&s))
             .unwrap_or_default(),
         loop_config: optional_text("loop_config")?.and_then(|s| serde_json::from_str(&s).ok()),
-        loop_sealed_sha: row.get("loop_sealed_sha")?,
         loop_summary: None,
         gate: None,
         drafted_by: optional_text("drafted_by")?.map(|automation| {
@@ -488,12 +487,6 @@ fn write_update(
         .optional()
         .map_err(|e| e.to_string())
     };
-    if let Some(mode) = update.run_mode {
-        if started()?.is_some_and(|(started, _)| started) {
-            return Err("A task's run mode can only change before it starts".to_string());
-        }
-        sets.push(("run_mode", Box::new(text(mode))));
-    }
     if let Some(config) = &update.loop_config {
         let config = loops::normalize_config(config)?;
         if let Some((true, Some(before))) = started()? {
@@ -537,10 +530,6 @@ fn write_update(
         assignments.push("fix_rounds = fix_rounds + 1".to_string());
     }
     let mut values: Vec<Box<dyn rusqlite::ToSql>> = sets.into_iter().map(|(_, v)| v).collect();
-    if update.run_mode == Some(RunMode::Loop) && update.loop_config.is_none() {
-        assignments.push("loop_config = COALESCE(loop_config, ?)".to_string());
-        values.push(Box::new(json(&LoopConfig::default())?));
-    }
     if let Some(sha) = &update.execution_start_sha_if_empty {
         assignments
             .push("execution_start_sha = COALESCE(NULLIF(execution_start_sha, ''), ?)".to_string());
@@ -557,7 +546,7 @@ fn write_update(
         rusqlite::params_from_iter(values.iter().map(|v| v.as_ref())),
     )
     .map_err(|e| e.to_string())?;
-    if update.run_mode.is_some() || update.workspace_mode.is_some() {
+    if update.workspace_mode.is_some() {
         let (mode, workspace): (String, String) = conn
             .query_row(
                 "SELECT run_mode, workspace_mode FROM tasks WHERE project_path = ?1 AND id = ?2",

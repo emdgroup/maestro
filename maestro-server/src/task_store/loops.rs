@@ -18,7 +18,6 @@ use super::{commit, parse, text, transaction};
 pub const V12_LOOPS: &str = "
 ALTER TABLE tasks ADD COLUMN run_mode TEXT NOT NULL DEFAULT 'Pipeline';
 ALTER TABLE tasks ADD COLUMN loop_config TEXT;
-ALTER TABLE tasks ADD COLUMN loop_sealed_sha TEXT;
 -- When the user last let a stopped loop go on: its streaks count from there.
 ALTER TABLE tasks ADD COLUMN loop_resumed_at TEXT;
 -- Why the loop last stopped for the user, a `LoopHalt`.
@@ -909,20 +908,6 @@ pub(crate) fn resumed_at(
     .map_err(|e| e.to_string())
 }
 
-pub(crate) fn set_sealed_sha(
-    conn: &Connection,
-    project_path: &str,
-    task_id: i32,
-    sha: &str,
-) -> Result<(), String> {
-    conn.execute(
-        "UPDATE tasks SET loop_sealed_sha = ?3 WHERE project_path = ?1 AND id = ?2",
-        params![project_path, task_id, sha],
-    )
-    .map(|_| ())
-    .map_err(|e| e.to_string())
-}
-
 /// The checks the daemon runs: the user's command checks and the accepted proposals.
 pub(crate) fn is_runnable(check: &LoopCheck) -> bool {
     check.kind == LoopCheckKind::Command && !is_pending_proposal(check)
@@ -1085,28 +1070,14 @@ mod tests {
     }
 
     #[test]
-    fn the_run_mode_changes_only_before_the_task_starts() {
+    fn a_started_loop_keeps_its_sealed_paths_and_changes_its_budget() {
         let mut conn = crate::project_store::open_in_memory();
-        let task = create(&mut conn, RunMode::Pipeline, None);
-        let to_loop = TaskUpdate {
-            run_mode: Some(RunMode::Loop),
-            ..TaskUpdate::default()
-        };
-        let switched = super::super::update(&mut conn, PROJECT, task, &to_loop).unwrap();
-        assert_eq!(switched.run_mode, RunMode::Loop);
-        assert_eq!(switched.loop_config, Some(LoopConfig::default()));
-
+        let task = create(&mut conn, RunMode::Loop, None);
         conn.execute(
-            "UPDATE tasks SET phase = 'Implementing' WHERE id = ?1",
+            "UPDATE tasks SET phase = 'Iterating' WHERE id = ?1",
             params![task],
         )
         .unwrap();
-        let back = TaskUpdate {
-            run_mode: Some(RunMode::Pipeline),
-            ..TaskUpdate::default()
-        };
-        assert!(super::super::update(&mut conn, PROJECT, task, &back).is_err());
-        // The config is not the mode, and stays editable.
         let longer = TaskUpdate {
             loop_config: Some(LoopConfig {
                 max_iterations: 20,
@@ -1405,19 +1376,8 @@ mod tests {
             loop_config: None,
         };
         assert!(super::super::create(&mut conn, &request).is_err());
-        request.run_mode = RunMode::Pipeline;
-        let task = super::super::create(&mut conn, &request).unwrap().id;
-        let to_loop = TaskUpdate {
-            run_mode: Some(RunMode::Loop),
-            ..TaskUpdate::default()
-        };
-        assert!(super::super::update(&mut conn, PROJECT, task, &to_loop).is_err());
-        let both = TaskUpdate {
-            run_mode: Some(RunMode::Loop),
-            workspace_mode: Some(WorkspaceMode::NewWorktree),
-            ..TaskUpdate::default()
-        };
-        let task = super::super::update(&mut conn, PROJECT, task, &both).unwrap();
+        request.workspace_mode = WorkspaceMode::NewWorktree;
+        let task = super::super::create(&mut conn, &request).unwrap();
         assert_eq!(task.run_mode, RunMode::Loop);
         let shared = TaskUpdate {
             workspace_mode: Some(WorkspaceMode::RepositoryDirectory),

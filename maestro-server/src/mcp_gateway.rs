@@ -848,18 +848,22 @@ impl LoopFields {
         config
     }
 
-    /// The sealed paths named, each checked against `base` the way the app's are.
-    async fn sealed(&self, project_path: &str, base: &str) -> Result<Option<Vec<String>>, String> {
+    /// The sealed paths named, each checked where the checks will run, as the app's are.
+    async fn sealed(
+        &self,
+        store: &Store,
+        project_path: &str,
+        task_id: Option<i32>,
+        base: &str,
+    ) -> Result<Option<Vec<String>>, String> {
         let Some(paths) = &self.sealed_paths else {
             return Ok(None);
         };
-        let base = match base.trim() {
-            "" => "HEAD",
-            base => base,
-        };
         let mut sealed = Vec::new();
         for path in paths {
-            sealed.push(crate::loop_engine::sealable(project_path, base, path).await?);
+            let found =
+                crate::loop_engine::sealable(store, project_path, task_id, base, path).await?;
+            sealed.push(found);
         }
         Ok(Some(sealed))
     }
@@ -907,7 +911,9 @@ async fn task_tool(
             }
             let (base_branch, workspace_mode) = task_defaults(&project_path).await;
             let (workspace_mode, loop_config) = if looping {
-                let sealed = fields.sealed(&project_path, &base_branch).await?;
+                let sealed = fields
+                    .sealed(&store, &project_path, None, &base_branch)
+                    .await?;
                 let config = fields.over(LoopConfig::default(), sealed);
                 (WorkspaceMode::NewWorktree, Some(config))
             } else {
@@ -1097,7 +1103,10 @@ async fn task_tool(
                 ..TaskUpdate::default()
             };
             if fields.any() {
-                let looping = fields.run_mode.unwrap_or(task.run_mode) == RunMode::Loop;
+                if fields.run_mode.is_some_and(|mode| mode != task.run_mode) {
+                    return Err("a task's run mode is fixed when it is created".to_string());
+                }
+                let looping = task.run_mode == RunMode::Loop;
                 if fields.loop_only() && !looping {
                     return Err(NOT_A_LOOP.to_string());
                 }
@@ -1108,14 +1117,10 @@ async fn task_tool(
                                 checks, setup command and sealed paths change in the app"
                         .to_string());
                 }
-                if let Some(mode) = fields.run_mode.filter(|mode| *mode != task.run_mode) {
-                    update.run_mode = Some(mode);
-                    if mode == RunMode::Loop {
-                        update.workspace_mode = Some(WorkspaceMode::NewWorktree);
-                    }
-                }
                 if looping {
-                    let sealed = fields.sealed(&project_path, &task.base_branch).await?;
+                    let sealed = fields
+                        .sealed(&store, &project_path, Some(task_id), &task.base_branch)
+                        .await?;
                     let config = task.loop_config.clone().unwrap_or_default();
                     update.loop_config = Some(fields.over(config, sealed));
                 }

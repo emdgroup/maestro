@@ -16,6 +16,15 @@ pub fn worktree_path_for_session(worktree_id: i32) -> String {
     format!("{}{}", WORKTREE_SESSION_PATH_PREFIX, worktree_id)
 }
 
+/// Whether `path`, as git lists it, is a loop's sandbox: the daemon's own second worktree of a loop
+/// task, where its worker runs without the sealed files. Never shown: the task's worktree is the one
+/// the user works with.
+pub fn is_loop_sandbox(path: &str) -> bool {
+    let path = path.replace('\\', "/");
+    path.rsplit_once('/')
+        .is_some_and(|(parent, name)| parent.ends_with(WORKTREE_DIR) && name.starts_with("loop-"))
+}
+
 /// True when Maestro created this worktree itself rather than the user creating it by hand.
 ///
 /// Rows written before the id-based session path existed use a branch-name-derived path and

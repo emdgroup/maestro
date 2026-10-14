@@ -30,6 +30,9 @@ const REVIEWER_PROTOCOL: &str = "Review the changes on this branch against the t
 /// A loop's worker: one iteration of many, judged by checks it cannot see.
 const LOOP_PROTOCOL: &str = "You are one iteration of a loop that runs until this task's checks pass. Each iteration is a fresh session, so nothing you say carries over, only what you leave on disk. Start by reading `.maestro/loop/PROGRESS.md` if it exists, and before you stop, update it with what you did, what you learned and what is left, for the next iteration. Make real progress toward the goal, then end your turn: your changes are committed and the checks run after you stop. The checks' sources are not available to you and their failures reach you as output only, so do not look for them or try to change them. Do not declare the task done; the checks decide. Maestro's `loop_status` tool says where the loop stands. If the goal needs a check the list lacks, propose it with `loop_propose_check`. If you cannot go on without the user, call `loop_blocked` with what you need from them, then end your turn.";
 
+/// A loop's preparer, in place of the refiner: sets the loop up with the user before it runs.
+const PREPARE_PROTOCOL: &str = "You are preparing this loop with the user before it runs. Once queued, the loop gives the goal above to a worker agent, in fresh sessions, until every check passes. The worker works in a copy of this branch without the sealed paths, so it never sees or changes the tests that judge it. You work in the loop's own worktree, where those tests belong. Talk it through with the user: what done means, and how a command can prove it. Write the tests or check scripts the loop needs and commit them here: a path has to be committed before it can be sealed. Then set the loop with Maestro's `update_task` tool: `checks` (Command, Judge or Manual, replacing the list), `sealed_paths` for what the worker must not see or change, `setup_command` if the checks need one, and the budgets. Do not implement the goal itself: that is the worker's job, and the checks should fail until it is done. End each turn with a short summary of the loop as it now stands.";
+
 /// A loop's judge: decides the `judge` checks against the loop's work, then writes the digest.
 const JUDGE_PROTOCOL: &str = "You are the judge of a loop: another agent has worked on this task in iterations, and its work is committed on this branch. Decide each check listed below against that work, reading the diff and the code it touches. Do not modify any files, and do not run the project's tests; they are checked separately. Answer every check on a line of its own, by its number, starting with PASS or FAIL and one line of reason, for example:\n\n1. PASS: unknown ids answer 404\n2. FAIL: nothing handles an empty list\n\nA FAIL's reason is all the next iteration is told, so make it specific. If every check passes, follow the verdicts with a line reading `## Digest` and a short review for the person who signs the work off, in three parts: `### What changed`, `### What the loop decided on its own` and `### Worth a look`.";
 
@@ -100,7 +103,9 @@ pub fn compose(
         _ => String::new(),
     };
     let looping = role == AgentRole::Coder && task.run_mode == RunMode::Loop;
+    let preparing = role == AgentRole::Refiner && task.run_mode == RunMode::Loop;
     let protocol = match role {
+        AgentRole::Refiner if preparing => PREPARE_PROTOCOL,
         AgentRole::Refiner => REFINER_PROTOCOL,
         AgentRole::Planner => PLANNER_PROTOCOL,
         AgentRole::Reviewer => REVIEWER_PROTOCOL,
@@ -133,6 +138,8 @@ pub fn compose(
 
     if looping {
         blocks.push(text(loop_context(conn, project_path, task)?));
+    } else if preparing {
+        blocks.push(text(prepare_context(conn, project_path, task)?));
     } else if role == AgentRole::Judge {
         // The judge's `feedback` is the diff's stat, which the starter read from the worktree.
         blocks.push(text(judge_context(conn, project_path, task, feedback)?));
@@ -200,6 +207,68 @@ pub fn compose(
         attachments,
         tail,
     })
+}
+
+/// The loop as it is set up so far, for its preparer.
+fn prepare_context(conn: &Connection, project_path: &str, task: &Task) -> Result<String, String> {
+    let config = task.loop_config.clone().unwrap_or_default();
+    let checks = task_store::loops::list_checks(conn, project_path, task.id)?;
+    let mut out = String::from(
+        "## The loop as it stands
+
+",
+    );
+    if checks.is_empty() {
+        out.push_str("No checks yet.");
+    } else {
+        out.push_str("Checks:");
+        for check in &checks {
+            out.push_str(&format!(
+                "
+- {:?}: {}",
+                check.kind, check.label
+            ));
+            if let Some(command) = check.command.as_deref() {
+                out.push_str(&format!(" (`{command}`)"));
+            }
+        }
+    }
+    if config.sealed_paths.is_empty() {
+        out.push_str(
+            "
+
+Nothing is sealed yet.",
+        );
+    } else {
+        out.push_str(
+            "
+
+Sealed: ",
+        );
+        let paths: Vec<String> = config
+            .sealed_paths
+            .iter()
+            .map(|p| format!("`{p}`"))
+            .collect();
+        out.push_str(&paths.join(", "));
+    }
+    if let Some(setup) = config.setup_command.as_deref() {
+        out.push_str(&format!(
+            "
+
+Setup before the checks: `{setup}`"
+        ));
+    }
+    out.push_str(&format!(
+        "
+
+Budget: {} iterations, {} minutes of agent time, stopping after {} in a row with no          progress. Each check may run for {} minutes.",
+        config.max_iterations,
+        config.max_agent_secs / 60,
+        config.stall_limit,
+        config.check_timeout_secs / 60
+    ));
+    Ok(out)
 }
 
 /// Where the loop stands: the iteration and budget, every check, and what the failing ones said.
@@ -311,7 +380,7 @@ fn judge_context(
     stat: Option<&str>,
 ) -> Result<String, String> {
     let base = match task.base_branch.trim() {
-        "" => task.loop_sealed_sha.as_deref().unwrap_or("HEAD"),
+        "" => task.execution_start_sha.as_deref().unwrap_or("HEAD"),
         base => base,
     };
     let mut out = format!("## The work\n\nThe loop's changes are `git diff {base}...HEAD`.");
