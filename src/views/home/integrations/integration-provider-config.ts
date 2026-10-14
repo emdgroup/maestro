@@ -92,7 +92,10 @@ export function getProviderInstructions(provider: string): InstructionLine[] | n
       return [
         { text: "Log into your Forgejo instance" },
         { text: "Go to Settings → Applications → Manage Access Tokens" },
-        { text: "Enter a token name, select issue scope (read)" },
+        // user: Read is what Connect checks, through `/api/v1/user`. repository: Read and Write is
+        // what opening a pull request needs, and a token without it still connects.
+        { text: "Enter a token name, then under Select permissions set:", code: false },
+        { text: "issue: Read, user: Read, repository: Read and Write", code: true },
         { text: "Click Generate Token and copy it immediately" },
       ];
     case "linear":
@@ -125,7 +128,9 @@ export function getProviderInstructions(provider: string): InstructionLine[] | n
       return [
         { text: "Log into your Gitea instance" },
         { text: "Go to Settings → Applications → Manage Access Tokens" },
-        { text: "Enter a token name, select issue scope (read)" },
+        // Same scopes as Forgejo, for the same reasons.
+        { text: "Enter a token name, then under Select permissions set:", code: false },
+        { text: "issue: Read, user: Read, repository: Read and Write", code: true },
         { text: "Click Generate Token and copy it immediately" },
       ];
     default:
