@@ -50,7 +50,7 @@ reqwest = { version = "0.13", default-features = true, features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 base64 = "0.23"
 machine-uid = "0.6"
-rand = { version = "0.8", features = ["getrandom"] }
+rand = "0.10"
 portable-pty = "0.9.0"
 russh = { version = "0.64.1", default-features = false, features = ["ring", "rsa", "flate2"] }
 russh-sftp = "3.0"
@@ -59,7 +59,7 @@ keyring = { version = "3.6.3", features = [
   "apple-native",
   "linux-native-sync-persistent",
 ] }
-sha2 = { version = "0.10", default-features = false, features = ["std"] }
+sha2 = "0.11"
 zeroize = { version = "1.8", features = ["derive"] }
 specta = { version = "2.0.0-rc.20", features = ["serde_json"] }
 specta-typescript = "0.0.9"
