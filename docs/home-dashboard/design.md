@@ -211,7 +211,7 @@ distro, Container; This computer always exists, so it is not offered):
 - **SSH host:** `Address` (`user@host or user@host:port`, large monospace), optional `Name`, and a
   segmented `Sign in with` control (SSH agent, Key file, Password). Key file shows a path with
   `Browse…`; Password shows a field and `Remember in the system keychain`. Footer note: `Maestro
-installs its server on the host the first time.`, then `Connect`. This folds today's separate
+  installs its server on the host the first time.`, then `Connect`. This folds today's separate
   `SshAuthModal` into the same step.
 - **WSL distro:** the distributions on this PC with Running or Stopped; one already added is dimmed
   and says `already added`.
@@ -255,12 +255,12 @@ Stop, Restart and Remove confirm in a `glass-strong` dialog listing the conseque
 the connection's live state:
 
 - **Stop:** `N agents stop mid-task` (their tasks resume when the server is back), `Task pipelines
-pause on every project here`, `N scheduled automations skip their runs` (a missed run is dropped,
+  pause on every project here`, `N scheduled automations skip their runs` (a missed run is dropped,
   not caught up), `Other windows lose their projects` with the holders named. Note: `It starts again
-the next time you open a project here.` Rose button `Stop server`.
+  the next time you open a project here.` Rose button `Stop server`.
 - **Restart:** the agents line and `Everything resumes on its own`. Accent button `Restart`.
 - **Remove:** the same list when connected, and the note `Projects and their boards stay on <host>.
-Adding the connection again brings them back.` Rose button `Remove`.
+  Adding the connection again brings them back.` Rose button `Remove`.
 
 ## Navigation into a project
 

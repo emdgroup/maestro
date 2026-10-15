@@ -7,7 +7,7 @@ import { ReviewFileCard, fileNote } from "./ReviewFileCard";
 import { BinaryDiffStats, BinaryFileBody } from "./BinaryFileView";
 import { useCommentNavigation } from "./useCommentNavigation";
 import { LoadDiffPrompt } from "./LoadDiffPrompt";
-import { diffLineCount, planEagerBodies, UNKNOWN_FILE_LINES } from "./body-budget";
+import { diffLineCount, planEagerBodies } from "./body-budget";
 import { displayItemPath, type DisplayItem } from "@/types/review";
 import type { DiffTarget } from "@/types/bindings";
 
@@ -137,22 +137,22 @@ export function DiffFileStack({
   /**
    * Which files render their diff without being asked, and which the user has since asked for.
    *
-   * Everything within the review's budget is built from the first frame — the document reaches its
+   * Every file within the per-file cap is built from the first frame — the document reaches its
    * true height immediately and never changes it, which is what makes `navigateTo` land exactly.
-   * Beyond the budget a card shows a button instead, and nothing about that is driven by scrolling:
-   * an attempt at building bodies as the viewport reached them made every scroll compete with tens
-   * of milliseconds of layout, and felt considerably worse than paying the whole cost up front.
+   * A larger one shows a button instead, and nothing about that is driven by scrolling: an attempt
+   * at building bodies as the viewport reached them made every scroll compete with tens of
+   * milliseconds of layout, and felt considerably worse than paying the whole cost up front.
    *
-   * An untracked file is counted at a nominal size here because its body is fetched rather than
-   * derived from the diff, so nothing knows how big it is yet. `UntrackedFileDiffViewer` applies
-   * the per-file cap itself once the content arrives.
+   * An untracked file always passes here because its body is fetched rather than derived from the
+   * diff, so nothing knows how big it is yet. `UntrackedFileDiffViewer` applies the same cap itself
+   * once the content arrives.
    */
   const eagerBodies = useMemo(
     () =>
       planEagerBodies(
         items.map((item) => ({
           path: displayItemPath(item),
-          lines: item.kind === "diff" ? diffLineCount(item.file.hunks) : UNKNOWN_FILE_LINES,
+          lines: item.kind === "diff" ? diffLineCount(item.file.hunks) : 0,
         })),
       ),
     [items],
@@ -167,7 +167,7 @@ export function DiffFileStack({
    *
    * The other half of the cost, and the half that is free to defer: colour changes no layout at
    * all (see the `highlight` prop on `DiffViewer`), so it can arrive whenever without moving
-   * anything. A body cannot, which is why that one is decided up front by the budget rather than
+   * anything. A body cannot, which is why that one is decided up front by its size rather than
    * drip-fed as the reader arrives.
    */
   const [highlighted, setHighlighted] = useState<Set<string>>(new Set());

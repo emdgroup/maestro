@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseDiffString, computeFileStats } from "./diff-utils";
+import { parseDiffString, computeFileStats, detectLanguage } from "./diff-utils";
 
 describe("parseDiffString", () => {
   it("returns empty array for empty string", () => {
@@ -388,4 +388,28 @@ describe("computeFileStats", () => {
     const hunks = ["@@ -1,2 +0,0 @@", "-line1", "-line2"];
     expect(computeFileStats(hunks)).toEqual({ insertions: 0, deletions: 2 });
   });
+});
+
+describe("detectLanguage", () => {
+  it.each([
+    ["src/a.ts", "typescript"],
+    ["src/a.mts", "typescript"],
+    ["scripts/build.mjs", "javascript"],
+    ["src/App.vue", "vue"],
+    ["src/theme.SCSS", "scss"],
+    ["Cargo.toml", "toml"],
+    ["app/Main.kt", "kotlin"],
+    ["deploy.ps1", "powershell"],
+    ["Dockerfile", "dockerfile"],
+    ["ci/Jenkinsfile", "groovy"],
+  ])("names %s as %s", (fileName, lang) => {
+    expect(detectLanguage(fileName)).toBe(lang);
+  });
+
+  it.each(["Makefile", "LICENSE", "notes.unknown", ".gitignore"])(
+    "leaves %s as plain text",
+    (fileName) => {
+      expect(detectLanguage(fileName)).toBe("text");
+    },
+  );
 });

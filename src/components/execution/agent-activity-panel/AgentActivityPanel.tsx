@@ -819,7 +819,7 @@ export function AgentActivityPanel({
               Only the selected session's conversation is rendered. AgentMonitor keeps a panel
               mounted for every ACP session so its listeners and reducer state survive
               navigation, which means without this gate every session's full message tree —
-              rendered Markdown, Shiki, KaTeX, Mermaid — sits in the DOM at once.
+              rendered Markdown, highlighted code, KaTeX, Mermaid — sits in the DOM at once.
 
               Scoped to the message list rather than the whole panel on purpose: ComposeBar
               holds the unsent draft in local state, and the side panel owns live xterm

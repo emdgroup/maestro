@@ -3,8 +3,8 @@
  *
  * `@git-diff-view/lowlight` calls `createLowlight(all)` at module scope, which bundles every
  * highlight.js grammar (~900 kB minified) into the chunk every markdown view loads. Diffs are
- * highlighted by shiki (`shiki-highlighter.ts`); lowlight is only the fallback `@git-diff-view/core`
- * reaches for when shiki has not registered a file's language. This one registers nothing and
+ * highlighted by Lezer (`diff-highlighter.ts`); lowlight is only the fallback `@git-diff-view/core`
+ * reaches for when Lezer has not registered a file's language. This one registers nothing and
  * returns no tree, so those files render as plain text instead.
  */
 

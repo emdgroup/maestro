@@ -24,8 +24,8 @@ Taken with the user on 2026-10-12, on top of the design's own:
 1. **Daemon: store id and `UsageSync`.** A `usage_meta` row in `projects.db` (migration
    `V11_USAGE_META`) holds a random store id, made on first use, and `merged_through_id`, the
    highest turn id `merge_old` has folded into hours. `ServerRequest::UsageSync { after_turn_id,
-limit }` answers `UsageSyncOk { store_id, merged_through_id, turns, turn_models, hourly,
-hourly_models, more }`: turns with an id above `after_turn_id` in id order, at most `limit`
+   limit }` answers `UsageSyncOk { store_id, merged_through_id, turns, turn_models, hourly,
+   hourly_models, more }`: turns with an id above `after_turn_id` in id order, at most `limit`
    (default 5000) per answer with `more` set when there are further pages, and the hourly tables
    only when `after_turn_id` is `None`. `PROTOCOL_VERSION` goes from 15 to 16. Tests: paging, the
    first sync carrying hours, `merged_through_id` moving after a merge.

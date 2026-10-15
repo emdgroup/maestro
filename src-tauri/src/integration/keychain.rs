@@ -6,7 +6,7 @@ use aes_gcm::{
     Aes256Gcm, Key, Nonce,
 };
 use keyring::Entry;
-use rand::RngCore;
+use rand::TryRng;
 use sha2::{Digest, Sha256};
 
 use crate::integration::token_manager::StoredToken;
@@ -203,7 +203,9 @@ impl KeychainStore {
         let key = Key::<Aes256Gcm>::from(key_bytes);
         let cipher = Aes256Gcm::new(&key);
         let mut nonce_arr = [0u8; 12];
-        rand::rngs::OsRng.fill_bytes(&mut nonce_arr);
+        rand::rngs::SysRng
+            .try_fill_bytes(&mut nonce_arr)
+            .expect("OS random number generator failed");
         let nonce = Nonce::from(nonce_arr);
         let ciphertext = cipher
             .encrypt(&nonce, plaintext.as_slice())
@@ -483,7 +485,9 @@ impl KeychainStore {
         let key_bytes = Self::derive_key(&Self::get_encryption_seed(app_data_dir));
         let cipher = Aes256Gcm::new(&Key::<Aes256Gcm>::from(key_bytes));
         let mut nonce_arr = [0u8; 12];
-        rand::rngs::OsRng.fill_bytes(&mut nonce_arr);
+        rand::rngs::SysRng
+            .try_fill_bytes(&mut nonce_arr)
+            .expect("OS random number generator failed");
         let nonce = Nonce::from(nonce_arr);
         let ciphertext = cipher
             .encrypt(&nonce, plaintext)
@@ -530,9 +534,10 @@ impl KeychainStore {
                 return trimmed;
             }
         }
-        use rand::RngCore;
         let mut buf = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut buf);
+        rand::rngs::SysRng
+            .try_fill_bytes(&mut buf)
+            .expect("OS random number generator failed");
         let hex: String = buf.iter().map(|b| format!("{:02x}", b)).collect();
         // Best-effort persist — if this fails, a new secret will be generated next
         // time, making existing encrypted files unreadable. This is acceptable: the
@@ -576,7 +581,9 @@ impl KeychainStore {
         let key = Key::<Aes256Gcm>::from(key_bytes);
         let cipher = Aes256Gcm::new(&key);
         let mut nonce_arr = [0u8; 12];
-        rand::rngs::OsRng.fill_bytes(&mut nonce_arr);
+        rand::rngs::SysRng
+            .try_fill_bytes(&mut nonce_arr)
+            .expect("OS random number generator failed");
         let nonce = Nonce::from(nonce_arr);
         let ciphertext = cipher
             .encrypt(&nonce, plaintext.as_slice())

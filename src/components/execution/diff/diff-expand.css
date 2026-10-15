@@ -1,41 +1,4 @@
 /**
- * The "load surrounding context" affordance on a chunk header.
- *
- * @git-diff-view only renders its expand arrows once the DiffFile holds a full copy of one side
- * of the file, and Maestro fetches that lazily — so until it arrives the library draws a blank
- * spacer in the action cell and there is nowhere to mount a React button. This paints the cell
- * instead, and `bindHunkHeaderPress` supplies the click.
- *
- * Scoped under .diff-context-request, which the viewer drops the moment content is attached, so
- * this cannot end up layered over the real arrows.
- */
-
-.diff-context-request td.diff-line-hunk-action {
-  cursor: pointer;
-  position: relative;
-}
-
-.diff-context-request td.diff-line-hunk-action::after {
-  content: "⋯";
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.1em;
-  line-height: 1;
-  opacity: 0.45;
-  transition:
-    opacity 120ms ease,
-    background-color 120ms ease;
-}
-
-.diff-context-request td.diff-line-hunk-action:hover::after {
-  opacity: 1;
-  background-color: color-mix(in oklch, currentColor 12%, transparent);
-}
-
-/**
  * Expanded context has to read as ordinary context.
  *
  * The library paints lines revealed by an expansion from `--diff-expand-content--` rather than

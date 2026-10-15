@@ -9,10 +9,8 @@
 export function LoadDiffPrompt({ lines, onLoad }: { lines: number; onLoad: () => void }) {
   return (
     <div className="flex flex-col items-center gap-2 px-3 py-8">
-      {/* The size, and nothing about why. A file can end up here because it is large or because
-          the review ran out of budget before reaching it, and an explanation naming one reason
-          would be wrong half the time. Zero means there is nothing to count — an untracked file
-          whose body has not been fetched yet. */}
+      {/* The size, which is the only reason a file ends up here. Zero means there is nothing to
+          count — an untracked file whose body has not been fetched yet. */}
       {lines > 0 && <p className="text-xs text-muted-foreground">{lines.toLocaleString()} lines</p>}
       <button
         type="button"

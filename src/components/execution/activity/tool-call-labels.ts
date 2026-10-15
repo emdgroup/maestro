@@ -1,7 +1,7 @@
 /**
  * Pure labelling helpers for tool-call rows. Kept free of React and of the row renderer so the
  * permission notifications, which load at startup, can import them without pulling the markdown
- * renderer (katex, shiki, the diff viewer) into the entry bundle.
+ * renderer (katex, the syntax highlighter, the diff viewer) into the entry bundle.
  */
 
 import type { ToolCallItem } from "./types";

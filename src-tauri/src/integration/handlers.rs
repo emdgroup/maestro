@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use base64::Engine as _;
-use rand::RngCore;
+use rand::TryRng;
 use tauri::{Emitter, State};
 
 use crate::core::AppState;
@@ -23,7 +23,9 @@ const KNOWN_PROVIDERS: &[&str] = &[
 
 fn generate_id() -> String {
     let mut buf = [0u8; 16];
-    rand::rngs::OsRng.fill_bytes(&mut buf);
+    rand::rngs::SysRng
+        .try_fill_bytes(&mut buf)
+        .expect("OS random number generator failed");
     buf.iter().map(|b| format!("{:02x}", b)).collect()
 }
 

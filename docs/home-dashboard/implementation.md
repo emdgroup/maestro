@@ -11,7 +11,7 @@ the technical decisions taken with the user on 2026-10-05. Phases are committed 
   only from another machine therefore appears too; opening it registers it in this app's database.
 - **A failed connect** (the server busy with another build, missing tools) is shown inside the
   connection's panel as one more state, with the actions `PreflightModal` offers today: `Update
-anyway`, `Test and use path`, `Continue anyway`. `PreflightModal` goes away.
+  anyway`, `Test and use path`, `Continue anyway`. `PreflightModal` goes away.
 - **Rename is SSH only for now.** The pencil shows on SSH panels only, because WSL and container
   connections have no name of their own and giving them one needs a schema change. This narrows
   `design.md`, which shows the pencil on every connection but This computer.
