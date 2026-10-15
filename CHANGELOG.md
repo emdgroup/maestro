@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.37.0](https://github.com/emdgroup/maestro/compare/v0.36.0...v0.37.0) (2026-10-15)
+
+
+### Features
+
+* add a scope selector to the session Changes tab ([#509](https://github.com/emdgroup/maestro/issues/509)) ([3b1a849](https://github.com/emdgroup/maestro/commit/3b1a849a4b386ad17eb0e3262c06ed7d026a0ae0))
+
+
+### Bug Fixes
+
+* draw the plan window hatch in the foreground colour ([#504](https://github.com/emdgroup/maestro/issues/504)) ([70740c8](https://github.com/emdgroup/maestro/commit/70740c816252a53b1deaea5870d0eefe94076355))
+* list user and repository scopes in Forgejo and Gitea token steps ([#514](https://github.com/emdgroup/maestro/issues/514)) ([5267063](https://github.com/emdgroup/maestro/commit/5267063fcda93a2152187b71075ad8d1fe834a5b))
+
 ## [0.36.0](https://github.com/emdgroup/maestro/compare/v0.35.1...v0.36.0) (2026-10-12)
 
 
