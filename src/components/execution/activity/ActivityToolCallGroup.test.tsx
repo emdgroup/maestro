@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 
-// An expanded command label reaches for the theme to pick a shiki palette.
+// An expanded command label reaches for the theme to pick a syntax palette.
 vi.mock("@/providers/ThemeProvider", () => ({ useTheme: () => ({ theme: "dark" }) }));
 
 import { ActivityToolCallGroup } from "./ActivityToolCallGroup";
@@ -18,7 +18,7 @@ function makeCall(
     title,
     kind,
     status,
-    // Content-free so ToolCallContentBlock (and shiki) never renders.
+    // Content-free so ToolCallContentBlock (and the highlighter) never renders.
     content: [],
     locations: [],
   };
@@ -218,7 +218,7 @@ describe("ActivityToolCallGroup", () => {
   it("opens a read to the excerpt the agent saw", () => {
     const tc: ToolCallItem = {
       ...makeCall("a", "Read ToolCallTimeline.tsx (60 - 62)", "completed", "read"),
-      // Unfenced, so ToolCallContentBlock takes its plain branch and shiki stays out.
+      // Unfenced, so ToolCallContentBlock takes its plain branch and the highlighter stays out.
       content: [{ type: "content", content: { type: "text", text: "60\texport function" } }],
       meta: { toolName: "Read", fileTotalLines: 171 },
     };

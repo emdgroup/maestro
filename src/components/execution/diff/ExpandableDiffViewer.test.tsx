@@ -11,17 +11,20 @@ vi.mock("@/lib/tauri-utils", () => ({
   api: { getFileContentAtBase: (...args: unknown[]) => getFileContentAtBase(...args) },
 }));
 
-// The real viewer pulls in Shiki and the library's DOM. What matters here is which `diffFile` it
-// was handed and whether it was given a way to ask for context at all.
+// The real viewer pulls in the highlighter and the library's DOM. What matters here is which
+// `diffFile` it was handed, whether it was told to colour it, and whether it was given a way to
+// ask for context at all.
 vi.mock("./DiffViewer", () => ({
   DiffViewer: ({
     diffFile,
     onRequestContext,
+    highlight,
   }: {
     diffFile: DiffFileWithName;
     onRequestContext?: () => void;
+    highlight?: boolean;
   }) => (
-    <div data-testid="diff-viewer">
+    <div data-testid="diff-viewer" data-highlight={String(highlight)}>
       <span data-testid="old-content">{diffFile.oldFile?.content ?? "none"}</span>
       <span data-testid="old-name">{diffFile.oldFile?.fileName ?? "none"}</span>
       {onRequestContext ? (
@@ -48,7 +51,7 @@ function modifiedFile(overrides: Partial<DiffFileWithName> = {}): DiffFileWithNa
   };
 }
 
-function renderViewer(file: DiffFileWithName) {
+function renderViewer(file: DiffFileWithName, highlight = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
@@ -58,6 +61,7 @@ function renderViewer(file: DiffFileWithName) {
         cwd="/tmp/wt"
         diffTarget={{ type: "Head" }}
         diffViewMode={DiffModeEnum.Unified}
+        highlight={highlight}
       />
     </QueryClientProvider>,
   );
@@ -69,8 +73,8 @@ beforeEach(() => {
 });
 
 describe("ExpandableDiffViewer", () => {
-  // The whole point of the lazy fetch: mounting a card must cost exactly what it costs today.
-  it("fetches nothing until the context is asked for", () => {
+  // A card the stack has not coloured yet is off screen: it costs no IPC until it is looked at.
+  it("fetches nothing until the context is asked for or the card is highlighted", () => {
     renderViewer(modifiedFile());
     expect(getFileContentAtBase).not.toHaveBeenCalled();
     expect(screen.getByTestId("old-content")).toHaveTextContent("none");
@@ -131,5 +135,37 @@ describe("ExpandableDiffViewer", () => {
     await waitFor(() => expect(getFileContentAtBase).toHaveBeenCalled());
     expect(screen.getByTestId("diff-viewer")).toBeInTheDocument();
     expect(screen.getByTestId("old-content")).toHaveTextContent("none");
+  });
+
+  // Colouring the diff lines alone miscolours any hunk that opens inside a comment or a template
+  // literal, so the colour waits for the file it belongs to.
+  it("fetches the pre-image once highlighted, and colours only after it arrives", async () => {
+    let resolve!: (content: string) => void;
+    getFileContentAtBase.mockReturnValue(new Promise((r) => (resolve = r)));
+    renderViewer(modifiedFile(), true);
+
+    await waitFor(() => expect(getFileContentAtBase).toHaveBeenCalledOnce());
+    expect(screen.getByTestId("diff-viewer")).toHaveAttribute("data-highlight", "false");
+
+    resolve(PRE_IMAGE);
+    await waitFor(() => expect(screen.getByTestId("old-content")).toHaveTextContent("line 1"));
+    expect(screen.getByTestId("diff-viewer")).toHaveAttribute("data-highlight", "true");
+  });
+
+  it("colours the diff lines alone when the pre-image cannot be had", async () => {
+    getFileContentAtBase.mockRejectedValue(new Error("gone"));
+    renderViewer(modifiedFile(), true);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("diff-viewer")).toHaveAttribute("data-highlight", "true"),
+    );
+    expect(screen.getByTestId("old-content")).toHaveTextContent("none");
+  });
+
+  it("colours an added file at once, having nothing to wait for", () => {
+    renderViewer(modifiedFile({ status: "A", oldPath: undefined }), true);
+
+    expect(screen.getByTestId("diff-viewer")).toHaveAttribute("data-highlight", "true");
+    expect(getFileContentAtBase).not.toHaveBeenCalled();
   });
 });

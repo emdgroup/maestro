@@ -8,7 +8,7 @@ import {
   type MultiSelectResult,
   type MultiSelectState,
 } from "@git-diff-view/react";
-import { getDiffHighlighter, type DiffHighlighterInstance } from "@/lib/shiki-highlighter";
+import { getDiffHighlighter, type DiffHighlighterInstance } from "@/lib/diff-highlighter";
 import "@git-diff-view/react/styles/diff-view.css";
 import "./diff-expand.css";
 import { DiffFile } from "@/types/review";
@@ -75,8 +75,8 @@ interface DiffViewerProps {
    * Whether to syntax-highlight, as opposed to rendering the same diff in plain text.
    *
    * The one expensive thing this component does. Building the diff's structure is under a
-   * millisecond a file; Shiki tokenising it is 25–150ms, and up to 1.8s for a large one — all of
-   * it synchronous, inside `DiffView`'s effects. `@git-diff-view` keeps the two apart
+   * millisecond a file; tokenising it is 7–30ms with Lezer, and was 25–150ms with Shiki, up to
+   * 1.8s for a large one — all of it synchronous, inside `DiffView`'s effects. `@git-diff-view` keeps the two apart
    * (`DiffView.tsx:320` only calls `initSyntax` for a highlighted view) which is what lets a host
    * render a whole review at once and colour it afterwards.
    *

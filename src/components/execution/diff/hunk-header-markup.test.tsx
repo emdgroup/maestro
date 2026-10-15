@@ -10,7 +10,7 @@ import { HUNK_ACTION_SELECTOR } from "./hunk-header-press";
  * component, so a bump that restructures the chunk-header row fails here rather than silently
  * leaving the affordance unclickable.
  *
- * Highlighting is off — Shiki contributes nothing to the row structure and costs seconds.
+ * Highlighting is off — the highlighter contributes nothing to the row structure.
  */
 
 const OLD = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n") + "\n";

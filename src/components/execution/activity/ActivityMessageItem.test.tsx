@@ -3,11 +3,6 @@ import { describe, it, expect, vi } from "vitest";
 
 // Mock Tauri and heavy deps before importing component
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
-vi.mock("@/lib/shiki-highlighter", () => ({
-  getDiffHighlighter: vi
-    .fn()
-    .mockResolvedValue({ codeToHtml: vi.fn().mockReturnValue("<code>mock</code>") }),
-}));
 vi.mock("@/providers/ThemeProvider", () => ({ useTheme: () => ({ theme: "dark" }) }));
 vi.mock("katex/dist/katex.min.css", () => ({}));
 

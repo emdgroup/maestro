@@ -38,7 +38,7 @@ vi.mock("@/lib/file-opener", () => ({
   opensViaHostCopy: () => false,
 }));
 
-// Markdown and the mime branches pull in Shiki and react-markdown; none of that is what these
+// Markdown and the mime branches pull in the highlighter and react-markdown; none of that is what these
 // tests are about.
 vi.mock("./WorkspaceFileContent", () => ({
   WorkspaceFileContent: ({ content, fileName }: { content: string | null; fileName: string }) => (

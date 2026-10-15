@@ -4,8 +4,10 @@ import type { HighlightStyle } from "@codemirror/language";
 import { typescriptLanguage } from "@codemirror/lang-javascript";
 import githubDark from "@shikijs/themes/github-dark";
 import githubLight from "@shikijs/themes/github-light";
+import { createCssVarHighlighter } from "@git-diff-view/lezer";
 import {
   githubHighlightStyle,
+  githubTokenColors,
   githubPalette,
   SELECTION_BG,
   SELECTION_SELECTORS,
@@ -77,6 +79,25 @@ function paint(code: string, style: HighlightStyle): Map<string, string | null> 
 describe("the CodeMirror GitHub theme", () => {
   const dark = githubHighlightStyle(true);
   const light = githubHighlightStyle(false);
+
+  // The diff view and the code blocks paint through `@git-diff-view/lezer` instead of a
+  // `HighlightStyle`; what a tag resolves to there has to be what it resolves to here.
+  it("hands the diff view the colours the editor resolves", () => {
+    const diff = createCssVarHighlighter(githubTokenColors());
+    for (const tag of [
+      t.keyword,
+      t.string,
+      t.comment,
+      t.variableName,
+      t.function(t.definition(t.variableName)),
+      t.derefOperator,
+      t.heading1,
+    ]) {
+      expect(diff.style([tag])).toBe(
+        `--diff-view-light:${colorOf(light, tag)};--diff-view-dark:${colorOf(dark, tag)}`,
+      );
+    }
+  });
 
   it("uses only colours that exist in the shiki theme it mirrors", () => {
     for (const [isDark, theme] of [

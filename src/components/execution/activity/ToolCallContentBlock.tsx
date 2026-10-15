@@ -68,8 +68,8 @@ export function ToolCallContentBlock({ content }: { content: ToolCallContent }) 
       if (!text) return null;
       const bare = unwrapWholeFence(text);
       // The `[&_pre]:` rules carry the same wrapping into the fenced branch,
-      // where the `pre` is shiki's and out of reach. `!` because they land on an
-      // ancestor of shiki's own `[&_pre]:overflow-x-auto`: specificity ties, so
+      // where the `pre` is the highlighter's and out of reach. `!` because they land on an
+      // ancestor of the highlighter's own `[&_pre]:overflow-x-auto`: specificity ties, so
       // stylesheet order would otherwise pick the winner. The cost is column
       // alignment on lines wider than the panel — carets under a compiler error,
       // ASCII tables — which is the cheaper of the two.

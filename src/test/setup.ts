@@ -23,11 +23,13 @@ vi.mock("@testing-library/user-event", async (importOriginal) => {
   return { default: fast, userEvent: fast };
 });
 
-// The real highlighter loads 38 grammars in the background the first time anything renders code
-// or a diff. In a full run that took one to two seconds, and whichever test was still going when it
-// landed absorbed them, a different one each time. Nothing but its own suite asserts on
-// highlighting, and that suite unmocks it.
-vi.mock("@/lib/shiki-highlighter", () => ({ getDiffHighlighter: () => new Promise(() => {}) }));
+// The real highlighter loads grammars in the background the first time anything renders code or a
+// diff, and whichever test was still going when they landed absorbed the work, a different one each
+// time. Nothing but its own suite asserts on highlighting, and that suite unmocks it.
+vi.mock("@/lib/diff-highlighter", () => ({
+  getDiffHighlighter: () => new Promise(() => {}),
+  highlightToHtml: () => new Promise(() => {}),
+}));
 
 // JSDOM doesn't implement Web Animations API; base-ui ScrollArea calls this in async timers
 if (!Element.prototype.getAnimations) {

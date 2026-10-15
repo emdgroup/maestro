@@ -299,7 +299,7 @@
   }
 }
 
-/* File content viewer — line numbers via CSS counter on Shiki .line spans */
+/* File content viewer — line numbers via CSS counter on the highlighter's .line spans */
 .file-code-view code {
   counter-reset: line;
   display: block;

@@ -6,7 +6,7 @@ import { DiffModeEnum } from "@git-diff-view/react";
 import { setAutoIntersect, intersect, observedElements } from "@/test/intersection-observer";
 
 // The stack's own wiring is what is under test, not the diff renderer — and the real one pulls in
-// Shiki, plus a query for the file's pre-image that would need a QueryClient. The stub reports the
+// the highlighter, plus a query for the file's pre-image that would need a QueryClient. The stub reports the
 // per-file review props it was handed, which is the contract that matters here.
 vi.mock("./ExpandableDiffViewer", () => ({
   ExpandableDiffViewer: ({
@@ -154,7 +154,7 @@ describe("DiffFileStack", () => {
   /**
    * The reversal the whole design turns on. Building a diff's structure is under a millisecond a
    * file, so every one of them is in the document from the first frame and the stack reaches its
-   * true height immediately. What waits is Shiki — 25–150ms a file — and colour changes no layout,
+   * true height immediately. What waits is the highlighter, and colour changes no layout,
    * so it can arrive whenever without moving anything.
    *
    * Deferring the *body* is what the two previous attempts did, and it cannot be made to work: an
