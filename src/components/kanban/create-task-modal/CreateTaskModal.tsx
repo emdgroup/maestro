@@ -263,7 +263,7 @@ export function CreateTaskModal({
           ? `${MAESTRO_BRANCH_PREFIX}${data.branchSuffix.trim()}`
           : null,
         model_override: null,
-        run_mode: runMode === "Loop" ? "Loop" : null,
+        run_mode: isGitRepo && runMode === "Loop" ? "Loop" : null,
         loop_config: null,
       },
       {
@@ -407,52 +407,52 @@ export function CreateTaskModal({
               </div>
             )}
 
-            {/* How it runs, first: it decides which workspaces there are to pick. */}
-            <div className="shrink-0 space-y-1.5">
-              <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
-                How it runs
-              </span>
-              <div className="grid grid-cols-2 gap-2">
-                {(
-                  [
+            {/* How it runs, first: it decides which workspaces there are to pick. Only in a git
+                project, since a loop needs a worktree of its own. */}
+            {isGitRepo && (
+              <div className="shrink-0 space-y-1.5">
+                <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
+                  How it runs
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  {(
                     [
-                      "Pipeline",
-                      Workflow,
-                      "Plan, implement, self review, your approval. For work you will judge by reading it.",
-                    ],
-                    [
-                      "Loop",
-                      Repeat,
-                      isGitRepo
-                        ? "Fresh sessions until sealed checks pass. For work a command can verify."
-                        : "Needs a git repository: a loop runs in a worktree of its own.",
-                    ],
-                  ] as const
-                ).map(([mode, Icon, blurb]) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    aria-pressed={runMode === mode}
-                    disabled={mode === "Loop" && !isGitRepo}
-                    onClick={() => {
-                      setRunMode(mode);
-                      if (mode === "Loop") setValue("workspaceMode", "NewWorktree");
-                    }}
-                    className={cn(
-                      "flex items-start gap-2 rounded-md border p-2.5 text-left text-xs disabled:opacity-50",
-                      runMode === mode ? "border-accent bg-accent/10" : "border-border",
-                    )}
-                  >
-                    <Icon className="mt-0.5 size-4 shrink-0 text-accent" />
-                    <span>
-                      <span className="font-medium">{mode}</span>
-                      <br />
-                      <span className="text-[11px] text-muted-foreground">{blurb}</span>
-                    </span>
-                  </button>
-                ))}
+                      [
+                        "Pipeline",
+                        Workflow,
+                        "Plan, implement, self review, your approval. For work you will judge by reading it.",
+                      ],
+                      [
+                        "Loop",
+                        Repeat,
+                        "Fresh sessions until sealed checks pass. For work a command can verify.",
+                      ],
+                    ] as const
+                  ).map(([mode, Icon, blurb]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      aria-pressed={runMode === mode}
+                      onClick={() => {
+                        setRunMode(mode);
+                        if (mode === "Loop") setValue("workspaceMode", "NewWorktree");
+                      }}
+                      className={cn(
+                        "flex items-start gap-2 rounded-md border p-2.5 text-left text-xs",
+                        runMode === mode ? "border-accent bg-accent/10" : "border-border",
+                      )}
+                    >
+                      <Icon className="mt-0.5 size-4 shrink-0 text-accent" />
+                      <span>
+                        <span className="font-medium">{mode}</span>
+                        <br />
+                        <span className="text-[11px] text-muted-foreground">{blurb}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Workspace: where the agent will work, and whatever that choice needs */}
             {isGitRepo && (
