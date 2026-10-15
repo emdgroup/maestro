@@ -1,9 +1,10 @@
 /**
  * CodeMirror rendering of Shiki's `github-dark` / `github-light`.
  *
- * The Files tab shows one file through one editor, so there is only one place colours come from —
- * but the *rest* of the app (the diff view, the agent activity stream) still renders code with
- * Shiki and those two themes. This file exists so the two agree.
+ * The Files tab, the diff view and the agent activity stream all parse code with Lezer, and all of
+ * them take their colours from here: the editor through `githubHighlightStyle`, the other two
+ * through `githubTokenColors`, which is the same rules handed to `@git-diff-view/lezer`. So the
+ * three cannot disagree.
  *
  * It replaces `@uiw/codemirror-theme-github`, which disagreed twice over:
  *
@@ -22,10 +23,11 @@
  * `special(propertyName)` finds `propertyName` — so composed tags are only listed where the
  * fallback would land on the wrong colour.
  */
-import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { HighlightStyle, syntaxHighlighting, type TagStyle } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import { tags as t } from "@lezer/highlight";
+import type { TokenColorRule } from "@git-diff-view/lezer";
 
 export interface GithubPalette {
   /** `editor.foreground`, and the colour `variable.other` is pinned to. */
@@ -117,8 +119,24 @@ export function githubPalette(isDark: boolean): GithubPalette {
 }
 
 export function githubHighlightStyle(isDark: boolean) {
-  const p = githubPalette(isDark);
-  return HighlightStyle.define([
+  return HighlightStyle.define(githubTokenRules(githubPalette(isDark)));
+}
+
+/**
+ * The same rules as light/dark pairs, the shape `@git-diff-view/lezer` paints with.
+ *
+ * Only colour carries over: the diff view styles a token through its `--diff-view-light` and
+ * `--diff-view-dark` variables alone, so a markdown heading is coloured there but not bold.
+ */
+export function githubTokenColors(): TokenColorRule[] {
+  const dark = githubTokenRules(DARK);
+  return githubTokenRules(LIGHT).flatMap((rule, i) =>
+    rule.color ? [{ tag: rule.tag, color: { light: rule.color, dark: dark[i].color! } }] : [],
+  );
+}
+
+function githubTokenRules(p: GithubPalette): TagStyle[] {
+  return [
     // comment, punctuation.definition.comment, string.comment
     { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: p.comment },
 
@@ -258,7 +276,7 @@ export function githubHighlightStyle(isDark: boolean) {
     { tag: t.inserted, color: p.tag },
     { tag: t.deleted, color: p.invalid },
     { tag: t.changed, color: p.variable },
-  ]);
+  ];
 }
 
 /**

@@ -19,7 +19,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
-use rand::RngCore;
+use rand::TryRng;
 use reqwest::header::{ACCEPT, CONTENT_TYPE, WWW_AUTHENTICATE};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -145,7 +145,9 @@ fn now() -> u64 {
 
 fn random_token() -> String {
     let mut bytes = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
+    rand::rngs::SysRng
+        .try_fill_bytes(&mut bytes)
+        .expect("OS random number generator failed");
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 

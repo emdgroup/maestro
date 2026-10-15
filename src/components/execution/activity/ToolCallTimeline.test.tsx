@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 
-// An expanded command label reaches for the theme to pick a shiki palette.
+// An expanded command label reaches for the theme to pick a syntax palette.
 vi.mock("@/providers/ThemeProvider", () => ({ useTheme: () => ({ theme: "dark" }) }));
 
 import { McpIcon } from "@/components/common/icons/McpIcon";
@@ -19,7 +19,7 @@ function call(id: string, title: string, kind = "read"): ToolCallItem {
     title,
     kind,
     status: "completed",
-    // Unfenced, so ToolCallContentBlock takes its plain branch and shiki stays out.
+    // Unfenced, so ToolCallContentBlock takes its plain branch and the highlighter stays out.
     content: [{ type: "content", content: { type: "text", text: `${BODY} ${id}` } }],
     locations: [],
     meta: { toolName: "Read", fileTotalLines: 700 },

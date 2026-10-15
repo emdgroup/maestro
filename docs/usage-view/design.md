@@ -77,7 +77,7 @@ Top to bottom:
      `cost is not recorded per model` in muted text. Model dots and bars use the model's colour
      from the Model split, so a model looks the same everywhere.
 8. **Coverage line.** For each connection that is not attached: `gpu-rig not connected: showing its
-usage up to Oct 9, 14:02 (cached). Connect to refresh.` A removed connection's usage stays,
+   usage up to Oct 9, 14:02 (cached). Connect to refresh.` A removed connection's usage stays,
    labelled `(removed)`, with no Connect link.
 
 ## Range control

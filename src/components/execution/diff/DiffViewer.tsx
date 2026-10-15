@@ -8,7 +8,7 @@ import {
   type MultiSelectResult,
   type MultiSelectState,
 } from "@git-diff-view/react";
-import { getDiffHighlighter, type DiffHighlighterInstance } from "@/lib/shiki-highlighter";
+import { getDiffHighlighter, type DiffHighlighterInstance } from "@/lib/diff-highlighter";
 import "@git-diff-view/react/styles/diff-view.css";
 import "./diff-expand.css";
 import { DiffFile } from "@/types/review";
@@ -19,7 +19,6 @@ import { InlineCommentInput } from "./InlineCommentInput";
 import { PendingCommentBlock } from "./PendingCommentBlock";
 import { buildExtendData } from "./extend-data";
 import { scopeRangeToHunk } from "./scope-selection";
-import { bindHunkHeaderPress, CONTEXT_REQUEST_CLASS } from "./hunk-header-press";
 
 export interface PendingComment {
   id: string;
@@ -64,19 +63,11 @@ interface DiffViewerProps {
   } | null;
   sendDisabled?: boolean;
   /**
-   * Called when the user presses a hunk header while the file's surrounding context is not
-   * loaded. Omit to leave hunk headers inert, which is what a diff whose pre-image cannot be
-   * fetched — an untracked file, a rename with no old blob — should do.
-   *
-   * See `useHunkHeaderPress` for why this is a request rather than the expansion itself.
-   */
-  onRequestContext?: () => void;
-  /**
    * Whether to syntax-highlight, as opposed to rendering the same diff in plain text.
    *
    * The one expensive thing this component does. Building the diff's structure is under a
-   * millisecond a file; Shiki tokenising it is 25–150ms, and up to 1.8s for a large one — all of
-   * it synchronous, inside `DiffView`'s effects. `@git-diff-view` keeps the two apart
+   * millisecond a file; tokenising it is 7–30ms with Lezer, and was 25–150ms with Shiki, up to
+   * 1.8s for a large one — all of it synchronous, inside `DiffView`'s effects. `@git-diff-view` keeps the two apart
    * (`DiffView.tsx:320` only calls `initSyntax` for a highlighted view) which is what lets a host
    * render a whole review at once and colour it afterwards.
    *
@@ -149,7 +140,6 @@ export function DiffViewer({
   onSendComment,
   commentNav,
   sendDisabled,
-  onRequestContext,
   highlight = true,
 }: DiffViewerProps) {
   const [highlighter, setHighlighter] = useState<DiffHighlighterInstance | null>(null);
@@ -184,11 +174,12 @@ export function DiffViewer({
   const { theme, systemTheme } = useTheme();
   const diffTheme = (theme === "system" ? systemTheme : theme) === "dark" ? "dark" : "light";
 
-  // Load syntax highlighter on mount
+  // Load syntax highlighter, with this file's grammar, on mount
+  const lang = diffFile?.newFile?.fileLang ?? diffFile?.oldFile?.fileLang;
   useEffect(() => {
     const loadHighlighter = async () => {
       try {
-        const hl = await getDiffHighlighter();
+        const hl = await getDiffHighlighter(lang);
         setHighlighter(hl);
       } catch (err) {
         console.error("Failed to load highlighter:", err);
@@ -199,7 +190,7 @@ export function DiffViewer({
     };
 
     loadHighlighter();
-  }, []);
+  }, [lang]);
 
   /**
    * The range a drag actually selected, kept because pressing the `+` discards it.
@@ -238,22 +229,6 @@ export function DiffViewer({
       return () => wrapper.removeEventListener("mousedown", notePress, true);
     },
     [reviewMode],
-  );
-
-  /**
-   * Both wrapper listeners in one ref callback, since an element takes a single ref. Each binder
-   * returns its own cleanup and no-ops when its feature is off.
-   */
-  const bindWrapper = useCallback(
-    (wrapper: HTMLDivElement | null) => {
-      const unbindWidgetPress = bindWidgetPressFlag(wrapper);
-      const unbindHunkPress = bindHunkHeaderPress(wrapper, onRequestContext);
-      return () => {
-        unbindWidgetPress?.();
-        unbindHunkPress?.();
-      };
-    },
-    [bindWidgetPressFlag, onRequestContext],
   );
 
   const handleMultiSelectChange = useCallback(
@@ -382,17 +357,13 @@ export function DiffViewer({
   return (
     <div className="min-h-0 flex flex-col h-full">
       <div
-        ref={bindWrapper}
+        ref={bindWidgetPressFlag}
         // Kept out of a panel drag except for the part on screen: the view wraps its lines and
         // renders every one of them, so following a drag means relaying out the whole file per
         // frame. `tr` is the unit that can be dropped — the table is `table-layout: fixed`, so
         // hiding rows cannot change a column's width. See `freezeLayout` in `@/ui/resizable`.
         data-freeze-layout="tr"
-        className={cn(
-          "flex-1 min-h-0",
-          reviewMode && "review-mode-active",
-          onRequestContext && CONTEXT_REQUEST_CLASS,
-        )}
+        className={cn("flex-1 min-h-0", reviewMode && "review-mode-active")}
       >
         {/* Multi-select is review-only: a read-only diff has nothing to do with a selection, and
             leaving it on there would highlight lines the user cannot act on. */}

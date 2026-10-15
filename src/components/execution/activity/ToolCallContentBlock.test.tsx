@@ -2,7 +2,7 @@ import { render } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 
 // Importing this module pulls in MarkdownBlock, which reaches for katex's CSS
-// and the theme provider that shiki reads.
+// and the theme provider that the highlighter reads.
 vi.mock("@/providers/ThemeProvider", () => ({ useTheme: () => ({ theme: "dark" }) }));
 vi.mock("katex/dist/katex.min.css", () => ({}));
 

@@ -6,7 +6,7 @@ import { DiffModeEnum } from "@git-diff-view/react";
 import { setAutoIntersect, intersect, observedElements } from "@/test/intersection-observer";
 
 // The stack's own wiring is what is under test, not the diff renderer — and the real one pulls in
-// Shiki, plus a query for the file's pre-image that would need a QueryClient. The stub reports the
+// the highlighter, plus a query for the file's pre-image that would need a QueryClient. The stub reports the
 // per-file review props it was handed, which is the contract that matters here.
 vi.mock("./ExpandableDiffViewer", () => ({
   ExpandableDiffViewer: ({
@@ -45,7 +45,7 @@ function diffItem(name: string): DisplayItem {
   return { kind: "diff", file: { fileName: name, hunks: [`@@ -1 +1 @@\n+${name}`], status: "M" } };
 }
 
-/** A file of a given size in diff lines, for exercising the review's rendering budget. */
+/** A file of a given size in diff lines, for exercising the per-file render cap. */
 function sizedDiffItem(name: string, lines: number): DisplayItem {
   const body = Array.from({ length: lines - 1 }, (_, line) => `+line ${line}`).join("\n");
   return { kind: "diff", file: { fileName: name, hunks: [`@@ -1 +1 @@\n${body}`], status: "M" } };
@@ -154,7 +154,7 @@ describe("DiffFileStack", () => {
   /**
    * The reversal the whole design turns on. Building a diff's structure is under a millisecond a
    * file, so every one of them is in the document from the first frame and the stack reaches its
-   * true height immediately. What waits is Shiki — 25–150ms a file — and colour changes no layout,
+   * true height immediately. What waits is the highlighter, and colour changes no layout,
    * so it can arrive whenever without moving anything.
    *
    * Deferring the *body* is what the two previous attempts did, and it cannot be made to work: an
@@ -252,9 +252,8 @@ describe("DiffFileStack", () => {
   });
 
   /**
-   * The budget, and the one case it exists for. A generated file costs more than the rest of the
-   * review together, so it waits to be asked for — and skipping it does not spend the budget, so
-   * everything after it still renders. Nothing here is driven by scrolling: building a diff is
+   * The cap, and the case it exists for. A generated file costs more than the rest of the review
+   * together, so it waits to be asked for, and everything after it still renders. Nothing here is driven by scrolling: building a diff is
    * tens of milliseconds of layout, and doing that as the viewport reaches each card made every
    * scroll compete with it.
    */
@@ -285,6 +284,24 @@ describe("DiffFileStack", () => {
     act(() => ref.current?.navigateTo(0));
 
     expect(screen.getAllByTestId("diff-viewer")).toHaveLength(2);
+  });
+
+  // The cap is per file: no count of files, however large, puts one behind a button.
+  it("renders a long review of small files in full", () => {
+    renderStack(
+      Array.from({ length: 30 }, (_, i) => sizedDiffItem(`f${i}.ts`, 400)),
+      emptyReview(),
+    );
+
+    expect(screen.getAllByTestId("diff-viewer")).toHaveLength(30);
+    expect(screen.queryByRole("button", { name: "Load diff" })).toBeNull();
+  });
+
+  it("puts a file just over 400 lines behind a button", () => {
+    renderStack([sizedDiffItem("a.ts", 401), diffItem("b.ts")], emptyReview());
+
+    expect(screen.getByRole("button", { name: "Load diff" })).toBeTruthy();
+    expect(screen.getAllByTestId("diff-viewer")).toHaveLength(1);
   });
 
   // The common case has to stay invisible: an agent's worktree diff is a handful of files, and

@@ -23,16 +23,41 @@ vi.mock("@testing-library/user-event", async (importOriginal) => {
   return { default: fast, userEvent: fast };
 });
 
-// The real highlighter loads 38 grammars in the background the first time anything renders code
-// or a diff. In a full run that took one to two seconds, and whichever test was still going when it
-// landed absorbed them, a different one each time. Nothing but its own suite asserts on
-// highlighting, and that suite unmocks it.
-vi.mock("@/lib/shiki-highlighter", () => ({ getDiffHighlighter: () => new Promise(() => {}) }));
+// The real highlighter loads grammars in the background the first time anything renders code or a
+// diff, and whichever test was still going when they landed absorbed the work, a different one each
+// time. Nothing but its own suite asserts on highlighting, and that suite unmocks it.
+vi.mock("@/lib/diff-highlighter", () => ({
+  getDiffHighlighter: () => new Promise(() => {}),
+  highlightToHtml: () => new Promise(() => {}),
+}));
 
 // JSDOM doesn't implement Web Animations API; base-ui ScrollArea calls this in async timers
 if (!Element.prototype.getAnimations) {
   Element.prototype.getAnimations = () => [];
 }
+
+// Browsers queue `selectionchange` as a task; happy-dom dispatches it inside `Selection.collapse`.
+// CodeMirror sets the DOM selection during its own update, and since 6.43.14 it answers a
+// `selectionchange` with another update, which throws "Calls to EditorView.update are not allowed
+// while an update is in progress". Deferring the event restores the browser's ordering.
+// happy-dom's own dispatch calls `document.dispatchEvent` again, so a deferred event passes through.
+const dispatchEvent = document.dispatchEvent.bind(document);
+const deferred = new WeakSet<Event>();
+document.dispatchEvent = (event) => {
+  if (event.type !== "selectionchange" || deferred.has(event)) return dispatchEvent(event);
+  deferred.add(event);
+  queueMicrotask(() => dispatchEvent(event));
+  return true;
+};
+
+// Cancelling an animation rejects its `finished` promise, and the Web Animations spec marks that
+// rejection handled; happy-dom does not. framer-motion 14 runs on native animations and cancels
+// them on unmount, which surfaced as an unhandled AbortError.
+const cancelAnimation = Animation.prototype.cancel;
+Animation.prototype.cancel = function (this: Animation) {
+  this.finished.catch(() => {});
+  cancelAnimation.call(this);
+};
 
 // happy-dom's IntersectionObserver is a stub whose methods are all `// TODO: Implement`, so
 // anything that mounts on intersection never mounts. Replace it unconditionally — the constructor

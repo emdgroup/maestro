@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render } from "@testing-library/react";
 
-// The markdown branch pulls in Shiki and react-markdown; these tests are about the html one.
+// The markdown branch pulls in the highlighter and react-markdown; these tests are about the html one.
 vi.mock("@/components/execution/activity/MarkdownBlock", () => ({
   MarkdownBlock: ({ text }: { text: string }) => <div data-testid="markdown">{text}</div>,
 }));

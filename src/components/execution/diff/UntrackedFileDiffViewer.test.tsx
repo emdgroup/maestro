@@ -11,7 +11,7 @@ vi.mock("@/services/worktree.service", () => ({
 }));
 
 // Stubbed to a marker: what is under test is which branch this component takes, not what the
-// real viewer draws — and the real one wants a ThemeProvider and a shiki instance to say so.
+// real viewer draws — and the real one wants a ThemeProvider and a highlighter instance to say so.
 vi.mock("./DiffViewer", () => ({
   DiffViewer: () => <div data-testid="diff-viewer" />,
 }));

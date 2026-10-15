@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { Copy, Check } from "lucide-react";
-import { getDiffHighlighter } from "@/lib/shiki-highlighter";
+import { highlightToHtml } from "@/lib/diff-highlighter";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/providers/ThemeProvider";
 
@@ -31,7 +31,7 @@ export const HighlightedCode = memo(function HighlightedCode({
   code: string;
   lang: string;
   stripContainerStyle?: boolean;
-  /** Merged over the defaults — pass `[&_pre]:…` to restyle shiki's own element. */
+  /** Merged over the defaults — pass `[&_pre]:…` to restyle the highlighter's own element. */
   className?: string;
 }) {
   const [html, setHtml] = useState<string | null>(null);
@@ -40,22 +40,17 @@ export const HighlightedCode = memo(function HighlightedCode({
 
   useEffect(() => {
     let cancelled = false;
-    getDiffHighlighter().then((hl) => {
-      if (cancelled) return;
-      try {
-        const engine = hl.getHighlighterEngine();
-        const result = engine.codeToHtml(code, {
-          lang: lang || "text",
-          theme: isDark ? "github-dark" : "github-light",
-        });
+    highlightToHtml(code, lang || "text", isDark).then(
+      (result) => {
         const stripped = stripContainerStyle
           ? result.replace(/<pre([^>]*?) style="[^"]*"/, "<pre$1")
           : result;
         if (!cancelled) setHtml(stripped);
-      } catch {
+      },
+      () => {
         // fallback to plain
-      }
-    });
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -73,7 +68,7 @@ export const HighlightedCode = memo(function HighlightedCode({
     );
   }
 
-  // Shiki loads async; until it resolves this must occupy the same box, or an
+  // The highlighter loads async; until it resolves this must occupy the same box, or an
   // expanding row visibly reflows once the grammar lands.
   return (
     <div className={cn("text-xs [&_pre]:overflow-x-auto [&_pre]:m-0 [&_pre]:p-3", className)}>

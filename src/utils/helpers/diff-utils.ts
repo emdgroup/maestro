@@ -6,40 +6,104 @@
 import { DiffFileWithName, DiffHighlighterLang, DiffStatus } from "@/types/review";
 
 /**
- * Detect file language based on file extension
+ * The language a file's extension names, as a name `diff-highlighter.ts` can find a grammar for:
+ * one of `@git-diff-view/lezer`'s own, or a name or alias in `@codemirror/language-data`.
+ * `diff-utils.test.ts` checks every entry resolves.
+ *
+ * A table rather than `LanguageDescription.matchFilename`, which is what the editor uses: this
+ * module is shared with the worktree cards, and importing `@codemirror/language-data` here would
+ * pull CodeMirror into their chunk.
  */
-function detectLanguage(fileName: string): DiffHighlighterLang {
-  const ext = fileName.split(".").pop()?.toLowerCase() || "";
+export const LANGUAGE_BY_EXTENSION: Record<string, DiffHighlighterLang> = {
+  ts: "typescript",
+  mts: "typescript",
+  cts: "typescript",
+  tsx: "tsx",
+  js: "javascript",
+  mjs: "javascript",
+  cjs: "javascript",
+  jsx: "jsx",
+  json: "json",
+  jsonc: "json",
+  py: "python",
+  pyw: "python",
+  rs: "rust",
+  go: "go",
+  java: "java",
+  kt: "kotlin",
+  kts: "kotlin",
+  scala: "scala",
+  groovy: "groovy",
+  gradle: "groovy",
+  swift: "swift",
+  dart: "dart",
+  cs: "csharp",
+  fs: "fsharp",
+  c: "c",
+  h: "c",
+  cpp: "cpp",
+  cc: "cpp",
+  cxx: "cpp",
+  hpp: "cpp",
+  hh: "cpp",
+  hxx: "cpp",
+  rb: "ruby",
+  php: "php",
+  lua: "lua",
+  pl: "perl",
+  pm: "perl",
+  r: "r",
+  jl: "julia",
+  hs: "haskell",
+  erl: "erlang",
+  clj: "clojure",
+  ml: "ocaml",
+  elm: "elm",
+  html: "html",
+  htm: "html",
+  vue: "vue",
+  css: "css",
+  scss: "scss",
+  sass: "sass",
+  less: "less",
+  xml: "xml",
+  svg: "xml",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "toml",
+  ini: "properties",
+  properties: "properties",
+  md: "markdown",
+  markdown: "markdown",
+  sh: "bash",
+  bash: "bash",
+  zsh: "bash",
+  ps1: "powershell",
+  psm1: "powershell",
+  psd1: "powershell",
+  sql: "sql",
+  proto: "protobuf",
+  diff: "diff",
+  patch: "diff",
+  tex: "latex",
+  cmake: "cmake",
+};
 
-  const langMap: Record<string, DiffHighlighterLang> = {
-    ts: "typescript",
-    tsx: "tsx",
-    js: "javascript",
-    jsx: "jsx",
-    py: "python",
-    rs: "rust",
-    go: "go",
-    java: "java",
-    cs: "csharp",
-    cpp: "cpp",
-    c: "c",
-    h: "c",
-    hpp: "cpp",
-    html: "html",
-    htm: "html",
-    css: "css",
-    scss: "css",
-    json: "json",
-    yaml: "yaml",
-    yml: "yaml",
-    md: "markdown",
-    sh: "bash",
-    bash: "bash",
-    sql: "sql",
-    xml: "xml",
-  };
+/** Files known by their whole name, since they have no extension to go by. */
+export const LANGUAGE_BY_FILENAME: Record<string, DiffHighlighterLang> = {
+  Dockerfile: "dockerfile",
+  Gemfile: "ruby",
+  Rakefile: "ruby",
+  Jenkinsfile: "groovy",
+  "CMakeLists.txt": "cmake",
+};
 
-  return langMap[ext] || "text";
+export function detectLanguage(fileName: string): DiffHighlighterLang {
+  const base = fileName.split("/").pop() ?? fileName;
+  const named = LANGUAGE_BY_FILENAME[base];
+  if (named) return named;
+  const ext = base.includes(".") ? base.split(".").pop()!.toLowerCase() : "";
+  return LANGUAGE_BY_EXTENSION[ext] || "text";
 }
 
 /**
