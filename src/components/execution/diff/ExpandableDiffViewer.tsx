@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { DiffFileWithName } from "@/types/review";
 import type { DiffTarget } from "@/types/bindings";
 import { useFileContentAtBaseQuery } from "@/services/worktree.service";
@@ -6,7 +6,7 @@ import { DiffViewer } from "./DiffViewer";
 
 interface ExpandableDiffViewerProps extends Omit<
   React.ComponentProps<typeof DiffViewer>,
-  "diffFile" | "loading" | "onRequestContext"
+  "diffFile" | "loading"
 > {
   file: DiffFileWithName;
   projectId: number | null;
@@ -29,9 +29,9 @@ interface ExpandableDiffViewerProps extends Omit<
  *
  * So the pre-image is fetched as soon as the card is highlighted, and the colour waits for it.
  * This used to wait for a press, because Shiki took ~6x longer over two whole files than over the
- * diff lines; Lezer takes 7–30ms over a whole file. A press before then still loads it, and once
- * it is in the library renders its own real arrows on every chunk header of this file and behaves
- * exactly as upstream from there.
+ * diff lines; Lezer takes 7–30ms over a whole file. Once it is in, the library renders its own
+ * expand arrows on every chunk header of this file and behaves exactly as upstream from there.
+ * Until then the chunk headers are inert.
  *
  * State lives here rather than in `DiffFileStack` for the memoisation: `DiffView` rebuilds its
  * `DiffFile` whenever the `data` prop's identity changes, so the merged object has to be stable
@@ -46,18 +46,16 @@ export function ExpandableDiffViewer({
   highlight = true,
   ...viewerProps
 }: ExpandableDiffViewerProps) {
-  const [requested, setRequested] = useState(false);
-
   // A file the base does not have — an addition — has no pre-image to fetch, and its diff already
   // shows every line, so there is nothing expansion could reveal.
   const basePath = file.oldPath ?? (file.status === "A" ? null : file.fileName);
 
-  const { data, isFetching, isError } = useFileContentAtBaseQuery(
+  const { data, isFetching } = useFileContentAtBaseQuery(
     projectId,
     cwd,
     diffTarget,
     basePath,
-    requested || highlight,
+    highlight,
   );
 
   const oldContent = data ?? null;
@@ -77,17 +75,6 @@ export function ExpandableDiffViewer({
     [file, oldContent, basePath],
   );
 
-  const handleRequestContext = useCallback(() => setRequested(true), []);
-
-  // Offered only until the pre-image has been asked for: once it is in, the library's own arrows
-  // take the cell over, and once a fetch has come back empty or failed a press would ask again for
-  // nothing. Also withheld where there is nothing to fetch, which leaves those hunk headers inert
-  // rather than clickable and silently useless.
-  const onRequestContext =
-    basePath !== null && data === undefined && !isFetching && !isError
-      ? handleRequestContext
-      : undefined;
-
   return (
     <DiffViewer
       diffFile={diffFile}
@@ -96,7 +83,6 @@ export function ExpandableDiffViewer({
       // Held back only while the first fetch is out. A null (past the size cap) or a failure
       // colours the diff lines alone rather than leaving the card plain.
       highlight={highlight && !(isFetching && data === undefined)}
-      onRequestContext={onRequestContext}
     />
   );
 }

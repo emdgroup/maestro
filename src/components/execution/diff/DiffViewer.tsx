@@ -19,7 +19,6 @@ import { InlineCommentInput } from "./InlineCommentInput";
 import { PendingCommentBlock } from "./PendingCommentBlock";
 import { buildExtendData } from "./extend-data";
 import { scopeRangeToHunk } from "./scope-selection";
-import { bindHunkHeaderPress, CONTEXT_REQUEST_CLASS } from "./hunk-header-press";
 
 export interface PendingComment {
   id: string;
@@ -63,14 +62,6 @@ interface DiffViewerProps {
     position: [number, number];
   } | null;
   sendDisabled?: boolean;
-  /**
-   * Called when the user presses a hunk header while the file's surrounding context is not
-   * loaded. Omit to leave hunk headers inert, which is what a diff whose pre-image cannot be
-   * fetched — an untracked file, a rename with no old blob — should do.
-   *
-   * See `useHunkHeaderPress` for why this is a request rather than the expansion itself.
-   */
-  onRequestContext?: () => void;
   /**
    * Whether to syntax-highlight, as opposed to rendering the same diff in plain text.
    *
@@ -149,7 +140,6 @@ export function DiffViewer({
   onSendComment,
   commentNav,
   sendDisabled,
-  onRequestContext,
   highlight = true,
 }: DiffViewerProps) {
   const [highlighter, setHighlighter] = useState<DiffHighlighterInstance | null>(null);
@@ -239,22 +229,6 @@ export function DiffViewer({
       return () => wrapper.removeEventListener("mousedown", notePress, true);
     },
     [reviewMode],
-  );
-
-  /**
-   * Both wrapper listeners in one ref callback, since an element takes a single ref. Each binder
-   * returns its own cleanup and no-ops when its feature is off.
-   */
-  const bindWrapper = useCallback(
-    (wrapper: HTMLDivElement | null) => {
-      const unbindWidgetPress = bindWidgetPressFlag(wrapper);
-      const unbindHunkPress = bindHunkHeaderPress(wrapper, onRequestContext);
-      return () => {
-        unbindWidgetPress?.();
-        unbindHunkPress?.();
-      };
-    },
-    [bindWidgetPressFlag, onRequestContext],
   );
 
   const handleMultiSelectChange = useCallback(
@@ -383,17 +357,13 @@ export function DiffViewer({
   return (
     <div className="min-h-0 flex flex-col h-full">
       <div
-        ref={bindWrapper}
+        ref={bindWidgetPressFlag}
         // Kept out of a panel drag except for the part on screen: the view wraps its lines and
         // renders every one of them, so following a drag means relaying out the whole file per
         // frame. `tr` is the unit that can be dropped — the table is `table-layout: fixed`, so
         // hiding rows cannot change a column's width. See `freezeLayout` in `@/ui/resizable`.
         data-freeze-layout="tr"
-        className={cn(
-          "flex-1 min-h-0",
-          reviewMode && "review-mode-active",
-          onRequestContext && CONTEXT_REQUEST_CLASS,
-        )}
+        className={cn("flex-1 min-h-0", reviewMode && "review-mode-active")}
       >
         {/* Multi-select is review-only: a read-only diff has nothing to do with a selection, and
             leaving it on there would highlight lines the user cannot act on. */}
