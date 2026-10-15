@@ -23,7 +23,7 @@ export const loopStarted = (task: Task) =>
   task.phase != null || (task.status !== "Planning" && task.status !== "Queue");
 
 /**
- * A loop's checks, sealed files and budget on its Details tab, saved with the rest of the task.
+ * A loop's checks, sealed files and budget on its Setup tab, saved with the rest of the task.
  * Budgets and checks change any time; the sealed paths only before the start.
  */
 export const LoopDetailsSection = forwardRef<
@@ -76,20 +76,17 @@ export const LoopDetailsSection = forwardRef<
   }));
 
   return (
-    <div className="shrink-0 space-y-2 border-t border-border pt-3">
-      <span className="text-xs font-medium">The loop</span>
-      <LoopEditor
-        value={draft}
-        onChange={(next) => {
-          dirty.current = true;
-          onDirtyChange(true);
-          setDraft(next);
-        }}
-        projectId={task.project_id}
-        baseBranch={branch}
-        sealedLocked={loopStarted(task)}
-        readOnly={task.status === "Done" || task.status === "Cancelled"}
-      />
-    </div>
+    <LoopEditor
+      value={draft}
+      onChange={(next) => {
+        dirty.current = true;
+        onDirtyChange(true);
+        setDraft(next);
+      }}
+      projectId={task.project_id}
+      baseBranch={branch}
+      sealedLocked={loopStarted(task)}
+      readOnly={task.status === "Done" || task.status === "Cancelled"}
+    />
   );
 });

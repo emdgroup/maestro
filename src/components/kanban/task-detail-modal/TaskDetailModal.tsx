@@ -105,7 +105,7 @@ interface TaskDraft {
   labels: string[];
 }
 
-type Tab = "loop" | "details" | "changes" | "notes" | "outcome";
+type Tab = "loop" | "setup" | "details" | "changes" | "notes" | "outcome";
 
 interface TaskDetailModalProps {
   taskId: number | null;
@@ -367,6 +367,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
               >
                 <TabsList variant="line" className="shrink-0">
                   {isLoop && <TabsTrigger value="loop">Loop</TabsTrigger>}
+                  {isLoop && <TabsTrigger value="setup">Setup</TabsTrigger>}
                   <TabsTrigger value="details">Details</TabsTrigger>
                   {isLoop && <TabsTrigger value="changes">Changes</TabsTrigger>}
                   {isLoop && <TabsTrigger value="notes">Agent notes</TabsTrigger>}
@@ -396,7 +397,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                   <TabsContent value="loop" className="min-h-0 overflow-y-auto pr-1">
                     <LoopTab
                       task={task}
-                      onEditChecks={() => setTab("details")}
+                      onEditChecks={() => setTab("setup")}
                       onJoin={() => {
                         setActiveTaskId(null);
                         navigate({ agentId: String(task.id) });
@@ -415,8 +416,19 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                   </TabsContent>
                 )}
 
-                {/* `keepMounted`, on both panels, because the editors here commit on blur: an
-                  unmounted panel never blurs, so a tab click mid-edit would drop what was typed. */}
+                {/* `keepMounted`, on the editing panels, because the editors here commit on blur:
+                  an unmounted panel never blurs, so a tab click mid-edit would drop what was
+                  typed. Setup is the loop's checks, sealed files and budgets, saved with the rest
+                  of the task. */}
+                {isLoop && (
+                  <TabsContent value="setup" keepMounted className="min-h-0 overflow-y-auto pr-1">
+                    <LoopDetailsSection
+                      ref={loopDetails}
+                      task={task}
+                      onDirtyChange={setLoopDirty}
+                    />
+                  </TabsContent>
+                )}
                 <TabsContent
                   value="details"
                   keepMounted
@@ -521,13 +533,6 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                       }
                     />
                   </div>
-                  {isLoop && (
-                    <LoopDetailsSection
-                      ref={loopDetails}
-                      task={task}
-                      onDirtyChange={setLoopDirty}
-                    />
-                  )}
                 </TabsContent>
 
                 {/* The only record a Done or archived task has: once the session closes, its
@@ -666,7 +671,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
               {isLoop && (
                 <LoopActions
                   task={task}
-                  onEditChecks={() => setTab("details")}
+                  onEditChecks={() => setTab("setup")}
                   onJoin={() => {
                     setActiveTaskId(null);
                     navigate({ agentId: String(task.id) });

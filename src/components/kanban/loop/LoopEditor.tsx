@@ -100,8 +100,8 @@ function ConnectionToolsLine() {
 }
 
 /**
- * A loop's done criteria, what is sealed from its agent, and its budget. The same editor on Create
- * Task and on a loop's Details tab. A started loop's sealed paths are fixed, since its worktree is
+ * A loop's done criteria, what is sealed from its agent, and its budget, on the loop's Setup tab. A
+ * started loop's sealed paths are fixed, since its worktree is
  * sealed to them; an accepted proposal is what adds one then.
  */
 export function LoopEditor({
