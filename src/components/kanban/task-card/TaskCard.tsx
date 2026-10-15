@@ -421,6 +421,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
     execute: handleExecute,
     executingTaskId,
     canRefine,
+    canPrepare,
     loopsHeldBack,
   } = useBoardActionsContext();
   const isExecuting = executingTaskId === task.id;
@@ -589,7 +590,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
           hasActiveSession={!!activeSession}
           isExecuting={isExecuting}
           startAnyway={queued !== null}
-          canRefine={canRefine}
+          canRefine={task.run_mode === "Loop" ? canPrepare : canRefine}
           isAuthRequired={!!authRequired}
           isRecovering={recoverSession.isPending}
           isSendingToReview={sendToReview.isPending}
@@ -602,7 +603,11 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
               void handleExecute(task, { respectCapacity: true, canPickAgent: true }),
             // A refinement, or a loop's preparation, is a conversation the user is having, so it
             // does not compete for a slot the way an implementation does and is not deferred.
-            onRefine: () => void handleExecute(task, { role: "Refiner", canPickAgent: true }),
+            onRefine: () =>
+              void handleExecute(task, {
+                role: task.run_mode === "Loop" ? "Preparer" : "Refiner",
+                canPickAgent: true,
+              }),
             onOpenProposal: () => setProposalOpen(true),
             onOpenPlan: () => setPlanOpen(true),
             onOpenProfiles: () => setProfilesOpen(true),

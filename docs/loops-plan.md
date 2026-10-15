@@ -792,7 +792,7 @@ they differ, and "Sealed checks" is rewritten to match once it is built.
 **Prepare loop replaces Refine on a Planning loop.**
 
 - An interactive session, like Refine, on the Refiner profile with a loop-specific prompt. No new
-  role.
+  role. (Changed after testing: it became the `Preparer` role, below.)
 - It creates the loop's context worktree on demand and works in it, where the tests are visible. It
   may write and commit test files there, and it sets the checks, sealed paths and budgets through
   MCP `update_task`.
@@ -815,10 +815,12 @@ the card):
   on the base branch before the context exists. The editor flags one that is not.
 - The scheduler's one-minute tick removes every sandbox whose loop is not In Progress, which covers
   a loop that passed, was moved, or was deleted.
-- Prepare loop is the Refiner role on a loop: the context instead of the repository directory, a
-  writable permission mode (a read-only one from the profile is dropped), and `PREPARE_PROTOCOL`
-  with the loop as it stands. Its summary is the refinement's proposal, closed with Done preparing,
-  which leaves the description alone.
+- Prepare loop is its own role, `Preparer`, with its own profiles in Settings (Preparation) and its
+  own row in a loop's Agents dialog. It works a loop's `Refining` phase, which the refiner works on
+  a pipeline task, so `task_restart::role` reads the phase with the run mode, and starting the other
+  one of the two is refused. With no Preparation profile it runs on the project's default agent.
+  It writes, in the context, with `PREPARE_PROTOCOL` and the loop as it stands. Its summary is the
+  refinement's proposal, closed with Done preparing, which leaves the description alone.
 - `TaskUpdate.run_mode` is gone from the protocol and the app; MCP `update_task` refuses a different
   run mode.
 - Create Task sets nothing up for a loop: choosing Loop only locks the workspace to a new worktree,

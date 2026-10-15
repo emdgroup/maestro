@@ -66,16 +66,18 @@ pub enum AgentRole {
     Reviewer,
     /// Decides a loop's `judge` checks and writes its review digest.
     Judge,
+    /// Prepares a loop with the user: writes its tests in the loop's worktree and sets its checks.
+    Preparer,
 }
 
 impl AgentRole {
     /// Whether the role is allowed to modify the repository.
     ///
-    /// Only the coder writes, and this is the single place that says so — a profile
-    /// claiming otherwise is corrected rather than trusted, because the read-only guarantee is what
-    /// the plan and proposal gates are built on.
+    /// Only the coder writes, and a loop's preparer, which commits the loop's tests. This is the
+    /// single place that says so — a profile claiming otherwise is corrected rather than trusted,
+    /// because the read-only guarantee is what the plan and proposal gates are built on.
     pub fn is_read_only(self) -> bool {
-        !matches!(self, AgentRole::Coder)
+        !matches!(self, AgentRole::Coder | AgentRole::Preparer)
     }
 }
 

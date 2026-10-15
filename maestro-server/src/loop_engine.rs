@@ -2590,7 +2590,7 @@ Try the cache first."
         let workspace = crate::worktree::prepare_task_workspace(
             &store,
             &task,
-            maestro_protocol::AgentRole::Refiner,
+            maestro_protocol::AgentRole::Preparer,
         )
         .await
         .unwrap();

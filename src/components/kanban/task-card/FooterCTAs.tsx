@@ -351,7 +351,7 @@ export function FooterCTAs({
           </TooltipTrigger>
           <TooltipContent>
             {!canRefine
-              ? "No agent can do this. Add a Refinement profile in Settings."
+              ? `No agent can do this. Add a ${task.run_mode === "Loop" ? "Preparation" : "Refinement"} profile in Settings.`
               : task.run_mode === "Loop"
                 ? "Talk the loop through with an agent: it writes the tests in the loop's worktree and sets the checks"
                 : "Ask an agent to sharpen this task's description"}

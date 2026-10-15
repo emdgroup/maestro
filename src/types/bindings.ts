@@ -3323,7 +3323,11 @@ export type AgentRole = "Refiner" | "Planner" | "Coder" | "Reviewer" |
 /**
  * Decides a loop's `judge` checks and writes its review digest.
  */
-"Judge"
+"Judge" | 
+/**
+ * Prepares a loop with the user: writes its tests in the loop's worktree and sets its checks.
+ */
+"Preparer"
 export type AgentStreamWidth = "full" | "compact"
 /**
  * Ahead/behind commit counts relative to the upstream tracking branch.

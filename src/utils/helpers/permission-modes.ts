@@ -21,9 +21,12 @@ import type { AgentRole } from "@/types/bindings";
 const WRITABLE_MODES = ["auto", "agent", "build", "full-access", "bypassPermissions"];
 const READ_ONLY_MODES = ["readonly", "plan"];
 
-/** The three roles that exist because they do not write. Only the coder implements. */
+/**
+ * The roles that exist because they do not write. Only the coder implements, and a loop's preparer
+ * commits the loop's tests.
+ */
 export function isReadOnlyRole(role: AgentRole): boolean {
-  return role !== "Coder";
+  return role !== "Coder" && role !== "Preparer";
 }
 
 /**

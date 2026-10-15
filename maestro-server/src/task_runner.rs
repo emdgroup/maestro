@@ -132,6 +132,7 @@ fn stage(role: AgentRole) -> &'static str {
         AgentRole::Coder => "Implementation",
         AgentRole::Reviewer => "Review",
         AgentRole::Judge => "Judging",
+        AgentRole::Preparer => "Preparation",
     }
 }
 
@@ -237,6 +238,19 @@ pub(crate) fn begin(
     } else {
         request.role
     };
+    // Both work the Refining phase: a loop is prepared, a pipeline task refined.
+    let looping = task.run_mode == maestro_protocol::RunMode::Loop;
+    if matches!(
+        (role, looping),
+        (AgentRole::Refiner, true) | (AgentRole::Preparer, false)
+    ) {
+        return Err(NotBegun::Other(format!(
+            "\"{}\" is {}, so it has no {} stage",
+            task.title,
+            if looping { "a loop" } else { "not a loop" },
+            stage(role)
+        )));
+    }
 
     // Only a fixed limit defers; Auto at its limit starts anyway, as the app's `Warn` does. A
     // limit that cannot be read starts too: the claim below is what decides.
@@ -303,7 +317,7 @@ pub(crate) fn begin(
         let retries = match task.phase {
             Some(TaskPhase::PlanReview) if role == AgentRole::Planner => Some(AgentRole::Planner),
             Some(TaskPhase::PlanReview) => Some(AgentRole::Coder),
-            phase => crate::task_restart::role(phase),
+            phase => crate::task_restart::role(phase, task.run_mode),
         };
         if retries.is_some_and(|expected| expected != role) {
             return Err(format!(

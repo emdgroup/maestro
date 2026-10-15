@@ -18,6 +18,8 @@ interface BoardActionsValue {
   executingTaskId: number | null;
   /** Whether any role on this project can run a refinement at all. Project-level, so asked once. */
   canRefine: boolean;
+  /** The same for preparing a loop. */
+  canPrepare: boolean;
   sessionByTaskId: Map<number, ActiveSessionInfo>;
   worktreeByTaskId: Map<number, WorktreeWithStatus>;
   /**
@@ -78,6 +80,9 @@ export function BoardActionsProvider({ children }: { children: ReactNode }) {
   // to start.
   const canRefine =
     (profilesDocument?.profiles ?? []).some((p) => p.role === "Refiner") || !!defaultAgent;
+  // The same for a loop's Prepare loop, with a Preparation profile.
+  const canPrepare =
+    (profilesDocument?.profiles ?? []).some((p) => p.role === "Preparer") || !!defaultAgent;
 
   const { data: tasks } = useTasksQuery(projectId);
   const autoMode = useAutoMode(projectId).data ?? false;
@@ -116,6 +121,7 @@ export function BoardActionsProvider({ children }: { children: ReactNode }) {
       execute,
       executingTaskId,
       canRefine,
+      canPrepare,
       sessionByTaskId,
       worktreeByTaskId,
       worktreeById,
@@ -125,6 +131,7 @@ export function BoardActionsProvider({ children }: { children: ReactNode }) {
       execute,
       executingTaskId,
       canRefine,
+      canPrepare,
       sessionByTaskId,
       worktreeByTaskId,
       worktreeById,

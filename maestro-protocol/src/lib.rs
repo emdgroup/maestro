@@ -1317,6 +1317,9 @@ pub enum AgentRole {
     Reviewer,
     /// Decides a loop's `judge` checks and writes its review digest. Read-only.
     Judge,
+    /// Prepares a loop with the user before it runs: writes its tests in the loop's worktree and
+    /// sets its checks. Works a loop's `Refining` phase, which is the refiner's on a pipeline task.
+    Preparer,
 }
 
 /// One task, every column the app reads.

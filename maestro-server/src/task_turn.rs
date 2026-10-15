@@ -67,7 +67,7 @@ pub(crate) fn next_stage(task: &Task) -> Option<AgentRole> {
         return None;
     }
     // Every working phase: a stage a usage limit cut off waits in its own phase.
-    crate::task_restart::role(task.phase)
+    crate::task_restart::role(task.phase, task.run_mode)
 }
 
 /// Whether a reviewer looks before the user: the project has one, the task did not turn it off,
@@ -213,7 +213,9 @@ pub(crate) async fn resolve(
         }
     };
     // A superseded session prompted after its hand-off ends no turn of the stage now running.
-    if let (Some(session), Some(stage)) = (role, crate::task_restart::role(task.phase)) {
+    if let (Some(session), Some(stage)) =
+        (role, crate::task_restart::role(task.phase, task.run_mode))
+    {
         if session != stage {
             send_diag(
                 "debug",

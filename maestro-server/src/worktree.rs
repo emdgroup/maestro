@@ -493,7 +493,9 @@ pub async fn prepare_task_workspace(
 
     let project_path = task.project_path.as_str();
     let looping = task.run_mode == maestro_protocol::RunMode::Loop;
-    let mode = if role == AgentRole::Refiner && !looping {
+    // A pipeline task's refiner reads the repository as it is; a loop's preparer works in the
+    // loop's own worktree, where its tests belong.
+    let mode = if role == AgentRole::Refiner {
         WorkspaceMode::RepositoryDirectory
     } else {
         task.workspace_mode

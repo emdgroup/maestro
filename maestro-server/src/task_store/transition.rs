@@ -120,7 +120,9 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
             AgentRole::Coder if current.status == Review => {
                 TaskState::active(Review, AwaitingMerge, Running, Ball::Agent)
             }
-            AgentRole::Refiner => TaskState::active(Planning, Refining, Running, Ball::Agent),
+            AgentRole::Refiner | AgentRole::Preparer => {
+                TaskState::active(Planning, Refining, Running, Ball::Agent)
+            }
             AgentRole::Planner => TaskState::active(InProgress, Drafting, Running, Ball::Agent),
             AgentRole::Coder => TaskState::active(InProgress, Implementing, Running, Ball::Agent),
             AgentRole::Reviewer => TaskState::active(Review, SelfReview, Running, Ball::Agent),

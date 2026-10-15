@@ -11,7 +11,8 @@ import type { AgentProfile, AgentRole, ConnectionKey, ProfilesDocument } from "@
 import { cn } from "@/lib/utils";
 
 /**
- * The five roles, in the order a task passes through them; the judge only ever works a loop.
+ * The six roles, in the order a task passes through them; the preparer and the judge only ever
+ * work a loop.
  *
  * Each line says what the role costs the user rather than what it is called: a project with no
  * profile for a role simply skips that stage, and "no Reviewer" being the difference between a
@@ -69,6 +70,24 @@ const ROLES: Array<{ role: AgentRole; title: string; blurb: string; defaultPromp
       "unhandled cases, and changes that go beyond the task; judge style against the project's own " +
       "conventions, not your preferences. Report findings with a file and line and a concrete " +
       "failure case. Send the work back only for problems worth another run.",
+  },
+  {
+    role: "Preparer",
+    title: "Preparation",
+    blurb:
+      "Prepares a loop with you: writes its tests and sets its checks. Without one, Prepare loop runs " +
+      "on the project's default agent.",
+    defaultPrompt:
+      "Prepare this loop so a worker agent can reach the goal by iterating until every check " +
+      "passes. Read the goal and the code it touches, then restate it as observable outcomes and " +
+      "ask the user about anything ambiguous before writing checks. Prefer command checks that " +
+      "test behaviour through public interfaces, cover the edge cases and error paths the goal " +
+      "names, run fast and deterministically, and fail with a message naming the input, the " +
+      "expected value and the actual one. Run each one to prove it fails today for the right " +
+      "reason. For more than one command, put the logic in a script file rather than a shell " +
+      "one-liner: checks run in cmd on Windows and sh elsewhere. Seal every test and check script " +
+      "the worker could edit to pass, and nothing it needs to change. Use a judge or manual check " +
+      "only for what a command cannot decide. Never implement the goal or weaken a check.",
   },
   {
     role: "Judge",
@@ -358,7 +377,9 @@ export function AgentProfilesSection({ projectId, agents, connection }: AgentPro
                   ? "No profile — runs on the project's default agent."
                   : role === "Judge"
                     ? "No profile: the loop's own agent judges."
-                    : "No profile — stage skipped."}
+                    : role === "Preparer"
+                      ? "No profile: Prepare loop runs on the project's default agent."
+                      : "No profile — stage skipped."}
               </p>
             ) : (
               forRole.map((profile) => (

@@ -103,9 +103,9 @@ pub fn compose(
         _ => String::new(),
     };
     let looping = role == AgentRole::Coder && task.run_mode == RunMode::Loop;
-    let preparing = role == AgentRole::Refiner && task.run_mode == RunMode::Loop;
+    let preparing = role == AgentRole::Preparer;
     let protocol = match role {
-        AgentRole::Refiner if preparing => PREPARE_PROTOCOL,
+        AgentRole::Preparer => PREPARE_PROTOCOL,
         AgentRole::Refiner => REFINER_PROTOCOL,
         AgentRole::Planner => PLANNER_PROTOCOL,
         AgentRole::Reviewer => REVIEWER_PROTOCOL,
