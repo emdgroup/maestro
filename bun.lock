@@ -31,7 +31,7 @@
         "@tauri-apps/api": "^2.12.0",
         "@tauri-apps/plugin-clipboard-manager": "^2.4.0",
         "@tauri-apps/plugin-dialog": "^2.8.0",
-        "@tauri-apps/plugin-notification": "^2.5.0",
+        "@tauri-apps/plugin-notification": "^2.6.0",
         "@tauri-apps/plugin-opener": "^2.7.1",
         "@tauri-apps/plugin-process": "^2.4.0",
         "@tauri-apps/plugin-shell": "^2.4.0",
@@ -752,7 +752,7 @@
 
     "@tauri-apps/plugin-dialog": ["@tauri-apps/plugin-dialog@2.8.0", "", { "dependencies": { "@tauri-apps/api": "^2.12.0" } }, "sha512-HSSD5C8UFE9ijD1wue84F7jjaIReFmj8AAPtS+xyjYRltJafIc4BiWHY7SJ6vbbew6u+YljEJHfyNfy5VwywXg=="],
 
-    "@tauri-apps/plugin-notification": ["@tauri-apps/plugin-notification@2.5.0", "", { "dependencies": { "@tauri-apps/api": "^2.12.0" } }, "sha512-S19zXtRLX1YryUh532YcGnjI3fzrBGj4oUcW87ojytmOAOCVMZ2bTTHOhI0enYZPH5uDmdQw+dEGCn5wfCm3zw=="],
+    "@tauri-apps/plugin-notification": ["@tauri-apps/plugin-notification@2.6.0", "", { "dependencies": { "@tauri-apps/api": "^2.12.0" } }, "sha512-QvpsQ6L6uSGT/7AmIrEUrfOiqjP1S8HtBU1ieaX6bvOFXGjnoxbNMR9V+8PVhLqRdOntqevpUJ3c52S+1afsIw=="],
 
     "@tauri-apps/plugin-opener": ["@tauri-apps/plugin-opener@2.7.1", "", { "dependencies": { "@tauri-apps/api": "^2.12.0" } }, "sha512-XkXdt30rontti9TII/gBBxFRXWfj8DiprFW7RgBFRBj1OhdfjBNVcFqSEWkkZ4hXafHnuEnB7F1sFsmu6uyywQ=="],
 
