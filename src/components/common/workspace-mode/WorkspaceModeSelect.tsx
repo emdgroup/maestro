@@ -45,8 +45,11 @@ interface WorkspaceModeSelectProps {
    * second workspace, so the option stays on screen and says so.
    */
   hasReusableWorkspace?: boolean;
-  /** Only a new worktree may be picked; the other modes stay on screen, disabled. */
-  newWorktreeOnly?: boolean;
+  /**
+   * Why only a new worktree will do. Set, the field is not a dropdown at all: it shows the one
+   * choice and this reason, rather than a list with a single option to open.
+   */
+  newWorktreeOnly?: string | null;
   /** Why an unavailable option is unavailable, shown in place of its description. */
   unavailableReason?: Partial<Record<WorkspaceMode, string>>;
   id?: string;
@@ -58,12 +61,11 @@ export function WorkspaceModeSelect({
   allowNewWorktree = true,
   allowReuse = true,
   hasReusableWorkspace = true,
-  newWorktreeOnly = false,
+  newWorktreeOnly = null,
   unavailableReason,
   id,
 }: WorkspaceModeSelectProps) {
   const isAllowed = (mode: WorkspaceMode) =>
-    (!newWorktreeOnly || mode === "NewWorktree") &&
     (mode !== "NewWorktree" || allowNewWorktree) &&
     (mode !== "ReuseWorkspace" || (allowReuse && hasReusableWorkspace));
 
@@ -73,6 +75,19 @@ export function WorkspaceModeSelect({
   const options = MODES.filter((mode) => mode.value !== "ReuseWorkspace" || allowReuse);
   const selected = MODES.find((mode) => mode.value === value) ?? MODES[0];
   const SelectedIcon = selected.icon;
+
+  if (newWorktreeOnly) {
+    const only = MODES[0];
+    return (
+      <div id={id} className="flex items-center gap-2 rounded-md border border-border py-2 px-3">
+        <only.icon className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm truncate">{only.label}</span>
+          <span className="block text-xs text-muted-foreground truncate">{newWorktreeOnly}</span>
+        </span>
+      </div>
+    );
+  }
 
   return (
     <Select value={value} onValueChange={(next) => onChange(next as WorkspaceMode)}>

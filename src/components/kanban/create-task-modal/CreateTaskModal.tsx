@@ -4,13 +4,8 @@ import type { SubmitHandler } from "react-hook-form";
 import { Dialog, DialogContent, DialogTitle, DialogClose } from "@/ui/dialog";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
-import { ArrowLeft, ArrowRight, Repeat, Workflow, X } from "lucide-react";
+import { Repeat, Workflow, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { LoopEditor } from "@/components/kanban/loop/LoopEditor";
-import { emptyLoopDraft, loopFromDraft, type LoopDraft } from "@/components/kanban/loop/loop-draft";
-import { useSetLoopChecksMutation, useSetLoopHiddenFilesMutation } from "@/services/loop.service";
-import { useSetTaskProfileOverridesMutation } from "@/services/task.service";
-import { parseProfileOverrides } from "@/lib/profile-overrides";
 import { toast } from "sonner";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import {
@@ -33,8 +28,6 @@ import { MAESTRO_BRANCH_PREFIX, validateBranchSuffix } from "@/lib/generateSessi
 import { findBranchConflict } from "@/components/common/workspace-mode/branch-conflict";
 import type {
   BranchMode,
-  LoopCheckEntry,
-  LoopConfig,
   RemoteIssue,
   RunMode,
   Task,
@@ -93,16 +86,9 @@ export function CreateTaskModal({
   const project = useSelectedProject();
   const { data: worktrees } = useWorktreesQuery(projectId, project?.path);
 
-  const { mutate: createTask, isPending: isCreating } = useCreateTaskMutation();
-  const setLoopChecks = useSetLoopChecksMutation();
-  const setHiddenFiles = useSetLoopHiddenFilesMutation();
-  const setOverrides = useSetTaskProfileOverridesMutation();
-  const [savingLoop, setSavingLoop] = useState(false);
-  const isPending = isCreating || savingLoop;
+  const { mutate: createTask, isPending } = useCreateTaskMutation();
+  // A loop is created bare: its checks are set up from its card, with Prepare loop or by hand.
   const [runMode, setRunMode] = useState<RunMode>("Pipeline");
-  const [loopDraft, setLoopDraft] = useState<LoopDraft>(emptyLoopDraft);
-  /** A loop is created in two screens: the task, then its loop. */
-  const [step, setStep] = useState<"task" | "loop">("task");
   const addAttachment = useAddTaskAttachmentMutation();
   // Mirrored from an effect rather than assigned during render — read only by the
   // file-input callback below, which runs after commit.
@@ -175,8 +161,6 @@ export function CreateTaskModal({
     setTitle(isOpen ? (initial?.title ?? "") : "");
     setDescription(isOpen ? (initial?.description ?? "") : "");
     setRunMode("Pipeline");
-    setLoopDraft(emptyLoopDraft());
-    setStep("task");
     if (!isOpen) {
       setError(null);
       setSelectedIssue(null);
@@ -249,19 +233,6 @@ export function CreateTaskModal({
         return;
       }
     }
-    if (runMode === "Loop" && step === "task") {
-      setStep("loop");
-      return;
-    }
-    let loop: { config: LoopConfig; checks: LoopCheckEntry[] } | null = null;
-    if (runMode === "Loop") {
-      const read = loopFromDraft(loopDraft);
-      if ("error" in read) {
-        setError(read.error);
-        return;
-      }
-      loop = read;
-    }
     const filesToAttach = [...pendingFiles];
     const reused =
       mode === "ReuseWorkspace"
@@ -292,12 +263,11 @@ export function CreateTaskModal({
           ? `${MAESTRO_BRANCH_PREFIX}${data.branchSuffix.trim()}`
           : null,
         model_override: null,
-        run_mode: loop ? "Loop" : null,
-        loop_config: loop?.config ?? null,
+        run_mode: runMode === "Loop" ? "Loop" : null,
+        loop_config: null,
       },
       {
         onSuccess: (newTask: Task) => {
-          if (loop) void saveLoop(newTask, loop);
           for (const f of filesToAttach) {
             addAttachmentRef.current.mutate({
               projectId: newTask.project_id,
@@ -313,8 +283,6 @@ export function CreateTaskModal({
             setDescription("");
             setSelectedIssue(null);
             setLabels([]);
-            setLoopDraft(emptyLoopDraft());
-            setStep("task");
           } else {
             onClose();
           }
@@ -325,31 +293,6 @@ export function CreateTaskModal({
       },
     );
   };
-
-  /** A new loop's checks, hidden files and judge, written once the task exists. */
-  async function saveLoop(task: Task, loop: { config: LoopConfig; checks: LoopCheckEntry[] }) {
-    const key = { projectId: task.project_id, taskId: task.id };
-    setSavingLoop(true);
-    try {
-      await setLoopChecks.mutateAsync({ ...key, checks: loop.checks });
-      if (loopDraft.hiddenFiles.length > 0) {
-        await setHiddenFiles.mutateAsync({ ...key, files: loopDraft.hiddenFiles });
-      }
-      if (loopDraft.judgeProfileId) {
-        await setOverrides.mutateAsync({
-          ...key,
-          overrides: {
-            ...parseProfileOverrides(task.profile_overrides),
-            Judge: loopDraft.judgeProfileId,
-          },
-        });
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSavingLoop(false);
-    }
-  }
 
   return (
     <Dialog
@@ -405,233 +348,185 @@ export function CreateTaskModal({
               </div>
             )}
 
-            {/* The task screen stays mounted behind the loop screen, so its fields keep their
-                values and their validation. */}
-            <div className={step === "task" ? "contents" : "hidden"}>
-              {/* Title */}
-              <div className="shrink-0">
-                <EditableField
-                  value={title}
-                  onSave={setTitle}
-                  isEditable={true}
-                  placeholder="Task title"
-                  className="text-xl font-semibold"
-                />
-              </div>
-
-              {/* Description + attachment */}
-              <DescriptionWithAttachments
-                value={description}
-                onSave={setDescription}
+            {/* Title */}
+            <div className="shrink-0">
+              <EditableField
+                value={title}
+                onSave={setTitle}
                 isEditable={true}
-                isDragging={isDragging}
-                onPickFiles={pickFiles}
-                placeholder="Add description..."
+                placeholder="Task title"
+                className="text-xl font-semibold"
               />
+            </div>
 
-              {/* Attachments, held until the task exists to hang them off */}
-              {pendingFiles.length > 0 && (
-                <ul className="shrink-0 space-y-1">
-                  {pendingFiles.map((f) => (
-                    <li
-                      key={f.filePath}
-                      className="h-9 flex items-center gap-2 rounded-md border border-border bg-card px-3 text-sm"
-                    >
-                      <span className="flex-1 truncate text-foreground">{f.filename}</span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 shrink-0"
-                        onClick={() =>
-                          setPendingFiles((prev) => prev.filter((p) => p.filePath !== f.filePath))
-                        }
-                      >
-                        <X className="size-3" />
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+            {/* Description + attachment */}
+            <DescriptionWithAttachments
+              value={description}
+              onSave={setDescription}
+              isEditable={true}
+              isDragging={isDragging}
+              onPickFiles={pickFiles}
+              placeholder="Add description..."
+            />
 
-              {/* Labels */}
-              {labels.length > 0 && (
-                <div className="flex flex-wrap gap-1 shrink-0">
-                  {labels.map((l) => (
-                    <IssueTypeChip
-                      key={l}
-                      type={l}
-                      onRemove={() => setLabels((prev) => prev.filter((x) => x !== l))}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* How it runs, first: it decides which workspaces there are to pick. */}
-              <div className="shrink-0 space-y-1.5">
-                <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
-                  How it runs
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  {(
-                    [
-                      [
-                        "Pipeline",
-                        Workflow,
-                        "Plan, implement, self review, your approval. For work you will judge by reading it.",
-                      ],
-                      [
-                        "Loop",
-                        Repeat,
-                        isGitRepo
-                          ? "Fresh sessions until sealed checks pass. For work a command can verify."
-                          : "Needs a git repository: a loop runs in a worktree of its own.",
-                      ],
-                    ] as const
-                  ).map(([mode, Icon, blurb]) => (
-                    <button
-                      key={mode}
+            {/* Attachments, held until the task exists to hang them off */}
+            {pendingFiles.length > 0 && (
+              <ul className="shrink-0 space-y-1">
+                {pendingFiles.map((f) => (
+                  <li
+                    key={f.filePath}
+                    className="h-9 flex items-center gap-2 rounded-md border border-border bg-card px-3 text-sm"
+                  >
+                    <span className="flex-1 truncate text-foreground">{f.filename}</span>
+                    <Button
                       type="button"
-                      aria-pressed={runMode === mode}
-                      disabled={mode === "Loop" && !isGitRepo}
-                      onClick={() => {
-                        setRunMode(mode);
-                        if (mode === "Loop") setValue("workspaceMode", "NewWorktree");
-                      }}
-                      className={cn(
-                        "flex items-start gap-2 rounded-md border p-2.5 text-left text-xs disabled:opacity-50",
-                        runMode === mode ? "border-accent bg-accent/10" : "border-border",
-                      )}
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 shrink-0"
+                      onClick={() =>
+                        setPendingFiles((prev) => prev.filter((p) => p.filePath !== f.filePath))
+                      }
                     >
-                      <Icon className="mt-0.5 size-4 shrink-0 text-accent" />
-                      <span>
-                        <span className="font-medium">{mode}</span>
-                        <br />
-                        <span className="text-[11px] text-muted-foreground">{blurb}</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+                      <X className="size-3" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
 
-              {/* Workspace: where the agent will work, and whatever that choice needs */}
-              {isGitRepo && (
-                <div className="shrink-0">
-                  <Controller
-                    name="baseBranch"
-                    control={control}
-                    rules={{
-                      // Only the mode that creates a worktree needs a branch chosen — and only the
-                      // one that checks a branch out can collide with a worktree already on it.
-                      validate: (value) => {
-                        if (workspaceMode !== "NewWorktree") return true;
-                        if (!value) return "Base branch is required";
-                        if (branchMode !== "Checkout") return true;
-                        return (
-                          findBranchConflict(value, worktrees ?? [], project?.path ?? "") ===
-                            null || "That branch is already checked out somewhere else"
-                        );
-                      },
-                    }}
-                    render={({ field: { value, onChange } }) => (
-                      <WorkspaceSelector
-                        mode={workspaceMode}
-                        onModeChange={(m) => setValue("workspaceMode", m)}
-                        baseBranch={value}
-                        onBaseBranchChange={onChange}
-                        baseBranchError={errors.baseBranch?.message}
-                        branchMode={branchMode}
-                        onBranchModeChange={(m) => setValue("branchMode", m)}
-                        branchSuffix={branchSuffix}
-                        onBranchSuffixChange={(s) => setValue("branchSuffix", s)}
-                        generatedBranchSuffix={null}
-                        worktrees={worktrees ?? []}
-                        repoPath={project?.path ?? ""}
-                        selectedWorktreeId={workspaceWorktreeId}
-                        onSelectedWorktreeChange={(wt: WorktreeWithStatus | null) =>
-                          setValue("workspaceWorktreeId", wt?.id ?? null)
-                        }
-                        claimsOwnership
-                        newWorktreeOnly={
-                          runMode === "Loop"
-                            ? "A loop always gets a worktree of its own, so its checks can be sealed from the agent"
-                            : null
-                        }
-                      />
-                    )}
+            {/* Labels */}
+            {labels.length > 0 && (
+              <div className="flex flex-wrap gap-1 shrink-0">
+                {labels.map((l) => (
+                  <IssueTypeChip
+                    key={l}
+                    type={l}
+                    onRemove={() => setLabels((prev) => prev.filter((x) => x !== l))}
                   />
-                  {runMode === "Loop" && (
-                    <p className="mt-1.5 text-[11px] text-muted-foreground">
-                      The checks run against this branch's files. Prepare the tests on a branch
-                      first and start from it, or use Prepare loop once the task exists.
-                    </p>
-                  )}
-                </div>
-              )}
+                ))}
+              </div>
+            )}
 
-              {/* Metadata pills */}
-              <div className="shrink-0">
-                <TaskMetadataPills
-                  priority={priority}
-                  onPriorityChange={(p) => setValue("priority", p)}
-                />
+            {/* How it runs, first: it decides which workspaces there are to pick. */}
+            <div className="shrink-0 space-y-1.5">
+              <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
+                How it runs
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                {(
+                  [
+                    [
+                      "Pipeline",
+                      Workflow,
+                      "Plan, implement, self review, your approval. For work you will judge by reading it.",
+                    ],
+                    [
+                      "Loop",
+                      Repeat,
+                      isGitRepo
+                        ? "Fresh sessions until sealed checks pass. For work a command can verify."
+                        : "Needs a git repository: a loop runs in a worktree of its own.",
+                    ],
+                  ] as const
+                ).map(([mode, Icon, blurb]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    aria-pressed={runMode === mode}
+                    disabled={mode === "Loop" && !isGitRepo}
+                    onClick={() => {
+                      setRunMode(mode);
+                      if (mode === "Loop") setValue("workspaceMode", "NewWorktree");
+                    }}
+                    className={cn(
+                      "flex items-start gap-2 rounded-md border p-2.5 text-left text-xs disabled:opacity-50",
+                      runMode === mode ? "border-accent bg-accent/10" : "border-border",
+                    )}
+                  >
+                    <Icon className="mt-0.5 size-4 shrink-0 text-accent" />
+                    <span>
+                      <span className="font-medium">{mode}</span>
+                      <br />
+                      <span className="text-[11px] text-muted-foreground">{blurb}</span>
+                    </span>
+                  </button>
+                ))}
               </div>
             </div>
 
-            {step === "loop" && (
-              <>
-                <div className="flex shrink-0 items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-7 shrink-0"
-                    aria-label="Back to the task"
-                    onClick={() => setStep("task")}
-                  >
-                    <ArrowLeft className="size-4" />
-                  </Button>
-                  <span className="truncate text-sm font-medium">{title.trim()}</span>
-                </div>
-                <div className="shrink-0">
-                  <LoopEditor
-                    value={loopDraft}
-                    onChange={setLoopDraft}
-                    projectId={projectId}
-                    baseBranch={baseBranch}
-                  />
-                </div>
-              </>
+            {/* Workspace: where the agent will work, and whatever that choice needs */}
+            {isGitRepo && (
+              <div className="shrink-0">
+                <Controller
+                  name="baseBranch"
+                  control={control}
+                  rules={{
+                    // Only the mode that creates a worktree needs a branch chosen — and only the
+                    // one that checks a branch out can collide with a worktree already on it.
+                    validate: (value) => {
+                      if (workspaceMode !== "NewWorktree") return true;
+                      if (!value) return "Base branch is required";
+                      if (branchMode !== "Checkout") return true;
+                      return (
+                        findBranchConflict(value, worktrees ?? [], project?.path ?? "") === null ||
+                        "That branch is already checked out somewhere else"
+                      );
+                    },
+                  }}
+                  render={({ field: { value, onChange } }) => (
+                    <WorkspaceSelector
+                      mode={workspaceMode}
+                      onModeChange={(m) => setValue("workspaceMode", m)}
+                      baseBranch={value}
+                      onBaseBranchChange={onChange}
+                      baseBranchError={errors.baseBranch?.message}
+                      branchMode={branchMode}
+                      onBranchModeChange={(m) => setValue("branchMode", m)}
+                      branchSuffix={branchSuffix}
+                      onBranchSuffixChange={(s) => setValue("branchSuffix", s)}
+                      generatedBranchSuffix={null}
+                      worktrees={worktrees ?? []}
+                      repoPath={project?.path ?? ""}
+                      selectedWorktreeId={workspaceWorktreeId}
+                      onSelectedWorktreeChange={(wt: WorktreeWithStatus | null) =>
+                        setValue("workspaceWorktreeId", wt?.id ?? null)
+                      }
+                      claimsOwnership
+                      newWorktreeOnly={
+                        runMode === "Loop"
+                          ? "A loop always gets a worktree of its own, so its checks can be sealed from the agent"
+                          : null
+                      }
+                    />
+                  )}
+                />
+              </div>
             )}
+
+            {/* Metadata pills */}
+            <div className="shrink-0">
+              <TaskMetadataPills
+                priority={priority}
+                onPriorityChange={(p) => setValue("priority", p)}
+              />
+            </div>
           </div>
 
           {/* Footer */}
           <div className="border-t border-border px-6 py-3 flex items-center gap-2 shrink-0">
-            {runMode === "Loop" && step === "task" ? (
-              <>
-                <div className="flex-1" />
-                <Button type="submit" size="sm">
-                  Set up the loop
-                  <ArrowRight className="size-3.5" />
-                </Button>
-              </>
-            ) : (
-              <>
-                <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
-                  <Switch
-                    size="sm"
-                    checked={createAnother}
-                    onCheckedChange={setCreateAnother}
-                    className="data-unchecked:bg-muted data-unchecked:border-border/50"
-                  />
-                  Create another
-                </label>
-                <div className="flex-1" />
-                <Button type="submit" size="sm" disabled={isPending}>
-                  {isPending ? "Saving..." : "Create"}
-                </Button>
-              </>
-            )}
+            <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+              <Switch
+                size="sm"
+                checked={createAnother}
+                onCheckedChange={setCreateAnother}
+                className="data-unchecked:bg-muted data-unchecked:border-border/50"
+              />
+              Create another
+            </label>
+            <div className="flex-1" />
+            <Button type="submit" size="sm" disabled={isPending}>
+              {isPending ? "Saving..." : "Create"}
+            </Button>
           </div>
         </form>
       </DialogContent>

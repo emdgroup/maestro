@@ -140,11 +140,10 @@ export function WorkspaceSelector({
         onChange={onModeChange}
         allowNewWorktree={allowNewWorktree}
         hasReusableWorkspace={reusable.length > 0}
-        newWorktreeOnly={newWorktreeOnly != null}
+        newWorktreeOnly={newWorktreeOnly}
         unavailableReason={{
           NewWorktree: "A terminal attaches to a checkout that already exists",
-          RepositoryDirectory: newWorktreeOnly ?? undefined,
-          ReuseWorkspace: newWorktreeOnly ?? "This project has no other worktree yet",
+          ReuseWorkspace: "This project has no other worktree yet",
         }}
       />
 

@@ -563,7 +563,8 @@ Visuals are the canvas mock `loops-app`.
 
 - **Create Task** gets "How it runs: Pipeline | Loop", below the workspace. Choosing Loop turns the
   footer into **Set up the loop**, which opens a second screen with a way back, ending in the usual
-  Create another and Create. That screen shows:
+  Create another and Create. (Phase 5b drops that screen: a loop is created bare and set up from its
+  card.) That screen shows:
   - Done when: rows of command, judge and manual checks.
   - **Sealed from the agent:** the sealed paths, prefilled from the commands, and the hidden files.
   - Setup command, check timeout (10 minutes), iterations, agent time, stall limit, judge.
@@ -785,8 +786,7 @@ they differ, and "Sealed checks" is rewritten to match once it is built.
 **Where the tests come from: a branch.**
 
 - The normal way is to prepare the tests on a branch first, then create the loop from it, as its
-  base branch or by checking it out. The UI says so where the branch is picked: the checks run
-  against that branch's files.
+  base branch or by checking it out. The checks run against that branch's files.
 - Sealed paths that do not exist on the chosen branch are flagged in the loop editor.
 
 **Prepare loop replaces Refine on a Planning loop.**
@@ -821,6 +821,10 @@ the card):
   which leaves the description alone.
 - `TaskUpdate.run_mode` is gone from the protocol and the app; MCP `update_task` refuses a different
   run mode.
+- Create Task sets nothing up for a loop: choosing Loop only locks the workspace to a new worktree,
+  shown as a plain field with the reason rather than a dropdown with one choice. The loop is created
+  with the default budgets and no checks, and is set up from its card, with Prepare loop or by hand
+  in its details.
 
 ## Phase 6: docs
 
