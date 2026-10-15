@@ -21,15 +21,6 @@ import { highlightCode } from "@lezer/highlight";
 import { githubPalette, githubTokenColors } from "@/lib/codemirror-github-theme";
 
 /**
- * What `detectLanguage` in `diff-utils.ts` can name that the package has no grammar for.
- *
- * Loaded before the highlighter resolves, because `@git-diff-view/core` asks for a grammar
- * synchronously: a file whose grammar is not registered yet falls back to the lowlight stub and
- * stays plain.
- */
-const DIFF_EXTRA_LANGS = ["csharp", "bash", "sql"];
-
-/**
  * Files longer than this render plain. The package defaults to 2000, which was Shiki's budget; a
  * diff is now tokenized against its whole file (see `ExpandableDiffViewer`), and Lezer gets through
  * 4500 lines in under 70ms.
@@ -60,14 +51,22 @@ function ensureLanguage(highlighter: DiffHighlighter, lang: string): Promise<boo
 
 let highlighterPromise: Promise<DiffHighlighter> | null = null;
 
-export function getDiffHighlighter() {
-  highlighterPromise ??= (async () => {
-    const highlighter = await getDiffViewHighlighter({ tokenColors: githubTokenColors() });
-    highlighter.setMaxLineToIgnoreSyntax(MAX_LINES);
-    await Promise.all(DIFF_EXTRA_LANGS.map((lang) => ensureLanguage(highlighter, lang)));
-    return highlighter;
-  })();
-  return highlighterPromise;
+/**
+ * The highlighter, once it has a grammar for `lang` if any registry has one.
+ *
+ * The grammar has to be in before the diff asks: `@git-diff-view/core` looks it up synchronously,
+ * and a file whose grammar is missing falls back to the lowlight stub and stays plain.
+ */
+export async function getDiffHighlighter(lang?: string | null) {
+  highlighterPromise ??= getDiffViewHighlighter({ tokenColors: githubTokenColors() }).then(
+    (highlighter) => {
+      highlighter.setMaxLineToIgnoreSyntax(MAX_LINES);
+      return highlighter;
+    },
+  );
+  const highlighter = await highlighterPromise;
+  if (lang) await ensureLanguage(highlighter, lang);
+  return highlighter;
 }
 
 export type DiffHighlighterInstance = DiffHighlighter;

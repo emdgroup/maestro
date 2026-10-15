@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { DiffFile, highlighter as bundledDefault } from "@git-diff-view/core";
 import { getDiffHighlighter, highlightToHtml } from "./diff-highlighter";
 import { githubPalette } from "./codemirror-github-theme";
+import { LANGUAGE_BY_EXTENSION, LANGUAGE_BY_FILENAME } from "./diff-utils";
 
 // `src/test/setup.ts` stubs the highlighter for every other suite; this one is about the real one.
 vi.unmock("@/lib/diff-highlighter");
@@ -42,10 +43,11 @@ describe("which highlighter the diff view actually uses", () => {
     expect(file.getNewSyntaxLine(2)?.nodeList.length).toBeGreaterThan(1);
   });
 
-  // `detectLanguage` names these, and the package has no grammar for them: without the preload
-  // they would fall through to the stub and render plain, as they did not under Shiki.
-  it.each(["csharp", "bash", "sql"])("has a grammar for %s before it resolves", async (lang) => {
-    const lezer = await getDiffHighlighter();
+  // Every name `detectLanguage` can hand a diff has to reach a grammar, or that file renders plain.
+  it.each([
+    ...new Set([...Object.values(LANGUAGE_BY_EXTENSION), ...Object.values(LANGUAGE_BY_FILENAME)]),
+  ])("has a grammar for %s once asked for it", async (lang) => {
+    const lezer = await getDiffHighlighter(lang);
     expect(lezer.hasRegisteredCurrentLang(lang)).toBe(true);
   });
 });

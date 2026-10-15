@@ -52,7 +52,7 @@ export function ExpandableDiffViewer({
   // shows every line, so there is nothing expansion could reveal.
   const basePath = file.oldPath ?? (file.status === "A" ? null : file.fileName);
 
-  const { data, isFetching } = useFileContentAtBaseQuery(
+  const { data, isFetching, isError } = useFileContentAtBaseQuery(
     projectId,
     cwd,
     diffTarget,
@@ -79,11 +79,14 @@ export function ExpandableDiffViewer({
 
   const handleRequestContext = useCallback(() => setRequested(true), []);
 
-  // Dropped once the content is in, so the library's own arrows take the cell over. Also withheld
-  // where there is nothing to fetch, which leaves those hunk headers inert rather than clickable
-  // and silently useless.
+  // Offered only until the pre-image has been asked for: once it is in, the library's own arrows
+  // take the cell over, and once a fetch has come back empty or failed a press would ask again for
+  // nothing. Also withheld where there is nothing to fetch, which leaves those hunk headers inert
+  // rather than clickable and silently useless.
   const onRequestContext =
-    basePath !== null && oldContent === null && !isFetching ? handleRequestContext : undefined;
+    basePath !== null && data === undefined && !isFetching && !isError
+      ? handleRequestContext
+      : undefined;
 
   return (
     <DiffViewer

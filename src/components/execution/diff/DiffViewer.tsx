@@ -184,11 +184,12 @@ export function DiffViewer({
   const { theme, systemTheme } = useTheme();
   const diffTheme = (theme === "system" ? systemTheme : theme) === "dark" ? "dark" : "light";
 
-  // Load syntax highlighter on mount
+  // Load syntax highlighter, with this file's grammar, on mount
+  const lang = diffFile?.newFile?.fileLang ?? diffFile?.oldFile?.fileLang;
   useEffect(() => {
     const loadHighlighter = async () => {
       try {
-        const hl = await getDiffHighlighter();
+        const hl = await getDiffHighlighter(lang);
         setHighlighter(hl);
       } catch (err) {
         console.error("Failed to load highlighter:", err);
@@ -199,7 +200,7 @@ export function DiffViewer({
     };
 
     loadHighlighter();
-  }, []);
+  }, [lang]);
 
   /**
    * The range a drag actually selected, kept because pressing the `+` discards it.

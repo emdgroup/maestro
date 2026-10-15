@@ -160,6 +160,17 @@ describe("ExpandableDiffViewer", () => {
       expect(screen.getByTestId("diff-viewer")).toHaveAttribute("data-highlight", "true"),
     );
     expect(screen.getByTestId("old-content")).toHaveTextContent("none");
+    // Pressing would only ask again for what just failed.
+    expect(screen.getByTestId("inert")).toBeInTheDocument();
+  });
+
+  // Past the size cap the base comes back null, and a press could fetch nothing more.
+  it("stops offering the request once a fetch has come back empty", async () => {
+    getFileContentAtBase.mockResolvedValue(null);
+    renderViewer(modifiedFile(), true);
+
+    await waitFor(() => expect(getFileContentAtBase).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId("inert")).toBeInTheDocument());
   });
 
   it("colours an added file at once, having nothing to wait for", () => {
