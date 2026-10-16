@@ -156,8 +156,10 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
   const isEditable = useIsTaskEditable(taskId);
 
   // Held while the modal is open, so auto-mode cannot start the task the user is halfway through
-  // rewriting — the agent would be given a prompt the user had already moved on from.
-  useTaskHold(projectId, taskId, taskId !== null);
+  // rewriting — the agent would be given a prompt the user had already moved on from. Only before
+  // the task starts: once under way, holding it kept the next stage from starting while the user
+  // watched, and a loop sent back from here sat until the modal closed.
+  useTaskHold(projectId, taskId, taskId !== null && task?.phase == null);
 
   const [draft, setDraft] = useState<TaskDraft>({
     title: "",

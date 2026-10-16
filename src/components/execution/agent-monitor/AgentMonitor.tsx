@@ -19,6 +19,7 @@ import {
   useRenameAcpSessionMutation,
   useCancelActiveSessionMutation,
 } from "@/services/execution.service";
+import { STAGE_NAMES } from "@/lib/default-profiles";
 import { useAgentProfilesQuery } from "@/services/project.service";
 import { useAutomationRunsQuery } from "@/services/automation.service";
 import { ACTIVITY_DOT, ElapsedTime } from "@/components/execution/shared/activityStatus";
@@ -143,7 +144,7 @@ function RoleChip({
   const { role, profile_id } = session.task_role;
   const chip = (
     <span className="shrink-0 rounded-full border border-border bg-muted/50 px-1.5 text-[11px] leading-[16px] text-muted-foreground">
-      {role}
+      {STAGE_NAMES[role]}
     </span>
   );
   if (!tooltip) return chip;

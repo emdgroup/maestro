@@ -7,7 +7,7 @@ import { Textarea } from "@/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { AgentConfigFields } from "@/components/common/agent-config/AgentConfigFields";
 import { useAgentProfilesQuery, useSaveAgentProfilesMutation } from "@/services/project.service";
-import { ROLE_PROMPTS, STAGE_TITLES } from "@/lib/default-profiles";
+import { ROLE_PROMPTS, STAGE_NAMES, STAGE_TITLES } from "@/lib/default-profiles";
 import { isReadOnlyRole } from "@/lib/permission-modes";
 import { useSelectedProject } from "@/store/projectStore";
 import type { AgentProfile, AgentRole, ConnectionKey, ProfilesDocument } from "@/types/bindings";
@@ -35,7 +35,7 @@ const PIPELINE_ROLES: RoleEntry[] = [
   {
     role: "Refiner",
     title: STAGE_TITLES.Refiner,
-    stage: "Refine",
+    stage: STAGE_NAMES.Refiner,
     what: "Sharpens a task's description before anyone implements it.",
     none: "skip",
     noneText: "The stage is skipped, and tasks in Planning show no Refine button.",
@@ -43,7 +43,7 @@ const PIPELINE_ROLES: RoleEntry[] = [
   {
     role: "Planner",
     title: STAGE_TITLES.Planner,
-    stage: "Plan",
+    stage: STAGE_NAMES.Planner,
     what: "Writes a plan, then waits for you to approve it.",
     none: "skip",
     noneText: "The stage is skipped, and work starts straight from the description.",
@@ -51,7 +51,7 @@ const PIPELINE_ROLES: RoleEntry[] = [
   {
     role: "Coder",
     title: STAGE_TITLES.Coder,
-    stage: "Implement",
+    stage: STAGE_NAMES.Coder,
     what: "Writes the code.",
     none: "default",
     noneText: "Runs on the project's default agent, with no instructions.",
@@ -59,7 +59,7 @@ const PIPELINE_ROLES: RoleEntry[] = [
   {
     role: "Reviewer",
     title: STAGE_TITLES.Reviewer,
-    stage: "Review",
+    stage: STAGE_NAMES.Reviewer,
     what: "Reviews the diff and can send it back for another run.",
     none: "skip",
     noneText: "The stage is skipped, and finished work comes straight to you.",
@@ -70,7 +70,7 @@ const LOOP_ROLES: RoleEntry[] = [
   {
     role: "Preparer",
     title: STAGE_TITLES.Preparer,
-    stage: "Prepare",
+    stage: STAGE_NAMES.Preparer,
     what: "Writes the loop's tests and sets its checks with you.",
     none: "default",
     noneText: "Runs on the project's default agent.",
@@ -78,7 +78,7 @@ const LOOP_ROLES: RoleEntry[] = [
   {
     role: "Worker",
     title: STAGE_TITLES.Worker,
-    stage: "Build",
+    stage: STAGE_NAMES.Worker,
     what: "Works toward the loop's goal, one fresh session per iteration.",
     none: "default",
     noneText: "Runs on the project's default agent.",
@@ -86,7 +86,7 @@ const LOOP_ROLES: RoleEntry[] = [
   {
     role: "Judge",
     title: STAGE_TITLES.Judge,
-    stage: "Judge",
+    stage: STAGE_NAMES.Judge,
     what: "Decides the judge checks and writes the summary you sign off.",
     none: "inherit",
     noneText: "Runs on the same agent as Build.",

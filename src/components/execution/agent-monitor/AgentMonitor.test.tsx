@@ -110,13 +110,13 @@ describe("AgentMonitor role chip", () => {
     session_name: "amber-brook",
   };
 
-  it("names the role the session was spawned for", () => {
+  it("names the stage the session was spawned for", () => {
     const { getAllByText } = renderMonitor({
       ...defaultProps,
       sessions: [{ ...taskSession, task_role: { role: "Planner" as const, profile_id: "strict" } }],
     });
     // Sidebar row and detail header both carry one.
-    expect(getAllByText("Planner").length).toBeGreaterThan(0);
+    expect(getAllByText("Plan").length).toBeGreaterThan(0);
   });
 
   it("shows nothing for a session no task started", () => {
@@ -124,7 +124,7 @@ describe("AgentMonitor role chip", () => {
       ...defaultProps,
       sessions: [{ ...taskSession, task_id: null, task_name: null, task_role: null }],
     });
-    expect(queryByText("Planner")).toBeNull();
-    expect(queryByText("Coder")).toBeNull();
+    expect(queryByText("Plan")).toBeNull();
+    expect(queryByText("Implement")).toBeNull();
   });
 });

@@ -1,5 +1,16 @@
 import type { AgentProfile, AgentRole, ProfilesDocument } from "@/types/bindings";
 
+/** Each role's stage as a verb, as the workflow row in Settings and a session's chip name it. */
+export const STAGE_NAMES: Record<AgentRole, string> = {
+  Refiner: "Refine",
+  Planner: "Plan",
+  Coder: "Implement",
+  Reviewer: "Review",
+  Preparer: "Prepare",
+  Worker: "Build",
+  Judge: "Judge",
+};
+
 /** Each role's stage, as Settings titles its panel and a task's Agents dialog labels its row. */
 export const STAGE_TITLES: Record<AgentRole, string> = {
   Refiner: "Refinement",
