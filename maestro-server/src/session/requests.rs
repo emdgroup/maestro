@@ -157,6 +157,10 @@ pub(crate) async fn load(
         let Some(conn_handle) = conn_handle else {
             return;
         };
+        // A task stage's instructions come back with it.
+        let instructions = req.project_path.as_deref().and_then(|project_path| {
+            crate::task_prompt::session_instructions(project_path, req.meta.role.as_deref())
+        });
         let result = load_session_on_connection(
             &conn_handle,
             req.session_id.clone(),
@@ -164,6 +168,7 @@ pub(crate) async fn load(
             &req.agent_id,
             &req.cwd,
             &req.additional_directories,
+            instructions.as_deref(),
             Arc::clone(&stdout_task),
         )
         .await;

@@ -2,12 +2,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use acp::schema::v1::{
-    ClientCapabilities, CloseSessionRequest, CreateTerminalRequest, CreateTerminalResponse,
-    DeleteSessionRequest, EnvVariable, Implementation, InitializeRequest, KillTerminalRequest,
-    KillTerminalResponse, ListSessionsRequest, LoadSessionRequest, McpServer, McpServerStdio,
-    NewSessionRequest, ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionRequest,
-    RequestPermissionResponse, SessionNotification, TerminalExitStatus, TerminalOutputRequest,
-    TerminalOutputResponse, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
+    ClientCapabilities, CloseSessionRequest, ContentBlock, CreateTerminalRequest,
+    CreateTerminalResponse, DeleteSessionRequest, EnvVariable, Implementation, InitializeRequest,
+    KillTerminalRequest, KillTerminalResponse, ListSessionsRequest, LoadSessionRequest, McpServer,
+    McpServerStdio, NewSessionRequest, ReleaseTerminalRequest, ReleaseTerminalResponse,
+    RequestPermissionRequest, RequestPermissionResponse, SessionNotification, SystemPrompt,
+    TerminalExitStatus, TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
+    WaitForTerminalExitResponse,
 };
 use acp::schema::ProtocolVersion;
 use agent_client_protocol as acp;
@@ -92,6 +93,13 @@ async fn mcp_servers_for(
         servers.push(server);
     }
     servers
+}
+
+/// `text` as the session's system prompt, appended to the agent's own instructions. Sent only to an
+/// agent that advertises `sessionCapabilities.systemPrompt`, as the spec requires.
+fn system_prompt_for(text: Option<&str>, supported: bool) -> Option<SystemPrompt> {
+    text.filter(|_| supported)
+        .map(|text| SystemPrompt::new(vec![ContentBlock::from(text)]))
 }
 
 fn mcp_server_name(server: &McpServer) -> String {
@@ -288,6 +296,7 @@ pub(crate) async fn create_session_on_connection(
     agent_id: &str,
     cwd: &str,
     additional_directories: &[String],
+    system_prompt: Option<&str>,
     stdout: crate::ClientOut,
 ) -> Result<SpawnResult, String> {
     let cx = conn.connection.clone();
@@ -311,7 +320,11 @@ pub(crate) async fn create_session_on_connection(
         .send_request(
             NewSessionRequest::new(std::path::PathBuf::from(cwd))
                 .mcp_servers(mcp_servers)
-                .additional_directories(roots),
+                .additional_directories(roots)
+                .system_prompt(system_prompt_for(
+                    system_prompt,
+                    conn.capabilities.supports_system_prompt,
+                )),
         )
         .block_task()
         .await
@@ -438,6 +451,7 @@ pub(crate) async fn create_session_on_connection(
 /// Registers the session route in the agent's router so shared handlers dispatch correctly.
 /// Ok(Some) = success; Ok(None) = ACP-level error (connection still alive, error already sent);
 /// Err(()) = transport failure (connection dead, error already sent).
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn load_session_on_connection(
     conn: &AgentConnectionHandle,
     maestro_session_id: String,
@@ -445,6 +459,7 @@ pub(crate) async fn load_session_on_connection(
     agent_id: &str,
     cwd: &str,
     additional_directories: &[String],
+    system_prompt: Option<&str>,
     stdout: crate::ClientOut,
 ) -> Result<
     Option<(
@@ -496,7 +511,11 @@ pub(crate) async fn load_session_on_connection(
                     conn.capabilities.supports_additional_directories,
                 )
                 .await,
-            );
+            )
+            .system_prompt(system_prompt_for(
+                system_prompt,
+                conn.capabilities.supports_system_prompt,
+            ));
     let load_response = match cx.send_request(load_req).block_task().await {
         Ok(r) => r,
         Err(e) => {
@@ -755,12 +774,17 @@ pub(crate) async fn pre_initialize_agent(
                         .session_capabilities
                         .additional_directories
                         .is_some(),
+                    supports_system_prompt: init_response
+                        .agent_capabilities
+                        .session_capabilities
+                        .system_prompt
+                        .is_some(),
                 };
                 crate::send_diag("info", format!(
-                    "[agent] initialize ok session_list={} session_load={} session_close={} session_delete={} auth_methods={} auth_logout={} mcp_http={} mcp_sse={}",
+                    "[agent] initialize ok session_list={} session_load={} session_close={} session_delete={} auth_methods={} auth_logout={} mcp_http={} mcp_sse={} system_prompt={}",
                     caps.supports_session_list, caps.supports_session_load, caps.supports_session_close, caps.supports_session_delete,
                     caps.auth_methods.len(), caps.supports_auth_logout,
-                    caps.mcp_transports.http, caps.mcp_transports.sse
+                    caps.mcp_transports.http, caps.mcp_transports.sse, caps.supports_system_prompt
                 ));
                 // Send the live connection handle out — caller uses it to create sessions.
                 let _ = ready_tx.send(Ok((caps, cx)));
@@ -826,7 +850,7 @@ pub(crate) async fn pre_initialize_agent(
 
 #[cfg(test)]
 mod tests {
-    use super::path_is_within;
+    use super::{path_is_within, system_prompt_for, NewSessionRequest};
     use std::path::Path;
 
     const ROOT: &str = r"C:\Users\me\maestro";
@@ -843,6 +867,18 @@ mod tests {
             ROOT,
             Path::new(r"C:\Users\me\maestro\.maestro\worktrees\session-100")
         ));
+    }
+
+    #[test]
+    fn system_prompt_is_appended_text_and_only_where_advertised() {
+        assert_eq!(system_prompt_for(Some("Be strict."), false), None);
+        assert_eq!(system_prompt_for(None, true), None);
+        let request = NewSessionRequest::new(std::path::PathBuf::from("/p"))
+            .system_prompt(system_prompt_for(Some("Be strict."), true));
+        assert_eq!(
+            serde_json::to_value(request).unwrap()["systemPrompt"],
+            serde_json::json!({ "mode": "append", "content": [{ "type": "text", "text": "Be strict." }] })
+        );
     }
 
     #[test]
