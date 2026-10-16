@@ -53,8 +53,8 @@ const PIPELINE_ROLES: RoleEntry[] = [
     role: "Coder",
     title: "Implementation",
     blurb:
-      "The only role allowed to write. Runs without a profile, on the project's default agent — " +
-      "a profile is how it gets this project's instructions.",
+      "Writes the code. Runs without a profile, on the project's default agent; a profile is how " +
+      "it gets this project's instructions.",
     defaultPrompt:
       "Implement this task. Follow the conventions of the surrounding code rather than introducing " +
       "your own, and keep the change to what was asked — no speculative extras. Verify before you " +
