@@ -60,7 +60,10 @@ describe("which highlighter the diff view actually uses", () => {
 
     highlighted(diff("3"));
     // The next poll: same base, different post-image.
-    expect(highlighted(diff("4")).getNewSyntaxLine(2)?.nodeList.length).toBeGreaterThan(1);
+    const next = highlighted(diff("4"));
+    // The added line, and the context line, which unified mode also paints from the new side.
+    expect(next.getNewSyntaxLine(2)?.nodeList.length).toBeGreaterThan(1);
+    expect(next.getNewSyntaxLine(1)?.nodeList.length).toBeGreaterThan(1);
   });
 
   // Every name `detectLanguage` can hand a diff has to reach a grammar, or that file renders plain.
