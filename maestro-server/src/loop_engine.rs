@@ -2124,7 +2124,7 @@ mod tests {
         let workspace = crate::worktree::prepare_task_workspace(
             store,
             task,
-            maestro_protocol::AgentRole::Coder,
+            maestro_protocol::AgentRole::Worker,
         )
         .await
         .expect("prepare");
@@ -2263,12 +2263,12 @@ mod tests {
         let merged = crate::worktree::prepare_task_workspace(
             &store,
             &task,
-            maestro_protocol::AgentRole::Coder,
+            maestro_protocol::AgentRole::Worker,
         )
         .await;
         assert!(merged.is_err(), "the same lines conflict: {merged:?}");
         git_in(&context, &["reset", "-q", "--hard", "HEAD~1"]).await;
-        crate::worktree::prepare_task_workspace(&store, &task, maestro_protocol::AgentRole::Coder)
+        crate::worktree::prepare_task_workspace(&store, &task, maestro_protocol::AgentRole::Worker)
             .await
             .expect("merged once nothing is in the way");
         assert_eq!(
@@ -2326,7 +2326,7 @@ mod tests {
             &path,
             &task,
             Some(TaskPhase::Iterating),
-            maestro_protocol::AgentRole::Coder,
+            maestro_protocol::AgentRole::Worker,
             None,
             None,
         )
@@ -2392,7 +2392,7 @@ Try the cache first."
             &path,
             &task,
             Some(TaskPhase::Iterating),
-            maestro_protocol::AgentRole::Coder,
+            maestro_protocol::AgentRole::Worker,
             None,
             None,
         )
@@ -2522,7 +2522,7 @@ Try the cache first."
                 &path,
                 &task,
                 Some(TaskPhase::Iterating),
-                maestro_protocol::AgentRole::Coder,
+                maestro_protocol::AgentRole::Worker,
                 None,
                 None,
             )
@@ -2776,7 +2776,7 @@ Try the cache first."
             &path,
             &stored,
             Some(TaskPhase::Iterating),
-            maestro_protocol::AgentRole::Coder,
+            maestro_protocol::AgentRole::Worker,
             None,
             None,
         )

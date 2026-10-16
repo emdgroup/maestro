@@ -66,10 +66,10 @@ pub(crate) fn role(phase: Option<TaskPhase>, run_mode: RunMode) -> Option<AgentR
         TaskPhase::Refining if run_mode == RunMode::Loop => Some(AgentRole::Preparer),
         TaskPhase::Refining => Some(AgentRole::Refiner),
         TaskPhase::Drafting => Some(AgentRole::Planner),
-        TaskPhase::Implementing
-        | TaskPhase::Rework
-        | TaskPhase::AwaitingMerge
-        | TaskPhase::Iterating => Some(AgentRole::Coder),
+        TaskPhase::Implementing | TaskPhase::Rework | TaskPhase::AwaitingMerge => {
+            Some(AgentRole::Coder)
+        }
+        TaskPhase::Iterating => Some(AgentRole::Worker),
         TaskPhase::SelfReview => Some(AgentRole::Reviewer),
         TaskPhase::Judging => Some(AgentRole::Judge),
         _ => None,
@@ -578,7 +578,7 @@ mod tests {
             ),
             Some(Action::Resume {
                 row: Box::new(rows[0].clone()),
-                role: AgentRole::Coder,
+                role: AgentRole::Worker,
                 unblock: false
             })
         );

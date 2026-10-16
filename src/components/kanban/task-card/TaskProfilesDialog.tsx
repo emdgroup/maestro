@@ -37,7 +37,7 @@ const ROLES: Array<{ role: AgentRole; label: string; optional: boolean }> = [
  */
 const LOOP_ROLES: Array<{ role: AgentRole; label: string; optional: boolean }> = [
   { role: "Preparer", label: "Preparation", optional: false },
-  { role: "Coder", label: "Iterations", optional: false },
+  { role: "Worker", label: "Iterations", optional: false },
   { role: "Judge", label: "Judging", optional: false },
 ];
 
@@ -142,10 +142,12 @@ export function TaskProfilesDialog({
               const fallbackLabel =
                 forRole.length === 0
                   ? role === "Judge"
-                    ? "No profile: the loop's own agent judges"
+                    ? "No profile: the Iterations agent judges"
                     : role === "Preparer"
                       ? "No profile: the project's default agent prepares"
-                      : "No profile (stage skipped)"
+                      : role === "Coder" || role === "Worker"
+                        ? "No profile: the project's default agent runs it"
+                        : "No profile (stage skipped)"
                   : `Project default${defaultName ? ` (${defaultName})` : ""}`;
               // A role the project has no profile for is already skipped, so there is nothing to
               // choose: the select stays disabled and says so, as it did before skipping existed.

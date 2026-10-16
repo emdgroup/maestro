@@ -11,8 +11,7 @@ import type { AgentProfile, AgentRole, ConnectionKey, ProfilesDocument } from "@
 import { cn } from "@/lib/utils";
 
 /**
- * The six roles, in the order a task passes through them; the preparer and the judge only ever
- * work a loop.
+ * The roles, in the order a task passes through them: a pipeline task's four, then a loop's three.
  *
  * Each line says what the role costs the user rather than what it is called: a project with no
  * profile for a role simply skips that stage, and "no Reviewer" being the difference between a
@@ -25,7 +24,9 @@ import { cn } from "@/lib/utils";
  * reach profiles already written, which is the right way round: those are the team's, not ours.
  * Deliberately project-neutral, since the project-specific half is what the user adds.
  */
-const ROLES: Array<{ role: AgentRole; title: string; blurb: string; defaultPrompt: string }> = [
+type RoleEntry = { role: AgentRole; title: string; blurb: string; defaultPrompt: string };
+
+const PIPELINE_ROLES: RoleEntry[] = [
   {
     role: "Refiner",
     title: "Refinement",
@@ -71,6 +72,9 @@ const ROLES: Array<{ role: AgentRole; title: string; blurb: string; defaultPromp
       "conventions, not your preferences. Report findings with a file and line and a concrete " +
       "failure case. Send the work back only for problems worth another run.",
   },
+];
+
+const LOOP_ROLES: RoleEntry[] = [
   {
     role: "Preparer",
     title: "Preparation",
@@ -90,15 +94,47 @@ const ROLES: Array<{ role: AgentRole; title: string; blurb: string; defaultPromp
       "only for what a command cannot decide. Never implement the goal or weaken a check.",
   },
   {
+    role: "Worker",
+    title: "Iterations",
+    blurb:
+      "Works toward the loop's goal, one fresh session per iteration, until every check passes. " +
+      "Without one, iterations run on the project's default agent.",
+    defaultPrompt:
+      "Move this loop toward its goal in this iteration. Start from the failing checks and the " +
+      "notes earlier iterations left, then make the smallest change that gets a failing check " +
+      "closer to passing. Follow the conventions of the surrounding code. Never edit a test or a " +
+      "check script to make it pass. Run the checks before you finish, and leave a short note on " +
+      "what you changed and what the next iteration should try.",
+  },
+  {
     role: "Judge",
     title: "Judging",
     blurb:
-      "Decides a loop's judge checks and writes the digest you sign off. Without one, the loop's own " +
+      "Decides a loop's judge checks and writes the digest you sign off. Without one, the Iterations " +
       "agent judges.",
     defaultPrompt:
       "Judge each check against the loop's diff and the code it touches, as a reviewer who has to " +
       "sign it off. Pass a check only when the work plainly meets it; when you fail one, say what " +
       "is missing and where, because that reason is all the next iteration gets.",
+  },
+];
+
+const ROLES = [...PIPELINE_ROLES, ...LOOP_ROLES];
+
+const GROUPS: Array<{ title: string; blurb: string; roles: RoleEntry[] }> = [
+  {
+    title: "Pipeline",
+    blurb:
+      "A pipeline task goes through these stages in order. A stage with no profile is skipped, " +
+      "except Implementation, which runs on the project's default agent.",
+    roles: PIPELINE_ROLES,
+  },
+  {
+    title: "Loop",
+    blurb:
+      "A loop is prepared with you, then iterates until its checks pass. Every loop stage runs " +
+      "without a profile.",
+    roles: LOOP_ROLES,
   },
 ];
 
@@ -344,64 +380,75 @@ export function AgentProfilesSection({ projectId, agents, connection }: AgentPro
         <p className="text-xs text-muted-foreground mt-1">
           Which agent runs each stage of a task. Saved in this project&apos;s{" "}
           <code className="text-[11px]">.maestro/profiles.json</code>, so the whole team gets the
-          same pipeline. A role with no profile is skipped — except Implementation, which runs on
-          the project&apos;s default agent.
+          same setup.
         </p>
       </div>
 
-      {ROLES.map(({ role, title, blurb }) => {
-        const forRole = profiles.filter((p) => p.role === role);
-        return (
-          <div key={role} className="space-y-2 pt-2 border-t border-border first:border-t-0">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold">{title}</p>
-                <p className="text-[11px] text-muted-foreground">{blurb}</p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => addProfile(role)}
-                aria-label={`Add a ${title} profile`}
-                className="shrink-0"
-              >
-                <Plus className="size-3" />
-                Add
-              </Button>
-            </div>
-
-            {forRole.length === 0 ? (
-              <p className="text-[11px] text-muted-foreground italic">
-                {role === "Coder"
-                  ? "No profile — runs on the project's default agent."
-                  : role === "Judge"
-                    ? "No profile: the loop's own agent judges."
-                    : role === "Preparer"
-                      ? "No profile: Prepare loop runs on the project's default agent."
-                      : "No profile — stage skipped."}
-              </p>
-            ) : (
-              forRole.map((profile) => (
-                <ProfileCard
-                  key={profile.id}
-                  profile={profile}
-                  title={title}
-                  isDefault={defaults[role] === profile.id}
-                  agents={agents}
-                  projectId={projectId}
-                  projectPath={projectPath}
-                  connection={connection}
-                  onChange={(patch, commit) => updateProfile(profile.id, patch, commit)}
-                  onCommit={() => saveNow(profiles, defaults)}
-                  onMakeDefault={() => makeDefault(role, profile.id)}
-                  onRemove={() => removeProfile(profile.id, role)}
-                />
-              ))
-            )}
+      {GROUPS.map((group) => (
+        <section key={group.title} className="space-y-2">
+          <div className="pt-2 border-t border-border">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {group.title}
+            </h4>
+            <p className="text-[11px] text-muted-foreground">{group.blurb}</p>
           </div>
-        );
-      })}
+          {group.roles.map(({ role, title, blurb }) => {
+            const forRole = profiles.filter((p) => p.role === role);
+            return (
+              <div key={role} className="space-y-2 pt-2 border-t border-border first:border-t-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold">{title}</p>
+                    <p className="text-[11px] text-muted-foreground">{blurb}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addProfile(role)}
+                    aria-label={`Add a ${title} profile`}
+                    className="shrink-0"
+                  >
+                    <Plus className="size-3" />
+                    Add
+                  </Button>
+                </div>
+
+                {forRole.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground italic">
+                    {role === "Coder"
+                      ? "No profile — runs on the project's default agent."
+                      : role === "Judge"
+                        ? "No profile: the Iterations agent judges."
+                        : role === "Preparer"
+                          ? "No profile: Prepare loop runs on the project's default agent."
+                          : role === "Worker"
+                            ? "No profile: iterations run on the project's default agent."
+                            : "No profile — stage skipped."}
+                  </p>
+                ) : (
+                  forRole.map((profile) => (
+                    <ProfileCard
+                      key={profile.id}
+                      profile={profile}
+                      title={title}
+                      isDefault={defaults[role] === profile.id}
+                      agents={agents}
+                      projectId={projectId}
+                      projectPath={projectPath}
+                      connection={connection}
+                      onChange={(patch, commit) => updateProfile(profile.id, patch, commit)}
+                      onCommit={() => saveNow(profiles, defaults)}
+                      onMakeDefault={() => makeDefault(role, profile.id)}
+                      onRemove={() => removeProfile(profile.id, role)}
+                    />
+                  ))
+                )}
+              </div>
+            );
+          })}
+        </section>
+      ))}
     </div>
   );
 }

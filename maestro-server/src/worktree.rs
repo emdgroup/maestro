@@ -588,7 +588,7 @@ pub async fn prepare_task_workspace(
     };
 
     let cwd = match role {
-        AgentRole::Coder | AgentRole::Judge if looping => {
+        AgentRole::Worker | AgentRole::Judge if looping => {
             sync_sandbox(project_path, &cwd, task).await?
         }
         _ => cwd,

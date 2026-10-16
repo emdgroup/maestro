@@ -1320,6 +1320,8 @@ pub enum AgentRole {
     /// Prepares a loop with the user before it runs: writes its tests in the loop's worktree and
     /// sets its checks. Works a loop's `Refining` phase, which is the refiner's on a pipeline task.
     Preparer,
+    /// Works a loop's iterations, each in a fresh session, as the coder works a pipeline task.
+    Worker,
 }
 
 /// One task, every column the app reads.

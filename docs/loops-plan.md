@@ -829,6 +829,14 @@ the card):
   one of the two is refused. With no Preparation profile it runs on the project's default agent.
   It writes, in the context, with `PREPARE_PROTOCOL` and the loop as it stands. Its summary is the
   refinement's proposal, closed with Done preparing, which leaves the description alone.
+- Iterations are their own role too, `Worker` (changed after testing, 2026-10-16), so a loop no
+  longer shares Implementation profiles with pipeline tasks. It works `Iterating`; `begin` turns a
+  loop started as the coder into its worker, since the app and the queue start every task as the
+  coder, and refuses a worker on a pipeline task. It writes and gets the task's own agent and
+  overrides, as the coder does; with no Iterations profile it runs on the project's default agent,
+  and a judge with no profile runs on the worker's agent. Settings groups the profiles under
+  Pipeline (Refinement, Planning, Implementation, Review) and Loop (Preparation, Iterations,
+  Judging).
 - `TaskUpdate.run_mode` is gone from the protocol and the app; MCP `update_task` refuses a different
   run mode.
 - Create Task sets nothing up for a loop: choosing Loop only locks the workspace to a new worktree,

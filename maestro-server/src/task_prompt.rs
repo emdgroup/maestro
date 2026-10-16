@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use maestro_protocol::{AgentRole, RunMode, Task, TaskPhase};
+use maestro_protocol::{AgentRole, Task, TaskPhase};
 use rusqlite::Connection;
 use serde_json::{json, Value};
 
@@ -102,7 +102,7 @@ pub fn compose(
         Some(p) if !p.is_empty() => format!("{p}\n\n---\n"),
         _ => String::new(),
     };
-    let looping = role == AgentRole::Coder && task.run_mode == RunMode::Loop;
+    let looping = role == AgentRole::Worker;
     let preparing = role == AgentRole::Preparer;
     let protocol = match role {
         AgentRole::Preparer => PREPARE_PROTOCOL,
@@ -110,7 +110,7 @@ pub fn compose(
         AgentRole::Planner => PLANNER_PROTOCOL,
         AgentRole::Reviewer => REVIEWER_PROTOCOL,
         AgentRole::Judge => JUDGE_PROTOCOL,
-        AgentRole::Coder if looping => LOOP_PROTOCOL,
+        AgentRole::Worker => LOOP_PROTOCOL,
         AgentRole::Coder => COMPLETION_PROTOCOL,
     };
     blocks.push(text(format!(
@@ -172,7 +172,7 @@ pub fn compose(
     let mut tail = Vec::new();
 
     // Only the coder acts on a review's per-file comments, and a loop has no review.
-    if role == AgentRole::Coder && !looping {
+    if role == AgentRole::Coder {
         if let Some(review) = task_store::reviews::get_review(conn, project_path, task.id)?
             .filter(|r| r.decision == "RequestChanges")
         {

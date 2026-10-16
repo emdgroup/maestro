@@ -133,6 +133,7 @@ fn stage(role: AgentRole) -> &'static str {
         AgentRole::Reviewer => "Review",
         AgentRole::Judge => "Judging",
         AgentRole::Preparer => "Preparation",
+        AgentRole::Worker => "Iterations",
     }
 }
 
@@ -233,16 +234,17 @@ pub(crate) fn begin(
                 profiles::profile_id_for(&task, AgentRole::Planner).as_deref(),
             )
             .is_some();
-    let role = if planner_first {
-        AgentRole::Planner
-    } else {
-        request.role
+    // A loop's coder is its worker: the app and the queue start every task as the coder.
+    let looping = task.run_mode == maestro_protocol::RunMode::Loop;
+    let role = match request.role {
+        _ if planner_first => AgentRole::Planner,
+        AgentRole::Coder if looping => AgentRole::Worker,
+        role => role,
     };
     // Both work the Refining phase: a loop is prepared, a pipeline task refined.
-    let looping = task.run_mode == maestro_protocol::RunMode::Loop;
     if matches!(
         (role, looping),
-        (AgentRole::Refiner, true) | (AgentRole::Preparer, false)
+        (AgentRole::Refiner, true) | (AgentRole::Preparer | AgentRole::Worker, false)
     ) {
         return Err(NotBegun::Other(format!(
             "\"{}\" is {}, so it has no {} stage",
@@ -759,7 +761,7 @@ async fn prepare(
     let (draft, loop_session) = {
         let conn = launcher.store.lock().await;
         let loop_session = match (task.run_mode, role) {
-            (maestro_protocol::RunMode::Loop, AgentRole::Coder) => Some(LoopSession::Iteration(
+            (maestro_protocol::RunMode::Loop, AgentRole::Worker) => Some(LoopSession::Iteration(
                 loops::next_iteration(&conn, project_path, task.id)?,
             )),
             (maestro_protocol::RunMode::Loop, AgentRole::Judge) => {
@@ -815,7 +817,7 @@ async fn prepare(
     let ready = {
         let mut conn = launcher.store.lock().await;
         // After the prompt, so a review is only dropped once it reached the coder.
-        if role == AgentRole::Coder {
+        if matches!(role, AgentRole::Coder | AgentRole::Worker) {
             let clear = ServerRequest::ClearTaskReview(maestro_protocol::TaskRef {
                 project_path: project_path.to_string(),
                 task_id: task.id,
@@ -1126,6 +1128,33 @@ mod tests {
                 }
                 other => assert!(!claims, "{role:?}: {:?}", other.err()),
             }
+        }
+    }
+
+    /// A loop started as the coder is its worker's; a pipeline task has no worker.
+    #[test]
+    fn a_loop_started_as_the_coder_runs_its_worker() {
+        let agents = [agent("fake")];
+        let (_dir, project, mut conn, task) = setup(Some("fake"));
+        let worker = StartTaskRequest {
+            role: AgentRole::Worker,
+            ..request(&project, &task)
+        };
+        assert!(begin(&mut conn, &worker, 0, &agents, &mut Vec::new()).is_err());
+        conn.execute(
+            "UPDATE tasks SET run_mode = 'Loop' WHERE id = ?1",
+            [task.id],
+        )
+        .unwrap();
+        match begin(
+            &mut conn,
+            &request(&project, &task),
+            0,
+            &agents,
+            &mut Vec::new(),
+        ) {
+            Ok(Begun::Claimed(claimed)) => assert_eq!(claimed.role, AgentRole::Worker),
+            other => panic!("{:?}", other.err()),
         }
     }
 

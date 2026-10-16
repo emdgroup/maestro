@@ -147,14 +147,19 @@ describe("AgentProfilesSection", () => {
     stored.current = {};
 
     renderSection();
-    // Three of five: Implementation still runs without a profile, on the project's default agent,
-    // and saying it is skipped is what sent users looking for a profile they did not need. A loop's
-    // judge falls back to the loop's own agent.
+    // Three of the pipeline's four: Implementation still runs without a profile, on the project's
+    // default agent, and saying it is skipped is what sent users looking for a profile they did not
+    // need. No loop stage is skipped: its iterations run on the default agent, which also judges.
     expect(screen.getAllByText("No profile — stage skipped.")).toHaveLength(3);
     expect(
       screen.getByText("No profile — runs on the project's default agent."),
     ).toBeInTheDocument();
-    expect(screen.getByText("No profile: the loop's own agent judges.")).toBeInTheDocument();
+    expect(
+      screen.getByText("No profile: iterations run on the project's default agent."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("No profile: the Iterations agent judges.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Pipeline" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Loop" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Add a Refinement profile" }));
 

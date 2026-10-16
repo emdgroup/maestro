@@ -70,7 +70,8 @@ fn plan(payload: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Only a session bound as the coder is approved, and only outside a read-only phase.
+/// Only a session bound as the coder or a loop's worker is approved, and only outside a read-only
+/// phase.
 pub(crate) fn decide(
     role: Option<AgentRole>,
     phase: Option<TaskPhase>,
@@ -79,7 +80,7 @@ pub(crate) fn decide(
     if read_only(phase) {
         return plan(payload).map_or(Decision::Ask, Decision::Plan);
     }
-    if role != Some(AgentRole::Coder) {
+    if !matches!(role, Some(AgentRole::Coder | AgentRole::Worker)) {
         return Decision::Ask;
     }
     allow_option(payload).map_or(Decision::Ask, Decision::Allow)

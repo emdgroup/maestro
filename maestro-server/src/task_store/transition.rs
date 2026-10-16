@@ -127,6 +127,7 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
             AgentRole::Coder => TaskState::active(InProgress, Implementing, Running, Ball::Agent),
             AgentRole::Reviewer => TaskState::active(Review, SelfReview, Running, Ball::Agent),
             AgentRole::Judge => TaskState::active(InProgress, Judging, Running, Ball::Agent),
+            AgentRole::Worker => TaskState::active(InProgress, Iterating, Running, Ball::Agent),
         },
 
         TaskTransition::SpawnAborted => current.unclaimed(TaskState::parked(current.status)),

@@ -481,7 +481,7 @@ wire_enum!(
 wire_enum!(
     crate::project::profiles::AgentRole,
     wire::AgentRole,
-    [Refiner, Planner, Coder, Reviewer, Judge, Preparer]
+    [Refiner, Planner, Coder, Reviewer, Judge, Preparer, Worker]
 );
 
 impl Task {

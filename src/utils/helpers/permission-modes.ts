@@ -22,11 +22,11 @@ const WRITABLE_MODES = ["auto", "agent", "build", "full-access", "bypassPermissi
 const READ_ONLY_MODES = ["readonly", "plan"];
 
 /**
- * The roles that exist because they do not write. Only the coder implements, and a loop's preparer
- * commits the loop's tests.
+ * The roles that exist because they do not write. Only the coder and a loop's worker implement, and
+ * a loop's preparer commits the loop's tests.
  */
 export function isReadOnlyRole(role: AgentRole): boolean {
-  return role !== "Coder" && role !== "Preparer";
+  return role !== "Coder" && role !== "Worker" && role !== "Preparer";
 }
 
 /**

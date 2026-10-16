@@ -3327,7 +3327,11 @@ export type AgentRole = "Refiner" | "Planner" | "Coder" | "Reviewer" |
 /**
  * Prepares a loop with the user: writes its tests in the loop's worktree and sets its checks.
  */
-"Preparer"
+"Preparer" | 
+/**
+ * Works a loop's iterations, each in a fresh session, as the coder works a pipeline task.
+ */
+"Worker"
 export type AgentStreamWidth = "full" | "compact"
 /**
  * Ahead/behind commit counts relative to the upstream tracking branch.
