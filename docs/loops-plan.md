@@ -491,7 +491,7 @@ since no session is live.
   `_meta["_claude/rateLimit"]` from `usage_update`. On `status: "rejected"` it records `resetsAt` and
   the window against the session. `TurnEnd` carries it as a new `TurnFacts.limit`.
 - **Close the gate.** A turn that ends with a limit recorded writes `agent_gates(agent_id,
-resume_at)`. With no reset time, the gate backs off 5, 15, 30, then 60 minutes, capped at 2 hours.
+  resume_at)`. With no reset time, the gate backs off 5, 15, 30, then 60 minutes, capped at 2 hours.
 - **Hold the work.** The scheduler skips candidates and handoffs whose agent's gate is closed, for
   pipeline and loop tasks alike. It reopens them on its one-minute tick once `resume_at` passes.
 - **What happens to the interrupted turn.**
