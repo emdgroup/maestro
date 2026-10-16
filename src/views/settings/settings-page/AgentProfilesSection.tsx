@@ -7,6 +7,7 @@ import { Textarea } from "@/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { AgentConfigFields } from "@/components/common/agent-config/AgentConfigFields";
 import { useAgentProfilesQuery, useSaveAgentProfilesMutation } from "@/services/project.service";
+import { ROLE_PROMPTS, STAGE_TITLES } from "@/lib/default-profiles";
 import { isReadOnlyRole } from "@/lib/permission-modes";
 import { useSelectedProject } from "@/store/projectStore";
 import type { AgentProfile, AgentRole, ConnectionKey, ProfilesDocument } from "@/types/bindings";
@@ -18,13 +19,6 @@ import { cn } from "@/lib/utils";
  * `noneText` says what the stage costs the user without a profile rather than what it is called: a
  * pipeline stage with no profile is simply skipped, and "no Reviewer" being the difference between
  * a task stopping at your gate and going straight to it is not obvious from the word "Reviewer".
- *
- * `defaultPrompt` is the text a new profile of that role starts with. It is copied into the
- * profile on creation rather than applied as a fallback at resolution time, because the user has
- * to be able to read it, edit it and delete it — none of which is true of a prompt that only
- * exists as a hidden default. The cost of that choice is that editing the text here does not
- * reach profiles already written, which is the right way round: those are the team's, not ours.
- * Deliberately project-neutral, since the project-specific half is what the user adds.
  */
 type RoleEntry = {
   role: AgentRole;
@@ -35,113 +29,69 @@ type RoleEntry = {
   /** What runs the stage without a profile: nothing, the project's default agent, or Build's. */
   none: "skip" | "default" | "inherit";
   noneText: string;
-  defaultPrompt: string;
 };
 
 const PIPELINE_ROLES: RoleEntry[] = [
   {
     role: "Refiner",
-    title: "Refinement",
+    title: STAGE_TITLES.Refiner,
     stage: "Refine",
     what: "Sharpens a task's description before anyone implements it.",
     none: "skip",
-    noneText: "Skipped. Tasks in Planning have no Refine button.",
-    defaultPrompt:
-      "Sharpen this task's description so it can be implemented without coming back to ask what it " +
-      "meant. Read enough of the codebase to ground it: name the files and functions involved, say " +
-      "what done looks like, and say what is out of scope. Where the task is genuinely ambiguous, " +
-      "write the ambiguity down rather than resolving it silently. Do not change any code.",
+    noneText: "The stage is skipped, and tasks in Planning show no Refine button.",
   },
   {
     role: "Planner",
-    title: "Planning",
+    title: STAGE_TITLES.Planner,
     stage: "Plan",
     what: "Writes a plan, then waits for you to approve it.",
     none: "skip",
-    noneText: "Skipped. Work starts straight from the description.",
-    defaultPrompt:
-      "Produce a plan for this task, not an implementation. Read the code paths it touches first, " +
-      "then give ordered steps naming the file and function each one changes. Call out the risky " +
-      "parts and anything you had to assume, and say how the result will be verified. Do not " +
-      "change any code.",
+    noneText: "The stage is skipped, and work starts straight from the description.",
   },
   {
     role: "Coder",
-    title: "Implementation",
+    title: STAGE_TITLES.Coder,
     stage: "Implement",
     what: "Writes the code.",
     none: "default",
-    noneText: "Runs on the project's default agent, with no instructions for this project.",
-    defaultPrompt:
-      "Implement this task. Follow the conventions of the surrounding code rather than introducing " +
-      "your own, and keep the change to what was asked — no speculative extras. Verify before you " +
-      "finish by running the project's tests, lint and build, and report plainly what passed, what " +
-      "failed, and anything you left undone.",
+    noneText: "Runs on the project's default agent, with no instructions.",
   },
   {
     role: "Reviewer",
-    title: "Review",
+    title: STAGE_TITLES.Reviewer,
     stage: "Review",
     what: "Reviews the diff and can send it back for another run.",
     none: "skip",
-    noneText: "Skipped. Finished work waits for you.",
-    defaultPrompt:
-      "Review this diff against the task it claims to implement. Look for correctness bugs, " +
-      "unhandled cases, and changes that go beyond the task; judge style against the project's own " +
-      "conventions, not your preferences. Report findings with a file and line and a concrete " +
-      "failure case. Send the work back only for problems worth another run.",
+    noneText: "The stage is skipped, and finished work comes straight to you.",
   },
 ];
 
 const LOOP_ROLES: RoleEntry[] = [
   {
     role: "Preparer",
-    title: "Preparation",
+    title: STAGE_TITLES.Preparer,
     stage: "Prepare",
     what: "Writes the loop's tests and sets its checks with you.",
     none: "default",
     noneText: "Runs on the project's default agent.",
-    defaultPrompt:
-      "Prepare this loop so a worker agent can reach the goal by iterating until every check " +
-      "passes. Read the goal and the code it touches, then restate it as observable outcomes and " +
-      "ask the user about anything ambiguous before writing checks. Prefer command checks that " +
-      "test behaviour through public interfaces, cover the edge cases and error paths the goal " +
-      "names, run fast and deterministically, and fail with a message naming the input, the " +
-      "expected value and the actual one. Run each one to prove it fails today for the right " +
-      "reason. For more than one command, put the logic in a script file rather than a shell " +
-      "one-liner: checks run in cmd on Windows and sh elsewhere. Seal every test and check script " +
-      "the worker could edit to pass, and nothing it needs to change. Use a judge or manual check " +
-      "only for what a command cannot decide. Never implement the goal or weaken a check.",
   },
   {
     role: "Worker",
-    title: "Building",
+    title: STAGE_TITLES.Worker,
     stage: "Build",
     what: "Works toward the loop's goal, one fresh session per iteration.",
     none: "default",
     noneText: "Runs on the project's default agent.",
-    defaultPrompt:
-      "Move this loop toward its goal in this iteration. Start from the failing checks and the " +
-      "notes earlier iterations left, then make the smallest change that gets a failing check " +
-      "closer to passing. Follow the conventions of the surrounding code. Never edit a test or a " +
-      "check script to make it pass. Run the checks before you finish, and leave a short note on " +
-      "what you changed and what the next iteration should try.",
   },
   {
     role: "Judge",
-    title: "Judging",
+    title: STAGE_TITLES.Judge,
     stage: "Judge",
     what: "Decides the judge checks and writes the summary you sign off.",
     none: "inherit",
     noneText: "Runs on the same agent as Build.",
-    defaultPrompt:
-      "Judge each check against the loop's diff and the code it touches, as a reviewer who has to " +
-      "sign it off. Pass a check only when the work plainly meets it; when you fail one, say what " +
-      "is missing and where, because that reason is all the next iteration gets.",
   },
 ];
-
-const ROLES = [...PIPELINE_ROLES, ...LOOP_ROLES];
 
 type Mode = "pipeline" | "loop";
 
@@ -157,9 +107,9 @@ const MODES: Record<Mode, { help: string; roles: RoleEntry[] }> = {
 };
 
 const FALLBACK: Record<RoleEntry["none"], string> = {
-  skip: "Without a profile, this stage is skipped.",
-  default: "Without a profile, it runs on the project's default agent.",
-  inherit: "Without a profile, it runs on the same agent as Build.",
+  skip: "Remove every profile and the stage is skipped.",
+  default: "Remove every profile and the stage runs on the project's default agent.",
+  inherit: "Remove every profile and the stage runs on the same agent as Build.",
 };
 
 interface AgentProfilesSectionProps {
@@ -536,7 +486,7 @@ export function AgentProfilesSection({
         mcp_servers: [],
         // A draft to edit, not a blank page. An empty box is why most profiles never get a prompt,
         // and a role with no prompt is the generic agent the profile existed to replace.
-        role_prompt: ROLES.find((r) => r.role === role)?.defaultPrompt ?? null,
+        role_prompt: ROLE_PROMPTS[role],
         fallback_behaviour: "Warn",
       },
     ];
@@ -612,10 +562,10 @@ export function AgentProfilesSection({
       <div>
         <h3 className="text-sm font-semibold flex items-center gap-2">
           <Bot className="size-4" />
-          Agents for the task workflow
+          Stages
         </h3>
         <p className="text-xs text-muted-foreground mt-1">
-          Choose the agent and the instructions for each stage.
+          Each stage runs on a profile: an agent, its settings, and instructions for this project.
         </p>
       </div>
 
@@ -715,7 +665,7 @@ export function AgentProfilesSection({
             </div>
             {forRole.length > 1 && (
               <p className="text-xs text-muted-foreground">
-                A task uses the default profile unless its Agents dialog picks another.
+                Tasks use the selected profile. A task can pick another from Agents on its card.
               </p>
             )}
             <p className="text-xs text-muted-foreground">{FALLBACK[entry.none]}</p>

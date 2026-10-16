@@ -212,6 +212,22 @@ export function useSaveAgentProfilesMutation() {
   });
 }
 
+/** Write a project's starting profiles, which the command skips when it already has the file. */
+export function useSeedAgentProfilesMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ projectId, document }: { projectId: number; document: ProfilesDocument }) =>
+      api.seedAgentProfiles(projectId, document),
+    onSuccess: (written, { projectId }) => {
+      if (written) {
+        void queryClient.invalidateQueries({ queryKey: projectQueryKeys.profiles(projectId) });
+      }
+    },
+    onError: createErrorToastHandler("Failed to create the starting agent profiles"),
+  });
+}
+
 /**
  * Mutation hook for the settings page's project-level fields.
  *

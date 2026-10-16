@@ -117,17 +117,17 @@ export function TaskProfilesDialog({
             Agents for “{task.title}”
           </DialogTitle>
           <DialogDescription>
-            Overrides the agent each role uses, for this task only. Roles are configured in
-            Settings.
+            Pick another profile for any stage, for this task only. Profiles are set up in Settings,
+            under Agents.
           </DialogDescription>
         </DialogHeader>
 
-        {/* Four disabled selects all reading "No profile (stage skipped)" is a dialog that looks
+        {/* Four disabled selects all reading "No profile, stage skipped" is a dialog that looks
             broken rather than one saying there is nothing to choose between yet. */}
         {profiles.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            This project has no agent profiles yet, so there is nothing to override here. Add one
-            per role in Settings.
+            This project has no agent profiles yet, so there is nothing to pick. Add them in
+            Settings, under Agents.
           </p>
         ) : (
           <div className="space-y-3">
@@ -142,13 +142,11 @@ export function TaskProfilesDialog({
               const fallbackLabel =
                 forRole.length === 0
                   ? role === "Judge"
-                    ? "No profile: Build's agent judges"
-                    : role === "Preparer"
-                      ? "No profile: the project's default agent prepares"
-                      : role === "Coder" || role === "Worker"
-                        ? "No profile: the project's default agent runs it"
-                        : "No profile (stage skipped)"
-                  : `Project default${defaultName ? ` (${defaultName})` : ""}`;
+                    ? "No profile, runs on Build's agent"
+                    : role === "Preparer" || role === "Coder" || role === "Worker"
+                      ? "No profile, runs on the default agent"
+                      : "No profile, stage skipped"
+                  : `Default profile${defaultName ? ` (${defaultName})` : ""}`;
               // A role the project has no profile for is already skipped, so there is nothing to
               // choose: the select stays disabled and says so, as it did before skipping existed.
               const canSkip = optional && forRole.length > 0;

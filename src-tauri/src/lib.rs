@@ -119,6 +119,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::reject_review,
         crate::ipc::list_agent_profiles,
         crate::ipc::save_agent_profiles,
+        crate::ipc::seed_agent_profiles,
         crate::ipc::list_automations,
         crate::ipc::save_automation,
         crate::ipc::delete_automation,

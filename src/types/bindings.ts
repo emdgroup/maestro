@@ -1134,6 +1134,21 @@ async saveAgentProfiles(projectId: number, document: ProfilesDocument) : Promise
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Give a project its starting profiles, unless it already has a `profiles.json`.
+ * 
+ * Returns whether it wrote. An existing file is kept even when it lists no profiles, because
+ * that is a user who removed them, and a host that cannot say whether the file exists is an
+ * error rather than a "no", so a flaky connection never writes over the user's profiles.
+ */
+async seedAgentProfiles(projectId: number, document: ProfilesDocument) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seed_agent_profiles", { projectId, document }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listAutomations(projectId: number) : Promise<Result<AutomationList, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_automations", { projectId }) };

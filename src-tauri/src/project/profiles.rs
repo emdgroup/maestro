@@ -375,6 +375,32 @@ pub async fn save_agent_profiles(
     write_maestro_json(&conn, PROFILES_FILE, &document).await
 }
 
+/// Give a project its starting profiles, unless it already has a `profiles.json`.
+///
+/// Returns whether it wrote. An existing file is kept even when it lists no profiles, because
+/// that is a user who removed them, and a host that cannot say whether the file exists is an
+/// error rather than a "no", so a flaky connection never writes over the user's profiles.
+#[tauri::command]
+#[specta::specta]
+pub async fn seed_agent_profiles(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    document: ProfilesDocument,
+) -> Result<bool, String> {
+    let conn = git_conn(&app_state, project_id).await?;
+    seed_profiles(&conn, &document).await
+}
+
+async fn seed_profiles(conn: &GitConnection, document: &ProfilesDocument) -> Result<bool, String> {
+    let path = format!("{}/.maestro/{PROFILES_FILE}", conn.path());
+    if crate::connectivity::files::try_exists(conn, &path).await? {
+        return Ok(false);
+    }
+    crate::core::project_storage::ensure_project_storage(conn).await?;
+    write_maestro_json(conn, PROFILES_FILE, document).await?;
+    Ok(true)
+}
+
 /// Resolve the profile for a role and reduce it to what the agent can honour.
 ///
 /// Takes the agent's advertised capabilities as arguments rather than looking them up, because
@@ -646,5 +672,29 @@ mod tests {
 
         let resolved = apply_capabilities(&p, &capable()).unwrap();
         assert!(resolved.warnings.is_empty(), "{:?}", resolved.warnings);
+    }
+
+    /// Seeding fills a project that never had the file and leaves one the user emptied alone.
+    #[tokio::test]
+    async fn seeding_writes_only_when_the_file_is_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = GitConnection::Local {
+            path: dir.path().to_string_lossy().into_owned(),
+        };
+        let seed = ProfilesDocument {
+            profiles: vec![profile(AgentRole::Coder)],
+            defaults: Default::default(),
+        };
+
+        assert!(seed_profiles(&conn, &seed).await.unwrap());
+        let written: ProfilesDocument = read_maestro_json(&conn, PROFILES_FILE).await;
+        assert_eq!(written.profiles.len(), 1);
+
+        write_maestro_json(&conn, PROFILES_FILE, &ProfilesDocument::default())
+            .await
+            .unwrap();
+        assert!(!seed_profiles(&conn, &seed).await.unwrap());
+        let kept: ProfilesDocument = read_maestro_json(&conn, PROFILES_FILE).await;
+        assert!(kept.profiles.is_empty());
     }
 }

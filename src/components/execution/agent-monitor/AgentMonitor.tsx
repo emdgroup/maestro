@@ -155,7 +155,7 @@ function RoleChip({
           ? // The id rather than nothing when the profile has since been renamed away or deleted:
             // it is what the session actually ran with.
             `Profile: ${profileNames[profile_id] ?? profile_id}`
-          : "No profile — the project's default agent"}
+          : "No profile, ran on the project's default agent"}
       </TooltipContent>
     </Tooltip>
   );
