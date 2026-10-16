@@ -133,7 +133,7 @@ fn stage(role: AgentRole) -> &'static str {
         AgentRole::Reviewer => "Review",
         AgentRole::Judge => "Judging",
         AgentRole::Preparer => "Preparation",
-        AgentRole::Worker => "Iterations",
+        AgentRole::Worker => "Worker",
     }
 }
 

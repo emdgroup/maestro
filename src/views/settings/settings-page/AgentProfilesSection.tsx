@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowRight, Bot, ChevronDown, Plus, Repeat, Trash2 } from "lucide-react";
+import { ArrowRight, Bot, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
@@ -31,7 +31,7 @@ type RoleEntry = {
   /** The stage's name in the workflow row. */
   stage: string;
   what: string;
-  /** What runs the stage without a profile: nothing, the project's default agent, or Iterate's. */
+  /** What runs the stage without a profile: nothing, the project's default agent, or the Worker's. */
   none: "skip" | "default" | "inherit";
   noneText: string;
   defaultPrompt: string;
@@ -114,8 +114,8 @@ const LOOP_ROLES: RoleEntry[] = [
   },
   {
     role: "Worker",
-    title: "Iterations",
-    stage: "Iterate",
+    title: "Worker",
+    stage: "Worker",
     what: "Works toward the loop's goal, one fresh session per iteration.",
     none: "default",
     noneText: "Runs on the project's default agent.",
@@ -132,7 +132,7 @@ const LOOP_ROLES: RoleEntry[] = [
     stage: "Judge",
     what: "Decides the judge checks and writes the summary you sign off.",
     none: "inherit",
-    noneText: "Runs on the same agent as Iterate.",
+    noneText: "Runs on the same agent as the Worker.",
     defaultPrompt:
       "Judge each check against the loop's diff and the code it touches, as a reviewer who has to " +
       "sign it off. Pass a check only when the work plainly meets it; when you fail one, say what " +
@@ -150,7 +150,7 @@ const MODES: Record<Mode, { help: string; roles: RoleEntry[] }> = {
     roles: PIPELINE_ROLES,
   },
   loop: {
-    help: "A loop is prepared with you, then repeats Iterate and Judge until every check passes.",
+    help: "A loop is prepared with you, then each iteration runs the Worker and the Judge, until every check passes.",
     roles: LOOP_ROLES,
   },
 };
@@ -158,7 +158,7 @@ const MODES: Record<Mode, { help: string; roles: RoleEntry[] }> = {
 const FALLBACK: Record<RoleEntry["none"], string> = {
   skip: "Without a profile, this stage is skipped.",
   default: "Without a profile, it runs on the project's default agent.",
-  inherit: "Without a profile, it runs on the same agent as Iterate.",
+  inherit: "Without a profile, it runs on the same agent as the Worker.",
 };
 
 interface AgentProfilesSectionProps {
@@ -348,6 +348,33 @@ function Arrow() {
 }
 
 /**
+ * Out of the iteration box's right side, round its top-right corner, and back in through its top.
+ *
+ * Drawn in pixels rather than a scaled viewBox so the stroke and the head match `Arrow`: lucide's
+ * 24-unit icon at 16px is a 1.33px line with 4.67px head strokes. The box's top-right corner sits at
+ * (44, 24), and the line leaves about halfway down the box, level with the arrows inside it.
+ */
+function LoopArrow() {
+  return (
+    <svg
+      aria-hidden
+      width="72"
+      height="96"
+      viewBox="0 0 72 96"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.33"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="pointer-events-none absolute -right-7 -top-6 text-muted-foreground"
+    >
+      <path d="M46 76h10a8 8 0 0 0 8-8V16a8 8 0 0 0-8-8H16a8 8 0 0 0-8 8v6" />
+      <path d="m3.33 17.33 4.67 4.67 4.67-4.67" />
+    </svg>
+  );
+}
+
+/**
  * A profile id the user never has to see or type.
  *
  * The id is what a task's override stores and what `defaults` points at, so it has to be stable
@@ -503,8 +530,8 @@ export function AgentProfilesSection({
     }
     if (entry.none === "skip") return { text: "Skipped", sub: "no profile", kind: "skip" };
     if (entry.none === "inherit") {
-      const iterate = runsBy(LOOP_ROLES.find((r) => r.role === "Worker")!);
-      return { text: "Same as Iterate", sub: iterate.sub, kind: "default" };
+      const worker = runsBy(LOOP_ROLES.find((r) => r.role === "Worker")!);
+      return { text: "Same as Worker", sub: worker.sub, kind: "default" };
     }
     return { text: "Default agent", sub: agentName(defaultAgent), kind: "default" };
   }
@@ -558,33 +585,20 @@ export function AgentProfilesSection({
           {roles.flatMap((r, i) => [i > 0 && <Arrow key={`to-${r.role}`} />, stageButton(r)])}
         </div>
       ) : (
-        // Room above the row for the line that runs from Judge back into Iterate.
-        <div className="flex items-stretch gap-2 pt-8">
-          {stageButton(roles[0]!)}
+        // Prepare, then the box of the two stages each iteration runs. Room above and to the right
+        // for the arrow that loops out of the box and back into it.
+        <div className="flex items-stretch gap-2 pt-6">
+          {/* Padded as the box is, so Prepare lines up with the stages inside it. */}
+          <div className="flex flex-1 pt-6 pb-2">{stageButton(roles[0]!)}</div>
           <Arrow />
-          <div className="relative flex flex-[2] items-stretch gap-2 pr-5">
+          <div className="relative mr-7 flex flex-[2] items-stretch gap-2 rounded-xl border border-dashed border-border p-2 pt-6">
+            <span className="absolute left-3 top-1.5 text-[11px] text-muted-foreground">
+              Iteration
+            </span>
             {stageButton(roles[1]!)}
             <Arrow />
             {stageButton(roles[2]!)}
-            {/* Out of Judge's right side, up, along the top, and down into the middle of Iterate,
-                whose centre is a quarter of the width left once the gutter, arrow and gaps are
-                taken off. */}
-            <span
-              aria-hidden
-              className="pointer-events-none absolute -top-6 right-1 bottom-1/2 w-4 rounded-r-md border-y border-r border-muted-foreground/50"
-            />
-            <span
-              aria-hidden
-              className="pointer-events-none absolute -top-6 right-5 left-[calc((100%-3.25rem)/4)] h-6 rounded-tl-md border-t border-l border-muted-foreground/50"
-            />
-            <ChevronDown
-              aria-hidden
-              className="pointer-events-none absolute -top-2.5 left-[calc((100%-3.25rem)/4)] size-3 -translate-x-1/2 text-muted-foreground"
-            />
-            <span className="absolute -top-5 left-[calc((100%-3.25rem)/4+0.5rem)] flex items-center gap-1 whitespace-nowrap text-[11px] leading-4 text-muted-foreground">
-              <Repeat aria-hidden className="size-3" />
-              Repeats until every check passes
-            </span>
+            <LoopArrow />
           </div>
         </div>
       )}
