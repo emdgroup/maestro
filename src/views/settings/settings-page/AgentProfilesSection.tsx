@@ -381,7 +381,7 @@ const LINE = {
  * between the cards are taken off.
  *
  * The line keeps the same 19px off the box's border along the top as down the right side, leaves
- * the right side 52px down, about level with the arrows inside it, and the head stops 2px above
+ * the right side 46px down, about level with the arrows inside it, and the head stops 2px above
  * the box's top border.
  */
 function LoopArrow() {
@@ -396,7 +396,7 @@ function LoopArrow() {
         {...LINE}
         className="pointer-events-none absolute -right-7 -top-6 text-muted-foreground"
       >
-        <path d="M46 76h10a8 8 0 0 0 8-8V12a8 8 0 0 0-8-8" />
+        <path d="M46 70h10a8 8 0 0 0 8-8V12a8 8 0 0 0-8-8" />
       </svg>
       <span
         aria-hidden
@@ -632,12 +632,13 @@ export function AgentProfilesSection({
       ) : (
         // Prepare, then the box of the two stages each iteration runs. Room above and to the right
         // for the arrow that loops out of the box and back into it.
-        <div className="flex items-stretch gap-2 pt-8">
+        // Pulled up to the help line above it: the room on top is the arrow's and the label's.
+        <div className="-mt-3 flex items-stretch gap-2 pt-[22px]">
           {/* Padded as the box is, so Prepare lines up with the stages inside it. */}
-          <div className="flex flex-1 pt-6 pb-2">{stageButton(roles[0]!)}</div>
+          <div className="flex flex-1 py-2">{stageButton(roles[0]!)}</div>
           <Arrow />
-          <div className="relative mr-7 flex flex-[2] items-stretch gap-2 rounded-xl border border-dashed border-border p-2 pt-6">
-            <span className="absolute left-3 top-1.5 text-[11px] text-muted-foreground">
+          <div className="relative mr-7 flex flex-[2] items-stretch gap-2 rounded-xl border border-dashed border-border p-2">
+            <span className="absolute bottom-full left-3 text-[11px] leading-4 text-muted-foreground">
               Iteration
             </span>
             {stageButton(roles[1]!)}
