@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { format as formatDate } from "date-fns";
+import { endOfMonth, format as formatDate, min } from "date-fns";
 import { X } from "lucide-react";
 import type { ConnectionKey, UsageProjectRef, UsageSplit } from "@/types/bindings";
 import { useUsageReport, useUsageSync } from "@/services/usage.service";
@@ -213,6 +213,16 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
     );
   };
 
+  // Drill in: a day or a month becomes the range. Hours and minutes have no finer range to open.
+  const selectDay = (day: Date) => setChoice({ from: day, to: day });
+  const selectBucket =
+    range.bucket === "day" || range.bucket === "month"
+      ? (index: number) => {
+          const from = parseKey(buckets[index], range.bucket);
+          setChoice({ from, to: range.bucket === "day" ? from : min([endOfMonth(from), now]) });
+        }
+      : undefined;
+
   return (
     <>
       <button
@@ -325,12 +335,31 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
             </div>
           </div>
           <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            {series.map((s) => (
-              <span key={s.key} className="flex items-center gap-1.5">
+            {series.map((s) => {
+              const swatch = (
                 <span className="size-2.5 rounded-[3px]" style={{ background: s.color }} />
-                {s.label}
-              </span>
-            ))}
+              );
+              if (effectiveSplit !== "model" || s.key === "other") {
+                return (
+                  <span key={s.key} className="flex items-center gap-1.5">
+                    {swatch}
+                    {s.label}
+                  </span>
+                );
+              }
+              return (
+                <button
+                  key={s.key}
+                  type="button"
+                  aria-pressed={models.includes(s.key)}
+                  onClick={() => toggleFilter("model", s.key)}
+                  className="flex cursor-pointer items-center gap-1.5 hover:text-foreground aria-pressed:text-foreground"
+                >
+                  {swatch}
+                  {s.label}
+                </button>
+              );
+            })}
           </div>
           <UsageChart
             buckets={buckets}
@@ -338,6 +367,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
             series={series}
             cumulative={cumulative}
             format={format}
+            onSelect={selectBucket}
           />
         </div>
 
@@ -351,7 +381,13 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
               </span>
             </div>
             {heatmap === "hours" ? (
-              <UsageHeatmap cells={report?.heatmap ?? []} metric={metric} format={format} />
+              <UsageHeatmap
+                cells={report?.heatmap ?? []}
+                start={range.start ?? parseKey(buckets[0], range.bucket)}
+                metric={metric}
+                format={format}
+                onSelectDay={selectDay}
+              />
             ) : (
               <UsageCalendar
                 days={report?.days ?? []}
@@ -359,6 +395,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
                 end={range.end}
                 metric={metric}
                 format={format}
+                onSelectDay={selectDay}
               />
             )}
           </div>
