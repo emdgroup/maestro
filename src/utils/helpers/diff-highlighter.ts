@@ -15,6 +15,7 @@ import {
   registerLanguage,
   type DiffHighlighter,
 } from "@git-diff-view/lezer";
+import { disableCache } from "@git-diff-view/core";
 import { LanguageDescription } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { highlightCode } from "@lezer/highlight";
@@ -58,12 +59,20 @@ let highlighterPromise: Promise<DiffHighlighter> | null = null;
  * and a file whose grammar is missing falls back to the lowlight stub and stays plain.
  */
 export async function getDiffHighlighter(lang?: string | null) {
-  highlighterPromise ??= getDiffViewHighlighter({ tokenColors: githubTokenColors() }).then(
-    (highlighter) => {
-      highlighter.setMaxLineToIgnoreSyntax(MAX_LINES);
-      return highlighter;
-    },
-  );
+  if (!highlighterPromise) {
+    // Core caches each side's tokenized file by content and shares it between diffs. A new diff
+    // over an already-highlighted base (the next poll, the same file in another panel) then takes
+    // the highlighter's name from the cached old side, `DiffView` reads that as "already
+    // highlighted" and skips `initSyntax`, and the freshly rebuilt new side is never tokenized:
+    // deletions in colour, additions plain. Lezer is fast enough to tokenize every diff afresh.
+    disableCache();
+    highlighterPromise = getDiffViewHighlighter({ tokenColors: githubTokenColors() }).then(
+      (highlighter) => {
+        highlighter.setMaxLineToIgnoreSyntax(MAX_LINES);
+        return highlighter;
+      },
+    );
+  }
   const highlighter = await highlighterPromise;
   if (lang) await ensureLanguage(highlighter, lang);
   return highlighter;
