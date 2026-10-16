@@ -1,9 +1,11 @@
-import { Repeat } from "lucide-react";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
 import { useLoopWaitCap, useSetLoopWaitCap } from "@/services/settings.service";
 
-/** How many loops may wait on the user before auto mode starts no more of the queued ones. */
+/**
+ * How many loops may wait on the user before auto mode starts no more of the queued ones. Shown
+ * under the Loops tab of the agents section.
+ */
 export function LoopWaitCapSection({ projectId }: { projectId: number }) {
   const { data: cap } = useLoopWaitCap(projectId);
   const setCap = useSetLoopWaitCap();
@@ -11,11 +13,8 @@ export function LoopWaitCapSection({ projectId }: { projectId: number }) {
   if (cap === undefined) return null;
 
   return (
-    <div className="bg-card border border-border rounded-lg p-4 space-y-3">
-      <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-        <Repeat className="w-4 h-4 text-muted-foreground" />
-        Loops
-      </h3>
+    <div className="rounded-lg border border-border p-4 space-y-2">
+      <h4 className="text-sm font-semibold">Waiting on you</h4>
       <div className="flex items-center gap-3">
         <Label htmlFor="loop-wait-cap" className="text-sm font-medium">
           At most

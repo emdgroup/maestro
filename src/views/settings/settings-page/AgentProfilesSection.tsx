@@ -1,4 +1,4 @@
-import { cloneElement, useState } from "react";
+import { cloneElement, useState, type ReactNode } from "react";
 import { ArrowRight, Bot, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
@@ -168,6 +168,8 @@ interface AgentProfilesSectionProps {
   connection: ConnectionKey;
   /** The project's default agent, which runs a stage that has no profile and is not skipped. */
   defaultAgent: string | null;
+  /** Settings for loops as a whole, shown under the Loops tab. */
+  loopSettings?: ReactNode;
 }
 
 /**
@@ -378,8 +380,9 @@ const LINE = {
  * box: the box's 8px padding, then half of what is left once the 16px arrow and two 8px gaps
  * between the cards are taken off.
  *
- * The top runs 16px above the box, the line leaves its right side 52px down, about level with the
- * arrows inside it, and the head stops 2px above the box's top border.
+ * The line keeps the same 19px off the box's border along the top as down the right side, leaves
+ * the right side 52px down, about level with the arrows inside it, and the head stops 2px above
+ * the box's top border.
  */
 function LoopArrow() {
   return (
@@ -393,23 +396,23 @@ function LoopArrow() {
         {...LINE}
         className="pointer-events-none absolute -right-7 -top-6 text-muted-foreground"
       >
-        <path d="M46 76h10a8 8 0 0 0 8-8V16a8 8 0 0 0-8-8" />
+        <path d="M46 76h10a8 8 0 0 0 8-8V12a8 8 0 0 0-8-8" />
       </svg>
       <span
         aria-hidden
-        className="pointer-events-none absolute -right-3 -top-4 left-[calc(25%+4px)] h-[1.33px] -translate-y-1/2 bg-muted-foreground"
+        className="pointer-events-none absolute -right-3 -top-5 left-[calc(25%+4px)] h-[1.33px] -translate-y-1/2 bg-muted-foreground"
       />
       {/* The Worker card's centre is at x = 8. */}
       <svg
         aria-hidden
         width="24"
-        height="24"
-        viewBox="0 0 24 24"
+        height="32"
+        viewBox="0 0 24 32"
         {...LINE}
-        className="pointer-events-none absolute -top-6 left-[calc(25%-12px)] text-muted-foreground"
+        className="pointer-events-none absolute -top-7 left-[calc(25%-12px)] text-muted-foreground"
       >
-        <path d="M16 8a8 8 0 0 0-8 8v6" />
-        <path d="m3.33 17.33 4.67 4.67 4.67-4.67" />
+        <path d="M16 8a8 8 0 0 0-8 8v10" />
+        <path d="m3.33 21.33 4.67 4.67 4.67-4.67" />
       </svg>
     </>
   );
@@ -437,6 +440,7 @@ export function AgentProfilesSection({
   agents,
   connection,
   defaultAgent,
+  loopSettings,
 }: AgentProfilesSectionProps) {
   const profilesQuery = useAgentProfilesQuery(projectId);
   const saveProfiles = useSaveAgentProfilesMutation();
@@ -628,7 +632,7 @@ export function AgentProfilesSection({
       ) : (
         // Prepare, then the box of the two stages each iteration runs. Room above and to the right
         // for the arrow that loops out of the box and back into it.
-        <div className="flex items-stretch gap-2 pt-6">
+        <div className="flex items-stretch gap-2 pt-8">
           {/* Padded as the box is, so Prepare lines up with the stages inside it. */}
           <div className="flex flex-1 pt-6 pb-2">{stageButton(roles[0]!)}</div>
           <Arrow />
@@ -698,6 +702,8 @@ export function AgentProfilesSection({
           </>
         )}
       </section>
+
+      {mode === "loop" && loopSettings}
     </div>
   );
 }

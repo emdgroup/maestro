@@ -241,8 +241,8 @@ function ProjectScopePane({
             agents={discovery?.agents ?? []}
             connection={connection}
             defaultAgent={settings?.default_agent ?? null}
+            loopSettings={<LoopWaitCapSection projectId={projectId} />}
           />
-          <LoopWaitCapSection projectId={projectId} />
         </>
       )}
       {pageId === "git" && (
