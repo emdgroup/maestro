@@ -37,6 +37,7 @@ import { Textarea } from "@/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useNow } from "@/hooks/useNow";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { useTaskCommentsQuery } from "@/services/task.service";
 import {
@@ -63,7 +64,7 @@ import {
   usePrefillHidden,
 } from "./LoopEditor";
 import { blankCheck, doneWhenRows, type CheckDraft, type LoopDraft } from "./loop-draft";
-import { clockTime, formatDuration, gateLine, loopHalt } from "./loop-state";
+import { buildTimeLeft, clockTime, formatDuration, gateLine, loopHalt } from "./loop-state";
 
 const MARKS: Record<LoopCheckState, { icon: typeof Check; tone: string }> = {
   Pass: { icon: Check, tone: "text-success" },
@@ -369,12 +370,54 @@ function CheckRow({
   );
 }
 
+/**
+ * The running Build's clock and a bar of how much of its time it has used, the time left on the
+ * bar's tooltip. Its own component so the one running row is the only one ticking.
+ */
+function BuildClock({ startedAt, limitSecs }: { startedAt: string; limitSecs: number }) {
+  const now = useNow(60_000);
+  const used = Math.max(0, (now - new Date(startedAt).getTime()) / 1000);
+  const { late, tip } = buildTimeLeft(used, limitSecs);
+  return (
+    <>
+      <span className={cn("tabular-nums text-xs", late ? "text-warning" : "text-muted-foreground")}>
+        {formatDuration(used)}
+      </span>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <span
+              role="progressbar"
+              aria-label={tip}
+              aria-valuemin={0}
+              aria-valuemax={limitSecs}
+              aria-valuenow={Math.min(used, limitSecs)}
+              className="flex h-3 items-center"
+            />
+          }
+        >
+          <span className="h-1.5 w-20 rounded-full bg-muted">
+            <span
+              className={cn("block h-1.5 rounded-full", late ? "bg-warning" : "bg-accent")}
+              style={{ width: `${Math.min(100, (used / limitSecs) * 100)}%` }}
+            />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{tip}</TooltipContent>
+      </Tooltip>
+    </>
+  );
+}
+
 function IterationRow({
   iteration,
+  buildLimitSecs,
   activity,
   onJoin,
 }: {
   iteration: LoopIteration;
+  /** The loop's `max_build_secs`, which the running Build is closed at. */
+  buildLimitSecs: number | null;
   /** What the running iteration's agent is doing now, while one is. */
   activity: string | null;
   onJoin: (() => void) | null;
@@ -386,17 +429,20 @@ function IterationRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="font-medium">#{iteration.n}</span>
-          {running && (
-            <span className="flex items-center gap-1 text-xs text-success">
-              <span className="size-1.5 animate-pulse rounded-full bg-success" />
-              now
+          {running && buildLimitSecs ? (
+            <>
+              <span className="tabular-nums text-xs text-muted-foreground">
+                {time(iteration.started_at)} ·
+              </span>
+              <BuildClock startedAt={iteration.started_at} limitSecs={buildLimitSecs} />
+            </>
+          ) : (
+            <span className="tabular-nums text-xs text-muted-foreground">
+              {time(iteration.started_at)} ·{" "}
+              {minutesBetween(iteration.started_at, iteration.ended_at)}
+              {running ? " so far" : ""}
             </span>
           )}
-          <span className="tabular-nums text-xs text-muted-foreground">
-            {time(iteration.started_at)} ·{" "}
-            {minutesBetween(iteration.started_at, iteration.ended_at)}
-            {running ? " so far" : ""}
-          </span>
           {(iteration.touched_sealed || iteration.peeks.length > 0) && (
             <Tooltip disabled={iteration.peeks.length === 0}>
               <TooltipTrigger
@@ -852,6 +898,7 @@ export function LoopTab({
             <IterationRow
               key={`${iteration.n}-${iteration.attempt}`}
               iteration={iteration}
+              buildLimitSecs={config?.max_build_secs ?? null}
               activity={iterating ? (activity?.label ?? "Working") : null}
               onJoin={session ? onJoin : null}
             />

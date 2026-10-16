@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LoopSummary, Task } from "@/types/bindings";
 import {
+  buildTimeLeft,
   draftLine,
   gateLine,
   loopLine,
@@ -167,6 +168,12 @@ describe("the loop's helpers", () => {
     expect(formatDuration(5400)).toBe("1h 30m");
     expect(formatDuration(7200)).toBe("2h");
     expect(formatDuration(2700)).toBe("45m");
+  });
+
+  it("says how long a running Build has left, and when it is about to be closed", () => {
+    expect(buildTimeLeft(74 * 60, 7200)).toEqual({ late: false, tip: "46m left" });
+    expect(buildTimeLeft(112 * 60, 7200)).toEqual({ late: true, tip: "Closes in 8m" });
+    expect(buildTimeLeft(7300, 7200)).toEqual({ late: true, tip: "Closing now" });
   });
 
   it("finds the paths a check command names", () => {

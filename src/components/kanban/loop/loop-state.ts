@@ -207,6 +207,17 @@ export function formatDuration(seconds: number): string {
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
+/**
+ * What a running Build's bar says of the time it has left: late in its last 10 minutes, when the
+ * daemon is about to close it.
+ */
+export function buildTimeLeft(usedSecs: number, limitSecs: number): { late: boolean; tip: string } {
+  const left = limitSecs - usedSecs;
+  if (left <= 0) return { late: true, tip: "Closing now" };
+  if (left <= 10 * 60) return { late: true, tip: `Closes in ${formatDuration(left)}` };
+  return { late: false, tip: `${formatDuration(left)} left` };
+}
+
 /** `2h`, `90m`, `1h 30m`, `1.5h`, or a bare number of minutes, in seconds. `null` when unreadable. */
 export function parseDuration(text: string): number | null {
   const t = text.trim().toLowerCase();
