@@ -562,7 +562,7 @@ export function AgentProfilesSection({
       <div>
         <h3 className="text-sm font-semibold flex items-center gap-2">
           <Bot className="size-4" />
-          Stages
+          Task workflow stages
         </h3>
         <p className="text-xs text-muted-foreground mt-1">
           Each stage runs on a profile: an agent, its settings, and instructions for this project.

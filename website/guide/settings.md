@@ -14,7 +14,7 @@ Pages come in three groups. **Project** pages appear only with a project open. O
 
 **Agents & sign-in** lists the agents installed on the project's connection. Click one to make it the project's default, which runs new sessions and any task stage with no profile of its own. **Logout** signs you out of an agent.
 
-**Stages** sets up the agent for each stage, on two tabs. **Pipeline** holds a [task](./tasks)'s stages, **Refine**, **Plan**, **Implement** and **Review**. **Loops** holds a loop's, **Prepare**, then **Build** and **Judge** for each iteration. Click a stage to see its profiles. **Add profile** creates one, with its own agent, model, permission mode, effort and instructions. A project opened for the first time starts with one profile per stage on the default agent. Without a profile, Refine, Plan and Review are skipped, Implement, Prepare and Build run on the default agent, and Judge runs on Build's agent. Profiles are saved in `.maestro/profiles.json`.
+**Task workflow stages** sets up the agent for each stage, on two tabs. **Pipeline** holds a [task](./tasks)'s stages, **Refine**, **Plan**, **Implement** and **Review**. **Loops** holds a loop's, **Prepare**, then **Build** and **Judge** for each iteration. Click a stage to see its profiles. **Add profile** creates one, with its own agent, model, permission mode, effort and instructions. A project opened for the first time starts with one profile per stage on the default agent. Without a profile, Refine, Plan and Review are skipped, Implement, Prepare and Build run on the default agent, and Judge runs on Build's agent. Profiles are saved in `.maestro/profiles.json`.
 
 ### Git
 
