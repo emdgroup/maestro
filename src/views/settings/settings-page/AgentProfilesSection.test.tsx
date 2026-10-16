@@ -181,7 +181,7 @@ describe("AgentProfilesSection", () => {
       "Iterate: Default agent",
       "Judge: Same as Iterate",
     ]);
-    await userEvent.click(screen.getByRole("tab", { name: "Pipeline tasks" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Pipeline" }));
 
     await openStage("Refine");
     await userEvent.click(screen.getByRole("button", { name: "Add a Refinement profile" }));

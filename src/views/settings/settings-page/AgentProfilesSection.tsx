@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowRight, Bot, Plus, Repeat, Trash2 } from "lucide-react";
+import { ArrowRight, Bot, ChevronDown, Plus, Repeat, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
@@ -533,9 +533,7 @@ export function AgentProfilesSection({
           Agents for the task workflow
         </h3>
         <p className="text-xs text-muted-foreground mt-1">
-          Choose the agent and the instructions for each stage. Saved in this project&apos;s{" "}
-          <code className="text-[11px]">.maestro/profiles.json</code>, so the whole team works the
-          same way.
+          Choose the agent and the instructions for each stage.
         </p>
       </div>
 
@@ -548,7 +546,7 @@ export function AgentProfilesSection({
           }}
         >
           <TabsList>
-            <TabsTrigger value="pipeline">Pipeline tasks</TabsTrigger>
+            <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
             <TabsTrigger value="loop">Loops</TabsTrigger>
           </TabsList>
         </Tabs>
@@ -560,19 +558,33 @@ export function AgentProfilesSection({
           {roles.flatMap((r, i) => [i > 0 && <Arrow key={`to-${r.role}`} />, stageButton(r)])}
         </div>
       ) : (
-        // Prepare, then a bracket around the two stages that repeat.
-        <div className="flex items-stretch gap-2">
-          {/* Padded as the bracket is, so Prepare lines up with the stages inside it. */}
-          <div className="flex flex-1 pt-6 pb-2">{stageButton(roles[0]!)}</div>
+        // Room above the row for the line that runs from Judge back into Iterate.
+        <div className="flex items-stretch gap-2 pt-8">
+          {stageButton(roles[0]!)}
           <Arrow />
-          <div className="relative flex flex-[2] items-stretch gap-2 rounded-xl border border-dashed border-border p-2 pt-6">
-            <span className="absolute left-3 top-1.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Repeat aria-hidden className="size-3" />
-              Repeats until every check passes
-            </span>
+          <div className="relative flex flex-[2] items-stretch gap-2 pr-5">
             {stageButton(roles[1]!)}
             <Arrow />
             {stageButton(roles[2]!)}
+            {/* Out of Judge's right side, up, along the top, and down into the middle of Iterate,
+                whose centre is a quarter of the width left once the gutter, arrow and gaps are
+                taken off. */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -top-6 right-1 bottom-1/2 w-4 rounded-r-md border-y border-r border-muted-foreground/50"
+            />
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -top-6 right-5 left-[calc((100%-3.25rem)/4)] h-6 rounded-tl-md border-t border-l border-muted-foreground/50"
+            />
+            <ChevronDown
+              aria-hidden
+              className="pointer-events-none absolute -top-2.5 left-[calc((100%-3.25rem)/4)] size-3 -translate-x-1/2 text-muted-foreground"
+            />
+            <span className="absolute -top-5 left-[calc((100%-3.25rem)/4+0.5rem)] flex items-center gap-1 whitespace-nowrap text-[11px] leading-4 text-muted-foreground">
+              <Repeat aria-hidden className="size-3" />
+              Repeats until every check passes
+            </span>
           </div>
         </div>
       )}
