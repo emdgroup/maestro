@@ -130,8 +130,8 @@ pub enum RunMode {
 #[specta(export)]
 pub struct LoopConfig {
     pub max_iterations: u32,
-    /// Agent time over the counted iterations, in seconds.
-    pub max_agent_secs: u32,
+    /// How long one iteration's Build session may run, in seconds.
+    pub max_build_secs: u32,
     /// Iterations in a row that change nothing before the loop stops as stalled.
     pub stall_limit: u32,
     pub check_timeout_secs: u32,
@@ -145,7 +145,7 @@ impl From<LoopConfig> for wire::LoopConfig {
     fn from(config: LoopConfig) -> Self {
         wire::LoopConfig {
             max_iterations: config.max_iterations,
-            max_agent_secs: config.max_agent_secs,
+            max_build_secs: config.max_build_secs,
             stall_limit: config.stall_limit,
             check_timeout_secs: config.check_timeout_secs,
             setup_command: config.setup_command,
@@ -158,7 +158,7 @@ impl From<wire::LoopConfig> for LoopConfig {
     fn from(config: wire::LoopConfig) -> Self {
         LoopConfig {
             max_iterations: config.max_iterations,
-            max_agent_secs: config.max_agent_secs,
+            max_build_secs: config.max_build_secs,
             stall_limit: config.stall_limit,
             check_timeout_secs: config.check_timeout_secs,
             setup_command: config.setup_command,

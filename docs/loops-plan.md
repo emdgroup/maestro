@@ -58,7 +58,7 @@ left out on purpose.
 | Plugins and connectors (MCP)                   | Managed MCP servers are injected into every session, loop sessions included                             | exists    |
 | `/loop`: re-run on a cadence                   | Automations. Not part of this plan                                                                      | exists    |
 | Automations feed a triage inbox                | An automation's agent creates a draft loop task in Planning                                             | 5         |
-| Budgets                                        | Iterations, agent time, stall limit. Tokens are shown per iteration, not budgeted                       | 1         |
+| Budgets                                        | Iterations, time per Build, stall limit. Tokens are shown per iteration, not budgeted                   | 1         |
 | Stall detection                                | N iterations in a row whose commit is empty stop the loop                                               | 1         |
 | Regressions                                    | Every command check re-runs after every iteration, passed or not                                        | 1         |
 | Usage limits without polluting context         | The daemon reads the reset time from the refused reply and waits; the next session never sees the error | 3         |
@@ -117,10 +117,13 @@ Locked while drafting. Do not reopen without the user.
     in the app, as it does today.
 - **The daemon owns the loop.** It runs with every window closed, survives a restart through the
   existing startup pass, and is driven by the existing scheduler.
-- **No cost budget.** Iterations, agent time and the stall limit are the budget. Tokens are reported
-  per iteration.
-- **Waiting is free.** Time spent waiting for a usage limit to reset is not agent time, and an
-  iteration a limit cut off runs again without counting.
+- **No cost budget.** Iterations, the time per Build and the stall limit are the budget. Tokens are
+  reported per iteration.
+- **Time is per Build, not per loop.** `max_build_secs` (2 hours) caps one iteration's Build
+  session. A total across the loop stopped a loop whose Builds take 30 minutes long before its
+  iterations ran out; the iteration count already bounds the total.
+- **Waiting is free.** An iteration a usage limit cut off runs again without counting, on a fresh
+  clock.
 - **The usage-limit gate applies to every task**, pipeline and loop alike.
 
 ## Sealed checks
@@ -227,7 +230,7 @@ way V8 added `claimed_from`.
 | Column            | Type                       | Meaning                                                                                                                        |
 | ----------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `run_mode`        | TEXT, default `'Pipeline'` | `Pipeline` or `Loop`                                                                                                           |
-| `loop_config`     | TEXT, JSON                 | `max_iterations` (10), `max_agent_secs` (7200), `stall_limit` (3), `check_timeout_secs` (600), `setup_command`, `sealed_paths` |
+| `loop_config`     | TEXT, JSON                 | `max_iterations` (10), `max_build_secs` (7200), `stall_limit` (3), `check_timeout_secs` (600), `setup_command`, `sealed_paths` |
 | `loop_sealed_sha` | TEXT                       | The base commit the sealed snapshot was taken from                                                                             |
 
 **New tables**, keyed by `(project_path, task_id, …)` like every task table:
@@ -344,9 +347,12 @@ first creation.
 user edited the checks) takes a new sealed snapshot from the base branch and runs step 3 on the same
 commit. It is not an iteration and costs no budget.
 
-**Budgets.** `max_iterations` counts iterations with `counted = true`. Agent time is the sum of
-counted iterations' `ended_at - started_at`. Both are checked before a handoff is written, never
-mid-turn.
+**Budgets.** `max_iterations` counts iterations with `counted = true`, checked before a handoff is
+written, never mid-turn. `max_build_secs` is checked on the scheduler's minute tick against the
+running iteration's `started_at`: a Build past it has its session closed and is finished as if its
+turn had ended, with "Closed after 2 hours" as its closing note, so its work is committed and
+checked and the loop goes on. Whichever of that close and the turn's own end comes first finishes
+the iteration; the other finds it claimed.
 
 **Restart.** `task_restart` learns three loop states:
 
@@ -444,12 +450,12 @@ since no session is live.
 - **A check the judge gives no readable verdict counts as a fail.** The loop iterates, and the
   worker is told the judge gave no verdict, with the judge's reply.
 - **A resume restarts the stall streak only.** Sending a loop back, or starting a stalled or
-  stopped one again, counts stalls from the resume. Iterations and agent time stay cumulative, so a
+  stopped one again, counts stalls from the resume. Iterations stay cumulative, so a
   spent budget is raised before a resume can run.
 - **Accepting a proposal names the paths to seal.** `AnswerLoopProposal` carries them; the editor
   prefills them in phase 4. A path that does not exist on the base branch is refused: the snapshot
   comes from there, so the user commits the test to the base branch or adds it as a hidden file.
-- **Judge time is not agent time.** The budget measures the worker's iterations.
+- **Judge time is not Build time.** The limit closes the worker's session only.
 - **Peeking is reported.** While an iteration runs the daemon notes every shell tool call that runs
   `git` and names a sealed path, and stores them on the iteration. The digest's "what deserves a
   look" lists them beside `touched_sealed`; a loop with no digest lists them in the pull request
@@ -567,7 +573,7 @@ Visuals are the canvas mock `loops-app`.
   card.) That screen shows:
   - Done when: rows of command, judge and manual checks.
   - **Sealed from the agent:** the sealed paths, prefilled from the commands, and the hidden files.
-  - Setup command, check timeout (10 minutes), iterations, agent time, stall limit, judge.
+  - Setup command, check timeout (10 minutes), iterations, time per Build, stall limit, judge.
   - A read-only line of the skills and MCP servers the agent gets.
 
   A Planning pipeline task's detail offers **Make it a loop**, which opens on the second screen.
@@ -584,7 +590,7 @@ Visuals are the canvas mock `loops-app`.
   The check bar sits under the phase line.
 
 - **Detail modal**, with Loop as the first tab:
-  - Banner per state, and the three meters (iterations, agent time, no-change streak).
+  - Banner per state, and the meters (iterations, no-change streak) and the time per Build.
   - The flaky banner names the check and both results, with Re-run checks and Edit checks.
   - The digest.
   - Done when, with Accept and Reject on proposals and Mark done on manual checks.
@@ -623,7 +629,7 @@ Settled before phase 4 started:
 - **Stop halts a loop in place.** It cuts the session, keeps its work as an uncounted WIP commit,
   and leaves the loop In Progress with ball User, its iterations and checks intact. Dragging the
   card to Planning still parks it.
-- **Budgets change any time.** Iterations, agent time, stall limit, check timeout and the setup
+- **Budgets change any time.** Iterations, time per Build, stall limit, check timeout and the setup
   command may be edited after the start; the checks already could. Sealed paths change only before
   the start or through an accepted proposal.
 - **Make it a loop** is the mock's "Run as a loop instead" banner on a Planning pipeline task's

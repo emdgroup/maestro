@@ -44,7 +44,7 @@ function loop(overrides: Partial<Task> = {}): Task {
     run_mode: "Loop",
     loop_config: {
       max_iterations: 12,
-      max_agent_secs: 10800,
+      max_build_secs: 10800,
       stall_limit: 2,
       check_timeout_secs: 600,
       sealed_paths: [],
@@ -157,7 +157,7 @@ describe("the loop's helpers", () => {
     expect(showsCheckBar(loop({ status: "Planning" }))).toBe(false);
   });
 
-  it("reads and writes agent time the way the editor shows it", () => {
+  it("reads and writes the time per Build the way the editor shows it", () => {
     expect(parseDuration("2h")).toBe(7200);
     expect(parseDuration("1h 30m")).toBe(5400);
     expect(parseDuration("90m")).toBe(5400);

@@ -135,7 +135,6 @@ pub enum LoopHalt {
     Failing,
     Stalled,
     OutOfIterations,
-    OutOfTime,
     Paused,
     Stopped,
     Blocked,
@@ -605,12 +604,12 @@ mod tests {
 
         let summary = maestro_protocol::LoopSummary {
             iteration: 2,
-            halt: Some(maestro_protocol::LoopHalt::OutOfTime),
+            halt: Some(maestro_protocol::LoopHalt::OutOfIterations),
             checks: vec![maestro_protocol::LoopCheckState::Flaky],
             ..Default::default()
         };
         let app: LoopSummary = mirror(summary).unwrap();
-        assert_eq!(app.halt, Some(LoopHalt::OutOfTime));
+        assert_eq!(app.halt, Some(LoopHalt::OutOfIterations));
         assert_eq!(app.checks, [LoopCheckState::Flaky]);
     }
 }

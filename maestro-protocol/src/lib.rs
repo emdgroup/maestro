@@ -1457,7 +1457,6 @@ pub enum LoopHalt {
     Failing,
     Stalled,
     OutOfIterations,
-    OutOfTime,
     Paused,
     Stopped,
     /// The worker called `loop_blocked`.
@@ -1495,8 +1494,9 @@ pub enum RunMode {
 pub struct LoopConfig {
     /// Iterations that count. One a usage limit cut off does not.
     pub max_iterations: u32,
-    /// Agent time over the counted iterations, in seconds.
-    pub max_agent_secs: u32,
+    /// How long one iteration's Build session may run, in seconds. One still running then is
+    /// closed, and what it wrote is committed and checked as if it had ended.
+    pub max_build_secs: u32,
     /// Iterations in a row that change nothing before the loop stops as stalled.
     pub stall_limit: u32,
     /// Per check. A check still running past it is killed and fails.
@@ -1512,7 +1512,7 @@ impl Default for LoopConfig {
     fn default() -> Self {
         LoopConfig {
             max_iterations: 10,
-            max_agent_secs: 2 * 60 * 60,
+            max_build_secs: 2 * 60 * 60,
             stall_limit: 3,
             check_timeout_secs: 10 * 60,
             setup_command: None,
@@ -1602,7 +1602,7 @@ pub struct LoopIteration {
     #[serde(default)]
     pub ended_at: Option<String>,
     pub outcome: LoopIterationOutcome,
-    /// Whether it counts against `max_iterations` and the agent time.
+    /// Whether it counts against `max_iterations`.
     pub counted: bool,
     /// The worker wrote at a sealed path, and the write was discarded.
     pub touched_sealed: bool,

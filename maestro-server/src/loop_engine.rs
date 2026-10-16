@@ -6,9 +6,9 @@
 //! session, goes to it through `Settle::LoopSessionClose`, and the engine waits for the close
 //! before any sealed file reaches the disk.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use maestro_protocol::{
@@ -128,6 +128,9 @@ async fn iteration_ended(
         );
         return;
     }
+    if !claim_end(path, task.id, &iteration) {
+        return;
+    }
     close(stdout, &end.session_id).await;
     let ended = Ended {
         summary: end.facts.closing_message.as_deref(),
@@ -136,6 +139,18 @@ async fn iteration_ended(
         cut: end.limited_until.map(Cut::Limit),
     };
     finish(store, everyone, path, &task, &iteration, ended).await;
+}
+
+/// Iterations this process has ended, by attempt. A Build closed for running too long can still
+/// end its turn on its own in the same moment, and only the first of the two may finish it. Never
+/// cleared, since an attempt ends once.
+// ponytail: one small entry per iteration for the daemon's lifetime; prune on finish if it matters.
+static ENDED: LazyLock<Mutex<HashSet<(String, i32, i32, i32)>>> = LazyLock::new(Default::default);
+
+/// Claim the ending of `iteration`: false when it was already claimed.
+fn claim_end(path: &str, task_id: i32, iteration: &LoopIteration) -> bool {
+    let key = (path.to_string(), task_id, iteration.n, iteration.attempt);
+    ENDED.lock().unwrap_or_else(|e| e.into_inner()).insert(key)
 }
 
 /// The judge's turn ended: its verdicts recorded, then sign-off with its digest, or another
@@ -1046,7 +1061,6 @@ async fn conclude(
         Verdict::Failing => Some(LoopHalt::Failing),
         Verdict::Stalled => Some(LoopHalt::Stalled),
         Verdict::OutOfIterations => Some(LoopHalt::OutOfIterations),
-        Verdict::OutOfTime => Some(LoopHalt::OutOfTime),
         Verdict::Passed | Verdict::Iterate => None,
     });
     {
@@ -1098,13 +1112,6 @@ async fn conclude(
             format!(
                 "Stopped: the loop used its {} iterations.",
                 config.max_iterations
-            ),
-        ),
-        Verdict::OutOfTime => (
-            TaskTransition::LoopHalted,
-            format!(
-                "Stopped: the loop used its {} of agent time.",
-                duration_words(config.max_agent_secs)
             ),
         ),
         Verdict::Iterate => (
@@ -1162,7 +1169,6 @@ enum Verdict {
     Failing,
     Stalled,
     OutOfIterations,
-    OutOfTime,
     Iterate,
 }
 
@@ -1195,13 +1201,8 @@ fn verdict(
     if stall_streak(&recent) >= config.stall_limit as usize {
         return Verdict::Stalled;
     }
-    let counted: Vec<&&LoopIteration> = ended.iter().filter(|i| i.counted).collect();
-    if counted.len() >= config.max_iterations as usize {
+    if ended.iter().filter(|i| i.counted).count() >= config.max_iterations as usize {
         return Verdict::OutOfIterations;
-    }
-    let seconds: i64 = counted.iter().map(|i| agent_seconds(i)).sum();
-    if seconds >= i64::from(config.max_agent_secs) {
-        return Verdict::OutOfTime;
     }
     Verdict::Iterate
 }
@@ -1799,6 +1800,73 @@ pub(crate) async fn sweep_sandboxes(store: &Store) {
     }
 }
 
+/// Whether `iteration` has run for `limit` seconds by `now`.
+fn overdue(iteration: &LoopIteration, limit: u32, now: chrono::DateTime<chrono::Utc>) -> bool {
+    chrono::DateTime::parse_from_rfc3339(&iteration.started_at)
+        .is_ok_and(|started| (now - started.to_utc()).num_seconds() >= i64::from(limit))
+}
+
+/// Close every Build that has run past its loop's `max_build_secs`, and end its iteration as its
+/// turn ending would have: what it wrote is committed and checked, and the loop goes on. Run on
+/// the scheduler's tick, so a Build is closed within a minute of its limit, and a restart cannot
+/// lose the deadline, which is read from the iteration's start.
+pub(crate) async fn sweep_overdue_builds(store: &Store, stdout: &crate::ClientOut) {
+    let read = {
+        let conn = store.lock().await;
+        loops::running_iteration_tasks(&conn)
+    };
+    let tasks = match read {
+        Ok(tasks) => tasks,
+        Err(e) => {
+            send_diag(
+                "warn",
+                format!("[loop] cannot list the running iterations: {e}"),
+            );
+            return;
+        }
+    };
+    for (path, task_id) in tasks {
+        let read = {
+            let conn = store.lock().await;
+            crate::task_store::get(&conn, &path, task_id).and_then(|task| {
+                Ok(task.zip(running(&loops::list_iterations(&conn, &path, task_id)?)))
+            })
+        };
+        let Ok(Some((task, iteration))) = read else {
+            continue;
+        };
+        let working = task.phase == Some(TaskPhase::Iterating)
+            && matches!(
+                task.phase_status,
+                Some(PhaseStatus::Running | PhaseStatus::Blocked)
+            );
+        let limit = task.loop_config.clone().unwrap_or_default().max_build_secs;
+        if !working || !overdue(&iteration, limit, chrono::Utc::now()) {
+            continue;
+        }
+        if !claim_end(&path, task_id, &iteration) {
+            continue;
+        }
+        let note = format!(
+            "Closed after {}, the limit for one Build, before it finished.",
+            duration_words(limit)
+        );
+        send_diag(
+            "info",
+            format!("[loop] iteration {} of task {task_id}: {note}", iteration.n),
+        );
+        for session_id in live_sessions(store, &path, task_id).await {
+            close(stdout, &session_id).await;
+        }
+        let everyone = crate::client_sink::ClientSink::everyone(stdout).await;
+        let ended = Ended {
+            summary: Some(&note),
+            ..Ended::default()
+        };
+        Box::pin(finish(store, &everyone, &path, &task, &iteration, ended)).await;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1902,18 +1970,34 @@ mod tests {
     }
 
     #[test]
-    fn agent_time_counts_only_counted_iterations() {
-        use LoopIterationOutcome::*;
-        let config = LoopConfig {
-            max_agent_secs: 20 * 60,
-            ..LoopConfig::default()
+    fn a_build_is_overdue_at_its_limit_and_ended_once() {
+        let build = iteration(1, LoopIterationOutcome::Running, None);
+        let at = |s: &str| chrono::DateTime::parse_from_rfc3339(s).unwrap().to_utc();
+        let started = at(&build.started_at);
+        assert!(!overdue(
+            &build,
+            7200,
+            started + chrono::Duration::seconds(7199)
+        ));
+        assert!(overdue(
+            &build,
+            7200,
+            started + chrono::Duration::seconds(7200)
+        ));
+
+        assert!(claim_end("/overdue", 1, &build));
+        assert!(
+            !claim_end("/overdue", 1, &build),
+            "the turn's own end, after the sweep's"
+        );
+        let again = LoopIteration {
+            attempt: build.attempt + 1,
+            ..build
         };
-        let mut interrupted = iteration(1, Interrupted, None);
-        interrupted.counted = false;
-        let iterations = [interrupted, iteration(2, Checked, Some("a"))];
-        assert_eq!(verdict(&config, &iterations, None, None), Verdict::Iterate);
-        let more = [iterations[1].clone(), iteration(3, Checked, Some("b"))];
-        assert_eq!(verdict(&config, &more, None, None), Verdict::OutOfTime);
+        assert!(
+            claim_end("/overdue", 1, &again),
+            "another attempt is its own"
+        );
     }
 
     #[test]

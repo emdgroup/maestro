@@ -152,10 +152,10 @@
             "minimum": 1,
             "description": "Iterations the loop may use. Default 10."
           },
-          "max_agent_minutes": {
+          "max_build_minutes": {
             "type": "integer",
             "minimum": 1,
-            "description": "Agent time over the loop's iterations. Default 120."
+            "description": "How long one iteration's Build may run before it is closed and its work checked. Default 120."
           },
           "stall_limit": {
             "type": "integer",
@@ -254,10 +254,10 @@
             "minimum": 1,
             "description": "Iterations the loop may use. Default 10."
           },
-          "max_agent_minutes": {
+          "max_build_minutes": {
             "type": "integer",
             "minimum": 1,
-            "description": "Agent time over the loop's iterations. Default 120."
+            "description": "How long one iteration's Build may run before it is closed and its work checked. Default 120."
           },
           "stall_limit": {
             "type": "integer",

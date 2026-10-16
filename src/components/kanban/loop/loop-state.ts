@@ -18,7 +18,6 @@ const HALTS: Record<LoopHalt, { label: string; urgent: boolean }> = {
   Failing: { label: "Failing, needs you", urgent: true },
   Stalled: { label: "Stalled, needs your answer", urgent: true },
   OutOfIterations: { label: "Out of iterations, needs you", urgent: true },
-  OutOfTime: { label: "Out of agent time, needs you", urgent: true },
   Paused: { label: "Paused", urgent: false },
   Stopped: { label: "Stopped by you", urgent: false },
   Blocked: { label: "Blocked, needs your answer", urgent: true },

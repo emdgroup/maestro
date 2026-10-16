@@ -25,7 +25,7 @@ export interface LoopDraft {
   hiddenFiles: LoopHiddenFile[];
   setupCommand: string;
   maxIterations: string;
-  agentTime: string;
+  buildTime: string;
   stallLimit: string;
   timeoutMinutes: string;
 }
@@ -50,7 +50,7 @@ export function emptyLoopDraft(): LoopDraft {
     hiddenFiles: [],
     setupCommand: "",
     maxIterations: "10",
-    agentTime: "2h",
+    buildTime: "2h",
     stallLimit: "3",
     timeoutMinutes: "10",
   };
@@ -77,7 +77,7 @@ export function loopDraftFrom(
     hiddenFiles,
     setupCommand: config.setup_command ?? "",
     maxIterations: String(config.max_iterations),
-    agentTime: formatDuration(config.max_agent_secs),
+    buildTime: formatDuration(config.max_build_secs),
     stallLimit: String(config.stall_limit),
     timeoutMinutes: String(Math.round(config.check_timeout_secs / 60)),
   };
@@ -118,11 +118,11 @@ export function loopFromDraft(
   const maxIterations = whole(draft.maxIterations, "Iterations");
   const stallLimit = whole(draft.stallLimit, "The no-change limit");
   const timeout = whole(draft.timeoutMinutes, "The check timeout");
-  const agentSecs = parseDuration(draft.agentTime);
+  const buildSecs = parseDuration(draft.buildTime);
   for (const value of [maxIterations, stallLimit, timeout]) {
     if (typeof value === "string") return { error: value };
   }
-  if (agentSecs === null) return { error: "Agent time reads like 2h, 90m or 1h 30m" };
+  if (buildSecs === null) return { error: "Time per Build reads like 2h, 90m or 1h 30m" };
   const rows = draft.checks.filter((c) => c.label.trim() || c.command.trim());
   const unnamed = rows.find((c) => !c.label.trim());
   if (unnamed) return { error: "Every check needs a sentence saying what it checks" };
@@ -131,7 +131,7 @@ export function loopFromDraft(
   return {
     config: {
       max_iterations: maxIterations as number,
-      max_agent_secs: agentSecs,
+      max_build_secs: buildSecs,
       stall_limit: stallLimit as number,
       check_timeout_secs: (timeout as number) * 60,
       setup_command: draft.setupCommand.trim() || null,

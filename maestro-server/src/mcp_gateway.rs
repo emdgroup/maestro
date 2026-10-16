@@ -743,7 +743,7 @@ struct LoopFields {
     run_mode: Option<RunMode>,
     checks: Option<Vec<LoopCheckSpec>>,
     max_iterations: Option<u32>,
-    max_agent_minutes: Option<u32>,
+    max_build_minutes: Option<u32>,
     stall_limit: Option<u32>,
     check_timeout_minutes: Option<u32>,
     setup_command: Option<String>,
@@ -787,7 +787,7 @@ impl LoopFields {
                 .map_err(|e| e.to_string())?,
             checks,
             max_iterations: number("max_iterations")?,
-            max_agent_minutes: number("max_agent_minutes")?,
+            max_build_minutes: number("max_build_minutes")?,
             stall_limit: number("stall_limit")?,
             check_timeout_minutes: number("check_timeout_minutes")?,
             setup_command: string_argument(arguments, "setup_command")?,
@@ -800,7 +800,7 @@ impl LoopFields {
 
     fn budgets(&self) -> bool {
         self.max_iterations.is_some()
-            || self.max_agent_minutes.is_some()
+            || self.max_build_minutes.is_some()
             || self.stall_limit.is_some()
             || self.check_timeout_minutes.is_some()
     }
@@ -830,8 +830,8 @@ impl LoopFields {
         if let Some(n) = self.max_iterations {
             config.max_iterations = n;
         }
-        if let Some(minutes) = self.max_agent_minutes {
-            config.max_agent_secs = minutes.saturating_mul(60);
+        if let Some(minutes) = self.max_build_minutes {
+            config.max_build_secs = minutes.saturating_mul(60);
         }
         if let Some(n) = self.stall_limit {
             config.stall_limit = n;
@@ -1250,7 +1250,7 @@ fn loop_json(task: &maestro_protocol::Task, checks: &[LoopCheck], own: bool) -> 
     let mut value = json!({
         "checks": checks,
         "maxIterations": config.max_iterations,
-        "maxAgentMinutes": config.max_agent_secs / 60,
+        "maxBuildMinutes": config.max_build_secs / 60,
         "stallLimit": config.stall_limit,
         "checkTimeoutMinutes": config.check_timeout_secs / 60,
         "iteration": summary.map_or(0, |s| s.iteration),
@@ -1348,7 +1348,15 @@ fn loop_status(
     let config = task.loop_config.clone().unwrap_or_default();
     let summary = task.loop_summary.as_deref();
     let counted = summary.map_or(0, |s| s.counted).max(0) as u32;
-    let agent_secs = summary.map_or(0, |s| s.agent_secs);
+    // This Build's own time, the limit it is closed at.
+    let build_secs = iterations
+        .iter()
+        .rev()
+        .find(|i| i.outcome == LoopIterationOutcome::Running)
+        .and_then(|i| chrono::DateTime::parse_from_rfc3339(&i.started_at).ok())
+        .map_or(0, |started| {
+            (chrono::Utc::now() - started.to_utc()).num_seconds()
+        });
     let rows: Vec<Value> = checks
         .iter()
         .filter(|c| !c.proposed || c.accepted)
@@ -1375,7 +1383,7 @@ fn loop_status(
         "maxIterations": config.max_iterations,
         "budget": {
             "iterationsAfterThis": config.max_iterations.saturating_sub(counted + 1),
-            "agentMinutesLeft": (i64::from(config.max_agent_secs) - agent_secs).max(0) / 60,
+            "buildMinutesLeft": (i64::from(config.max_build_secs) - build_secs).max(0) / 60,
         },
         "checks": rows,
         "proposals": proposals,

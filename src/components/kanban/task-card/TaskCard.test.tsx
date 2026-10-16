@@ -1593,7 +1593,7 @@ describe("TaskCard as a loop", () => {
     ball: "Agent",
     loop_config: {
       max_iterations: 12,
-      max_agent_secs: 7200,
+      max_build_secs: 7200,
       stall_limit: 2,
       check_timeout_secs: 600,
       sealed_paths: [],

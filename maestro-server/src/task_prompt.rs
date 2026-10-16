@@ -262,9 +262,9 @@ Setup before the checks: `{setup}`"
     out.push_str(&format!(
         "
 
-Budget: {} iterations, {} minutes of agent time, stopping after {} in a row with no          progress. Each check may run for {} minutes.",
+Budget: {} iterations, each Build closed after {} minutes, stopping after {} in a row with no progress. Each check may run for {} minutes.",
         config.max_iterations,
-        config.max_agent_secs / 60,
+        config.max_build_secs / 60,
         config.stall_limit,
         config.check_timeout_secs / 60
     ));

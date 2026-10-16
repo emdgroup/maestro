@@ -4010,9 +4010,9 @@ export type LoopCheckState = "Pending" | "Pass" | "Fail" | "Flaky"
  */
 export type LoopConfig = { max_iterations: number; 
 /**
- * Agent time over the counted iterations, in seconds.
+ * How long one iteration's Build session may run, in seconds.
  */
-max_agent_secs: number; 
+max_build_secs: number; 
 /**
  * Iterations in a row that change nothing before the loop stops as stalled.
  */
@@ -4021,7 +4021,7 @@ stall_limit: number; check_timeout_secs: number; setup_command?: string | null;
  * Relative paths kept out of the worker's worktree. A trailing `/` names a directory.
  */
 sealed_paths: string[] }
-export type LoopHalt = "Flaky" | "Failing" | "Stalled" | "OutOfIterations" | "OutOfTime" | "Paused" | "Stopped" | "Blocked" | "Conflict"
+export type LoopHalt = "Flaky" | "Failing" | "Stalled" | "OutOfIterations" | "Paused" | "Stopped" | "Blocked" | "Conflict"
 /**
  * An acceptance file that exists only in the loop's record, never in the repository.
  */

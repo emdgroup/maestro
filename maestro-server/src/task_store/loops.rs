@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS agent_gates (
 pub fn normalize_config(config: &LoopConfig) -> Result<LoopConfig, String> {
     for (name, value) in [
         ("max_iterations", config.max_iterations),
-        ("max_agent_secs", config.max_agent_secs),
+        ("max_build_secs", config.max_build_secs),
         ("stall_limit", config.stall_limit),
         ("check_timeout_secs", config.check_timeout_secs),
     ] {
@@ -567,6 +567,19 @@ pub(crate) fn next_iteration(
         |row| row.get(0),
     )
     .map_err(|e| e.to_string())
+}
+
+/// The loops with an iteration running, in every project.
+pub(crate) fn running_iteration_tasks(conn: &Connection) -> Result<Vec<(String, i32)>, String> {
+    let mut statement = conn
+        .prepare(
+            "SELECT DISTINCT project_path, task_id FROM loop_iterations WHERE outcome = 'Running'",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<_, _>>().map_err(|e| e.to_string())
 }
 
 /// The row of an iteration whose session is up, as the next attempt of its number.

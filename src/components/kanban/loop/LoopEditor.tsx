@@ -12,7 +12,7 @@ import { sealablePaths, useSealablePathsQuery } from "@/services/loop.service";
 import { useSelectedProject } from "@/store/projectStore";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
 import type { CheckDraft, LoopDraft } from "./loop-draft";
-import { formatDuration, pathsInCommand } from "./loop-state";
+import { pathsInCommand } from "./loop-state";
 
 export const CHECK_KINDS: Record<LoopCheckKind, { icon: typeof Terminal; name: string }> = {
   Command: { icon: Terminal, name: "Command" },
@@ -135,18 +135,19 @@ export function LimitCards({
           onChange={(maxIterations) => onChange({ maxIterations })}
         />
       </LimitCard>
+      {/* Each Build has its own clock, so there is no total to meter. */}
       <LimitCard
-        label="Agent time"
-        used={started ? formatDuration(summary.agent_secs) : null}
-        share={started ? summary.agent_secs / config.max_agent_secs : 0}
-        help="Time spent waiting for a usage limit does not count."
+        label="Time per Build"
+        used={null}
+        share={0}
+        help="A Build still running then is closed, and what it wrote is checked."
       >
         <LimitInput
-          label="Agent time"
-          value={value.agentTime}
+          label="Time per Build"
+          value={value.buildTime}
           placeholder="2h"
           readOnly={readOnly}
-          onChange={(agentTime) => onChange({ agentTime })}
+          onChange={(buildTime) => onChange({ buildTime })}
         />
       </LimitCard>
       <LimitCard

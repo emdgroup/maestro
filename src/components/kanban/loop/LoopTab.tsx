@@ -641,12 +641,11 @@ export function LoopTab({
       Stalled: `Stopped: ${config.stall_limit} iterations in a row changed nothing`,
       Failing: "Stopped: the last three iterations failed",
       OutOfIterations: `Stopped: the loop used its ${config.max_iterations} iterations`,
-      OutOfTime: `Stopped: the loop used its ${formatDuration(config.max_agent_secs)} of agent time`,
     }[halt];
     banner = (
       <Banner tone="red" icon={OctagonX} title={title}>
         {summary.last_summary && <>The agent's last note: “{summary.last_summary}” </>}
-        {halt === "OutOfIterations" || halt === "OutOfTime"
+        {halt === "OutOfIterations"
           ? "Raise the limit above and save, or answer with a note and resume."
           : "Answer with a note and resume."}
       </Banner>

@@ -227,6 +227,10 @@ async fn run(
             Msg::All => {
                 let store = Arc::clone(&deps.store);
                 tokio::spawn(async move { crate::loop_engine::sweep_sandboxes(&store).await });
+                let (store, stdout) = (Arc::clone(&deps.store), Arc::clone(&deps.stdout));
+                tokio::spawn(async move {
+                    crate::loop_engine::sweep_overdue_builds(&store, &stdout).await
+                });
                 let projects = projects_with_candidates(&*deps.store.lock().await);
                 for path in projects.unwrap_or_default() {
                     let _ = tx.send(Msg::Request(path));
