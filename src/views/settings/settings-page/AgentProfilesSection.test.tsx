@@ -1,3 +1,4 @@
+import { cloneElement } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -61,16 +62,31 @@ const agents = [
   { id: "codex", name: "Codex" },
 ];
 
+const section = (
+  <AgentProfilesSection
+    projectId={1}
+    agents={agents}
+    connection={{ type: "local" }}
+    defaultAgent="claude-acp"
+  />
+);
+
+/** A copy, so a later `rerender(section)` is a new element and renders rather than bailing out. */
 function renderSection() {
-  return render(
-    <AgentProfilesSection projectId={1} agents={agents} connection={{ type: "local" }} />,
-  );
+  return render(cloneElement(section));
 }
 
-/** The same element again, for a rerender that swaps what the probe is reporting. */
-const section = (
-  <AgentProfilesSection projectId={1} agents={agents} connection={{ type: "local" }} />
-);
+/** Renders with a profile's editor open: only an open profile shows its fields and probes. */
+async function renderOpen(name = "Coder") {
+  const result = renderSection();
+  await userEvent.click(screen.getByRole("button", { name: `Edit ${name}` }));
+  return result;
+}
+
+/** Opens a stage of the workflow row, by the name it has there. */
+async function openStage(stage: string) {
+  await userEvent.click(screen.getByRole("button", { name: new RegExp(`^${stage}:`) }));
+}
 
 /** The document handed to the most recent write. */
 function lastSaved(): ProfilesDocument {
@@ -129,7 +145,7 @@ describe("AgentProfilesSection", () => {
       isError: false,
     };
 
-    renderSection();
+    await renderOpen();
     // Focus and leave the name field: blur is what commits a text edit, and tabbing through a
     // form is not an edit.
     await userEvent.click(screen.getByDisplayValue("Coder"));
@@ -147,20 +163,27 @@ describe("AgentProfilesSection", () => {
     stored.current = {};
 
     renderSection();
-    // Three of the pipeline's four: Implementation still runs without a profile, on the project's
-    // default agent, and saying it is skipped is what sent users looking for a profile they did not
-    // need. No loop stage is skipped: its iterations run on the default agent, which also judges.
-    expect(screen.getAllByText("No profile — stage skipped.")).toHaveLength(3);
-    expect(
-      screen.getByText("No profile — runs on the project's default agent."),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("No profile: iterations run on the project's default agent."),
-    ).toBeInTheDocument();
-    expect(screen.getByText("No profile: the Iterations agent judges.")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Pipeline" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Loop" })).toBeInTheDocument();
+    // Three of the pipeline's four are skipped. Implementation still runs without a profile, on the
+    // project's default agent, and saying it is skipped is what sent users looking for a profile
+    // they did not need. No loop stage is skipped: the judge runs on whatever iterates.
+    const stages = () =>
+      screen.getAllByRole("button", { name: /^\w+: / }).map((b) => b.getAttribute("aria-label"));
+    expect(stages()).toEqual([
+      "Refine: Skipped",
+      "Plan: Skipped",
+      "Implement: Default agent",
+      "Review: Skipped",
+    ]);
+    expect(screen.getByRole("button", { name: /^Implement:/ })).toHaveTextContent("Claude");
+    await userEvent.click(screen.getByRole("tab", { name: "Loops" }));
+    expect(stages()).toEqual([
+      "Prepare: Default agent",
+      "Iterate: Default agent",
+      "Judge: Same as Iterate",
+    ]);
+    await userEvent.click(screen.getByRole("tab", { name: "Pipeline tasks" }));
 
+    await openStage("Refine");
     await userEvent.click(screen.getByRole("button", { name: "Add a Refinement profile" }));
 
     expect(save).toHaveBeenCalledTimes(1);
@@ -175,6 +198,7 @@ describe("AgentProfilesSection", () => {
    */
   it("makes the first profile of a role its default", async () => {
     renderSection();
+    await openStage("Refine");
 
     await userEvent.click(screen.getByRole("button", { name: "Add a Refinement profile" }));
 
@@ -192,7 +216,9 @@ describe("AgentProfilesSection", () => {
   it("prefills a new profile's instructions with its role's template", async () => {
     renderSection();
 
+    await openStage("Review");
     await userEvent.click(screen.getByRole("button", { name: "Add a Review profile" }));
+    await openStage("Implement");
     await userEvent.click(screen.getByRole("button", { name: "Add a Implementation profile" }));
 
     const [reviewer, coder] = lastSaved().profiles!;
@@ -242,7 +268,7 @@ describe("AgentProfilesSection", () => {
   it("saves a renamed profile when the field loses focus", async () => {
     stored.current = oneCoder(null);
 
-    renderSection();
+    await renderOpen();
     await userEvent.type(screen.getByDisplayValue("Coder"), "!");
     expect(save).not.toHaveBeenCalled();
 
@@ -259,7 +285,7 @@ describe("AgentProfilesSection", () => {
    * which renders a button and portals its items only while open, so the visible label is both the
    * only thing present when closed and the thing the user actually reads.
    */
-  it("names the chosen model on the trigger", () => {
+  it("names the chosen model on the trigger", async () => {
     stored.current = oneCoder("opus");
     probe.current = {
       data: {
@@ -275,7 +301,7 @@ describe("AgentProfilesSection", () => {
       isError: false,
     };
 
-    renderSection();
+    await renderOpen();
 
     expect(screen.getByRole("combobox", { name: "Model for Coder" })).toHaveTextContent("Opus");
   });
@@ -286,7 +312,7 @@ describe("AgentProfilesSection", () => {
    * the agent rejects with a console warning, so the profile said one thing and the run did
    * another. Clearing it to "agent default" is what the run would do anyway.
    */
-  it("clears a stored model the agent does not offer", () => {
+  it("clears a stored model the agent does not offer", async () => {
     stored.current = oneCoder("gpt-5-codex");
     probe.current = {
       data: { models: [{ model_id: "sonnet", name: "Sonnet" }], modes: [], effort: null },
@@ -295,7 +321,7 @@ describe("AgentProfilesSection", () => {
       isError: false,
     };
 
-    renderSection();
+    await renderOpen();
 
     expect(screen.getByRole("combobox", { name: "Model for Coder" })).toHaveTextContent(
       "agent default",
@@ -311,11 +337,11 @@ describe("AgentProfilesSection", () => {
    * profiles naming it, for the whole team, since `profiles.json` is committed. The carve-out is
    * the agent being absent entirely, covered below.
    */
-  it("clears every unconfirmable field when the probe failed", () => {
+  it("clears every unconfirmable field when the probe failed", async () => {
     stored.current = oneCoder("opus", "auto", "high");
     probe.current = { data: undefined as never, isLoading: false, isSuccess: false, isError: true };
 
-    renderSection();
+    await renderOpen();
 
     const saved = lastSaved().profiles![0]!;
     expect(saved.model).toBeNull();
@@ -328,11 +354,11 @@ describe("AgentProfilesSection", () => {
    * that failed, and clearing on that would wipe a good value every time the panel opened — or,
    * worse, every time the user changed the model, since that re-probes.
    */
-  it("writes nothing while the probe is still running", () => {
+  it("writes nothing while the probe is still running", async () => {
     stored.current = oneCoder("opus", "auto", "high");
     probe.current = { data: undefined as never, isLoading: true, isSuccess: false, isError: false };
 
-    renderSection();
+    await renderOpen();
 
     expect(save).not.toHaveBeenCalled();
     // All three go on showing what is stored while the asking happens — the labels are covered by
@@ -346,7 +372,7 @@ describe("AgentProfilesSection", () => {
    * is a property of the agent, so nothing a re-probe returns can change it. Blanking it read as
    * the panel asking the agent to confirm a choice it had just been given.
    */
-  it("goes on naming the model while a model change re-probes", () => {
+  it("goes on naming the model while a model change re-probes", async () => {
     stored.current = oneCoder("opus");
     probe.current = {
       data: {
@@ -362,7 +388,7 @@ describe("AgentProfilesSection", () => {
       isError: false,
     };
 
-    const { rerender } = renderSection();
+    const { rerender } = await renderOpen();
     expect(screen.getByRole("combobox", { name: "Model for Coder" })).toHaveTextContent("Opus 4.7");
 
     // The new query key has nothing cached, so the probe restarts with no data at all.
@@ -396,7 +422,7 @@ describe("AgentProfilesSection", () => {
       isError: false,
     };
 
-    renderSection();
+    await renderOpen();
     const before = save.mock.calls.length;
     await userEvent.click(screen.getByRole("combobox", { name: "Claude" }));
     await userEvent.click(screen.getByRole("option", { name: "Codex" }));
@@ -426,7 +452,7 @@ describe("AgentProfilesSection", () => {
    * back to "agent default" on the very next render. The resets wait for a settled state, not for
    * the absence of a loading one.
    */
-  it("keeps a model the user just picked while the re-probe has not answered", () => {
+  it("keeps a model the user just picked while the re-probe has not answered", async () => {
     stored.current = oneCoder("opus");
     probe.current = {
       data: undefined as never,
@@ -435,7 +461,7 @@ describe("AgentProfilesSection", () => {
       isError: false,
     };
 
-    renderSection();
+    await renderOpen();
 
     expect(save).not.toHaveBeenCalled();
     expect(screen.getByRole("combobox", { name: "Model for Coder" })).toHaveTextContent("opus");
@@ -463,7 +489,7 @@ describe("AgentProfilesSection", () => {
       isError: false,
     };
 
-    const { rerender } = renderSection();
+    const { rerender } = await renderOpen();
     probe.current = {
       data: undefined as never,
       isLoading: true,
@@ -484,11 +510,11 @@ describe("AgentProfilesSection", () => {
   });
 
   /** With no model chosen there is no name to keep, so the probe is what the field waits on. */
-  it("says it is asking when no model is chosen yet", () => {
+  it("says it is asking when no model is chosen yet", async () => {
     stored.current = oneCoder(null);
     probe.current = { data: undefined as never, isLoading: true, isSuccess: false, isError: false };
 
-    renderSection();
+    await renderOpen();
 
     expect(screen.getByRole("combobox", { name: "Model for Coder" })).toHaveTextContent(
       "asking the agent…",
@@ -500,12 +526,12 @@ describe("AgentProfilesSection", () => {
    * of every profile naming it on sight. Not probing is what keeps a profile written on a machine
    * that has the agent intact on one that does not.
    */
-  it("does not probe an agent this machine does not have", () => {
+  it("does not probe an agent this machine does not have", async () => {
     const doc = oneCoder("opus", "auto", "high");
     doc.profiles![0]!.agent_id = "gemini";
     stored.current = doc;
 
-    renderSection();
+    await renderOpen();
 
     expect(probeArgs).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }));
     expect(save).not.toHaveBeenCalled();
@@ -517,10 +543,10 @@ describe("AgentProfilesSection", () => {
    * budgets per model. A probe that never names the profile's model reports the agent's *default*
    * model's list, which is the wrong list for every profile that picked another one.
    */
-  it("asks the agent about the model the profile names", () => {
+  it("asks the agent about the model the profile names", async () => {
     stored.current = oneCoder("gpt-5-codex");
 
-    renderSection();
+    await renderOpen();
 
     expect(probeArgs).toHaveBeenCalledWith(
       expect.objectContaining({ agentId: "claude-acp", modelId: "gpt-5-codex", enabled: true }),
@@ -531,11 +557,11 @@ describe("AgentProfilesSection", () => {
    * A probe that failed and an agent that genuinely has one model both come back empty, and the
    * difference matters: one means "nothing to choose", the other means "we could not ask".
    */
-  it("says when it could not ask the agent", () => {
+  it("says when it could not ask the agent", async () => {
     stored.current = oneCoder(null);
     probe.current = { data: undefined as never, isLoading: false, isSuccess: false, isError: true };
 
-    renderSection();
+    await renderOpen();
 
     expect(screen.getByRole("combobox", { name: "Model for Coder" })).toHaveTextContent(
       "agent default (could not ask)",
@@ -547,7 +573,7 @@ describe("AgentProfilesSection", () => {
    * an unrecognised mode is dropped with a warning, so a reviewer meant to be held read-only
    * runs unheld. It comes off the same probe as the models.
    */
-  it("names the chosen permission mode on the trigger", () => {
+  it("names the chosen permission mode on the trigger", async () => {
     stored.current = oneCoder(null, "auto");
     probe.current = {
       data: {
@@ -563,7 +589,7 @@ describe("AgentProfilesSection", () => {
       isError: false,
     };
 
-    renderSection();
+    await renderOpen();
 
     expect(screen.getByRole("combobox", { name: "Permission mode for Coder" })).toHaveTextContent(
       "Auto",
@@ -576,7 +602,7 @@ describe("AgentProfilesSection", () => {
    * read-only role read-only — it is dropped with a warning at spawn — so replacing it with a mode
    * the agent does have is what actually keeps the promise the stored value was making.
    */
-  it("replaces a stored permission mode the agent does not offer", () => {
+  it("replaces a stored permission mode the agent does not offer", async () => {
     stored.current = oneCoder(null, "dontAsk");
     probe.current = {
       data: {
@@ -592,7 +618,7 @@ describe("AgentProfilesSection", () => {
       isError: false,
     };
 
-    renderSection();
+    await renderOpen();
 
     expect(screen.getByRole("combobox", { name: "Permission mode for Coder" })).toHaveTextContent(
       "Auto",
@@ -605,7 +631,7 @@ describe("AgentProfilesSection", () => {
    * written to `profiles.json` rather than re-resolved invisibly on every spawn — a coder takes
    * the first writable mode, the other three the first read-only one.
    */
-  it("fills in and stores the mode an unset role needs", () => {
+  it("fills in and stores the mode an unset role needs", async () => {
     stored.current = {
       profiles: [
         {
@@ -644,17 +670,18 @@ describe("AgentProfilesSection", () => {
       isError: false,
     };
 
-    renderSection();
-
-    expect(
-      screen.getByRole("combobox", { name: "Permission mode for Reviewer" }),
-    ).toHaveTextContent("Plan");
+    await renderOpen();
     expect(screen.getByRole("combobox", { name: "Permission mode for Coder" })).toHaveTextContent(
       "Auto",
     );
+    await openStage("Review");
+    await userEvent.click(screen.getByRole("button", { name: "Edit Reviewer" }));
+    expect(
+      screen.getByRole("combobox", { name: "Permission mode for Reviewer" }),
+    ).toHaveTextContent("Plan");
 
-    // Both cards resolve off one shared probe, so the document that lands on disk has to carry
-    // both modes rather than whichever card wrote last.
+    // Each card resolves off the same probe, so the document that lands on disk has to carry both
+    // modes rather than whichever card wrote last.
     const saved = lastSaved().profiles!;
     expect(saved.find((p) => p.id === "r1")!.permission_mode).toBe("plan");
     expect(saved.find((p) => p.id === "c1")!.permission_mode).toBe("auto");
@@ -681,7 +708,7 @@ describe("AgentProfilesSection", () => {
       isError: false,
     };
 
-    renderSection();
+    await renderOpen();
     await userEvent.click(screen.getByRole("combobox", { name: "Permission mode for Coder" }));
 
     expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Plan", "Auto"]);
@@ -691,10 +718,10 @@ describe("AgentProfilesSection", () => {
    * Nothing to choose from is not the same as a choice not yet made. An enabled dropdown here
    * would open onto one dead option, and the mode is genuinely the agent's own.
    */
-  it("disables the dropdown when the agent offers no modes", () => {
+  it("disables the dropdown when the agent offers no modes", async () => {
     stored.current = oneCoder(null);
 
-    renderSection();
+    await renderOpen();
 
     expect(screen.getByRole("combobox", { name: "Permission mode for Coder" })).toBeDisabled();
     expect(
@@ -707,7 +734,7 @@ describe("AgentProfilesSection", () => {
    * Effort is not part of ACP proper — it arrives as one entry in the generic config-option list,
    * found by category rather than read off a field, so that it is offered at all is worth pinning.
    */
-  it("names the chosen effort on the trigger", () => {
+  it("names the chosen effort on the trigger", async () => {
     stored.current = oneCoder(null, null, "high");
     probe.current = {
       data: {
@@ -726,7 +753,7 @@ describe("AgentProfilesSection", () => {
       isError: false,
     };
 
-    renderSection();
+    await renderOpen();
 
     expect(screen.getByRole("combobox", { name: "Effort for Coder" })).toHaveTextContent("High");
   });
@@ -736,7 +763,7 @@ describe("AgentProfilesSection", () => {
    * `set_acp_config_option` and swallows the rejection with a console warning, so a value the
    * model does not have was the one setting on the card that visibly did nothing.
    */
-  it("clears a stored effort the model does not offer", () => {
+  it("clears a stored effort the model does not offer", async () => {
     stored.current = oneCoder(null, null, "xhigh");
     probe.current = {
       data: {
@@ -749,7 +776,7 @@ describe("AgentProfilesSection", () => {
       isError: false,
     };
 
-    renderSection();
+    await renderOpen();
 
     expect(screen.getByRole("combobox", { name: "Effort for Coder" })).toHaveTextContent(
       "agent default",
@@ -765,7 +792,7 @@ describe("AgentProfilesSection", () => {
    * against the profile's own model, so "this agent has none" was both wrong and unactionable —
    * the fix is to pick a different model, not a different agent.
    */
-  it("disables the dropdown and names the model when it exposes no effort", () => {
+  it("disables the dropdown and names the model when it exposes no effort", async () => {
     stored.current = oneCoder("opus");
     probe.current = {
       data: { models: [{ model_id: "opus", name: "Opus" }], modes: [], effort: null },
@@ -774,7 +801,7 @@ describe("AgentProfilesSection", () => {
       isError: false,
     };
 
-    renderSection();
+    await renderOpen();
 
     expect(screen.getByRole("combobox", { name: "Effort for Coder" })).toBeDisabled();
     expect(screen.getByText("Opus exposes no effort setting.")).toBeInTheDocument();
@@ -782,10 +809,10 @@ describe("AgentProfilesSection", () => {
   });
 
   /** With no model chosen the probe ran against whichever one the agent opens on, so say that. */
-  it("names the agent's default model when no model is chosen", () => {
+  it("names the agent's default model when no model is chosen", async () => {
     stored.current = oneCoder(null);
 
-    renderSection();
+    await renderOpen();
 
     expect(
       screen.getByText("This agent's default model exposes no effort setting."),
@@ -796,7 +823,7 @@ describe("AgentProfilesSection", () => {
    * The label that started all this. Every field now shows a real, selectable option, so the
    * suffix has no state left to describe.
    */
-  it("never labels anything as not offered", () => {
+  it("never labels anything as not offered", async () => {
     stored.current = oneCoder("gpt-5-codex", "dontAsk", "xhigh");
     probe.current = {
       data: {
@@ -809,7 +836,7 @@ describe("AgentProfilesSection", () => {
       isError: false,
     };
 
-    renderSection();
+    await renderOpen();
 
     expect(screen.queryByText(/not offered/)).not.toBeInTheDocument();
   });

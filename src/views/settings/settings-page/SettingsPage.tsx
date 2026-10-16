@@ -240,6 +240,7 @@ function ProjectScopePane({
             projectId={projectId}
             agents={discovery?.agents ?? []}
             connection={connection}
+            defaultAgent={settings?.default_agent ?? null}
           />
           <LoopWaitCapSection projectId={projectId} />
         </>

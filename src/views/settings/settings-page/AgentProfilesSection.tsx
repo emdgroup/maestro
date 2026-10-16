@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Bot, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, Bot, Plus, Repeat, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
+import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Textarea } from "@/ui/textarea";
 import { AgentConfigFields } from "@/components/common/agent-config/AgentConfigFields";
 import { useAgentProfilesQuery, useSaveAgentProfilesMutation } from "@/services/project.service";
@@ -13,9 +14,9 @@ import { cn } from "@/lib/utils";
 /**
  * The roles, in the order a task passes through them: a pipeline task's four, then a loop's three.
  *
- * Each line says what the role costs the user rather than what it is called: a project with no
- * profile for a role simply skips that stage, and "no Reviewer" being the difference between a
- * task stopping at your gate and going straight to it is not obvious from the word "Reviewer".
+ * `noneText` says what the stage costs the user without a profile rather than what it is called: a
+ * pipeline stage with no profile is simply skipped, and "no Reviewer" being the difference between
+ * a task stopping at your gate and going straight to it is not obvious from the word "Reviewer".
  *
  * `defaultPrompt` is the text a new profile of that role starts with. It is copied into the
  * profile on creation rather than applied as a fallback at resolution time, because the user has
@@ -24,14 +25,26 @@ import { cn } from "@/lib/utils";
  * reach profiles already written, which is the right way round: those are the team's, not ours.
  * Deliberately project-neutral, since the project-specific half is what the user adds.
  */
-type RoleEntry = { role: AgentRole; title: string; blurb: string; defaultPrompt: string };
+type RoleEntry = {
+  role: AgentRole;
+  title: string;
+  /** The stage's name in the workflow row. */
+  stage: string;
+  what: string;
+  /** What runs the stage without a profile: nothing, the project's default agent, or Iterate's. */
+  none: "skip" | "default" | "inherit";
+  noneText: string;
+  defaultPrompt: string;
+};
 
 const PIPELINE_ROLES: RoleEntry[] = [
   {
     role: "Refiner",
     title: "Refinement",
-    blurb:
-      "Sharpens a task's description before anyone implements it. Without one, Planning has no Refine.",
+    stage: "Refine",
+    what: "Sharpens a task's description before anyone implements it.",
+    none: "skip",
+    noneText: "Skipped. Tasks in Planning have no Refine button.",
     defaultPrompt:
       "Sharpen this task's description so it can be implemented without coming back to ask what it " +
       "meant. Read enough of the codebase to ground it: name the files and functions involved, say " +
@@ -41,8 +54,10 @@ const PIPELINE_ROLES: RoleEntry[] = [
   {
     role: "Planner",
     title: "Planning",
-    blurb:
-      "Writes a plan and stops at a gate for you. Without one, work starts straight from the description.",
+    stage: "Plan",
+    what: "Writes a plan, then waits for you to approve it.",
+    none: "skip",
+    noneText: "Skipped. Work starts straight from the description.",
     defaultPrompt:
       "Produce a plan for this task, not an implementation. Read the code paths it touches first, " +
       "then give ordered steps naming the file and function each one changes. Call out the risky " +
@@ -52,9 +67,10 @@ const PIPELINE_ROLES: RoleEntry[] = [
   {
     role: "Coder",
     title: "Implementation",
-    blurb:
-      "Writes the code. Runs without a profile, on the project's default agent; a profile is how " +
-      "it gets this project's instructions.",
+    stage: "Implement",
+    what: "Writes the code.",
+    none: "default",
+    noneText: "Runs on the project's default agent, with no instructions for this project.",
     defaultPrompt:
       "Implement this task. Follow the conventions of the surrounding code rather than introducing " +
       "your own, and keep the change to what was asked — no speculative extras. Verify before you " +
@@ -64,8 +80,10 @@ const PIPELINE_ROLES: RoleEntry[] = [
   {
     role: "Reviewer",
     title: "Review",
-    blurb:
-      "Reviews the diff and can send it back. Without one, finished work waits for you instead.",
+    stage: "Review",
+    what: "Reviews the diff and can send it back for another run.",
+    none: "skip",
+    noneText: "Skipped. Finished work waits for you.",
     defaultPrompt:
       "Review this diff against the task it claims to implement. Look for correctness bugs, " +
       "unhandled cases, and changes that go beyond the task; judge style against the project's own " +
@@ -78,9 +96,10 @@ const LOOP_ROLES: RoleEntry[] = [
   {
     role: "Preparer",
     title: "Preparation",
-    blurb:
-      "Prepares a loop with you: writes its tests and sets its checks. Without one, Prepare loop runs " +
-      "on the project's default agent.",
+    stage: "Prepare",
+    what: "Writes the loop's tests and sets its checks with you.",
+    none: "default",
+    noneText: "Runs on the project's default agent.",
     defaultPrompt:
       "Prepare this loop so a worker agent can reach the goal by iterating until every check " +
       "passes. Read the goal and the code it touches, then restate it as observable outcomes and " +
@@ -96,9 +115,10 @@ const LOOP_ROLES: RoleEntry[] = [
   {
     role: "Worker",
     title: "Iterations",
-    blurb:
-      "Works toward the loop's goal, one fresh session per iteration, until every check passes. " +
-      "Without one, iterations run on the project's default agent.",
+    stage: "Iterate",
+    what: "Works toward the loop's goal, one fresh session per iteration.",
+    none: "default",
+    noneText: "Runs on the project's default agent.",
     defaultPrompt:
       "Move this loop toward its goal in this iteration. Start from the failing checks and the " +
       "notes earlier iterations left, then make the smallest change that gets a failing check " +
@@ -109,9 +129,10 @@ const LOOP_ROLES: RoleEntry[] = [
   {
     role: "Judge",
     title: "Judging",
-    blurb:
-      "Decides a loop's judge checks and writes the digest you sign off. Without one, the Iterations " +
-      "agent judges.",
+    stage: "Judge",
+    what: "Decides the judge checks and writes the summary you sign off.",
+    none: "inherit",
+    noneText: "Runs on the same agent as Iterate.",
     defaultPrompt:
       "Judge each check against the loop's diff and the code it touches, as a reviewer who has to " +
       "sign it off. Pass a check only when the work plainly meets it; when you fail one, say what " +
@@ -121,46 +142,51 @@ const LOOP_ROLES: RoleEntry[] = [
 
 const ROLES = [...PIPELINE_ROLES, ...LOOP_ROLES];
 
-const GROUPS: Array<{ title: string; blurb: string; roles: RoleEntry[] }> = [
-  {
-    title: "Pipeline",
-    blurb:
-      "A pipeline task goes through these stages in order. A stage with no profile is skipped, " +
-      "except Implementation, which runs on the project's default agent.",
+type Mode = "pipeline" | "loop";
+
+const MODES: Record<Mode, { help: string; roles: RoleEntry[] }> = {
+  pipeline: {
+    help: "A task goes through these stages once, in order. You approve the work at the gates.",
     roles: PIPELINE_ROLES,
   },
-  {
-    title: "Loop",
-    blurb:
-      "A loop is prepared with you, then iterates until its checks pass. Every loop stage runs " +
-      "without a profile.",
+  loop: {
+    help: "A loop is prepared with you, then repeats Iterate and Judge until every check passes.",
     roles: LOOP_ROLES,
   },
-];
+};
+
+const FALLBACK: Record<RoleEntry["none"], string> = {
+  skip: "Without a profile, this stage is skipped.",
+  default: "Without a profile, it runs on the project's default agent.",
+  inherit: "Without a profile, it runs on the same agent as Iterate.",
+};
 
 interface AgentProfilesSectionProps {
   projectId: number;
   agents: Array<{ id: string; name: string }>;
   connection: ConnectionKey;
+  /** The project's default agent, which runs a stage that has no profile and is not skipped. */
+  defaultAgent: string | null;
 }
 
 /**
- * One profile's editable fields: what is this profile's own, around the agent settings every
- * caller of `AgentConfigFields` shares.
+ * One profile: a line naming what it runs, and its editor below it when open.
  *
- * Still its own component so each card probes its own agent: the probe costs a real subprocess,
- * and TanStack dedupes by query key, so four profiles naming `claude-acp` on the same model pay
- * for one session between them rather than four. Naming different models is what splits them, and
- * that is the point — the effort list differs per model.
+ * The editor is its own mount so each open profile probes its own agent: the probe costs a real
+ * subprocess, and TanStack dedupes by query key, so profiles naming `claude-acp` on the same model
+ * pay for one session between them. Only an open profile probes, which is also why one editor is
+ * open at a time.
  */
-function ProfileCard({
+function ProfileRow({
   profile,
   title,
   isDefault,
+  open,
   agents,
   projectId,
   projectPath,
   connection,
+  onToggle,
   onChange,
   onCommit,
   onMakeDefault,
@@ -169,28 +195,37 @@ function ProfileCard({
   profile: AgentProfile;
   title: string;
   isDefault: boolean;
+  open: boolean;
   agents: Array<{ id: string; name: string }>;
   projectId: number;
   projectPath: string | null;
   connection: ConnectionKey;
+  onToggle: () => void;
   /** `commit` persists the patch straight away; the text fields leave it to `onCommit`. */
   onChange: (patch: Partial<AgentProfile>, commit?: boolean) => void;
   onCommit: () => void;
   onMakeDefault: () => void;
   onRemove: () => void;
 }) {
+  const summary = [
+    agents.find((a) => a.id === profile.agent_id)?.name ?? profile.agent_id,
+    profile.model,
+    profile.permission_mode,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
-    // React's `onBlur` is `focusout`, which bubbles — one handler here covers the name and the
-    // role prompt without threading a save through each of them. The three selects commit
-    // themselves, since a choice from a list is finished the moment it is made.
+    // React's `onBlur` is `focusout`, which bubbles: one handler here covers the name and the
+    // role prompt without threading a save through each of them. The selects commit themselves,
+    // since a choice from a list is finished the moment it is made.
     <div
       onBlur={onCommit}
       className={cn(
-        "rounded-md border p-3 space-y-2",
+        "rounded-md border p-3 space-y-3",
         isDefault ? "border-accent/60 bg-accent/5" : "border-border",
       )}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         {/* Radio rather than a toggle: exactly one profile per role is the default, and a toggle
             would let the user turn the last one off. */}
         <input
@@ -201,12 +236,20 @@ function ProfileCard({
           aria-label={`Use ${profile.name} by default for ${title}`}
           className="accent-accent"
         />
-        <Input
-          value={profile.name}
-          onChange={(e) => onChange({ name: e.target.value })}
-          placeholder="Name"
-          className="h-7 text-xs"
-        />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{profile.name || "Unnamed profile"}</p>
+          <p className="truncate text-xs text-muted-foreground">{summary}</p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-label={`${open ? "Close" : "Edit"} ${profile.name}`}
+        >
+          {open ? "Close" : "Edit"}
+        </Button>
         <Button
           type="button"
           variant="ghost"
@@ -219,28 +262,89 @@ function ProfileCard({
         </Button>
       </div>
 
-      <AgentConfigFields
-        value={profile}
-        label={profile.name}
-        agents={agents}
-        projectId={projectId}
-        projectPath={projectPath}
-        connection={connection}
-        readOnly={isReadOnlyRole(profile.role)}
-        onChange={onChange}
-      />
-
-      <label className="text-[11px] text-muted-foreground space-y-1 block">
-        Instructions for this role
-        <Textarea
-          value={profile.role_prompt ?? ""}
-          onChange={(e) => onChange({ role_prompt: e.target.value || null })}
-          placeholder="What this role means in this project. Sent ahead of the task."
-          className="min-h-16 text-xs"
-        />
-      </label>
+      {open && (
+        <div className="space-y-3 border-t border-border pt-3">
+          <label className="block space-y-1 text-xs text-muted-foreground">
+            Name
+            <Input
+              value={profile.name}
+              onChange={(e) => onChange({ name: e.target.value })}
+              placeholder="Name"
+              className="h-8 text-sm"
+            />
+          </label>
+          <AgentConfigFields
+            value={profile}
+            label={profile.name}
+            agents={agents}
+            projectId={projectId}
+            projectPath={projectPath}
+            connection={connection}
+            readOnly={isReadOnlyRole(profile.role)}
+            onChange={onChange}
+          />
+          <label className="block space-y-1 text-xs text-muted-foreground">
+            Instructions, sent ahead of the task
+            <Textarea
+              value={profile.role_prompt ?? ""}
+              onChange={(e) => onChange({ role_prompt: e.target.value || null })}
+              placeholder="What this stage means in this project."
+              className="min-h-24 text-sm"
+            />
+          </label>
+        </div>
+      )}
     </div>
   );
+}
+
+type Runs = { text: string; sub: string; kind: "profile" | "default" | "skip" };
+
+/** A stage in the workflow row, saying what runs it. */
+function StageButton({
+  entry,
+  runs,
+  selected,
+  onSelect,
+}: {
+  entry: RoleEntry;
+  runs: Runs;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      aria-label={`${entry.stage}: ${runs.text}`}
+      className={cn(
+        "min-w-0 flex-1 rounded-lg border px-3 py-2.5 text-left transition-colors",
+        runs.kind === "skip" && "border-dashed text-muted-foreground",
+        selected ? "border-accent bg-accent/10 ring-1 ring-accent/40" : "hover:bg-muted",
+      )}
+    >
+      <span className="block text-sm font-medium">{entry.stage}</span>
+      <span className="mt-1 flex items-center gap-1.5 text-xs">
+        <span
+          className={cn(
+            "inline-block size-2 shrink-0 rounded-full",
+            runs.kind === "profile"
+              ? "bg-chart-2"
+              : runs.kind === "skip"
+                ? "bg-muted-foreground/40"
+                : "bg-chart-4",
+          )}
+        />
+        <span className="truncate">{runs.text}</span>
+      </span>
+      <span className="block truncate pl-3.5 text-[11px] text-muted-foreground">{runs.sub}</span>
+    </button>
+  );
+}
+
+function Arrow() {
+  return <ArrowRight aria-hidden className="size-4 shrink-0 self-center text-muted-foreground" />;
 }
 
 /**
@@ -260,7 +364,12 @@ function serialize(profiles: AgentProfile[], defaults: Record<string, string>): 
   return JSON.stringify({ profiles, defaults });
 }
 
-export function AgentProfilesSection({ projectId, agents, connection }: AgentProfilesSectionProps) {
+export function AgentProfilesSection({
+  projectId,
+  agents,
+  connection,
+  defaultAgent,
+}: AgentProfilesSectionProps) {
   const profilesQuery = useAgentProfilesQuery(projectId);
   const saveProfiles = useSaveAgentProfilesMutation();
   const projectPath = useSelectedProject()?.path ?? null;
@@ -270,6 +379,13 @@ export function AgentProfilesSection({ projectId, agents, connection }: AgentPro
   // What is on disk. The blur handler fires on every focus change, including tabbing through
   // fields without touching them, and a project's `profiles.json` may be an SSH round trip away.
   const [persisted, setPersisted] = useState("");
+  // Which workflow is shown, the stage open in each, and the one profile being edited.
+  const [mode, setMode] = useState<Mode>("pipeline");
+  const [selected, setSelected] = useState<Record<Mode, AgentRole>>({
+    pipeline: "Coder",
+    loop: "Worker",
+  });
+  const [editing, setEditing] = useState<string | null>(null);
 
   // Adopted from the query during render rather than from an effect, which would paint an empty
   // list over profiles already fetched. Latched on the object identity so the user's edits are not
@@ -347,6 +463,7 @@ export function AgentProfilesSection({ projectId, agents, connection }: AgentPro
     const nextDefaults = defaults[role] ? defaults : { ...defaults, [role]: id };
     setProfiles(next);
     setDefaults(nextDefaults);
+    setEditing(id);
     saveNow(next, nextDefaults);
   }
 
@@ -370,6 +487,44 @@ export function AgentProfilesSection({ projectId, agents, connection }: AgentPro
     saveNow(profiles, nextDefaults);
   }
 
+  const agentName = (id: string | null) =>
+    id ? (agents.find((a) => a.id === id)?.name ?? id) : "none set";
+
+  /** What runs a stage: its default profile, else what its `none` says. */
+  function runsBy(entry: RoleEntry): Runs {
+    const forRole = profiles.filter((p) => p.role === entry.role);
+    const chosen = forRole.find((p) => p.id === defaults[entry.role]) ?? forRole[0];
+    if (chosen) {
+      return {
+        text: chosen.name || "Unnamed profile",
+        sub: agentName(chosen.agent_id),
+        kind: "profile",
+      };
+    }
+    if (entry.none === "skip") return { text: "Skipped", sub: "no profile", kind: "skip" };
+    if (entry.none === "inherit") {
+      const iterate = runsBy(LOOP_ROLES.find((r) => r.role === "Worker")!);
+      return { text: "Same as Iterate", sub: iterate.sub, kind: "default" };
+    }
+    return { text: "Default agent", sub: agentName(defaultAgent), kind: "default" };
+  }
+
+  const roles = MODES[mode].roles;
+  const entry = roles.find((r) => r.role === selected[mode])!;
+  const forRole = profiles.filter((p) => p.role === entry.role);
+  const stageButton = (r: RoleEntry) => (
+    <StageButton
+      key={r.role}
+      entry={r}
+      runs={runsBy(r)}
+      selected={r.role === entry.role}
+      onSelect={() => {
+        setSelected({ ...selected, [mode]: r.role });
+        setEditing(null);
+      }}
+    />
+  );
+
   return (
     <div className="bg-card border border-border rounded-lg p-4 space-y-4">
       <div>
@@ -378,77 +533,104 @@ export function AgentProfilesSection({ projectId, agents, connection }: AgentPro
           Agents for the task workflow
         </h3>
         <p className="text-xs text-muted-foreground mt-1">
-          Which agent runs each stage of a task. Saved in this project&apos;s{" "}
-          <code className="text-[11px]">.maestro/profiles.json</code>, so the whole team gets the
-          same setup.
+          Choose the agent and the instructions for each stage. Saved in this project&apos;s{" "}
+          <code className="text-[11px]">.maestro/profiles.json</code>, so the whole team works the
+          same way.
         </p>
       </div>
 
-      {GROUPS.map((group) => (
-        <section key={group.title} className="space-y-2">
-          <div className="pt-2 border-t border-border">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {group.title}
-            </h4>
-            <p className="text-[11px] text-muted-foreground">{group.blurb}</p>
-          </div>
-          {group.roles.map(({ role, title, blurb }) => {
-            const forRole = profiles.filter((p) => p.role === role);
-            return (
-              <div key={role} className="space-y-2 pt-2 border-t border-border first:border-t-0">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold">{title}</p>
-                    <p className="text-[11px] text-muted-foreground">{blurb}</p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => addProfile(role)}
-                    aria-label={`Add a ${title} profile`}
-                    className="shrink-0"
-                  >
-                    <Plus className="size-3" />
-                    Add
-                  </Button>
-                </div>
+      <div className="space-y-2">
+        <Tabs
+          value={mode}
+          onValueChange={(value) => {
+            setMode(value as Mode);
+            setEditing(null);
+          }}
+        >
+          <TabsList>
+            <TabsTrigger value="pipeline">Pipeline tasks</TabsTrigger>
+            <TabsTrigger value="loop">Loops</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <p className="text-xs text-muted-foreground">{MODES[mode].help}</p>
+      </div>
 
-                {forRole.length === 0 ? (
-                  <p className="text-[11px] text-muted-foreground italic">
-                    {role === "Coder"
-                      ? "No profile — runs on the project's default agent."
-                      : role === "Judge"
-                        ? "No profile: the Iterations agent judges."
-                        : role === "Preparer"
-                          ? "No profile: Prepare loop runs on the project's default agent."
-                          : role === "Worker"
-                            ? "No profile: iterations run on the project's default agent."
-                            : "No profile — stage skipped."}
-                  </p>
-                ) : (
-                  forRole.map((profile) => (
-                    <ProfileCard
-                      key={profile.id}
-                      profile={profile}
-                      title={title}
-                      isDefault={defaults[role] === profile.id}
-                      agents={agents}
-                      projectId={projectId}
-                      projectPath={projectPath}
-                      connection={connection}
-                      onChange={(patch, commit) => updateProfile(profile.id, patch, commit)}
-                      onCommit={() => saveNow(profiles, defaults)}
-                      onMakeDefault={() => makeDefault(role, profile.id)}
-                      onRemove={() => removeProfile(profile.id, role)}
-                    />
-                  ))
-                )}
-              </div>
-            );
-          })}
-        </section>
-      ))}
+      {mode === "pipeline" ? (
+        <div className="flex items-stretch gap-2">
+          {roles.flatMap((r, i) => [i > 0 && <Arrow key={`to-${r.role}`} />, stageButton(r)])}
+        </div>
+      ) : (
+        // Prepare, then a bracket around the two stages that repeat.
+        <div className="flex items-stretch gap-2">
+          {/* Padded as the bracket is, so Prepare lines up with the stages inside it. */}
+          <div className="flex flex-1 pt-6 pb-2">{stageButton(roles[0]!)}</div>
+          <Arrow />
+          <div className="relative flex flex-[2] items-stretch gap-2 rounded-xl border border-dashed border-border p-2 pt-6">
+            <span className="absolute left-3 top-1.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Repeat aria-hidden className="size-3" />
+              Repeats until every check passes
+            </span>
+            {stageButton(roles[1]!)}
+            <Arrow />
+            {stageButton(roles[2]!)}
+          </div>
+        </div>
+      )}
+
+      <section aria-label={entry.title} className="rounded-lg border border-border p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h4 className="text-sm font-semibold">{entry.title}</h4>
+            <p className="text-xs text-muted-foreground">{entry.what}</p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => addProfile(entry.role)}
+            aria-label={`Add a ${entry.title} profile`}
+            className="shrink-0"
+          >
+            <Plus className="size-3" />
+            Add profile
+          </Button>
+        </div>
+
+        {forRole.length === 0 ? (
+          <p className="rounded-md bg-muted/60 px-3 py-2.5 text-xs">
+            <span className="font-medium">No profile.</span> {entry.noneText}
+          </p>
+        ) : (
+          <>
+            <div className="space-y-2">
+              {forRole.map((profile) => (
+                <ProfileRow
+                  key={profile.id}
+                  profile={profile}
+                  title={entry.title}
+                  isDefault={defaults[entry.role] === profile.id}
+                  open={editing === profile.id}
+                  agents={agents}
+                  projectId={projectId}
+                  projectPath={projectPath}
+                  connection={connection}
+                  onToggle={() => setEditing(editing === profile.id ? null : profile.id)}
+                  onChange={(patch, commit) => updateProfile(profile.id, patch, commit)}
+                  onCommit={() => saveNow(profiles, defaults)}
+                  onMakeDefault={() => makeDefault(entry.role, profile.id)}
+                  onRemove={() => removeProfile(profile.id, entry.role)}
+                />
+              ))}
+            </div>
+            {forRole.length > 1 && (
+              <p className="text-xs text-muted-foreground">
+                A task uses the default profile unless its Agents dialog picks another.
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">{FALLBACK[entry.none]}</p>
+          </>
+        )}
+      </section>
     </div>
   );
 }
