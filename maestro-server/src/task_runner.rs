@@ -512,6 +512,14 @@ async fn run(
     .await
     .ok_or_else(|| format!("The agent {agent_id} could not be started"))?;
 
+    // The role prompt and protocol line go in the system prompt where the agent takes one, and
+    // `prepare` puts them in the first prompt where it does not.
+    let system_prompt = connection.capabilities.supports_system_prompt.then(|| {
+        let profile_id = profiles::profile_id_for(&task, role);
+        let role_prompt = profiles::role_prompt(&project_path, role, profile_id.as_deref());
+        crate::task_prompt::instructions(role, role_prompt.as_deref())
+    });
+
     let session_id = uuid::Uuid::new_v4().to_string();
     let requested_at = chrono::Utc::now();
     let mut result = match crate::session::connection::create_session_on_connection(
@@ -520,6 +528,7 @@ async fn run(
         &agent_id,
         &workspace.cwd,
         &[],
+        system_prompt.as_deref(),
         Arc::clone(everyone),
     )
     .await
@@ -564,6 +573,7 @@ async fn run(
         &capabilities,
         result.config_options.as_ref(),
         &result.session,
+        system_prompt.is_none(),
         feedback.as_deref(),
     )
     .await;
@@ -683,6 +693,7 @@ async fn prepare(
     capabilities: &profiles::AgentCapabilities,
     config_options: Option<&Vec<serde_json::Value>>,
     session: &ActiveSession,
+    inline_instructions: bool,
     feedback: Option<&str>,
 ) -> Result<(Option<String>, Vec<String>), Failure> {
     // A profile set to fail rather than degrade fails the start.
@@ -699,6 +710,7 @@ async fn prepare(
         prior_phase,
         role,
         settings.role_prompt.as_deref(),
+        inline_instructions,
         feedback,
     )?;
     // Files read and images scaled with the store let go, and off the runtime.
@@ -1160,6 +1172,7 @@ missing test",
             claimed.prior_phase,
             claimed.role,
             None,
+            true,
             None,
         )
         .unwrap()

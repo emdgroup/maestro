@@ -69,8 +69,40 @@ impl Draft {
     }
 }
 
+fn protocol(role: AgentRole) -> &'static str {
+    match role {
+        AgentRole::Refiner => REFINER_PROTOCOL,
+        AgentRole::Planner => PLANNER_PROTOCOL,
+        AgentRole::Reviewer => REVIEWER_PROTOCOL,
+        AgentRole::Coder => COMPLETION_PROTOCOL,
+    }
+}
+
+/// A stage's standing orders: the profile's role prompt, then the role's protocol line.
+///
+/// Sent as the session's system prompt where the agent takes one, so compaction cannot summarise
+/// them away and a reload brings them back. Elsewhere [`compose`] puts them around the task.
+pub fn instructions(role: AgentRole, role_prompt: Option<&str>) -> String {
+    match role_prompt.filter(|p| !p.is_empty()) {
+        Some(role_prompt) => format!("{role_prompt}\n\n---\n{}", protocol(role)),
+        None => protocol(role).to_string(),
+    }
+}
+
+/// [`instructions`] for a task session being reloaded, rebuilt from its row's `role` meta
+/// (`{"role": "Coder", "profile_id": ...}`). `None` for a session that is not a task stage.
+pub fn session_instructions(project_path: &str, role_meta: Option<&str>) -> Option<String> {
+    let meta: Value = serde_json::from_str(role_meta?).ok()?;
+    let role = serde_json::from_value(meta.get("role")?.clone()).ok()?;
+    let profile_id = meta.get("profile_id").and_then(Value::as_str);
+    let role_prompt = crate::profiles::role_prompt(project_path, role, profile_id);
+    Some(instructions(role, role_prompt.as_deref()))
+}
+
 /// `phase` is the task's phase before its claim, which is what says a coder is reworking or fixing
-/// CI: the claim itself always leaves `Spawning`.
+/// CI: the claim itself always leaves `Spawning`. `inline` is false when the session already has
+/// the role prompt and protocol line as its system prompt.
+#[allow(clippy::too_many_arguments)]
 pub fn compose(
     conn: &Connection,
     project_path: &str,
@@ -78,6 +110,7 @@ pub fn compose(
     phase: Option<TaskPhase>,
     role: AgentRole,
     role_prompt: Option<&str>,
+    inline: bool,
     feedback: Option<&str>,
 ) -> Result<Draft, String> {
     let mut blocks = Vec::new();
@@ -89,19 +122,18 @@ pub fn compose(
         }
         _ => format!("# {}", task.title),
     };
-    let role_prompt = match role_prompt {
-        Some(p) if !p.is_empty() => format!("{p}\n\n---\n"),
-        _ => String::new(),
-    };
-    let protocol = match role {
-        AgentRole::Refiner => REFINER_PROTOCOL,
-        AgentRole::Planner => PLANNER_PROTOCOL,
-        AgentRole::Reviewer => REVIEWER_PROTOCOL,
-        AgentRole::Coder => COMPLETION_PROTOCOL,
-    };
-    blocks.push(text(format!(
-        "{role_prompt}{prompt_text}\n\n---\n{protocol}"
-    )));
+    if inline {
+        let role_prompt = match role_prompt {
+            Some(p) if !p.is_empty() => format!("{p}\n\n---\n"),
+            _ => String::new(),
+        };
+        blocks.push(text(format!(
+            "{role_prompt}{prompt_text}\n\n---\n{}",
+            protocol(role)
+        )));
+    } else {
+        blocks.push(text(prompt_text));
+    }
 
     let latest = |kind: &str| -> Result<Option<String>, String> {
         Ok(
@@ -393,6 +425,7 @@ mod tests {
             None,
             AgentRole::Coder,
             Some("Be careful."),
+            true,
             None,
         )
         .unwrap()
@@ -414,6 +447,7 @@ mod tests {
             None,
             AgentRole::Coder,
             Some(""),
+            true,
             None,
         )
         .unwrap()
@@ -422,6 +456,75 @@ mod tests {
             texts(&bare),
             vec![format!("# Fix login\n\n---\n{COMPLETION_PROTOCOL}")]
         );
+    }
+
+    #[test]
+    fn a_session_with_a_system_prompt_gets_only_the_task() {
+        let (conn, task) = setup(P, Some("The button is dead."));
+        let prompt = compose(
+            &conn,
+            P,
+            &task,
+            None,
+            AgentRole::Coder,
+            Some("Be careful."),
+            false,
+            None,
+        )
+        .unwrap()
+        .embed();
+        assert_eq!(
+            texts(&prompt),
+            vec![
+                "# Fix login
+
+The button is dead."
+            ]
+        );
+        assert_eq!(
+            instructions(AgentRole::Coder, Some("Be careful.")),
+            format!(
+                "Be careful.
+
+---
+{COMPLETION_PROTOCOL}"
+            )
+        );
+        assert_eq!(
+            instructions(AgentRole::Reviewer, Some("")),
+            REVIEWER_PROTOCOL
+        );
+    }
+
+    #[test]
+    fn a_reloaded_stage_gets_its_profiles_instructions_back() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".maestro")).unwrap();
+        std::fs::write(
+            dir.path().join(".maestro/profiles.json"),
+            r#"{"profiles":[{"id":"strict","name":"Strict","role":"Reviewer","agent_id":"a","role_prompt":"Be strict."}]}"#,
+        )
+        .unwrap();
+        let project = dir.path().to_str().unwrap();
+
+        assert_eq!(
+            session_instructions(
+                project,
+                Some(r#"{"role":"Reviewer","profile_id":"strict"}"#)
+            ),
+            Some(format!(
+                "Be strict.
+
+---
+{REVIEWER_PROTOCOL}"
+            ))
+        );
+        assert_eq!(
+            session_instructions(P, Some(r#"{"role":"Coder","profile_id":null}"#)),
+            Some(COMPLETION_PROTOCOL.to_string())
+        );
+        assert_eq!(session_instructions(project, None), None);
+        assert_eq!(session_instructions(project, Some("not json")), None);
     }
 
     #[test]
@@ -457,7 +560,7 @@ mod tests {
         .unwrap();
         let rework = Some(TaskPhase::Rework);
 
-        let prompt = compose(&conn, P, &task, rework, AgentRole::Coder, None, None)
+        let prompt = compose(&conn, P, &task, rework, AgentRole::Coder, None, true, None)
             .unwrap()
             .embed();
         let t = texts(&prompt);
@@ -473,9 +576,18 @@ mod tests {
         );
 
         // The reviewer reads none of it.
-        let reviewer = compose(&conn, P, &task, rework, AgentRole::Reviewer, None, None)
-            .unwrap()
-            .embed();
+        let reviewer = compose(
+            &conn,
+            P,
+            &task,
+            rework,
+            AgentRole::Reviewer,
+            None,
+            true,
+            None,
+        )
+        .unwrap()
+        .embed();
         assert_eq!(
             texts(&reviewer),
             vec![format!("# Fix login\n\n---\n{REVIEWER_PROTOCOL}")]
@@ -488,7 +600,7 @@ mod tests {
         note(&conn, &task, "verdict", "ignored outside rework");
         note(&conn, &task, "ci", "build failed: test_login");
         let phase = Some(TaskPhase::AwaitingMerge);
-        let prompt = compose(&conn, P, &task, phase, AgentRole::Coder, None, None)
+        let prompt = compose(&conn, P, &task, phase, AgentRole::Coder, None, true, None)
             .unwrap()
             .embed();
         assert_eq!(
@@ -508,6 +620,7 @@ mod tests {
             None,
             AgentRole::Planner,
             None,
+            true,
             Some(" smaller "),
         )
         .unwrap()
@@ -520,11 +633,20 @@ mod tests {
                 "## What the user wants changed about it\n\nsmaller\n\nReply with the revised plan in full — it replaces the one above.".to_string(),
             ]
         );
-        let fresh = compose(&conn, P, &task, None, AgentRole::Planner, None, Some("  "))
-            .unwrap()
-            .embed();
+        let fresh = compose(
+            &conn,
+            P,
+            &task,
+            None,
+            AgentRole::Planner,
+            None,
+            true,
+            Some("  "),
+        )
+        .unwrap()
+        .embed();
         assert_eq!(texts(&fresh).len(), 1);
-        let refiner = compose(&conn, P, &task, None, AgentRole::Refiner, None, None)
+        let refiner = compose(&conn, P, &task, None, AgentRole::Refiner, None, true, None)
             .unwrap()
             .embed();
         assert_eq!(
@@ -561,6 +683,7 @@ mod tests {
             None,
             AgentRole::Reviewer,
             None,
+            true,
             None,
         )
         .unwrap()

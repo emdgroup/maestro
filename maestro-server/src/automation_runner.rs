@@ -436,6 +436,7 @@ pub async fn start(
             &automation.agent_id,
             &cwd,
             &[],
+            None,
             Arc::clone(&stdout),
         )
         .await;

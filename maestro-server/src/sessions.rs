@@ -143,6 +143,8 @@ pub struct AgentCapabilities {
     /// Which MCP transports this agent can connect to, for gating `.mcp.json` entries.
     pub mcp_transports: crate::mcp_config::McpTransportSupport,
     pub supports_additional_directories: bool,
+    /// Whether `session/new` and `session/load` may carry a `systemPrompt` (unstable in ACP).
+    pub supports_system_prompt: bool,
 }
 
 /// Cloneable subset of `AgentConnection` used by spawned tasks that need to call ACP methods

@@ -114,6 +114,16 @@ pub(crate) async fn handle_agent_restart(
     if new_conn.capabilities.supports_session_load {
         let conn_handle = AgentConnectionHandle::from(&new_conn);
         for (maestro_sid, acp_session_id, session_cwd, session_roots) in &to_restore {
+            // A task stage's instructions come back with it.
+            let instructions = carried
+                .get(maestro_sid)
+                .and_then(Option::as_ref)
+                .and_then(|b| {
+                    crate::task_prompt::session_instructions(
+                        &b.project_path,
+                        b.meta.role.as_deref(),
+                    )
+                });
             let result = load_session_on_connection(
                 &conn_handle,
                 maestro_sid.clone(),
@@ -121,6 +131,7 @@ pub(crate) async fn handle_agent_restart(
                 &dead_agent_id,
                 session_cwd,
                 session_roots,
+                instructions.as_deref(),
                 Arc::clone(stdout),
             )
             .await;
