@@ -13,6 +13,7 @@ import {
   Pause,
   Pencil,
   Play,
+  Plus,
   Repeat,
   Sparkles,
   StickyNote,
@@ -845,23 +846,15 @@ export function LoopTab({
             )}
           </ul>
           {!readOnly && (
-            <div className="flex items-center gap-3 px-1 text-xs">
-              <span className="text-muted-foreground">Add a check:</span>
-              {(Object.keys(CHECK_KINDS) as LoopCheckKind[]).map((kind) => {
-                const Icon = CHECK_KINDS[kind].icon;
-                return (
-                  <button
-                    key={kind}
-                    type="button"
-                    className="flex items-center gap-1 text-accent hover:underline"
-                    onClick={() => addCheck(kind)}
-                  >
-                    <Icon className="size-3.5" />
-                    {kind === "Manual" ? "Ticked by you" : CHECK_KINDS[kind].name}
-                  </button>
-                );
-              })}
-            </div>
+            // One button: the editor it opens picks the kind, Command first.
+            <button
+              type="button"
+              className="flex items-center gap-1 px-1 text-xs text-accent hover:underline"
+              onClick={() => addCheck("Command")}
+            >
+              <Plus className="size-3.5" />
+              Add check
+            </button>
           )}
         </>
       ) : (
