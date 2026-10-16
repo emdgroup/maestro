@@ -646,8 +646,8 @@ fn peeks(commands: &[String], sealed: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// `RerunLoopChecks`, `ReadLoopNotes`, `AnswerLoopProposal`, `OpenAgentGate`, `PauseLoop` and
-/// `StopLoop`: the reply, and the pushes owed after it.
+/// `RerunLoopChecks`, `ReadLoopNotes`, `AnswerLoopProposal`, `OpenAgentGate`, `PauseLoop`,
+/// `StopLoop` and `RestartLoop`: the reply, and the pushes owed after it.
 pub(crate) async fn answer(
     request: ServerRequest,
     store: Option<&Store>,
@@ -681,6 +681,12 @@ pub(crate) async fn answer(
         ServerRequest::StopLoop(task) => {
             return match Box::pin(hold_loop(store, stdout, task, LoopHalt::Stopped)).await {
                 Ok(pushes) => (ServerResponse::StopLoopOk, pushes),
+                Err(e) => (crate::helpers::error_response(e), Vec::new()),
+            };
+        }
+        ServerRequest::RestartLoop(request) => {
+            return match Box::pin(restart_loop(store, request)).await {
+                Ok(pushes) => (ServerResponse::RestartLoopOk, pushes),
                 Err(e) => (crate::helpers::error_response(e), Vec::new()),
             };
         }
@@ -803,6 +809,69 @@ async fn hold_loop(
         }
         _ => Err("This loop is not running".to_string()),
     }
+}
+
+/// `RestartLoop`: the loop's branch reset to the commit it started from, its sandbox removed, and
+/// its iterations, check results, halt and streaks cleared, parked in Planning or Queue. Only a
+/// loop with nothing running, so no session or check is writing while the branch moves.
+async fn restart_loop(
+    store: &Store,
+    request: maestro_protocol::RestartLoopRequest,
+) -> Result<Vec<ServerResponse>, String> {
+    use maestro_protocol::TaskStatus;
+    let path = crate::automations::canonical_project_path(&request.project_path);
+    let task_id = request.task_id;
+    if !matches!(request.status, TaskStatus::Planning | TaskStatus::Queue) {
+        return Err("A loop restarts in Planning or Queue".to_string());
+    }
+    let task = crate::task_store::get(&*store.lock().await, &path, task_id)?
+        .ok_or_else(|| format!("Task {task_id} not found"))?;
+    if task.run_mode != RunMode::Loop {
+        return Err("Only a loop restarts this way".to_string());
+    }
+    let busy = matches!(
+        task.phase_status,
+        Some(PhaseStatus::Running | PhaseStatus::Blocked)
+    ) || matches!(task.phase, Some(TaskPhase::Spawning | TaskPhase::Checking));
+    if busy {
+        return Err("Stop the loop before restarting it".to_string());
+    }
+    if let (Some(dir), Some(start)) = (
+        worktree_dir(store, &path, task_id).await,
+        task.execution_start_sha.as_deref(),
+    ) {
+        if Path::new(&dir).exists() {
+            git(&dir, &["reset", "--hard", start]).await?;
+            git(&dir, &["clean", "-fd"]).await?;
+        }
+    }
+    crate::worktree::remove_sandbox(&path, task_id).await?;
+    let mut conn = store.lock().await;
+    loops::clear_progress(&mut conn, &path, task_id)?;
+    let short: String = task
+        .execution_start_sha
+        .as_deref()
+        .unwrap_or_default()
+        .chars()
+        .take(8)
+        .collect();
+    let note = if short.is_empty() {
+        "Restarted from scratch: the iterations and check results are cleared.".to_string()
+    } else {
+        format!(
+            "Restarted from scratch: the branch is back at {short}, where the loop started, and              the iterations and check results are cleared."
+        )
+    };
+    let move_back = ServerRequest::ApplyTaskTransition(ApplyTaskTransitionRequest {
+        project_path: path.clone(),
+        task_id,
+        event: TaskTransition::ManualMove(request.status),
+        guard: TransitionGuard::Always,
+        update: None,
+        comment: Some(note_entry(note)),
+    });
+    let (_, pushes) = crate::task_store::requests::answer(&mut conn, move_back)?;
+    Ok(pushes)
 }
 
 /// The routing ids of the task's sessions that are up.
@@ -2643,6 +2712,81 @@ Try the cache first."
         assert!(
             digest.contains("Iteration 1 ran `git show main:tests/t.txt`."),
             "the peek is worth a look: {digest}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_restarted_loop_loses_its_work_and_its_history() {
+        let (_repo, store, task) = sealed_loop(SEES_THEM).await;
+        let (dir, task, iteration) = start(&store, &task).await;
+        std::fs::write(Path::new(&dir).join("src/b.txt"), "b").unwrap();
+        let everyone = crate::client_sink::ClientSink::detached();
+        let path = task.project_path.clone();
+        let ended = Ended {
+            summary: Some("added b"),
+            ..Ended::default()
+        };
+        finish(&store, &everyone, &path, &task, &iteration, ended).await;
+        let context = worktree_dir(&store, &path, task.id).await.unwrap();
+        assert!(
+            Path::new(&context).join("src/b.txt").exists(),
+            "merged back"
+        );
+
+        let running = TaskRef {
+            project_path: path.clone(),
+            task_id: task.id,
+        };
+        store
+            .lock()
+            .await
+            .execute(
+                "UPDATE tasks SET phase = 'Iterating', phase_status = 'Running' WHERE id = ?1",
+                [task.id],
+            )
+            .unwrap();
+        let restart = |status| maestro_protocol::RestartLoopRequest {
+            project_path: running.project_path.clone(),
+            task_id: running.task_id,
+            status,
+        };
+        assert!(
+            restart_loop(&store, restart(maestro_protocol::TaskStatus::Queue))
+                .await
+                .is_err(),
+            "not while it runs"
+        );
+        store
+            .lock()
+            .await
+            .execute(
+                "UPDATE tasks SET status = 'Review', phase = 'Approval', phase_status = 'Waiting',
+                                  ball = 'User', loop_halt = 'Stalled' WHERE id = ?1",
+                [task.id],
+            )
+            .unwrap();
+        restart_loop(&store, restart(maestro_protocol::TaskStatus::Queue))
+            .await
+            .unwrap();
+
+        let head = git(&context, &["rev-parse", "HEAD"]).await.unwrap();
+        assert_eq!(Some(head.trim()), task.execution_start_sha.as_deref());
+        assert!(!Path::new(&context).join("src/b.txt").exists());
+        assert!(!Path::new(&dir).exists(), "the sandbox goes");
+        let conn = store.lock().await;
+        assert!(loops::list_iterations(&conn, &path, task.id)
+            .unwrap()
+            .is_empty());
+        let checks = loops::list_checks(&conn, &path, task.id).unwrap();
+        assert!(checks.iter().all(|c| c.state == LoopCheckState::Pending));
+        let task = crate::task_store::get(&conn, &path, task.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(task.status, maestro_protocol::TaskStatus::Queue);
+        assert_eq!(task.phase, None);
+        assert_eq!(
+            loops::halt_and_hold(&conn, &path, task.id).unwrap(),
+            (None, None)
         );
     }
 

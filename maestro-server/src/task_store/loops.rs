@@ -569,6 +569,38 @@ pub(crate) fn next_iteration(
     .map_err(|e| e.to_string())
 }
 
+/// Everything a loop's run left behind: its iterations, its checks' results, its halt, hold and
+/// resume mark. The checks themselves and the hidden files stay, as the loop's definition.
+pub(crate) fn clear_progress(
+    conn: &mut Connection,
+    project_path: &str,
+    task_id: i32,
+) -> Result<(), String> {
+    let tx = transaction(conn)?;
+    let at = Utc::now().to_rfc3339();
+    tx.execute(
+        "DELETE FROM loop_iterations WHERE project_path = ?1 AND task_id = ?2",
+        params![project_path, task_id],
+    )
+    .and_then(|_| {
+        tx.execute(
+            "UPDATE loop_checks SET state = 'Pending', detail = NULL, passed_at_sha = NULL,
+                 updated_at = ?3
+             WHERE project_path = ?1 AND task_id = ?2",
+            params![project_path, task_id, at],
+        )
+    })
+    .and_then(|_| {
+        tx.execute(
+            "UPDATE tasks SET loop_halt = NULL, loop_hold = NULL, loop_resumed_at = NULL
+             WHERE project_path = ?1 AND id = ?2",
+            params![project_path, task_id],
+        )
+    })
+    .map_err(|e| format!("Failed to clear the loop's progress: {e}"))?;
+    commit(tx)
+}
+
 /// The loops with an iteration running, in every project.
 pub(crate) fn running_iteration_tasks(conn: &Connection) -> Result<Vec<(String, i32)>, String> {
     let mut statement = conn

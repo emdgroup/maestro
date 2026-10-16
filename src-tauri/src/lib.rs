@@ -73,6 +73,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::read_loop_notes,
         crate::ipc::pause_loop,
         crate::ipc::stop_loop,
+        crate::ipc::restart_loop,
         crate::ipc::add_loop_note,
         crate::ipc::resume_loop,
         crate::ipc::open_agent_gate,

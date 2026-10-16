@@ -469,6 +469,18 @@ async stopLoop(projectId: number, taskId: number) : Promise<Result<null, string>
 }
 },
 /**
+ * Start a loop that is not running over from scratch, parked in Planning or Queue: its branch
+ * back to where the loop started, its iterations and check results gone.
+ */
+async restartLoop(projectId: number, taskId: number, status: TaskStatus) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restart_loop", { projectId, taskId, status }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * A note for the next iteration. The one running is not interrupted.
  */
 async addLoopNote(projectId: number, taskId: number, body: string) : Promise<Result<null, string>> {

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { taskQueryKeys } from "@/services/task.service";
-import type { LoopCheckEntry, LoopCheckSpec, LoopHiddenFile } from "@/types/bindings";
+import type { LoopCheckEntry, LoopCheckSpec, LoopHiddenFile, TaskStatus } from "@/types/bindings";
 
 /**
  * A loop's own rows, kept beside the task's. Every write to them pushes `tasks-changed`, which
@@ -130,6 +130,15 @@ export function useStopLoopMutation() {
   return useLoopMutation(
     ({ projectId, taskId }: TaskKey) => api.stopLoop(projectId, taskId),
     "Failed to stop the loop",
+  );
+}
+
+/** Start a loop over from scratch in Planning or Queue: its branch reset, its history gone. */
+export function useRestartLoopMutation() {
+  return useLoopMutation(
+    ({ projectId, taskId, status }: TaskKey & { status: TaskStatus }) =>
+      api.restartLoop(projectId, taskId, status),
+    "Failed to restart the loop",
   );
 }
 

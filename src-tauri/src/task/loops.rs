@@ -470,6 +470,31 @@ pub(crate) async fn stop_loop_on_server(
     .await
 }
 
+/// Start a loop that is not running over from scratch, parked in Planning or Queue: its branch
+/// back to where the loop started, its iterations and check results gone.
+#[tauri::command]
+#[specta::specta]
+pub async fn restart_loop(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    task_id: i32,
+    status: crate::task::models::TaskStatus,
+) -> Result<(), String> {
+    query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::RestartLoop(maestro_protocol::RestartLoopRequest {
+                project_path,
+                task_id,
+                status: status.into(),
+            })
+        },
+        reply!(ServerResponse::RestartLoopOk => ()),
+    )
+    .await
+}
+
 /// A note for the next iteration. The one running is not interrupted.
 #[tauri::command]
 #[specta::specta]

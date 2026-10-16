@@ -55,6 +55,7 @@ import { DescriptionWithAttachments } from "@/components/kanban/shared/Descripti
 import { AttachmentSection } from "./AttachmentSection";
 import { WorkspaceSelector } from "@/components/common/workspace-mode/WorkspaceSelector";
 import { TaskMetadataPills } from "@/components/kanban/shared/TaskMetadataPills";
+import { useRestartLoopMutation } from "@/services/loop.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { OutcomeThread } from "./OutcomeThread";
 
@@ -219,6 +220,9 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  // Where a started loop moved back before its start is going, once the user confirms the restart.
+  const [restartTo, setRestartTo] = useState<TaskStatus | null>(null);
+  const restartLoop = useRestartLoopMutation();
   const [discardOpen, setDiscardOpen] = useState(false);
 
   function handleRequestClose() {
@@ -252,6 +256,11 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
     // No agent check here any more. Which agent runs is decided per role by the project's profiles
     // at spawn time, so a task carries none to check — and a guard reading `task.agent_id` would
     // now refuse every move to Queue rather than the ones it was written for.
+    // A loop that has run starts over from scratch, which loses its work, so it asks first.
+    if (task.run_mode === "Loop" && (task.loop_summary?.iteration ?? 0) > 0) {
+      setRestartTo(newStatus as TaskStatus);
+      return;
+    }
     updateTask.mutate({
       projectId: task.project_id,
       taskId: task.id,
@@ -636,6 +645,42 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                   </AlertDialog>
                 </>
               )}
+
+              <AlertDialog
+                open={restartTo !== null}
+                onOpenChange={(open) => !open && setRestartTo(null)}
+              >
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Restart this loop from scratch?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Its progress will be lost. The branch goes back to where the loop started, so
+                      the code its iterations wrote is gone, and its iterations and check results
+                      are cleared. Its checks, hidden files and limits stay.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => setRestartTo(null)}>
+                      Keep its progress
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      variant="destructive"
+                      onClick={() => {
+                        if (restartTo) {
+                          restartLoop.mutate({
+                            projectId: task.project_id,
+                            taskId: task.id,
+                            status: restartTo,
+                          });
+                        }
+                        setRestartTo(null);
+                      }}
+                    >
+                      Restart loop
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
 
               <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
                 <AlertDialogContent>
