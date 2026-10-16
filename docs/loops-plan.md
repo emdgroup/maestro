@@ -833,10 +833,10 @@ the card):
   longer shares Implementation profiles with pipeline tasks. It works `Iterating`; `begin` turns a
   loop started as the coder into its worker, since the app and the queue start every task as the
   coder, and refuses a worker on a pipeline task. It writes and gets the task's own agent and
-  overrides, as the coder does; with no Worker profile it runs on the project's default agent, and
+  overrides, as the coder does; with no Building profile it runs on the project's default agent, and
   a judge with no profile runs on the worker's agent. Settings shows the profiles in two tabs,
-  Pipeline (Refine, Plan, Implement, Review) and Loops (Prepare, then Worker and Judge in an
-  Iteration box with an arrow looping out of it and back in). Each stage says what runs it, and
+  Pipeline (Refine, Plan, Implement, Review) and Loops (Prepare, then Build, the worker, and
+  Judge in an Iteration box with an arrow looping out of it and back in). Each stage says what runs it, and
   opens below the row with one profile editor at a time.
 - `TaskUpdate.run_mode` is gone from the protocol and the app; MCP `update_task` refuses a different
   run mode.

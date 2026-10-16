@@ -32,7 +32,7 @@ type RoleEntry = {
   /** The stage's name in the workflow row. */
   stage: string;
   what: string;
-  /** What runs the stage without a profile: nothing, the project's default agent, or the Worker's. */
+  /** What runs the stage without a profile: nothing, the project's default agent, or Build's. */
   none: "skip" | "default" | "inherit";
   noneText: string;
   defaultPrompt: string;
@@ -115,8 +115,8 @@ const LOOP_ROLES: RoleEntry[] = [
   },
   {
     role: "Worker",
-    title: "Worker",
-    stage: "Worker",
+    title: "Building",
+    stage: "Build",
     what: "Works toward the loop's goal, one fresh session per iteration.",
     none: "default",
     noneText: "Runs on the project's default agent.",
@@ -133,7 +133,7 @@ const LOOP_ROLES: RoleEntry[] = [
     stage: "Judge",
     what: "Decides the judge checks and writes the summary you sign off.",
     none: "inherit",
-    noneText: "Runs on the same agent as the Worker.",
+    noneText: "Runs on the same agent as Build.",
     defaultPrompt:
       "Judge each check against the loop's diff and the code it touches, as a reviewer who has to " +
       "sign it off. Pass a check only when the work plainly meets it; when you fail one, say what " +
@@ -151,7 +151,7 @@ const MODES: Record<Mode, { help: string; roles: RoleEntry[] }> = {
     roles: PIPELINE_ROLES,
   },
   loop: {
-    help: "A loop is prepared with you, then each iteration runs the Worker and the Judge, until every check passes.",
+    help: "A loop is prepared with you, then each iteration runs Build, then Judge, until every check passes.",
     roles: LOOP_ROLES,
   },
 };
@@ -159,7 +159,7 @@ const MODES: Record<Mode, { help: string; roles: RoleEntry[] }> = {
 const FALLBACK: Record<RoleEntry["none"], string> = {
   skip: "Without a profile, this stage is skipped.",
   default: "Without a profile, it runs on the project's default agent.",
-  inherit: "Without a profile, it runs on the same agent as the Worker.",
+  inherit: "Without a profile, it runs on the same agent as Build.",
 };
 
 interface AgentProfilesSectionProps {
@@ -382,11 +382,11 @@ const LINE = {
 
 /**
  * Out of the iteration box's right side, up round its top-right corner, along its top, and down
- * into the middle of the Worker card.
+ * into the middle of the Build card.
  *
  * Drawn in pixels rather than a scaled viewBox so the stroke and the head match `Arrow`. Three
  * pieces, because only the top run changes length with the box: the right-hand turn, the top run,
- * and the left-hand turn with the head. The Worker card's centre is `25% - 4px` of the box's padding
+ * and the left-hand turn with the head. The Build card's centre is `25% - 4px` of the box's padding
  * box: the box's 8px padding, then half of what is left once the 16px arrow and two 8px gaps
  * between the cards are taken off.
  *
@@ -412,7 +412,7 @@ function LoopArrow() {
         aria-hidden
         className="pointer-events-none absolute -right-3 -top-5 left-[calc(25%+4px)] h-[1.33px] -translate-y-1/2 bg-muted-foreground"
       />
-      {/* The Worker card's centre is at x = 8. */}
+      {/* The Build card's centre is at x = 8. */}
       <svg
         aria-hidden
         width="24"
@@ -586,7 +586,7 @@ export function AgentProfilesSection({
     if (entry.none === "skip") return { text: "Skipped", sub: "no profile", kind: "skip" };
     if (entry.none === "inherit") {
       const worker = runsBy(LOOP_ROLES.find((r) => r.role === "Worker")!);
-      return { text: "Same as Worker", sub: worker.sub, kind: "default" };
+      return { text: "Same as Build", sub: worker.sub, kind: "default" };
     }
     return { text: "Default agent", sub: agentName(defaultAgent), kind: "default" };
   }

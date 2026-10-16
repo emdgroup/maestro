@@ -37,7 +37,7 @@ const ROLES: Array<{ role: AgentRole; label: string; optional: boolean }> = [
  */
 const LOOP_ROLES: Array<{ role: AgentRole; label: string; optional: boolean }> = [
   { role: "Preparer", label: "Preparation", optional: false },
-  { role: "Worker", label: "Worker", optional: false },
+  { role: "Worker", label: "Building", optional: false },
   { role: "Judge", label: "Judging", optional: false },
 ];
 
@@ -142,7 +142,7 @@ export function TaskProfilesDialog({
               const fallbackLabel =
                 forRole.length === 0
                   ? role === "Judge"
-                    ? "No profile: the Worker's agent judges"
+                    ? "No profile: Build's agent judges"
                     : role === "Preparer"
                       ? "No profile: the project's default agent prepares"
                       : role === "Coder" || role === "Worker"

@@ -178,8 +178,8 @@ describe("AgentProfilesSection", () => {
     await userEvent.click(screen.getByRole("tab", { name: "Loops" }));
     expect(stages()).toEqual([
       "Prepare: Default agent",
-      "Worker: Default agent",
-      "Judge: Same as Worker",
+      "Build: Default agent",
+      "Judge: Same as Build",
     ]);
     await userEvent.click(screen.getByRole("tab", { name: "Pipeline" }));
 
