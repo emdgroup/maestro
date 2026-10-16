@@ -1,5 +1,5 @@
 import { cloneElement, useState, type ReactNode } from "react";
-import { ArrowRight, Bot, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bot, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
@@ -361,6 +361,16 @@ function Arrow() {
   return <ArrowRight aria-hidden className="size-4 shrink-0 self-center text-muted-foreground" />;
 }
 
+/** `Arrow` over its reverse, for two stages that hand work back and forth. */
+function BackAndForth() {
+  return (
+    <span aria-hidden className="flex shrink-0 flex-col self-center text-muted-foreground">
+      <ArrowRight className="size-4" />
+      <ArrowLeft className="size-4" />
+    </span>
+  );
+}
+
 /** Lucide's 24-unit `ArrowRight` at 16px: a 1.33px line with round ends and joins. */
 const LINE = {
   fill: "none",
@@ -627,7 +637,16 @@ export function AgentProfilesSection({
 
       {mode === "pipeline" ? (
         <div className="flex items-stretch gap-2">
-          {roles.flatMap((r, i) => [i > 0 && <Arrow key={`to-${r.role}`} />, stageButton(r)])}
+          {roles.flatMap((r, i) => [
+            i > 0 &&
+              // The reviewer can send the work back to the coder, so that pair goes both ways.
+              (r.role === "Reviewer" ? (
+                <BackAndForth key={`to-${r.role}`} />
+              ) : (
+                <Arrow key={`to-${r.role}`} />
+              )),
+            stageButton(r),
+          ])}
         </div>
       ) : (
         // Prepare, then the box of the two stages each iteration runs. Room above and to the right
