@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { cloneElement, useState } from "react";
 import { ArrowRight, Bot, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Textarea } from "@/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { AgentConfigFields } from "@/components/common/agent-config/AgentConfigFields";
 import { useAgentProfilesQuery, useSaveAgentProfilesMutation } from "@/services/project.service";
 import { isReadOnlyRole } from "@/lib/permission-modes";
@@ -312,7 +313,7 @@ function StageButton({
   selected: boolean;
   onSelect: () => void;
 }) {
-  return (
+  const button = (
     <button
       type="button"
       onClick={onSelect}
@@ -323,7 +324,10 @@ function StageButton({
         runs.kind === "skip" && "border-dashed text-muted-foreground",
         selected ? "border-accent bg-accent/10 ring-1 ring-accent/40" : "hover:bg-muted",
       )}
-    >
+    />
+  );
+  const content = (
+    <>
       <span className="block text-sm font-medium">{entry.stage}</span>
       <span className="mt-1 flex items-center gap-1.5 text-xs">
         <span
@@ -339,7 +343,15 @@ function StageButton({
         <span className="truncate">{runs.text}</span>
       </span>
       <span className="block truncate pl-3.5 text-[11px] text-muted-foreground">{runs.sub}</span>
-    </button>
+    </>
+  );
+  // The card truncates a long profile name, so hovering it shows the whole one.
+  if (runs.kind !== "profile") return cloneElement(button, {}, content);
+  return (
+    <Tooltip>
+      <TooltipTrigger render={button}>{content}</TooltipTrigger>
+      <TooltipContent>{runs.text}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -347,30 +359,59 @@ function Arrow() {
   return <ArrowRight aria-hidden className="size-4 shrink-0 self-center text-muted-foreground" />;
 }
 
+/** Lucide's 24-unit `ArrowRight` at 16px: a 1.33px line with round ends and joins. */
+const LINE = {
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.33,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+} as const;
+
 /**
- * Out of the iteration box's right side, round its top-right corner, and back in through its top.
+ * Out of the iteration box's right side, up round its top-right corner, along its top, and down
+ * into the middle of the Worker card.
  *
- * Drawn in pixels rather than a scaled viewBox so the stroke and the head match `Arrow`: lucide's
- * 24-unit icon at 16px is a 1.33px line with 4.67px head strokes. The box's top-right corner sits at
- * (44, 24), and the line leaves about halfway down the box, level with the arrows inside it.
+ * Drawn in pixels rather than a scaled viewBox so the stroke and the head match `Arrow`. Three
+ * pieces, because only the top run changes length with the box: the right-hand turn, the top run,
+ * and the left-hand turn with the head. The Worker card's centre is `25% - 4px` of the box's padding
+ * box: the box's 8px padding, then half of what is left once the 16px arrow and two 8px gaps
+ * between the cards are taken off.
+ *
+ * The top runs 16px above the box, the line leaves its right side 52px down, about level with the
+ * arrows inside it, and the head stops 2px above the box's top border.
  */
 function LoopArrow() {
   return (
-    <svg
-      aria-hidden
-      width="72"
-      height="96"
-      viewBox="0 0 72 96"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.33"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="pointer-events-none absolute -right-7 -top-6 text-muted-foreground"
-    >
-      <path d="M46 76h10a8 8 0 0 0 8-8V16a8 8 0 0 0-8-8H16a8 8 0 0 0-8 8v6" />
-      <path d="m3.33 17.33 4.67 4.67 4.67-4.67" />
-    </svg>
+    <>
+      {/* The box's top-right corner is at (44, 24). */}
+      <svg
+        aria-hidden
+        width="72"
+        height="96"
+        viewBox="0 0 72 96"
+        {...LINE}
+        className="pointer-events-none absolute -right-7 -top-6 text-muted-foreground"
+      >
+        <path d="M46 76h10a8 8 0 0 0 8-8V16a8 8 0 0 0-8-8" />
+      </svg>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -right-3 -top-4 left-[calc(25%+4px)] h-[1.33px] -translate-y-1/2 bg-muted-foreground"
+      />
+      {/* The Worker card's centre is at x = 8. */}
+      <svg
+        aria-hidden
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        {...LINE}
+        className="pointer-events-none absolute -top-6 left-[calc(25%-12px)] text-muted-foreground"
+      >
+        <path d="M16 8a8 8 0 0 0-8 8v6" />
+        <path d="m3.33 17.33 4.67 4.67 4.67-4.67" />
+      </svg>
+    </>
   );
 }
 
