@@ -35,17 +35,21 @@ function Cell({
   handle,
   label,
   background,
+  onClick,
 }: {
   handle: CellHandle;
   label: string;
   background: string;
+  onClick: () => void;
 }) {
   return (
     <TooltipTrigger
       handle={handle}
       payload={label}
       delay={0}
-      render={<div className="h-[18px] rounded" style={{ background }} />}
+      render={
+        <div className="h-[18px] cursor-pointer rounded" style={{ background }} onClick={onClick} />
+      }
     />
   );
 }
@@ -65,12 +69,16 @@ function Legend() {
 
 interface UsageHeatmapProps {
   cells: UsageHeatCell[];
+  /** The range's first day: a week holds each weekday once, so a cell names one day. */
+  start: Date;
   metric: Metric;
   format: (value: number) => string;
+  /** Narrow the range to a clicked cell's day. */
+  onSelectDay: (day: Date) => void;
 }
 
 /** The selected metric summed per hour of each weekday over the range, on one hue. */
-export function UsageHeatmap({ cells, metric, format }: UsageHeatmapProps) {
+export function UsageHeatmap({ cells, start, metric, format, onSelectDay }: UsageHeatmapProps) {
   const [handle] = useState(() => TooltipPrimitive.createHandle());
   const value = (weekday: number, hour: number) => {
     const cell = cells.find((c) => c.weekday === weekday && c.hour === hour);
@@ -92,6 +100,9 @@ export function UsageHeatmap({ cells, metric, format }: UsageHeatmapProps) {
                     handle={handle}
                     label={`${name} ${pad(hour)}:00–${pad(hour + 1)}:00 · ${format(v)}`}
                     background={shade(v, max)}
+                    onClick={() =>
+                      onSelectDay(addDays(startOfDay(start), (weekday - start.getDay() + 7) % 7))
+                    }
                   />
                 );
               })}
@@ -117,10 +128,18 @@ interface UsageCalendarProps {
   end: Date;
   metric: Metric;
   format: (value: number) => string;
+  onSelectDay: (day: Date) => void;
 }
 
 /** The selected metric per day, one column per week from Monday, on the heatmap's hue. */
-export function UsageCalendar({ days, start, end, metric, format }: UsageCalendarProps) {
+export function UsageCalendar({
+  days,
+  start,
+  end,
+  metric,
+  format,
+  onSelectDay,
+}: UsageCalendarProps) {
   const [handle] = useState(() => TooltipPrimitive.createHandle());
   const values = new Map(days.map((d) => [d.day, metric === "cost" ? d.cost : d.tokens]));
   const max = Math.max(...values.values(), 0) || 1;
@@ -165,6 +184,7 @@ export function UsageCalendar({ days, start, end, metric, format }: UsageCalenda
                       handle={handle}
                       label={`${formatDate(day, "EEE, MMM d")} · ${format(v)}`}
                       background={shade(v, max)}
+                      onClick={() => onSelectDay(day)}
                     />
                   );
                 })}

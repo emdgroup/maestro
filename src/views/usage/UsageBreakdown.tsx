@@ -71,6 +71,7 @@ export function UsageBreakdown({ rows, format }: UsageBreakdownProps) {
                   style={{
                     // The bar is the share beside it, not the row's size against the largest.
                     width: `${(row.value / total) * 100}%`,
+                    minWidth: row.value ? 1 : 0,
                     background: row.color ?? "var(--usage-accent)",
                   }}
                 />

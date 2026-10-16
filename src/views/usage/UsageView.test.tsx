@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { format } from "date-fns";
 import type { UsageReport } from "@/types/bindings";
 import { UsageView } from "./UsageView";
 
@@ -105,6 +106,31 @@ describe("the Usage view", () => {
       expect.objectContaining({
         projects: [{ connection_key: "local", project_path: "/src/maestro" }],
       }),
+    );
+  });
+
+  it("narrows the range to a day clicked on the chart", async () => {
+    const { container } = renderView();
+    await screen.findByText("maestro");
+    const bars = container.querySelectorAll("svg rect");
+    fireEvent.click(bars[bars.length - 1]);
+    // A single day is cut by hour.
+    expect(getUsageReport).toHaveBeenLastCalledWith(expect.objectContaining({ bucket: "hour" }));
+  });
+
+  it("filters on a model clicked in the Model split's legend", async () => {
+    const today = format(new Date(), "yyyy-MM-dd");
+    getUsageReport.mockResolvedValue({
+      ...report,
+      series: [{ bucket: today, key: "claude-opus", cost: null, tokens: 100 }],
+    });
+    renderView();
+    await screen.findByText("maestro");
+    fireEvent.click(screen.getByRole("button", { name: /^Tokens/, pressed: false }));
+    fireEvent.click(screen.getByRole("button", { name: "Model" }));
+    fireEvent.click(await screen.findByRole("button", { name: "claude-opus", pressed: false }));
+    expect(getUsageReport).toHaveBeenLastCalledWith(
+      expect.objectContaining({ models: ["claude-opus"] }),
     );
   });
 });

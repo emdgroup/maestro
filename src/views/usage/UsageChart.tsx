@@ -20,6 +20,8 @@ interface UsageChartProps {
   series: ChartSeries[];
   cumulative: boolean;
   format: (value: number) => string;
+  /** Clicking a bucket narrows the range to it; absent where a bucket is finer than a day. */
+  onSelect?: (index: number) => void;
 }
 
 const W = 640;
@@ -28,6 +30,8 @@ const AXIS_LABELS = 5;
 // The SVG stretches wider than it is tall, so a corner is narrower than it is high.
 const RX = 3;
 const RY = 4;
+// A segment's 2px of gaps plus one pixel that shows, so a sliver of a stack is never lost.
+const MIN_SEGMENT = 3;
 
 /** One segment of a stacked bar, rounded only where it ends the bar: the top of the top one and
  * the bottom of the bottom one, so the joins stay square. */
@@ -62,7 +66,14 @@ function segment(
  * Stacked bars per bucket with a dashed average, or stacked areas of the running total. Hovering
  * a bucket shows each series and the total.
  */
-export function UsageChart({ buckets, bucket, series, cumulative, format }: UsageChartProps) {
+export function UsageChart({
+  buckets,
+  bucket,
+  series,
+  cumulative,
+  format,
+  onSelect,
+}: UsageChartProps) {
   // One tooltip for every bucket, fed the hovered bucket's index.
   const [handle] = useState(() => TooltipPrimitive.createHandle<number>());
   const n = buckets.length;
@@ -104,8 +115,13 @@ export function UsageChart({ buckets, bucket, series, cumulative, format }: Usag
     buckets.forEach((_, i) => {
       let top = H;
       const stack = shown.filter((s) => s.values[i]);
+      const heights = stack.map((s) => Math.max((s.values[i] / max) * H, MIN_SEGMENT));
+      // The tallest segment gives up what the slivers took, so the bar keeps its true height.
+      const excess = heights.reduce((a, b) => a + b, 0) - (stackTotals[i] / max) * H;
+      const tallest = heights.indexOf(Math.max(...heights));
+      if (excess > 0) heights[tallest] = Math.max(heights[tallest] - excess, MIN_SEGMENT);
       stack.forEach((s, j) => {
-        const height = (s.values[i] / max) * H;
+        const height = heights[j];
         top -= height;
         marks.push(
           <path
@@ -162,7 +178,17 @@ export function UsageChart({ buckets, bucket, series, cumulative, format }: Usag
               handle={handle}
               payload={i}
               delay={0}
-              render={<rect x={i * slot} y={0} width={slot} height={H} fill="transparent" />}
+              render={
+                <rect
+                  x={i * slot}
+                  y={0}
+                  width={slot}
+                  height={H}
+                  fill="transparent"
+                  className={onSelect && "cursor-pointer"}
+                  onClick={onSelect && (() => onSelect(i))}
+                />
+              }
             />
           ))}
         </svg>

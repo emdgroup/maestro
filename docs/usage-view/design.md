@@ -49,11 +49,16 @@ Top to bottom:
    `Connection`, `Model`, `Agent`, `Token type`. Legend under it.
    - _Over time_: stacked bars, one per bucket, coloured by the split, with a dashed line and a
      label at the average. Segments are at 85% opacity, and a bar is rounded only at its two ends:
-     the joins between segments stay square.
+     the joins between segments stay square. A segment is never thinner than one visible pixel,
+     however small its share; the tallest segment gives up the difference, so the bar keeps its
+     height.
    - _Cumulative_: stacked areas at 70% opacity, the running total from the start of the range,
      same split.
    - Hovering a bar or a point shows each series' value and the total for that bucket, in the
      app's tooltip. Every tooltip in the view is the app's, never a native `title`.
+   - Clicking a day or month bucket makes it the range: a custom range of that day, or of that
+     month up to today. Hour and minute buckets are not clickable.
+   - Under the `Model` split, clicking a model in the legend toggles the filter on it.
    - With Cost selected, `Model` and `Token type` are disabled, with the tooltip
      `Tokens only: cost is recorded per turn, not per model` (or `per token type`). If either was
      the split, it falls back to `Connection`.
@@ -67,6 +72,7 @@ Top to bottom:
      per local day of the range, with the month named above the week holding its first day. Hover
      shows the date and the value. A week of days would be one column, which is why a week keeps
      the hours.
+   - Clicking a cell makes its day the range, in both forms.
 7. **Projects** and **Models**, two panels side by side. Each row is two lines: the name, a muted
    qualifier (the project's connection, or the model's agents), the value, the share in percent and
    a chevron; then the bar on its own line, as long as that share. Clicking anywhere on a row expands it into tokens by
