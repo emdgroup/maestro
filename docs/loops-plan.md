@@ -595,6 +595,14 @@ Visuals are the canvas mock `loops-app`.
   The other tabs are Details (the goal is the description, and the sealed paths), Changes, Agent notes
   (`PROGRESS.md`) and Outcome.
 
+  As built after the test campaign (2026-10-16): the Loop tab is the loop's whole setup too, and the
+  Setup tab and the live column are gone. The three limits are cards whose limit is edited in place,
+  with the meter under it once the loop has started. Done when is one list: the pencil opens a check
+  in place, a failing check's output opens under it, and a bare loop shows Prepare loop there. The
+  running iteration's row carries what its agent is doing and Join. Below sit "Running the checks"
+  (the setup command, now "Run first", and the timeout) and "Hidden from the agent" (the sealed
+  paths and hidden files). The judge is picked only in the card's Agents dialog.
+
 - **Action bar.** An All / Pipeline / Loops filter. Needs me already counts loops, since a loop
   waiting on the user has ball User.
 

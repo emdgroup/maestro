@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect, type SetStateAction } from "react";
 import { Ban, Bot, Repeat, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import { LoopTab } from "@/components/kanban/loop/LoopTab";
-import { LoopSidePanel } from "@/components/kanban/loop/LoopSidePanel";
+import { useBoardActionsContext } from "@/contexts/BoardActionsContext";
 import { LoopChangesTab, LoopNotesTab } from "@/components/kanban/loop/LoopWorkTabs";
 import { LoopActions } from "@/components/kanban/loop/LoopActions";
 import {
@@ -105,7 +104,7 @@ interface TaskDraft {
   labels: string[];
 }
 
-type Tab = "loop" | "setup" | "details" | "changes" | "notes" | "outcome";
+type Tab = "loop" | "details" | "changes" | "notes" | "outcome";
 
 interface TaskDetailModalProps {
   taskId: number | null;
@@ -136,14 +135,21 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
   // A different task opens onto its first tab, whatever tab the last one was left on: a loop's is
   // the loop itself.
+  // The loop draft is the opened task's, so its unsaved mark does not outlive it either.
+  const [loopDirty, setLoopDirty] = useState(false);
   useEffect(() => {
     setTab(isLoop ? "loop" : "details");
+    setLoopDirty(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
 
   const loopDetails = useRef<LoopDetailsHandle>(null);
-  const [loopDirty, setLoopDirty] = useState(false);
   const navigate = useNavigate();
+  const { execute, canPrepare } = useBoardActionsContext();
+  const joinLoop = () => {
+    setActiveTaskId(null);
+    if (task) navigate({ agentId: String(task.id) });
+  };
 
   const { setActiveTaskId } = useNavigationActions();
 
@@ -367,7 +373,6 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
               >
                 <TabsList variant="line" className="shrink-0">
                   {isLoop && <TabsTrigger value="loop">Loop</TabsTrigger>}
-                  {isLoop && <TabsTrigger value="setup">Setup</TabsTrigger>}
                   <TabsTrigger value="details">Details</TabsTrigger>
                   {isLoop && <TabsTrigger value="changes">Changes</TabsTrigger>}
                   {isLoop && <TabsTrigger value="notes">Agent notes</TabsTrigger>}
@@ -386,22 +391,32 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                         {task.drafted_by.run != null && <> #{task.drafted_by.run}</>}
                       </div>
                       <div className="text-muted-foreground">
-                        Check the goal{isLoop ? ", the checks and the budgets" : ""}, then queue it
+                        Check the goal{isLoop ? ", the checks and the limits" : ""}, then queue it
                         to run it. Nothing runs before that.
                       </div>
                     </div>
                   </div>
                 )}
 
+                {/* `keepMounted`, on the editing panels, because the editors here commit on blur:
+                  an unmounted panel never blurs, so a tab click mid-edit would drop what was
+                  typed. The loop's checks, hidden files and limits are saved with the rest of the
+                  task. */}
                 {isLoop && (
-                  <TabsContent value="loop" className="min-h-0 overflow-y-auto pr-1">
-                    <LoopTab
+                  <TabsContent value="loop" keepMounted className="min-h-0 overflow-y-auto pr-1">
+                    <LoopDetailsSection
+                      ref={loopDetails}
                       task={task}
-                      onEditChecks={() => setTab("setup")}
-                      onJoin={() => {
-                        setActiveTaskId(null);
-                        navigate({ agentId: String(task.id) });
-                      }}
+                      onDirtyChange={setLoopDirty}
+                      onJoin={joinLoop}
+                      onPrepare={
+                        task.status === "Planning" && task.phase == null && canPrepare
+                          ? () => {
+                              setActiveTaskId(null);
+                              void execute(task, { role: "Preparer", canPickAgent: true });
+                            }
+                          : null
+                      }
                     />
                   </TabsContent>
                 )}
@@ -416,19 +431,6 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                   </TabsContent>
                 )}
 
-                {/* `keepMounted`, on the editing panels, because the editors here commit on blur:
-                  an unmounted panel never blurs, so a tab click mid-edit would drop what was
-                  typed. Setup is the loop's checks, sealed files and budgets, saved with the rest
-                  of the task. */}
-                {isLoop && (
-                  <TabsContent value="setup" keepMounted className="min-h-0 overflow-y-auto pr-1">
-                    <LoopDetailsSection
-                      ref={loopDetails}
-                      task={task}
-                      onDirtyChange={setLoopDirty}
-                    />
-                  </TabsContent>
-                )}
                 <TabsContent
                   value="details"
                   keepMounted
@@ -541,15 +543,6 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                   <OutcomeThread projectId={task.project_id} taskId={task.id} />
                 </TabsContent>
               </Tabs>
-              {isLoop && (tab === "loop" || tab === "changes") && (
-                <LoopSidePanel
-                  task={task}
-                  onJoin={() => {
-                    setActiveTaskId(null);
-                    navigate({ agentId: String(task.id) });
-                  }}
-                />
-              )}
             </div>
 
             {/* Footer */}
@@ -668,16 +661,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
               <div className="flex-1" />
 
-              {isLoop && (
-                <LoopActions
-                  task={task}
-                  onEditChecks={() => setTab("setup")}
-                  onJoin={() => {
-                    setActiveTaskId(null);
-                    navigate({ agentId: String(task.id) });
-                  }}
-                />
-              )}
+              {isLoop && <LoopActions task={task} onJoin={joinLoop} />}
 
               {(isEditable || loopDirty) && (
                 <Button

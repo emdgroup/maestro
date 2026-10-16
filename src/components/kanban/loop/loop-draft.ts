@@ -28,8 +28,6 @@ export interface LoopDraft {
   agentTime: string;
   stallLimit: string;
   timeoutMinutes: string;
-  /** A Judge profile for this task, or `null` for the worker's own agent. */
-  judgeProfileId: string | null;
 }
 
 let nextKey = 0;
@@ -55,7 +53,6 @@ export function emptyLoopDraft(): LoopDraft {
     agentTime: "2h",
     stallLimit: "3",
     timeoutMinutes: "10",
-    judgeProfileId: null,
   };
 }
 
@@ -64,7 +61,6 @@ export function loopDraftFrom(
   config: LoopConfig,
   checks: LoopCheck[],
   hiddenFiles: LoopHiddenFile[],
-  judgeProfileId: string | null,
 ): LoopDraft {
   return {
     checks: checks
@@ -84,8 +80,31 @@ export function loopDraftFrom(
     agentTime: formatDuration(config.max_agent_secs),
     stallLimit: String(config.stall_limit),
     timeoutMinutes: String(Math.round(config.check_timeout_secs / 60)),
-    judgeProfileId,
   };
+}
+
+/** A row of the loop's "Done when" list: one of the user's checks, or a proposal to answer. */
+export type DoneWhenRow =
+  | { kind: "check"; draft: CheckDraft; live: LoopCheck | null }
+  | { kind: "proposal"; live: LoopCheck };
+
+/**
+ * The user's checks as edited, each with the state the daemon last gave it, then the proposals
+ * still waiting for an answer. A check the draft adds has no state yet, and one it removes is gone
+ * from the list before it is saved.
+ */
+export function doneWhenRows(drafts: CheckDraft[], live: LoopCheck[]): DoneWhenRow[] {
+  const byId = new Map(live.map((c) => [c.id, c]));
+  return [
+    ...drafts.map((draft) => ({
+      kind: "check" as const,
+      draft,
+      live: draft.id === null ? null : (byId.get(draft.id) ?? null),
+    })),
+    ...live
+      .filter((c) => c.proposed && !c.accepted)
+      .map((c) => ({ kind: "proposal" as const, live: c })),
+  ];
 }
 
 /** The config and checks to save, or what is wrong with the draft. */
@@ -105,7 +124,6 @@ export function loopFromDraft(
   }
   if (agentSecs === null) return { error: "Agent time reads like 2h, 90m or 1h 30m" };
   const rows = draft.checks.filter((c) => c.label.trim() || c.command.trim());
-  if (rows.length === 0) return { error: "A loop needs at least one check to know it is done" };
   const unnamed = rows.find((c) => !c.label.trim());
   if (unnamed) return { error: "Every check needs a sentence saying what it checks" };
   const commandless = rows.find((c) => c.kind === "Command" && !c.command.trim());

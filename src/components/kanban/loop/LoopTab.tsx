@@ -2,6 +2,8 @@ import { useState } from "react";
 import {
   BookOpen,
   Check,
+  ChevronDown,
+  ChevronRight,
   Circle,
   Dice5,
   Hourglass,
@@ -9,6 +11,7 @@ import {
   MessageCircleQuestion,
   OctagonX,
   Pause,
+  Pencil,
   Play,
   Repeat,
   Sparkles,
@@ -47,7 +50,19 @@ import {
   useTickLoopCheckMutation,
 } from "@/services/loop.service";
 import { useBoardActions } from "@/store/boardStore";
-import { CHECK_KINDS } from "./LoopEditor";
+import { useTaskSession } from "@/contexts/BoardActionsContext";
+import { useSessionActivity } from "@/store/sessionActivityStore";
+import {
+  CHECK_KINDS,
+  CheckEditor,
+  ChecksRunCard,
+  ConnectionToolsLine,
+  HiddenCard,
+  KIND_HELP,
+  LimitCards,
+  usePrefillHidden,
+} from "./LoopEditor";
+import { blankCheck, doneWhenRows, type CheckDraft, type LoopDraft } from "./loop-draft";
 import { clockTime, formatDuration, gateLine, loopHalt } from "./loop-state";
 
 const MARKS: Record<LoopCheckState, { icon: typeof Check; tone: string }> = {
@@ -72,11 +87,6 @@ const time = (iso: string) =>
 function minutesBetween(from: string, to: string | null | undefined): string {
   const end = to ? new Date(to) : new Date();
   return formatDuration((end.getTime() - new Date(from).getTime()) / 1000);
-}
-
-/** `1.9M`, `840k`. */
-function tokens(n: number): string {
-  return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}k`;
 }
 
 function Banner({
@@ -106,33 +116,6 @@ function Banner({
         {children && <div className="text-muted-foreground">{children}</div>}
       </div>
       {actions && <div className="flex shrink-0 gap-1.5">{actions}</div>}
-    </div>
-  );
-}
-
-function Meter({
-  label,
-  value,
-  share,
-  warn,
-}: {
-  label: string;
-  value: string;
-  share: number;
-  warn?: boolean;
-}) {
-  return (
-    <div className="flex-1 rounded-md border border-border bg-card p-2">
-      <div className="flex items-baseline justify-between text-[11px]">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="tabular-nums">{value}</span>
-      </div>
-      <div className="mt-1.5 h-1 rounded-full bg-muted">
-        <div
-          className={cn("h-1 rounded-full", warn ? "bg-destructive" : "bg-accent")}
-          style={{ width: `${Math.min(100, Math.max(0, share * 100))}%` }}
-        />
-      </div>
     </div>
   );
 }
@@ -171,16 +154,16 @@ function AcceptForm({
       {kind === "Command" && (
         <Input
           value={command}
-          placeholder="Shell command, exit 0 passes"
+          placeholder="The command to run, for example bun run test"
           onChange={(e) => setCommand(e.target.value)}
-          className="h-8 font-mono text-[11px]"
+          className="h-8 font-mono text-xs"
         />
       )}
       <Input
         value={seal}
-        placeholder="Paths to seal, comma separated (they must be on the base branch)"
+        placeholder="Files to hide from the agent, comma separated (they must be on the base branch)"
         onChange={(e) => setSeal(e.target.value)}
-        className="h-8 font-mono text-[11px]"
+        className="h-8 font-mono text-xs"
       />
       <div className="flex justify-end gap-1.5">
         <Button variant="ghost" size="sm" onClick={onCancel}>
@@ -208,72 +191,33 @@ function AcceptForm({
   );
 }
 
-function CheckRow({ task, check, onEdit }: { task: Task; check: LoopCheck; onEdit: () => void }) {
-  const key = { projectId: task.project_id, taskId: task.id };
-  const tick = useTickLoopCheckMutation();
+/** A proposal from the worker: its reason, and its command only as a suggestion. */
+function ProposalRow({ task, check }: { task: Task; check: LoopCheck }) {
   const answer = useAnswerLoopProposalMutation();
   const [accepting, setAccepting] = useState(false);
-  const proposal = check.proposed && !check.accepted;
-  const { icon: Mark, tone } = proposal
-    ? { icon: Sparkles, tone: "text-accent" }
-    : MARKS[check.state];
-  const { icon: KindIcon, name } = proposal
-    ? { icon: Sparkles, name: "Proposed" }
-    : CHECK_KINDS[check.kind];
-  // A proposal's detail is the worker's reason, and its command only a suggestion.
-  const sub = proposal ? (
-    <>
-      {check.detail}
-      {check.command && (
-        <span className="font-mono">
-          {check.detail ? " · " : ""}
-          {check.command}
-        </span>
-      )}
-    </>
-  ) : check.kind === "Command" && check.command ? (
-    <>
-      <span className="font-mono">{check.command}</span>
-      {check.detail && (
-        <span className={cn(check.state === "Fail" && "text-destructive")}>
-          {" "}
-          · {check.detail.split("\n").filter(Boolean).pop()}
-        </span>
-      )}
-    </>
-  ) : (
-    check.detail?.split("\n")[0]
-  );
+  const key = { projectId: task.project_id, taskId: task.id };
   return (
-    <li
-      className={cn(
-        "px-3 py-2",
-        proposal && "bg-accent/8",
-        check.state === "Flaky" && "bg-warning/5",
-      )}
-    >
+    <li className="bg-accent/8 px-3 py-2.5">
       <div className="flex items-start gap-2.5">
-        <Mark className={cn("mt-0.5 size-4 shrink-0", tone)} />
+        <Sparkles className="mt-0.5 size-4 shrink-0 text-accent" />
         <div className="min-w-0 flex-1">
-          <div className="text-xs">{check.label}</div>
-          {sub && (
-            <div
-              className={cn(
-                "mt-0.5 text-[11px] text-muted-foreground",
-                // A proposal's reason is what the user decides on, so it is not cut to one line.
-                proposal ? "line-clamp-3" : "truncate",
-              )}
-            >
-              {sub}
-            </div>
-          )}
+          <div className="text-sm">{check.label}</div>
+          <div className="mt-0.5 line-clamp-3 text-xs text-muted-foreground">
+            {check.detail}
+            {check.command && (
+              <span className="font-mono">
+                {check.detail ? " · " : ""}
+                {check.command}
+              </span>
+            )}
+          </div>
         </div>
-        <span className="flex shrink-0 items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-          <KindIcon className="size-2.5" />
-          {name}
+        <span className="flex shrink-0 items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 text-xs text-muted-foreground">
+          <Sparkles className="size-3" />
+          Proposed
         </span>
-        {proposal && !accepting && (
-          <span className="flex shrink-0 gap-2 text-[11px]">
+        {!accepting && (
+          <span className="flex shrink-0 gap-2 text-xs">
             <button className="text-accent hover:underline" onClick={() => setAccepting(true)}>
               Accept
             </button>
@@ -284,21 +228,6 @@ function CheckRow({ task, check, onEdit }: { task: Task; check: LoopCheck; onEdi
               Reject
             </button>
           </span>
-        )}
-        {!proposal && check.kind === "Manual" && (
-          <button
-            className="shrink-0 text-[11px] text-accent hover:underline"
-            onClick={() =>
-              tick.mutate({ ...key, checkId: check.id, ticked: check.state !== "Pass" })
-            }
-          >
-            {check.state === "Pass" ? "Untick" : "Mark done"}
-          </button>
-        )}
-        {check.state === "Flaky" && (
-          <button className="shrink-0 text-[11px] text-accent hover:underline" onClick={onEdit}>
-            Edit
-          </button>
         )}
       </div>
       {accepting && (
@@ -320,15 +249,150 @@ function CheckRow({ task, check, onEdit }: { task: Task; check: LoopCheck; onEdi
   );
 }
 
-function IterationRow({ iteration, onJoin }: { iteration: LoopIteration; onJoin: () => void }) {
+/**
+ * One of the user's checks: as edited, with the state the daemon last gave it. A failing check's
+ * output opens under it, since it is what the next iteration is told.
+ */
+function CheckRow({
+  task,
+  draft,
+  live,
+  readOnly,
+  onEdit,
+  onRemove,
+}: {
+  task: Task;
+  draft: CheckDraft;
+  live: LoopCheck | null;
+  readOnly: boolean;
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  const tick = useTickLoopCheckMutation();
+  const [open, setOpen] = useState(false);
+  const { icon: Mark, tone } = MARKS[live?.state ?? "Pending"];
+  const { icon: KindIcon, name } = CHECK_KINDS[draft.kind];
+  const failing = live?.state === "Fail" || live?.state === "Flaky";
+  const output = failing ? live?.detail?.trim() : undefined;
+  const lastLine = live?.detail?.split("\n").filter(Boolean).pop();
+  const sub =
+    draft.kind === "Command" ? (
+      <>
+        <span className="font-mono">{draft.command}</span>
+        {lastLine && (
+          <span
+            className={cn(
+              live?.state === "Fail" && "text-destructive",
+              live?.state === "Flaky" && "text-warning",
+            )}
+          >
+            {" "}
+            · {lastLine}
+          </span>
+        )}
+      </>
+    ) : (
+      (live?.detail?.split("\n")[0] ?? KIND_HELP[draft.kind])
+    );
+  return (
+    <li className={cn("group px-3 py-2.5", live?.state === "Flaky" && "bg-warning/5")}>
+      <div className="flex items-start gap-2.5">
+        <Mark className={cn("mt-0.5 size-4 shrink-0", tone)} />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm">{draft.label}</div>
+          <div className="mt-0.5 truncate text-xs text-muted-foreground">{sub}</div>
+        </div>
+        <span className="flex shrink-0 items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 text-xs text-muted-foreground">
+          <KindIcon className="size-3" />
+          {name}
+        </span>
+        {live && draft.kind === "Manual" && live.kind === "Manual" && (
+          <button
+            className="shrink-0 text-xs text-accent hover:underline"
+            onClick={() =>
+              tick.mutate({
+                projectId: task.project_id,
+                taskId: task.id,
+                checkId: live.id,
+                ticked: live.state !== "Pass",
+              })
+            }
+          >
+            {live.state === "Pass" ? "Untick" : "Mark done"}
+          </button>
+        )}
+        {!readOnly && (
+          <span className="flex shrink-0 gap-0.5 text-muted-foreground opacity-50 group-hover:opacity-100">
+            <button
+              type="button"
+              aria-label={`Edit "${draft.label}"`}
+              className="rounded p-1 hover:bg-muted hover:text-foreground"
+              onClick={onEdit}
+            >
+              <Pencil className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              aria-label={`Remove "${draft.label}"`}
+              className="rounded p-1 hover:bg-muted hover:text-foreground"
+              onClick={onRemove}
+            >
+              <X className="size-3.5" />
+            </button>
+          </span>
+        )}
+      </div>
+      {output && (
+        <div className="pl-6.5 pt-1">
+          <button
+            type="button"
+            className="flex items-center gap-1 text-xs text-accent hover:underline"
+            onClick={() => setOpen(!open)}
+          >
+            {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+            {open ? "Hide output" : "Show output"}
+          </button>
+          {open && (
+            <>
+              <pre className="mt-1.5 max-h-64 overflow-auto whitespace-pre rounded-md border border-border bg-background p-2 font-mono text-xs leading-relaxed">
+                {output}
+              </pre>
+              <p className="mt-1 text-xs text-muted-foreground">
+                The next iteration gets this output, cut to 200 lines. It never sees the hidden
+                files themselves.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+function IterationRow({
+  iteration,
+  activity,
+  onJoin,
+}: {
+  iteration: LoopIteration;
+  /** What the running iteration's agent is doing now, while one is. */
+  activity: string | null;
+  onJoin: (() => void) | null;
+}) {
   const running = iteration.outcome === "Running";
   return (
     <li className="flex items-start gap-2.5 px-3 py-2 hover:bg-muted/40">
       <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", OUTCOME_DOT[iteration.outcome])} />
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="font-medium">#{iteration.n}</span>
-          <span className="tabular-nums text-muted-foreground">
+          {running && (
+            <span className="flex items-center gap-1 text-xs text-success">
+              <span className="size-1.5 animate-pulse rounded-full bg-success" />
+              now
+            </span>
+          )}
+          <span className="tabular-nums text-xs text-muted-foreground">
             {time(iteration.started_at)} ·{" "}
             {minutesBetween(iteration.started_at, iteration.ended_at)}
             {running ? " so far" : ""}
@@ -337,11 +401,11 @@ function IterationRow({ iteration, onJoin }: { iteration: LoopIteration; onJoin:
             <Tooltip disabled={iteration.peeks.length === 0}>
               <TooltipTrigger
                 render={
-                  <span className="flex items-center gap-0.5 rounded bg-amber-500/15 px-1 text-[10px] text-amber-600" />
+                  <span className="flex items-center gap-0.5 rounded bg-amber-500/15 px-1 text-xs text-amber-600" />
                 }
               >
-                <Lock className="size-2.5" />
-                {iteration.touched_sealed ? "touched a sealed path" : "looked at a sealed path"}
+                <Lock className="size-3" />
+                {iteration.touched_sealed ? "touched a hidden file" : "looked for a hidden file"}
               </TooltipTrigger>
               <TooltipContent className="whitespace-pre-line">
                 {iteration.peeks.join("\n")}
@@ -350,56 +414,77 @@ function IterationRow({ iteration, onJoin }: { iteration: LoopIteration; onJoin:
           )}
         </div>
         {iteration.summary && (
-          <div className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">
+          <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
             {iteration.summary}
           </div>
         )}
         {iteration.blocked && (
-          <div className="mt-0.5 line-clamp-2 text-[11px] text-warning">
+          <div className="mt-0.5 line-clamp-2 text-xs text-warning">
             Blocked: {iteration.blocked}
           </div>
         )}
+        {running && activity && (
+          <div className="mt-1.5 rounded-md border border-border bg-background p-2 text-xs leading-relaxed">
+            {activity}
+          </div>
+        )}
       </div>
-      <div className="flex shrink-0 items-center gap-3 text-[11px] text-muted-foreground">
+      <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
         {running ? (
-          <button className="flex items-center gap-1 text-accent hover:underline" onClick={onJoin}>
-            <CornerDownRight className="size-3" />
-            Join
-          </button>
+          onJoin && (
+            <button
+              className="flex items-center gap-1 text-accent hover:underline"
+              onClick={onJoin}
+            >
+              <CornerDownRight className="size-3" />
+              Join
+            </button>
+          )
         ) : iteration.outcome === "Interrupted" ? (
           <span className="text-amber-600">not counted</span>
         ) : (
-          <>
-            <span className="tabular-nums">
-              {iteration.files} files <span className="text-success">+{iteration.added}</span>{" "}
-              <span className="text-destructive">−{iteration.removed}</span>
-            </span>
-            {iteration.tokens != null && (
-              <span className="tabular-nums">{tokens(iteration.tokens)} tok</span>
-            )}
-          </>
+          <span className="tabular-nums">
+            {iteration.files} {iteration.files === 1 ? "file" : "files"}{" "}
+            <span className="text-success">+{iteration.added}</span>{" "}
+            <span className="text-destructive">−{iteration.removed}</span>
+          </span>
         )}
       </div>
     </li>
   );
 }
 
-/** The newest entry of a kind, or the ones written after a moment. */
+/** The newest entry of a kind. */
 const latest = (comments: TaskComment[], kind: string) =>
   [...comments].reverse().find((c) => c.kind === kind);
 
+/** The row being edited, with what it held when editing began; `null` for a row just added. */
+type Editing = { key: string; before: CheckDraft | null };
+
 /**
- * A loop at a glance: why it waits, its budget, the judge's digest, its checks, its iterations,
- * and the note for the next one.
+ * A loop on one tab: why it waits, its limits, the judge's digest, its checks as a list edited in
+ * place, its iterations, the note for the next one, and what runs around the checks. Edits go into
+ * the draft, saved with the rest of the task.
  */
 export function LoopTab({
   task,
-  onEditChecks,
+  draft,
+  onDraftChange,
+  baseBranch,
+  sealedLocked,
+  readOnly,
   onJoin,
+  onPrepare,
 }: {
   task: Task;
-  onEditChecks: () => void;
+  draft: LoopDraft;
+  onDraftChange: (draft: LoopDraft) => void;
+  baseBranch: string;
+  sealedLocked: boolean;
+  readOnly: boolean;
   onJoin: () => void;
+  /** Starts Prepare loop, where it can be. */
+  onPrepare: (() => void) | null;
 }) {
   const key = { projectId: task.project_id, taskId: task.id };
   const { data: checks = [] } = useLoopChecksQuery(task.project_id, task.id);
@@ -410,15 +495,45 @@ export function LoopTab({
   const addNote = useAddLoopNoteMutation();
   const openGate = useOpenAgentGateMutation();
   const { openReview } = useBoardActions();
+  const session = useTaskSession(task.id);
+  const activity = useSessionActivity(session?.session_id);
   const [note, setNote] = useState("");
+  const [editing, setEditing] = useState<Editing | null>(null);
 
-  const config = task.loop_config;
-  const summary = task.loop_summary;
+  const set = (patch: Partial<LoopDraft>) => onDraftChange({ ...draft, ...patch });
+  const setCheck = (rowKey: string, patch: Partial<CheckDraft>) =>
+    set({ checks: draft.checks.map((c) => (c.key === rowKey ? { ...c, ...patch } : c)) });
+  const removeCheck = (rowKey: string) =>
+    set({ checks: draft.checks.filter((c) => c.key !== rowKey) });
+  const addCheck = (kind: LoopCheckKind) => {
+    const check = blankCheck(kind);
+    set({ checks: [...draft.checks, check] });
+    setEditing({ key: check.key, before: null });
+  };
+  const editCheck = (check: CheckDraft) => setEditing({ key: check.key, before: check });
+  const cancelEdit = () => {
+    if (!editing) return;
+    if (editing.before) setCheck(editing.key, editing.before);
+    else removeCheck(editing.key);
+    setEditing(null);
+  };
+  const prefill = usePrefillHidden(
+    draft,
+    onDraftChange,
+    task.project_id,
+    baseBranch,
+    sealedLocked || readOnly,
+  );
+
+  const config = task.loop_config ?? null;
+  const summary = task.loop_summary ?? null;
   const halt = loopHalt(task);
   const gate = gateLine(task);
   const signoff = task.phase === "Approval";
   const live = task.phase_status === "Running" || task.phase_status === "Blocked";
   const started = (summary?.iteration ?? 0) > 0;
+  const iterating = task.phase === "Iterating" && task.phase_status === "Running";
+  const rows = doneWhenRows(draft.checks, checks);
   const real = checks.filter((c) => !c.proposed || c.accepted);
   const passing = real.filter((c) => c.state === "Pass").length;
   // The digest describes the work that reached sign-off; while the loop works again it is stale.
@@ -430,6 +545,10 @@ export function LoopTab({
   );
   const yours = real.filter((c) => c.kind === "Manual" && c.state !== "Pass");
   const flaky = real.filter((c) => c.state === "Flaky");
+  const editFlaky = () => {
+    const row = draft.checks.find((c) => flaky.some((f) => f.id === c.id));
+    if (row) editCheck(row);
+  };
 
   let banner: React.ReactNode = null;
   if (gate && task.gate) {
@@ -472,15 +591,17 @@ export function LoopTab({
               <Repeat className="size-3" />
               Re-run checks
             </Button>
-            <Button size="sm" variant="outline" onClick={onEditChecks}>
-              Edit checks
-            </Button>
+            {!readOnly && (
+              <Button size="sm" variant="outline" onClick={editFlaky}>
+                Edit the check
+              </Button>
+            )}
           </>
         }
       >
         It failed, then passed when run again on the same commit. A check that changes its mind
         would spend iterations on nothing, so the loop waits for you. Fix the test on{" "}
-        {task.base_branch} or remove the check, then re-run checks. Re-running takes the sealed
+        {task.base_branch} or remove the check, then re-run checks. Re-running takes the hidden
         files from {task.base_branch} again and costs no iteration.
       </Banner>
     );
@@ -526,7 +647,7 @@ export function LoopTab({
       <Banner tone="red" icon={OctagonX} title={title}>
         {summary.last_summary && <>The agent's last note: “{summary.last_summary}” </>}
         {halt === "OutOfIterations" || halt === "OutOfTime"
-          ? "Raise the budget on Details, or answer with a note and resume."
+          ? "Raise the limit above and save, or answer with a note and resume."
           : "Answer with a note and resume."}
       </Banner>
     );
@@ -573,8 +694,8 @@ export function LoopTab({
   const noteBox = (live ||
     resumes ||
     (task.phase_status === "Waiting" && task.ball === "Agent")) && (
-    <section className="space-y-1.5">
-      <h3 className="px-1 text-[11px] font-medium">
+    <section className="space-y-2">
+      <h3 className="px-1 text-sm font-medium">
         {signoff ? "Send back" : halt ? "Answer and resume" : "Note for the next iteration"}
       </h3>
       {pendingNotes.map((c) => (
@@ -584,7 +705,7 @@ export function LoopTab({
         >
           <StickyNote className="mt-0.5 size-3.5 text-accent" />
           <span className="flex-1">{c.body}</span>
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             goes into iteration {(summary?.counted ?? 0) + 1}
           </span>
         </div>
@@ -639,37 +760,130 @@ export function LoopTab({
     </section>
   );
 
-  return (
-    <div className="space-y-3">
-      {banner}
-      {started && config && summary && (
-        <div className="flex gap-2">
-          <Meter
-            label="Iterations"
-            value={`${summary.counted} of ${config.max_iterations}`}
-            share={summary.counted / config.max_iterations}
-          />
-          <Meter
-            label="Agent time"
-            value={`${formatDuration(summary.agent_secs)} of ${formatDuration(config.max_agent_secs)}`}
-            share={summary.agent_secs / config.max_agent_secs}
-          />
-          <Meter
-            label="In a row with no change"
-            value={`${summary.no_change} of ${config.stall_limit}`}
-            share={summary.no_change / config.stall_limit}
-            warn={summary.no_change >= config.stall_limit}
-          />
+  const doneWhen = (
+    <section className="space-y-2">
+      <div className="flex items-baseline justify-between px-1">
+        <h3 className="text-sm font-medium">Done when</h3>
+        {real.length > 0 && (
+          <span className="text-xs text-muted-foreground">
+            {passing} of {real.length} pass
+          </span>
+        )}
+      </div>
+      {rows.length > 0 ? (
+        <>
+          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+            {rows.map((row) =>
+              row.kind === "proposal" ? (
+                <ProposalRow key={`p-${row.live.id}`} task={task} check={row.live} />
+              ) : editing?.key === row.draft.key ? (
+                <li key={row.draft.key} className="bg-accent/8 px-3 py-3">
+                  <CheckEditor
+                    check={row.draft}
+                    onChange={(patch) => setCheck(row.draft.key, patch)}
+                    onCommandBlur={prefill}
+                    onDone={() => setEditing(null)}
+                    onCancel={cancelEdit}
+                  />
+                </li>
+              ) : (
+                <CheckRow
+                  key={row.draft.key}
+                  task={task}
+                  draft={row.draft}
+                  live={row.live}
+                  readOnly={readOnly}
+                  onEdit={() => editCheck(row.draft)}
+                  onRemove={() => removeCheck(row.draft.key)}
+                />
+              ),
+            )}
+          </ul>
+          {!readOnly && (
+            <div className="flex items-center gap-3 px-1 text-xs">
+              <span className="text-muted-foreground">Add a check:</span>
+              {(Object.keys(CHECK_KINDS) as LoopCheckKind[]).map((kind) => {
+                const Icon = CHECK_KINDS[kind].icon;
+                return (
+                  <button
+                    key={kind}
+                    type="button"
+                    className="flex items-center gap-1 text-accent hover:underline"
+                    onClick={() => addCheck(kind)}
+                  >
+                    <Icon className="size-3.5" />
+                    {kind === "Manual" ? "Ticked by you" : CHECK_KINDS[kind].name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="space-y-3 rounded-lg border border-dashed border-border p-6 text-center">
+          <div className="text-sm font-medium">No checks yet</div>
+          <p className="mx-auto max-w-md text-xs text-muted-foreground">
+            A loop runs until all its checks pass, so it needs at least one before it can start.
+            Prepare loop opens a session that writes the tests and the checks with you.
+          </p>
+          {!readOnly && (
+            <div className="flex justify-center gap-2">
+              {onPrepare && (
+                <Button size="sm" variant="outline" onClick={onPrepare}>
+                  <Sparkles className="size-3" />
+                  Prepare loop
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => addCheck("Command")}>
+                Add a check myself
+              </Button>
+            </div>
+          )}
         </div>
       )}
+    </section>
+  );
+
+  const iterationList = (
+    <section className="space-y-2">
+      <h3 className="px-1 text-sm font-medium">Iterations</h3>
+      {iterations.length > 0 ? (
+        <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+          {[...iterations].reverse().map((iteration) => (
+            <IterationRow
+              key={`${iteration.n}-${iteration.attempt}`}
+              iteration={iteration}
+              activity={iterating ? (activity?.label ?? "Working") : null}
+              onJoin={session ? onJoin : null}
+            />
+          ))}
+        </ul>
+      ) : (
+        <p className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+          None yet
+        </p>
+      )}
+    </section>
+  );
+
+  return (
+    <div className="space-y-4">
+      {banner}
+      <LimitCards
+        value={draft}
+        onChange={set}
+        config={config}
+        summary={started ? summary : null}
+        readOnly={readOnly}
+      />
       {digest?.body && (
-        <section className="space-y-1.5">
-          <h3 className="flex items-center justify-between px-1 text-[11px] font-medium">
+        <section className="space-y-2">
+          <h3 className="flex items-center justify-between px-1 text-sm font-medium">
             <span className="flex items-center gap-1.5">
-              <BookOpen className="size-3.5 text-muted-foreground" />
+              <BookOpen className="size-4 text-muted-foreground" />
               Review digest
             </span>
-            <span className="font-normal text-muted-foreground">
+            <span className="text-xs font-normal text-muted-foreground">
               by the judge, from the notes, iterations and diff
             </span>
           </h3>
@@ -678,40 +892,27 @@ export function LoopTab({
           </div>
         </section>
       )}
-      <div className="grid grid-cols-2 gap-3">
-        <section className="space-y-1.5">
-          <h3 className="flex justify-between px-1 text-[11px] font-medium">
-            <span>Done when</span>
-            <span className="text-muted-foreground">
-              {passing} of {real.length} pass
-            </span>
-          </h3>
-          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-            {checks.map((check) => (
-              <CheckRow key={check.id} task={task} check={check} onEdit={onEditChecks} />
-            ))}
-          </ul>
-        </section>
-        <section className="space-y-1.5">
-          <h3 className="px-1 text-[11px] font-medium">Iterations</h3>
-          {iterations.length > 0 ? (
-            <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-              {[...iterations].reverse().map((iteration) => (
-                <IterationRow
-                  key={`${iteration.n}-${iteration.attempt}`}
-                  iteration={iteration}
-                  onJoin={onJoin}
-                />
-              ))}
-            </ul>
-          ) : (
-            <p className="rounded-lg border border-dashed border-border p-4 text-center text-[11px] text-muted-foreground">
-              None yet
-            </p>
-          )}
-        </section>
-      </div>
+      {started ? (
+        <div className="grid grid-cols-2 gap-4">
+          {doneWhen}
+          {iterationList}
+        </div>
+      ) : (
+        doneWhen
+      )}
       {noteBox}
+      <div className="grid grid-cols-2 gap-4">
+        <ChecksRunCard value={draft} onChange={set} readOnly={readOnly} />
+        <HiddenCard
+          value={draft}
+          onChange={set}
+          projectId={task.project_id}
+          baseBranch={baseBranch}
+          locked={sealedLocked}
+          readOnly={readOnly}
+        />
+      </div>
+      <ConnectionToolsLine />
     </div>
   );
 }

@@ -14,15 +14,7 @@ import { gateLine, loopHalt } from "./loop-state";
  * The loop detail's footer: what the loop's state lets the user do from here. Resuming is the note
  * box's, since a loop that waits on the user is waiting for an answer.
  */
-export function LoopActions({
-  task,
-  onJoin,
-  onEditChecks,
-}: {
-  task: Task;
-  onJoin: () => void;
-  onEditChecks: () => void;
-}) {
+export function LoopActions({ task, onJoin }: { task: Task; onJoin: () => void }) {
   const key = { projectId: task.project_id, taskId: task.id };
   const pause = usePauseLoopMutation();
   const stop = useStopLoopMutation();
@@ -49,15 +41,10 @@ export function LoopActions({
         </Button>
       )}
       {halt === "Flaky" && (
-        <>
-          <Button size="sm" variant="outline" onClick={onEditChecks}>
-            Edit checks
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => rerun.mutate(key)}>
-            <Repeat className="size-3" />
-            Re-run checks
-          </Button>
-        </>
+        <Button size="sm" variant="outline" onClick={() => rerun.mutate(key)}>
+          <Repeat className="size-3" />
+          Re-run checks
+        </Button>
       )}
       {task.phase === "Approval" && (
         <Button size="sm" variant="outline" onClick={() => openReview(task.id)}>
