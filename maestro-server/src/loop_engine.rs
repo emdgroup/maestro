@@ -1101,10 +1101,23 @@ async fn conclude(
             let resumed = loops::resumed_at(&conn, path, task_id)?;
             let (judge, _) = loops::to_judge(&conn, path, task_id)?;
             let (_, hold) = loops::halt_and_hold(&conn, path, task_id)?;
-            Ok(Some((task, iterations, resumed, !judge.is_empty(), hold)))
+            // An iteration that committed nothing leaves the loop on the commit its checks last
+            // ran on, so their results still hold.
+            let passing = loops::list_checks(&conn, path, task_id)?
+                .iter()
+                .filter(|c| loops::is_runnable(c))
+                .all(|c| c.state == LoopCheckState::Pass);
+            Ok(Some((
+                task,
+                iterations,
+                resumed,
+                !judge.is_empty(),
+                hold,
+                passing,
+            )))
         })()
     };
-    let (task, iterations, resumed, judge, hold) = match read {
+    let (task, iterations, resumed, judge, hold, passing) = match read {
         Ok(Some(found)) => found,
         Ok(None) => return,
         Err(e) => {
@@ -1117,7 +1130,15 @@ async fn conclude(
         Step::Commands(run) => Some(run),
         _ => None,
     };
-    let verdict = verdict(&config, &iterations, run, resumed.as_deref());
+    let unchanged = matches!(step, Step::Iteration)
+        && iterations.last().map(|i| i.outcome) == Some(LoopIterationOutcome::Empty);
+    let verdict = verdict(
+        &config,
+        &iterations,
+        run,
+        unchanged && passing,
+        resumed.as_deref(),
+    );
     let n = iterations.last().map_or(0, |i| i.n);
     // A pause or stop asked for while this step ran is taken before the next one starts.
     let held = match (&verdict, hold) {
@@ -1154,6 +1175,16 @@ async fn conclude(
                  commit, so it is flaky. Fix it or remove it, then re-run the checks.",
                 labels.join(", ")
             ),
+        ),
+        Verdict::Passed if unchanged && judge => (
+            TaskTransition::LoopJudging,
+            format!(
+                "Iteration {n} changed nothing and every command check already passes, so the                  judge decides the rest."
+            ),
+        ),
+        Verdict::Passed if unchanged => (
+            TaskTransition::LoopChecksPassed,
+            format!("Iteration {n} changed nothing, and every command check already passes."),
         ),
         Verdict::Passed if judge => (
             TaskTransition::LoopJudging,
@@ -1243,11 +1274,13 @@ enum Verdict {
 
 /// What the loop does next, from its iterations, oldest first, and the checks just run. The stall
 /// and failure streaks count from `resumed`, when the user last let the loop go on; the budget
-/// counts every iteration.
+/// counts every iteration. `still_passing` is an iteration that changed nothing on a commit every
+/// command check already passes: another would only change nothing again.
 fn verdict(
     config: &LoopConfig,
     iterations: &[LoopIteration],
     run: Option<&CheckRun>,
+    still_passing: bool,
     resumed: Option<&str>,
 ) -> Verdict {
     if let Some(run) = run {
@@ -1257,6 +1290,9 @@ fn verdict(
         if run.all_pass {
             return Verdict::Passed;
         }
+    }
+    if still_passing {
+        return Verdict::Passed;
     }
     let (ended, recent) = ended_and_recent(iterations, resumed);
     let failing = recent
@@ -1987,16 +2023,19 @@ mod tests {
             ..CheckRun::default()
         };
         assert_eq!(
-            verdict(&config, &one, Some(&flaky), None),
+            verdict(&config, &one, Some(&flaky), false, None),
             Verdict::Flaky(vec!["Tests pass".to_string()])
         );
         let passed = CheckRun {
             all_pass: true,
             ..CheckRun::default()
         };
-        assert_eq!(verdict(&config, &one, Some(&passed), None), Verdict::Passed);
         assert_eq!(
-            verdict(&config, &one, Some(&failing("x")), None),
+            verdict(&config, &one, Some(&passed), false, None),
+            Verdict::Passed
+        );
+        assert_eq!(
+            verdict(&config, &one, Some(&failing("x")), false, None),
             Verdict::OutOfIterations
         );
     }
@@ -2012,9 +2051,15 @@ mod tests {
             iteration(4, Failed, None),
             iteration(5, Failed, None),
         ];
-        assert_eq!(verdict(&config, &iterations, None, None), Verdict::Iterate);
+        assert_eq!(
+            verdict(&config, &iterations, None, false, None),
+            Verdict::Iterate
+        );
         iterations.push(iteration(6, Failed, None));
-        assert_eq!(verdict(&config, &iterations, None, None), Verdict::Failing);
+        assert_eq!(
+            verdict(&config, &iterations, None, false, None),
+            Verdict::Failing
+        );
     }
 
     #[test]
@@ -2028,14 +2073,22 @@ mod tests {
         ];
         // Iteration 2 changed the failure; 3 changed nothing.
         assert_eq!(
-            verdict(&config, &iterations, Some(&failing("x")), None),
+            verdict(&config, &iterations, Some(&failing("x")), false, None),
             Verdict::Iterate
         );
         let mut stalled = iterations.to_vec();
         stalled.push(iteration(4, Checked, Some("2 failed in 1.31s")));
         stalled.push(iteration(5, Checked, Some("2 failed in 0.98s")));
         // Empty, then the same failure twice, timings aside.
-        assert_eq!(verdict(&config, &stalled, None, None), Verdict::Stalled);
+        assert_eq!(
+            verdict(&config, &stalled, None, false, None),
+            Verdict::Stalled
+        );
+        assert_eq!(
+            verdict(&config, &stalled, None, true, None),
+            Verdict::Passed,
+            "nothing changed and every check already passes: sign-off, not another iteration"
+        );
     }
 
     #[test]
@@ -2081,13 +2134,16 @@ mod tests {
             iteration(2, Empty, None),
             iteration(3, Empty, None),
         ];
-        assert_eq!(verdict(&config, &iterations, None, None), Verdict::Stalled);
+        assert_eq!(
+            verdict(&config, &iterations, None, false, None),
+            Verdict::Stalled
+        );
         let mut after = iteration(4, Empty, None);
         after.started_at = "2026-10-12T11:00:00Z".to_string();
         iterations.push(after);
         let resumed = Some("2026-10-12T10:30:00Z");
         assert_eq!(
-            verdict(&config, &iterations, None, resumed),
+            verdict(&config, &iterations, None, false, resumed),
             Verdict::Iterate,
             "one empty iteration since the resume"
         );
@@ -2095,7 +2151,7 @@ mod tests {
         last.started_at = "2026-10-12T11:30:00Z".to_string();
         iterations.push(last);
         assert_eq!(
-            verdict(&config, &iterations, None, resumed),
+            verdict(&config, &iterations, None, false, resumed),
             Verdict::OutOfIterations
         );
     }
