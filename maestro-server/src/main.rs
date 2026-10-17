@@ -40,6 +40,7 @@ mod scheduler;
 mod session;
 mod sessions;
 mod skills;
+mod start_over;
 mod task_prompt;
 mod task_restart;
 mod task_runner;

@@ -1,24 +1,36 @@
 import { CornerDownRight, Pause, Play, Repeat, Square } from "lucide-react";
+import { toast } from "sonner";
 import type { Task } from "@/types/bindings";
 import { Button } from "@/ui/button";
 import {
   useOpenAgentGateMutation,
   usePauseLoopMutation,
   useRerunLoopChecksMutation,
+  useResumeLoopMutation,
   useStopLoopMutation,
 } from "@/services/loop.service";
 import { useBoardActions } from "@/store/boardStore";
 import { gateLine, loopHalt } from "./loop-state";
 
 /**
- * The loop detail's footer: what the loop's state lets the user do from here. Resuming is the note
- * box's, since a loop that waits on the user is waiting for an answer.
+ * The loop detail's footer: what the loop's state lets the user do from here. Resume goes on with
+ * no note; answering the loop with one is the note box's.
  */
-export function LoopActions({ task, onJoin }: { task: Task; onJoin: () => void }) {
+export function LoopActions({
+  task,
+  onJoin,
+  beforeResume,
+}: {
+  task: Task;
+  onJoin: () => void;
+  /** Saves the loop tab's edits, so a resumed loop runs on them. Rejects with what is wrong. */
+  beforeResume: () => Promise<void>;
+}) {
   const key = { projectId: task.project_id, taskId: task.id };
   const pause = usePauseLoopMutation();
   const stop = useStopLoopMutation();
   const rerun = useRerunLoopChecksMutation();
+  const resume = useResumeLoopMutation();
   const openGate = useOpenAgentGateMutation();
   const { openReview } = useBoardActions();
   const live = task.phase_status === "Running" || task.phase_status === "Blocked";
@@ -44,6 +56,24 @@ export function LoopActions({ task, onJoin }: { task: Task; onJoin: () => void }
         <Button size="sm" variant="outline" onClick={() => rerun.mutate(key)}>
           <Repeat className="size-3" />
           Re-run checks
+        </Button>
+      )}
+      {halt && halt !== "Flaky" && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={async () => {
+            try {
+              await beforeResume();
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : String(e));
+              return;
+            }
+            resume.mutate({ ...key, note: null });
+          }}
+        >
+          <Play className="size-3" />
+          Resume
         </Button>
       )}
       {task.phase === "Approval" && (

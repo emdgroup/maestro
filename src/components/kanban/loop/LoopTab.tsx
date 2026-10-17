@@ -49,6 +49,7 @@ import {
   useOpenAgentGateMutation,
   useRerunLoopChecksMutation,
   useResumeLoopMutation,
+  usePauseLoopMutation,
   useTickLoopCheckMutation,
 } from "@/services/loop.service";
 import { useBoardActions } from "@/store/boardStore";
@@ -539,6 +540,7 @@ export function LoopTab({
   const { data: comments = [] } = useTaskCommentsQuery(task.project_id, task.id);
   const rerun = useRerunLoopChecksMutation();
   const resume = useResumeLoopMutation();
+  const pause = usePauseLoopMutation();
   const addNote = useAddLoopNoteMutation();
   const openGate = useOpenAgentGateMutation();
   const { openReview } = useBoardActions();
@@ -580,6 +582,10 @@ export function LoopTab({
   const live = task.phase_status === "Running" || task.phase_status === "Blocked";
   const started = (summary?.iteration ?? 0) > 0;
   const iterating = task.phase === "Iterating" && task.phase_status === "Running";
+  // A Build reads the list when it starts and the checks when they run, so the list holds still
+  // while either works. Pause lets the iteration end cleanly, and the lock lifts then.
+  const checksLocked = !readOnly && (live || task.phase === "Checking");
+  const checksReadOnly = readOnly || checksLocked;
   const rows = doneWhenRows(draft.checks, checks);
   const real = checks.filter((c) => !c.proposed || c.accepted);
   const passing = real.filter((c) => c.state === "Pass").length;
@@ -816,6 +822,25 @@ export function LoopTab({
           </span>
         )}
       </div>
+      {checksLocked && (
+        <div className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+          <Lock className="size-3 shrink-0" />
+          {summary?.hold ? (
+            <span>Locked until iteration {summary.iteration} and its checks end.</span>
+          ) : (
+            <>
+              <span>Locked while iteration {summary?.iteration ?? 1} runs.</span>
+              <button
+                type="button"
+                className="text-foreground underline"
+                onClick={() => pause.mutate(key)}
+              >
+                Pause to edit
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {rows.length > 0 ? (
         <>
           <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
@@ -838,14 +863,14 @@ export function LoopTab({
                   task={task}
                   draft={row.draft}
                   live={row.live}
-                  readOnly={readOnly}
+                  readOnly={checksReadOnly}
                   onEdit={() => editCheck(row.draft)}
                   onRemove={() => removeCheck(row.draft.key)}
                 />
               ),
             )}
           </ul>
-          {!readOnly && (
+          {!checksReadOnly && (
             // One button: the editor it opens picks the kind, Command first.
             <button
               type="button"

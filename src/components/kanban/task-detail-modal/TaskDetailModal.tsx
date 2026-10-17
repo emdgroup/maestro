@@ -1,7 +1,17 @@
 import { useState, useRef, useEffect, type SetStateAction } from "react";
-import { Ban, Bot, Repeat, Trash2, X } from "lucide-react";
+import {
+  Ban,
+  Bot,
+  BotMessageSquare,
+  Play,
+  Repeat,
+  RotateCcw,
+  Square,
+  Trash2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
-import { useBoardActionsContext } from "@/contexts/BoardActionsContext";
+import { useBoardActionsContext, useTaskSession } from "@/contexts/BoardActionsContext";
 import { LoopChangesTab, LoopNotesTab } from "@/components/kanban/loop/LoopWorkTabs";
 import { LoopActions } from "@/components/kanban/loop/LoopActions";
 import {
@@ -9,19 +19,11 @@ import {
   type LoopDetailsHandle,
 } from "@/components/kanban/loop/LoopDetailsSection";
 import { useNavigate } from "@/store/navigationStore";
-import type {
-  BranchMode,
-  Task,
-  TaskStatus,
-  TaskPriority,
-  WorkspaceMode,
-  WorktreeWithStatus,
-} from "@/types/bindings";
+import type { BranchMode, TaskPriority, WorkspaceMode, WorktreeWithStatus } from "@/types/bindings";
 import { MAESTRO_BRANCH_PREFIX, taskBranchName } from "@/lib/generateSessionName";
 import { Button } from "@/ui/button";
 import { cn } from "@/lib/utils";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Dialog, DialogContent, DialogTitle, DialogHeader } from "@/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/ui/tabs";
 import {
@@ -42,6 +44,7 @@ import {
   useDeleteTaskMutation,
   useAddTaskAttachmentMutation,
   useTaskCommentsQuery,
+  useStopTaskMutation,
 } from "@/services/task.service";
 import { useSelectedProject, useIsGitRepo } from "@/store/projectStore";
 import { useNavigationActions } from "@/store/navigationStore";
@@ -55,42 +58,10 @@ import { DescriptionWithAttachments } from "@/components/kanban/shared/Descripti
 import { AttachmentSection } from "./AttachmentSection";
 import { WorkspaceSelector } from "@/components/common/workspace-mode/WorkspaceSelector";
 import { TaskMetadataPills } from "@/components/kanban/shared/TaskMetadataPills";
-import { useRestartLoopMutation } from "@/services/loop.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { OutcomeThread } from "./OutcomeThread";
-
-// Cancelled has no board column, but a cancelled task can still be opened from the archive, and a
-// picker showing nothing at all for it reads as a bug.
-const ALL_STATUSES: TaskStatus[] = [
-  "Planning",
-  "Queue",
-  "InProgress",
-  "Review",
-  "Done",
-  "Cancelled",
-];
-
-/**
- * Everywhere the user may send a task by hand.
- *
- * Only the two columns a task sits in before it runs. Everything past that point is reached by
- * an action rather than by re-filing: InProgress by Execute, Review by an agent finishing,
- * Done by Approve, Cancelled by its own button. Offering them here let the picker assert things
- * no action had made true — most visibly, re-selecting Review on a task already in Review
- * applies `ManualMove`, which parks it and strips the phase and ball off a live review.
- *
- * This does still let a cancelled task be re-filed to Planning, which is how restoring from the
- * archive works.
- */
-const SELECTABLE_STATUSES = new Set<TaskStatus>(["Planning", "Queue"]);
-
-/**
- * Done is terminal: view the outcome and archive it, nothing else. A task an agent is currently
- * working in is locked for the same reason the card cannot be dragged — re-filing applies
- * `ManualMove`, which parks the task and orphans the session still running against it.
- */
-const STATUS_IS_LOCKED = (task: Task) =>
-  task.status === "Done" || task.phase_status === "Running" || task.phase_status === "Blocked";
+import { TaskStatusChip } from "./TaskStatusChip";
+import { StartOverDialog, runControls } from "./StartOverDialog";
 
 interface TaskDraft {
   title: string;
@@ -146,8 +117,10 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
   const loopDetails = useRef<LoopDetailsHandle>(null);
   const navigate = useNavigate();
-  const { execute, canPrepare } = useBoardActionsContext();
-  const joinLoop = () => {
+  const { execute, canPrepare, executingTaskId } = useBoardActionsContext();
+  const session = useTaskSession(taskId ?? -1);
+  const stopTask = useStopTaskMutation();
+  const join = () => {
     setActiveTaskId(null);
     if (task) navigate({ agentId: String(task.id) });
   };
@@ -220,9 +193,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
-  // Where a started loop moved back before its start is going, once the user confirms the restart.
-  const [restartTo, setRestartTo] = useState<TaskStatus | null>(null);
-  const restartLoop = useRestartLoopMutation();
+  const [startOverOpen, setStartOverOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
 
   function handleRequestClose() {
@@ -246,27 +217,6 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
       if ((isEditable || loopDirty) && task) void handleSave();
     },
   });
-
-  function handleStatusChange(newStatus: string | null) {
-    if (!newStatus || !task) return;
-    // Re-picking the status a task is already in still applies `ManualMove`, which parks it —
-    // clearing phase, phase_status and ball. On anything with live pipeline state that silently
-    // throws it away, so a no-op selection has to stay a no-op.
-    if (newStatus === task.status) return;
-    // No agent check here any more. Which agent runs is decided per role by the project's profiles
-    // at spawn time, so a task carries none to check — and a guard reading `task.agent_id` would
-    // now refuse every move to Queue rather than the ones it was written for.
-    // A loop that has run starts over from scratch, which loses its work, so it asks first.
-    if (task.run_mode === "Loop" && (task.loop_summary?.iteration ?? 0) > 0) {
-      setRestartTo(newStatus as TaskStatus);
-      return;
-    }
-    updateTask.mutate({
-      projectId: task.project_id,
-      taskId: task.id,
-      updates: { status: newStatus as TaskStatus },
-    });
-  }
 
   async function handleSave() {
     if (!task || draft.title.trim().length < 3) return;
@@ -309,6 +259,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
   }
 
   const isPendingDeleteOrArchive = deleteTask.isPending || archiveTask.isPending;
+  const controls = task ? runControls(task) : { live: false, startOver: false };
 
   return (
     <Dialog
@@ -346,22 +297,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                 </span>
               )}
               <div className="flex-1" />
-              <Select
-                value={task.status}
-                onValueChange={handleStatusChange}
-                disabled={STATUS_IS_LOCKED(task)}
-              >
-                <SelectTrigger size="sm" className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ALL_STATUSES.filter((s) => isGitRepo || s !== "Review").map((s) => (
-                    <SelectItem key={s} value={s} disabled={!SELECTABLE_STATUSES.has(s)}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <TaskStatusChip task={task} />
               <ShortcutHint shortcutId="task-back">
                 <Button
                   variant="ghost"
@@ -419,7 +355,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                       ref={loopDetails}
                       task={task}
                       onDirtyChange={setLoopDirty}
-                      onJoin={joinLoop}
+                      onJoin={join}
                       onPrepare={
                         task.status === "Planning" && task.phase == null && canPrepare
                           ? () => {
@@ -646,41 +582,16 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                 </>
               )}
 
-              <AlertDialog
-                open={restartTo !== null}
-                onOpenChange={(open) => !open && setRestartTo(null)}
-              >
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Restart this loop from scratch?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Its progress will be lost. The branch goes back to where the loop started, so
-                      the code its iterations wrote is gone, and its iterations and check results
-                      are cleared. Its checks, hidden files and limits stay.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel onClick={() => setRestartTo(null)}>
-                      Keep its progress
-                    </AlertDialogCancel>
-                    <AlertDialogAction
-                      variant="destructive"
-                      onClick={() => {
-                        if (restartTo) {
-                          restartLoop.mutate({
-                            projectId: task.project_id,
-                            taskId: task.id,
-                            status: restartTo,
-                          });
-                        }
-                        setRestartTo(null);
-                      }}
-                    >
-                      Restart loop
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <StartOverDialog
+                task={task}
+                branch={
+                  worktrees?.find((w) => w.task_id === task.id)?.branch_name ??
+                  task.workspace_branch ??
+                  null
+                }
+                open={startOverOpen}
+                onOpenChange={setStartOverOpen}
+              />
 
               <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
                 <AlertDialogContent>
@@ -708,7 +619,58 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
               <div className="flex-1" />
 
-              {isLoop && <LoopActions task={task} onJoin={joinLoop} />}
+              {isLoop ? (
+                <LoopActions
+                  task={task}
+                  onJoin={join}
+                  beforeResume={async () => {
+                    await loopDetails.current?.save();
+                  }}
+                />
+              ) : (
+                <>
+                  {task.status === "Queue" && (
+                    <Button
+                      size="sm"
+                      disabled={executingTaskId === task.id || task.phase === "Spawning"}
+                      onClick={() =>
+                        void execute(task, { respectCapacity: true, canPickAgent: true })
+                      }
+                    >
+                      <Play className="size-3 fill-current" />
+                      {executingTaskId === task.id || task.phase === "Spawning"
+                        ? "Starting…"
+                        : "Execute"}
+                    </Button>
+                  )}
+                  {controls.live && session && (
+                    <Button size="sm" variant="outline" onClick={join}>
+                      <BotMessageSquare className="size-3" />
+                      Join
+                    </Button>
+                  )}
+                  {controls.live && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={stopTask.isPending}
+                      onClick={() =>
+                        stopTask.mutate({ projectId: task.project_id, taskId: task.id })
+                      }
+                    >
+                      <Square className="size-3 fill-current" />
+                      Stop
+                    </Button>
+                  )}
+                </>
+              )}
+
+              {controls.startOver && (
+                <Button size="sm" variant="outline" onClick={() => setStartOverOpen(true)}>
+                  <RotateCcw className="size-3" />
+                  Start over
+                </Button>
+              )}
 
               {(isEditable || loopDirty) && (
                 <Button

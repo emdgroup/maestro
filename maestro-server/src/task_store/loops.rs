@@ -806,20 +806,35 @@ pub(crate) fn record_outcome(
     .map_err(|e| e.to_string())
 }
 
-/// What one check run concluded about each check, by id.
+/// What one check run concluded about each check, by id. `ran` is the list the run read: a check
+/// edited since then is a new question, which this run did not answer, so it is left alone.
 pub(crate) fn record_results(
     conn: &mut Connection,
     project_path: &str,
     task_id: i32,
+    ran: &[LoopCheck],
     results: &[(i32, LoopCheckState, Option<String>)],
 ) -> Result<(), String> {
     let tx = transaction(conn)?;
     let now = Utc::now().to_rfc3339();
     for (id, state, detail) in results {
+        let Some(check) = ran.iter().find(|c| c.id == *id) else {
+            continue;
+        };
         tx.execute(
             "UPDATE loop_checks SET state = ?4, detail = ?5, updated_at = ?6
-             WHERE project_path = ?1 AND task_id = ?2 AND id = ?3",
-            params![project_path, task_id, id, text(*state), detail, now],
+             WHERE project_path = ?1 AND task_id = ?2 AND id = ?3
+               AND kind = ?7 AND command IS ?8",
+            params![
+                project_path,
+                task_id,
+                id,
+                text(*state),
+                detail,
+                now,
+                text(check.kind),
+                check.command
+            ],
         )
         .map_err(|e| e.to_string())?;
     }
@@ -1205,6 +1220,53 @@ mod tests {
             (second[1].id, second[1].state),
             (tests, LoopCheckState::Pending)
         );
+    }
+
+    #[test]
+    fn a_run_does_not_answer_a_check_edited_while_it_ran() {
+        let mut conn = crate::project_store::open_in_memory();
+        let task = create(&mut conn, RunMode::Loop, None);
+        let command = |label, cmd| entry(None, LoopCheckKind::Command, label, Some(cmd));
+        let ran = set(
+            &mut conn,
+            task,
+            vec![
+                command("Tests pass", "bun test"),
+                command("Lint", "bun lint"),
+            ],
+        )
+        .unwrap();
+        // Edited while the run read the old list.
+        set(
+            &mut conn,
+            task,
+            vec![
+                entry(
+                    Some(ran[0].id),
+                    LoopCheckKind::Command,
+                    "Tests pass",
+                    Some("bun test:all"),
+                ),
+                entry(
+                    Some(ran[1].id),
+                    LoopCheckKind::Command,
+                    "Lint",
+                    Some("bun lint"),
+                ),
+            ],
+        )
+        .unwrap();
+        let results = [
+            (ran[0].id, LoopCheckState::Pass, None),
+            (ran[1].id, LoopCheckState::Pass, None),
+        ];
+        record_results(&mut conn, PROJECT, task, &ran, &results).unwrap();
+        let states: Vec<_> = list_checks(&conn, PROJECT, task)
+            .unwrap()
+            .into_iter()
+            .map(|c| c.state)
+            .collect();
+        assert_eq!(states, [LoopCheckState::Pending, LoopCheckState::Pass]);
     }
 
     #[test]

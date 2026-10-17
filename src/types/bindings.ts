@@ -469,18 +469,6 @@ async stopLoop(projectId: number, taskId: number) : Promise<Result<null, string>
 }
 },
 /**
- * Start a loop that is not running over from scratch, parked in Planning or Queue: its branch
- * back to where the loop started, its iterations and check results gone.
- */
-async restartLoop(projectId: number, taskId: number, status: TaskStatus) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("restart_loop", { projectId, taskId, status }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * A note for the next iteration. The one running is not interrupted.
  */
 async addLoopNote(projectId: number, taskId: number, body: string) : Promise<Result<null, string>> {
@@ -3091,6 +3079,31 @@ async proxyImage(projectId: number, imageUrl: string) : Promise<Result<string, s
 async interruptTask(projectId: number, taskId: number) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("interrupt_task", { projectId, taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stop the agent working on a task and leave everything it produced where it is: the task stays
+ * in its column and phase, failed and the user's, so it can be recovered, sent on or started over.
+ * A loop is halted the same way `interrupt_task` halts one.
+ */
+async stopTask(projectId: number, taskId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_task", { projectId, taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Start a task that is not running over from scratch, parked in Planning or Queue. See the
+ * daemon's `start_over`.
+ */
+async restartTask(projectId: number, taskId: number, status: TaskStatus) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restart_task", { projectId, taskId, status }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

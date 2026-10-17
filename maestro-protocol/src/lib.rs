@@ -294,9 +294,10 @@ pub enum ServerRequest {
     PauseLoop(TaskRef),
     /// Halt the loop now: a running session is cut, its work kept as an uncounted WIP commit.
     StopLoop(TaskRef),
-    /// Start a loop that is not running over from scratch: its branch back to where the loop
-    /// started, its iterations and check results gone, parked in `status`.
-    RestartLoop(RestartLoopRequest),
+    /// Start a task that is not running over from scratch, parked in `status`: its branch back to
+    /// where it started, or a new branch from the base once it is Done or Cancelled, and its
+    /// progress gone.
+    RestartTask(RestartTaskRequest),
     /// The worker's `.maestro/loop/PROGRESS.md`, as it stands in the loop's worktree.
     ReadLoopNotes(TaskRef),
     /// The project's prompt collection, favorites first, then most recently edited.
@@ -1757,7 +1758,7 @@ pub struct TaskRef {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct RestartLoopRequest {
+pub struct RestartTaskRequest {
     pub project_path: String,
     pub task_id: i32,
     /// Planning or Queue.
@@ -2809,7 +2810,7 @@ pub enum ServerResponse {
     RerunLoopChecksOk,
     PauseLoopOk,
     StopLoopOk,
-    RestartLoopOk,
+    RestartTaskOk,
     ReadLoopNotesOk(LoopNotes),
     ListPromptsOk(PromptList),
     GetPromptOk(OptionalPrompt),
@@ -2972,7 +2973,7 @@ impl ServerResponse {
             | Self::RerunLoopChecksOk
             | Self::PauseLoopOk
             | Self::StopLoopOk
-            | Self::RestartLoopOk
+            | Self::RestartTaskOk
             | Self::ReadLoopNotesOk(_)
             | Self::ListPromptsOk(_)
             | Self::GetPromptOk(_)

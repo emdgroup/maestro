@@ -647,7 +647,7 @@ fn peeks(commands: &[String], sealed: &[String]) -> Vec<String> {
 }
 
 /// `RerunLoopChecks`, `ReadLoopNotes`, `AnswerLoopProposal`, `OpenAgentGate`, `PauseLoop`,
-/// `StopLoop` and `RestartLoop`: the reply, and the pushes owed after it.
+/// `StopLoop` and `RestartTask`: the reply, and the pushes owed after it.
 pub(crate) async fn answer(
     request: ServerRequest,
     store: Option<&Store>,
@@ -684,9 +684,9 @@ pub(crate) async fn answer(
                 Err(e) => (crate::helpers::error_response(e), Vec::new()),
             };
         }
-        ServerRequest::RestartLoop(request) => {
-            return match Box::pin(restart_loop(store, request)).await {
-                Ok(pushes) => (ServerResponse::RestartLoopOk, pushes),
+        ServerRequest::RestartTask(request) => {
+            return match Box::pin(crate::start_over::restart(store, request)).await {
+                Ok(pushes) => (ServerResponse::RestartTaskOk, pushes),
                 Err(e) => (crate::helpers::error_response(e), Vec::new()),
             };
         }
@@ -809,70 +809,6 @@ async fn hold_loop(
         }
         _ => Err("This loop is not running".to_string()),
     }
-}
-
-/// `RestartLoop`: the loop's branch reset to the commit it started from, its sandbox removed, and
-/// its iterations, check results, halt and streaks cleared, parked in Planning or Queue. Only a
-/// loop with nothing running, so no session or check is writing while the branch moves.
-async fn restart_loop(
-    store: &Store,
-    request: maestro_protocol::RestartLoopRequest,
-) -> Result<Vec<ServerResponse>, String> {
-    use maestro_protocol::TaskStatus;
-    let path = crate::automations::canonical_project_path(&request.project_path);
-    let task_id = request.task_id;
-    if !matches!(request.status, TaskStatus::Planning | TaskStatus::Queue) {
-        return Err("A loop restarts in Planning or Queue".to_string());
-    }
-    let task = crate::task_store::get(&*store.lock().await, &path, task_id)?
-        .ok_or_else(|| format!("Task {task_id} not found"))?;
-    if task.run_mode != RunMode::Loop {
-        return Err("Only a loop restarts this way".to_string());
-    }
-    let busy = matches!(
-        task.phase_status,
-        Some(PhaseStatus::Running | PhaseStatus::Blocked)
-    ) || matches!(task.phase, Some(TaskPhase::Spawning | TaskPhase::Checking));
-    if busy {
-        return Err("Stop the loop before restarting it".to_string());
-    }
-    // Where the loop started is the parent of the first commit an iteration made, not the
-    // task's start: the preparation commits its tests before the first iteration, and those stay.
-    let first = loops::list_iterations(&*store.lock().await, &path, task_id)?
-        .into_iter()
-        .find_map(|i| i.commit_sha);
-    let dir = worktree_dir(store, &path, task_id).await;
-    let mut start = None;
-    if let (Some(dir), Some(first)) = (dir, first) {
-        if Path::new(&dir).exists() {
-            let parent = git(&dir, &["rev-parse", &format!("{first}^")]).await?;
-            let parent = parent.trim().to_string();
-            git(&dir, &["reset", "--hard", &parent]).await?;
-            git(&dir, &["clean", "-fd"]).await?;
-            start = Some(parent);
-        }
-    }
-    crate::worktree::remove_sandbox(&path, task_id).await?;
-    let mut conn = store.lock().await;
-    loops::clear_progress(&mut conn, &path, task_id)?;
-    let note = match start {
-        Some(start) => format!(
-            "Restarted from scratch: the branch is back at {}, where the loop started, and the \
-             iterations and check results are cleared.",
-            &start[..start.len().min(8)]
-        ),
-        None => "Restarted from scratch: the iterations and check results are cleared.".to_string(),
-    };
-    let move_back = ServerRequest::ApplyTaskTransition(ApplyTaskTransitionRequest {
-        project_path: path.clone(),
-        task_id,
-        event: TaskTransition::ManualMove(request.status),
-        guard: TransitionGuard::Always,
-        update: None,
-        comment: Some(note_entry(note)),
-    });
-    let (_, pushes) = crate::task_store::requests::answer(&mut conn, move_back)?;
-    Ok(pushes)
 }
 
 /// The routing ids of the task's sessions that are up.
@@ -1041,8 +977,8 @@ async fn check(store: &Store, everyone: &crate::ClientOut, path: &str, task_id: 
     };
     {
         let mut conn = store.lock().await;
-        let recorded = loops::record_results(&mut conn, path, task_id, &run.results).and_then(
-            |()| match &last {
+        let recorded = loops::record_results(&mut conn, path, task_id, &checks, &run.results)
+            .and_then(|()| match &last {
                 Some(last) => loops::record_outcome(
                     &conn,
                     path,
@@ -1054,8 +990,7 @@ async fn check(store: &Store, everyone: &crate::ClientOut, path: &str, task_id: 
                         .map(String::as_str),
                 ),
                 None => Ok(()),
-            },
-        );
+            });
         if let Err(e) = recorded {
             send_diag("warn", format!("[loop] task {task_id}: {e}"));
         }
@@ -1441,7 +1376,7 @@ fn entry(kind: &str, author: &str, body: String) -> NewTaskComment {
     }
 }
 
-fn note_entry(body: String) -> NewTaskComment {
+pub(crate) fn note_entry(body: String) -> NewTaskComment {
     entry("note", "maestro", body)
 }
 
@@ -2774,6 +2709,48 @@ Try the cache first."
     }
 
     #[tokio::test]
+    async fn a_done_task_starts_over_on_a_new_branch_from_the_base() {
+        let (_repo, store, task) = sealed_loop(SEES_THEM).await;
+        let role = maestro_protocol::AgentRole::Preparer;
+        let first = crate::worktree::prepare_task_workspace(&store, &task, role)
+            .await
+            .unwrap();
+        let old = first.branch.clone().unwrap();
+        store
+            .lock()
+            .await
+            .execute(
+                "UPDATE tasks SET status = 'Done', phase = NULL, phase_status = NULL WHERE id = ?1",
+                [task.id],
+            )
+            .unwrap();
+        let request = maestro_protocol::RestartTaskRequest {
+            project_path: task.project_path.clone(),
+            task_id: task.id,
+            status: maestro_protocol::TaskStatus::Planning,
+        };
+        crate::start_over::restart(&store, request).await.unwrap();
+
+        assert!(!Path::new(&first.cwd).exists(), "the old worktree goes");
+        let refreshed = crate::task_store::get(&*store.lock().await, &task.project_path, task.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(refreshed.status, maestro_protocol::TaskStatus::Planning);
+        assert_eq!(refreshed.workspace_branch, Some(format!("{old}-2")));
+        let kept = format!("refs/heads/{old}");
+        assert!(
+            git(&task.project_path, &["rev-parse", "--verify", &kept])
+                .await
+                .is_ok(),
+            "the old branch is left as it was"
+        );
+        let next = crate::worktree::prepare_task_workspace(&store, &refreshed, role)
+            .await
+            .unwrap();
+        assert_eq!(next.branch, Some(format!("{old}-2")));
+    }
+
+    #[tokio::test]
     async fn a_restarted_loop_loses_its_work_and_its_history() {
         let (_repo, store, task) = sealed_loop(SEES_THEM).await;
         // The preparation commits to the loop's worktree before the first iteration.
@@ -2817,13 +2794,13 @@ Try the cache first."
                 [task.id],
             )
             .unwrap();
-        let restart = |status| maestro_protocol::RestartLoopRequest {
+        let restart = |status| maestro_protocol::RestartTaskRequest {
             project_path: running.project_path.clone(),
             task_id: running.task_id,
             status,
         };
         assert!(
-            restart_loop(&store, restart(maestro_protocol::TaskStatus::Queue))
+            crate::start_over::restart(&store, restart(maestro_protocol::TaskStatus::Queue))
                 .await
                 .is_err(),
             "not while it runs"
@@ -2837,7 +2814,7 @@ Try the cache first."
                 [task.id],
             )
             .unwrap();
-        restart_loop(&store, restart(maestro_protocol::TaskStatus::Queue))
+        crate::start_over::restart(&store, restart(maestro_protocol::TaskStatus::Queue))
             .await
             .unwrap();
 

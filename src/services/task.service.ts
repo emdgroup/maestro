@@ -19,6 +19,7 @@ import type {
   AgentRole,
   MergeResult,
   StartTaskResult,
+  TaskStatus,
 } from "@/types/bindings";
 
 /**
@@ -628,6 +629,42 @@ export function useInterruptTaskMutation() {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: createErrorToastHandler("Failed to interrupt task"),
+  });
+}
+
+/** Stop the agent working on a task, keeping what it produced. A loop halts where it is. */
+export function useStopTaskMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, taskId }: { projectId: number; taskId: number }) =>
+      api.stopTask(projectId, taskId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to stop the task"),
+  });
+}
+
+/**
+ * Start a task that is not running over from scratch, in Planning or Queue: its work thrown away
+ * and its progress cleared. A Done or Cancelled task gets a new branch from the base.
+ */
+export function useRestartTaskMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      taskId,
+      status,
+    }: {
+      projectId: number;
+      taskId: number;
+      status: TaskStatus;
+    }) => api.restartTask(projectId, taskId, status),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.base });
+    },
+    onError: createErrorToastHandler("Failed to start the task over"),
   });
 }
 
