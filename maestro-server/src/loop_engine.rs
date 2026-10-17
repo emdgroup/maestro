@@ -836,31 +836,32 @@ async fn restart_loop(
     if busy {
         return Err("Stop the loop before restarting it".to_string());
     }
-    if let (Some(dir), Some(start)) = (
-        worktree_dir(store, &path, task_id).await,
-        task.execution_start_sha.as_deref(),
-    ) {
+    // Where the loop started is the parent of the first commit an iteration made, not the
+    // task's start: the preparation commits its tests before the first iteration, and those stay.
+    let first = loops::list_iterations(&*store.lock().await, &path, task_id)?
+        .into_iter()
+        .find_map(|i| i.commit_sha);
+    let dir = worktree_dir(store, &path, task_id).await;
+    let mut start = None;
+    if let (Some(dir), Some(first)) = (dir, first) {
         if Path::new(&dir).exists() {
-            git(&dir, &["reset", "--hard", start]).await?;
+            let parent = git(&dir, &["rev-parse", &format!("{first}^")]).await?;
+            let parent = parent.trim().to_string();
+            git(&dir, &["reset", "--hard", &parent]).await?;
             git(&dir, &["clean", "-fd"]).await?;
+            start = Some(parent);
         }
     }
     crate::worktree::remove_sandbox(&path, task_id).await?;
     let mut conn = store.lock().await;
     loops::clear_progress(&mut conn, &path, task_id)?;
-    let short: String = task
-        .execution_start_sha
-        .as_deref()
-        .unwrap_or_default()
-        .chars()
-        .take(8)
-        .collect();
-    let note = if short.is_empty() {
-        "Restarted from scratch: the iterations and check results are cleared.".to_string()
-    } else {
-        format!(
-            "Restarted from scratch: the branch is back at {short}, where the loop started, and              the iterations and check results are cleared."
-        )
+    let note = match start {
+        Some(start) => format!(
+            "Restarted from scratch: the branch is back at {}, where the loop started, and the \
+             iterations and check results are cleared.",
+            &start[..start.len().min(8)]
+        ),
+        None => "Restarted from scratch: the iterations and check results are cleared.".to_string(),
     };
     let move_back = ServerRequest::ApplyTaskTransition(ApplyTaskTransitionRequest {
         project_path: path.clone(),
@@ -1179,7 +1180,8 @@ async fn conclude(
         Verdict::Passed if unchanged && judge => (
             TaskTransition::LoopJudging,
             format!(
-                "Iteration {n} changed nothing and every command check already passes, so the                  judge decides the rest."
+                "Iteration {n} changed nothing and every command check already passes, so the \
+                 judge decides the rest."
             ),
         ),
         Verdict::Passed if unchanged => (
@@ -2774,6 +2776,20 @@ Try the cache first."
     #[tokio::test]
     async fn a_restarted_loop_loses_its_work_and_its_history() {
         let (_repo, store, task) = sealed_loop(SEES_THEM).await;
+        // The preparation commits to the loop's worktree before the first iteration.
+        let prepared = crate::worktree::prepare_task_workspace(
+            &store,
+            &task,
+            maestro_protocol::AgentRole::Preparer,
+        )
+        .await
+        .unwrap();
+        std::fs::write(Path::new(&prepared.cwd).join("src/prep.txt"), "prep").unwrap();
+        git(&prepared.cwd, &["add", "-A"]).await.unwrap();
+        git(&prepared.cwd, &["commit", "-q", "-m", "prep"])
+            .await
+            .unwrap();
+        let prepared_at = git(&prepared.cwd, &["rev-parse", "HEAD"]).await.unwrap();
         let (dir, task, iteration) = start(&store, &task).await;
         std::fs::write(Path::new(&dir).join("src/b.txt"), "b").unwrap();
         let everyone = crate::client_sink::ClientSink::detached();
@@ -2826,8 +2842,16 @@ Try the cache first."
             .unwrap();
 
         let head = git(&context, &["rev-parse", "HEAD"]).await.unwrap();
-        assert_eq!(Some(head.trim()), task.execution_start_sha.as_deref());
+        assert_eq!(
+            head.trim(),
+            prepared_at.trim(),
+            "back to where the loop started"
+        );
         assert!(!Path::new(&context).join("src/b.txt").exists());
+        assert!(
+            Path::new(&context).join("src/prep.txt").exists(),
+            "the preparation's commit stays"
+        );
         assert!(!Path::new(&dir).exists(), "the sandbox goes");
         let conn = store.lock().await;
         assert!(loops::list_iterations(&conn, &path, task.id)
