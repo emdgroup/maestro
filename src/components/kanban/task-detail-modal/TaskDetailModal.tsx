@@ -619,6 +619,18 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
               <div className="flex-1" />
 
+              {task.status === "Queue" && (
+                <Button
+                  size="sm"
+                  disabled={executingTaskId === task.id || task.phase === "Spawning"}
+                  onClick={() => void execute(task, { respectCapacity: true, canPickAgent: true })}
+                >
+                  <Play className="size-3 fill-current" />
+                  {executingTaskId === task.id || task.phase === "Spawning"
+                    ? "Starting…"
+                    : "Execute"}
+                </Button>
+              )}
               {isLoop ? (
                 <LoopActions
                   task={task}
@@ -629,20 +641,6 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                 />
               ) : (
                 <>
-                  {task.status === "Queue" && (
-                    <Button
-                      size="sm"
-                      disabled={executingTaskId === task.id || task.phase === "Spawning"}
-                      onClick={() =>
-                        void execute(task, { respectCapacity: true, canPickAgent: true })
-                      }
-                    >
-                      <Play className="size-3 fill-current" />
-                      {executingTaskId === task.id || task.phase === "Spawning"
-                        ? "Starting…"
-                        : "Execute"}
-                    </Button>
-                  )}
                   {controls.live && session && (
                     <Button size="sm" variant="outline" onClick={join}>
                       <BotMessageSquare className="size-3" />
