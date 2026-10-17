@@ -158,7 +158,7 @@
     {
       "id": "claude-acp",
       "name": "Claude Agent",
-      "version": "0.92.0",
+      "version": "0.93.0",
       "description": "ACP wrapper for Anthropic's Claude",
       "repository": "https://github.com/agentclientprotocol/claude-agent-acp",
       "authors": ["Anthropic", "Zed Industries", "JetBrains"],
@@ -166,7 +166,7 @@
       "license_url": "https://github.com/agentclientprotocol/claude-agent-acp/blob/main/LICENSE",
       "distribution": {
         "npx": {
-          "package": "@agentclientprotocol/claude-agent-acp@0.92.0"
+          "package": "@agentclientprotocol/claude-agent-acp@0.93.0"
         }
       },
       "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/claude-acp.svg"
@@ -487,7 +487,7 @@
     {
       "id": "factory-droid",
       "name": "Factory Droid",
-      "version": "0.243.0",
+      "version": "0.244.0",
       "description": "Factory Droid - AI coding agent powered by Factory AI",
       "website": "https://factory.ai/product/cli",
       "authors": ["Factory AI"],
@@ -495,7 +495,7 @@
       "license_url": "https://factory.ai/legal/terms",
       "distribution": {
         "npx": {
-          "package": "droid@0.243.0",
+          "package": "droid@0.244.0",
           "args": ["exec", "--output-format", "acp-daemon"],
           "env": {
             "DROID_DISABLE_AUTO_UPDATE": "true",
@@ -953,7 +953,7 @@
     {
       "id": "nova",
       "name": "Nova",
-      "version": "1.1.54",
+      "version": "1.1.55",
       "description": "Nova by Compass AI - a fully-fledged software engineer at your command",
       "repository": "https://github.com/Compass-Agentic-Platform/nova",
       "website": "https://www.compassap.ai/portfolio/nova.html",
@@ -963,7 +963,7 @@
       "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/nova.svg",
       "distribution": {
         "npx": {
-          "package": "@compass-ai/nova@1.1.54",
+          "package": "@compass-ai/nova@1.1.55",
           "args": ["acp"]
         }
       }
