@@ -387,7 +387,7 @@ function WorkspaceOpt({ task, worktree }: { task: Task; worktree: WorktreeWithSt
   return (
     <Tooltip>
       <TooltipTrigger render={trigger} />
-      <TooltipContent>
+      <TooltipContent className="flex-col items-start gap-0.5 break-all">
         <div className="font-mono">{branch}</div>
         {worktree ? (
           <div className="font-mono text-muted-foreground">{worktree.path}</div>
