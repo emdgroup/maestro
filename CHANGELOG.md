@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.0](https://github.com/emdgroup/maestro/compare/v0.37.0...v0.38.0) (2026-10-17)
+
+
+### Features
+
+* **usage:** drill into a day or month, filter from the model legend ([#527](https://github.com/emdgroup/maestro/issues/527)) ([ab999d4](https://github.com/emdgroup/maestro/commit/ab999d4a61e48df54ff223fe1cb37bb4d2f52042))
+
 ## [0.37.0](https://github.com/emdgroup/maestro/compare/v0.36.0...v0.37.0) (2026-10-15)
 
 
