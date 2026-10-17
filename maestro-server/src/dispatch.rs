@@ -3,7 +3,7 @@ use std::sync::Arc;
 use maestro_protocol::{
     CheckToolsResponse, DiscoveredAgent, ErrorResponse, FileReadResponse, FileSearchResponse,
     InstallSkillsResponse, ListAgentsResponse, PreInitializeResponse, ServerRequest,
-    ServerResponse, SessionUpdate, SpawnResponse, AUTH_REQUIRED_ERROR,
+    ServerResponse, SpawnResponse, AUTH_REQUIRED_ERROR,
 };
 
 use crate::agent;
@@ -1088,24 +1088,7 @@ pub(crate) async fn dispatch_message(
 
         ServerRequest::Prompt(req) => {
             if let Some(session) = sessions.get(&req.session_id) {
-                let sent_at = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64;
-                send_or_return!(
-                    send_response(
-                        stdout,
-                        &ServerResponse::SessionUpdate(SessionUpdate {
-                            session_id: req.session_id.clone(),
-                            payload: serde_json::json!({
-                                "sessionUpdate": "user_message",
-                                "content": req.content,
-                                "sentAt": sent_at,
-                            }),
-                        }),
-                    )
-                    .await
-                );
+                // The command loop shows the prompt in the transcript, as it does every prompt.
                 let cmd = match req.content {
                     serde_json::Value::Array(blocks) => SessionCommand::PromptStructured(blocks),
                     other => SessionCommand::Prompt(other.as_str().unwrap_or("").to_string()),
