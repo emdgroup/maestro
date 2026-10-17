@@ -1,6 +1,7 @@
 import { memo, useRef, useEffect, useState } from "react";
 import { Task, TaskStatus, type JsonValue, type WorktreeWithStatus } from "@/types/bindings";
 import { useKanban } from "@/contexts/KanbanContext";
+import { relativeWorktreePath } from "@/components/execution/worktree-card/worktree-usage";
 import {
   useBoardActionsContext,
   useTaskSession,
@@ -335,6 +336,7 @@ function PriorityOpt({ priority }: { priority: string }) {
  */
 function WorkspaceOpt({ task, worktree }: { task: Task; worktree: WorktreeWithStatus | null }) {
   const navigate = useNavigate();
+  const { projectPath } = useKanban();
   if (task.workspace_mode === "RepositoryDirectory") return null;
 
   // The branch name is kept in the database for branch operations even while detached, so showing
@@ -390,9 +392,11 @@ function WorkspaceOpt({ task, worktree }: { task: Task; worktree: WorktreeWithSt
       <TooltipContent className="flex-col items-start gap-0.5 break-all">
         <div className="font-mono">{branch}</div>
         {worktree ? (
-          <div className="font-mono text-muted-foreground">{worktree.path}</div>
+          <div className="font-mono opacity-70">
+            {relativeWorktreePath(worktree.path, projectPath)}
+          </div>
         ) : (
-          <div className="text-muted-foreground">Not created yet</div>
+          <div className="opacity-70">Not created yet</div>
         )}
       </TooltipContent>
     </Tooltip>
