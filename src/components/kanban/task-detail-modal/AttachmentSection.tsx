@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useSelectedProject } from "@/store/projectStore";
 import { useWslConnections } from "@/services/connection.service";
 import { Button } from "@/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { ZoomableContent } from "@/ui/zoomable-content";
 import {
   useTaskAttachmentsQuery,
@@ -47,15 +48,21 @@ function AttachmentThumbnail({
   // native opener reports what actually went wrong.
   if (!src) {
     return (
-      <button
-        aria-label={`Open ${attachment.filename}`}
-        title={attachment.file_path}
-        className="w-20 h-20 flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border px-1 text-[10px] text-muted-foreground"
-        onClick={() => void openAttachment(attachment.file_path)}
-      >
-        <FileWarning className="size-4" />
-        <span className="w-full truncate">{attachment.filename}</span>
-      </button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              aria-label={`Open ${attachment.filename}`}
+              className="w-20 h-20 flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border px-1 text-[10px] text-muted-foreground"
+              onClick={() => void openAttachment(attachment.file_path)}
+            />
+          }
+        >
+          <FileWarning className="size-4" />
+          <span className="w-full truncate">{attachment.filename}</span>
+        </TooltipTrigger>
+        <TooltipContent className="break-all">{attachment.file_path}</TooltipContent>
+      </Tooltip>
     );
   }
 

@@ -8,6 +8,7 @@ import { ToolCallTimeline } from "./ToolCallTimeline";
 import { subagentName } from "./utils";
 import { StopSubagentContext, stopSubagentPrompt } from "./subagent-stop";
 import { useSettings } from "@/services/settings.service";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { ToolCallItem } from "./types";
 
 function stripUsage(text: string): string {
@@ -165,30 +166,36 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
           )}
         </div>
         {canStop && !stopAsked ? (
-          <button
-            type="button"
-            title="Stop this subagent"
-            aria-label={`Stop ${name}`}
-            onClick={() => {
-              setStopAsked(true);
-              stopSubagent(stopSubagentPrompt(item));
-            }}
-            className={cn(
-              pillClass,
-              // Both labels share one cell, so the pill keeps its width when it turns into Stop.
-              "group/pill relative grid bg-accent/15 text-accent transition-colors",
-              // Hovering anywhere on the card offers the stop; hovering the pill itself is the one that takes it.
-              "group-hover/card:bg-destructive/10 group-hover/card:text-destructive hover:bg-destructive/20 focus-visible:bg-destructive/15 focus-visible:text-destructive",
-            )}
-          >
-            <span className="col-start-1 row-start-1 group-hover/card:invisible group-focus-visible/pill:invisible">
-              Running
-            </span>
-            <span className="invisible col-start-1 row-start-1 inline-flex items-center justify-center gap-1 group-hover/card:visible group-focus-visible/pill:visible">
-              <Square className="size-2 fill-current" />
-              Stop
-            </span>
-          </button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={`Stop ${name}`}
+                  onClick={() => {
+                    setStopAsked(true);
+                    stopSubagent(stopSubagentPrompt(item));
+                  }}
+                  className={cn(
+                    pillClass,
+                    // Both labels share one cell, so the pill keeps its width when it turns into Stop.
+                    "group/pill relative grid bg-accent/15 text-accent transition-colors",
+                    // Hovering anywhere on the card offers the stop; hovering the pill itself is the one that takes it.
+                    "group-hover/card:bg-destructive/10 group-hover/card:text-destructive hover:bg-destructive/20 focus-visible:bg-destructive/15 focus-visible:text-destructive",
+                  )}
+                />
+              }
+            >
+              <span className="col-start-1 row-start-1 group-hover/card:invisible group-focus-visible/pill:invisible">
+                Running
+              </span>
+              <span className="invisible col-start-1 row-start-1 inline-flex items-center justify-center gap-1 group-hover/card:visible group-focus-visible/pill:visible">
+                <Square className="size-2 fill-current" />
+                Stop
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Stop this subagent</TooltipContent>
+          </Tooltip>
         ) : (
           <span
             className={cn(

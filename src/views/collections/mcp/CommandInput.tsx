@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { openQuote, quoteArg, splitCommand } from "./mcp";
 
 const CHIP = "flex items-center gap-0.5 rounded py-px pr-0.5 pl-1.5 font-mono text-[11px]";
@@ -74,31 +75,36 @@ export function CommandInput({
             }}
           />
         ) : (
-          <span
-            // oxlint-disable-next-line react/no-array-index-key -- a position, not an identity
-            key={index}
-            title={index === 0 ? "Command" : undefined}
-            className={cn(
-              CHIP,
-              "cursor-pointer whitespace-pre",
-              index === 0 ? "bg-primary/15 font-semibold" : "bg-muted",
-              /\$\{\w+\}/.test(token) && "outline outline-1 outline-dashed outline-amber-500",
-            )}
-            onClick={() => setEditing({ index, text: quoteArg(token) })}
-          >
-            {token}
-            <button
-              type="button"
-              aria-label={`Remove ${token}`}
-              className="rounded text-muted-foreground hover:text-foreground"
-              onClick={(event) => {
-                event.stopPropagation();
-                onChange(tokens.filter((_, kept) => kept !== index));
-              }}
+          // oxlint-disable-next-line react/no-array-index-key -- a position, not an identity
+          <Tooltip key={index} disabled={index !== 0}>
+            <TooltipTrigger
+              render={
+                <span
+                  className={cn(
+                    CHIP,
+                    "cursor-pointer whitespace-pre",
+                    index === 0 ? "bg-primary/15 font-semibold" : "bg-muted",
+                    /\$\{\w+\}/.test(token) && "outline outline-1 outline-dashed outline-amber-500",
+                  )}
+                  onClick={() => setEditing({ index, text: quoteArg(token) })}
+                />
+              }
             >
-              <X className="size-3" />
-            </button>
-          </span>
+              {token}
+              <button
+                type="button"
+                aria-label={`Remove ${token}`}
+                className="rounded text-muted-foreground hover:text-foreground"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onChange(tokens.filter((_, kept) => kept !== index));
+                }}
+              >
+                <X className="size-3" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Command</TooltipContent>
+          </Tooltip>
         ),
       )}
       <input
