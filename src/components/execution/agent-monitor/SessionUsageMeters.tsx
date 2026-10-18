@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { cn } from "@/lib/utils";
 import { humanizeTokenCount } from "@/lib/format-utils";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/ui/hover-card";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import {
   DOT_COLOR,
   PCT_COLOR,
@@ -176,15 +177,21 @@ export function SessionUsageMeters({
                 <span className="bg-accent/15 px-1.5 py-0.5 text-accent">{money(cost)}</span>
               )}
               {measured.length > 0 && (
-                <span
-                  className={cn(
-                    "bg-foreground/[0.06] px-1.5 py-0.5 text-foreground",
-                    cost && "border-l border-border/60",
-                  )}
-                  title={`${total.toLocaleString()} tokens`}
-                >
-                  {humanizeTokenCount(total)}
-                </span>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span
+                        className={cn(
+                          "bg-foreground/[0.06] px-1.5 py-0.5 text-foreground",
+                          cost && "border-l border-border/60",
+                        )}
+                      />
+                    }
+                  >
+                    {humanizeTokenCount(total)}
+                  </TooltipTrigger>
+                  <TooltipContent>{total.toLocaleString()} tokens</TooltipContent>
+                </Tooltip>
               )}
             </span>
           </HoverCardTrigger>
@@ -259,12 +266,14 @@ function TokenDetails({ turns, total }: { turns: UsageTurn[]; total: number }) {
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between">
         <span className="text-xs font-semibold">Tokens</span>
-        <span
-          className="text-lg font-bold tabular-nums tracking-tight"
-          title={total.toLocaleString()}
-        >
-          {humanizeTokenCount(total)}
-        </span>
+        <Tooltip>
+          <TooltipTrigger
+            render={<span className="text-lg font-bold tabular-nums tracking-tight" />}
+          >
+            {humanizeTokenCount(total)}
+          </TooltipTrigger>
+          <TooltipContent>{total.toLocaleString()}</TooltipContent>
+        </Tooltip>
       </div>
       <div className="-mt-1.5 text-muted-foreground">
         {turns.length} {turns.length === 1 ? "turn" : "turns"} · {formatCountdown(active)} active ·
@@ -273,15 +282,22 @@ function TokenDetails({ turns, total }: { turns: UsageTurn[]; total: number }) {
       <div>
         <div className="flex h-7 items-end gap-px">
           {bars.map((t, i) => (
-            <div
-              key={i}
-              className="max-w-1.5 flex-1 rounded-[1px]"
-              title={`${t.model_id ?? UNKNOWN_MODEL} · ${(t.total_tokens ?? 0).toLocaleString()} tokens`}
-              style={{
-                height: `${Math.max(((t.total_tokens ?? 0) / tallest) * 100, 6)}%`,
-                background: fill.get(t.model_id ?? UNKNOWN_MODEL),
-              }}
-            />
+            <Tooltip key={i}>
+              <TooltipTrigger
+                render={
+                  <div
+                    className="max-w-1.5 flex-1 rounded-[1px]"
+                    style={{
+                      height: `${Math.max(((t.total_tokens ?? 0) / tallest) * 100, 6)}%`,
+                      background: fill.get(t.model_id ?? UNKNOWN_MODEL),
+                    }}
+                  />
+                }
+              />
+              <TooltipContent>
+                {t.model_id ?? UNKNOWN_MODEL} · {(t.total_tokens ?? 0).toLocaleString()} tokens
+              </TooltipContent>
+            </Tooltip>
           ))}
         </div>
         {/* Marks the latest turn. */}
@@ -336,9 +352,12 @@ function TokenDetails({ turns, total }: { turns: UsageTurn[]; total: number }) {
           <div key={kind} className="contents">
             <span className={cn("h-1.5 w-1.5 self-center rounded-full", color)} />
             <span className="text-muted-foreground">{label}</span>
-            <span className="text-right tabular-nums" title={sums[kind].toLocaleString()}>
-              {humanizeTokenCount(sums[kind])}
-            </span>
+            <Tooltip>
+              <TooltipTrigger render={<span className="text-right tabular-nums" />}>
+                {humanizeTokenCount(sums[kind])}
+              </TooltipTrigger>
+              <TooltipContent>{sums[kind].toLocaleString()}</TooltipContent>
+            </Tooltip>
           </div>
         ))}
       </div>

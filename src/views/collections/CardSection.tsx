@@ -4,6 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/ui/hover-card";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 
 /** The search box above a panel's sections, with a button that clears it. */
 export function SearchBox({
@@ -49,15 +50,21 @@ export function SearchBox({
 export function CardTitle({ title, href }: { title: string; href?: string | null }) {
   if (!href) return <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>;
   return (
-    <button
-      type="button"
-      title={href}
-      onClick={() => void openUrl(href)}
-      className="group/title flex min-w-0 flex-1 items-center gap-1 text-left text-sm font-semibold hover:underline"
-    >
-      <span className="truncate">{title}</span>
-      <ExternalLink className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover/title:opacity-100" />
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={() => void openUrl(href)}
+            className="group/title flex min-w-0 flex-1 items-center gap-1 text-left text-sm font-semibold hover:underline"
+          />
+        }
+      >
+        <span className="truncate">{title}</span>
+        <ExternalLink className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover/title:opacity-100" />
+      </TooltipTrigger>
+      <TooltipContent className="break-all">{href}</TooltipContent>
+    </Tooltip>
   );
 }
 

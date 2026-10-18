@@ -2,6 +2,7 @@ import { Folder, GitBranch } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
 import { useNow } from "@/hooks/useNow";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { MAESTRO_BRANCH_PREFIX } from "@/lib/generateSessionName";
 import type { BranchMode, WorkspaceMode, WorktreeWithStatus } from "@/types/bindings";
 import { WorkspaceCard } from "./WorkspaceCard";
@@ -103,9 +104,12 @@ export function WorkspaceSelector({
               <span className="flex items-center gap-1.5 min-w-0 px-2.5">
                 <GitBranch className="size-3 shrink-0 text-muted-foreground" />
                 {branchName ? (
-                  <span className="font-mono truncate" title={branchName}>
-                    {branchName}
-                  </span>
+                  <Tooltip>
+                    <TooltipTrigger render={<span className="font-mono truncate" />}>
+                      {branchName}
+                    </TooltipTrigger>
+                    <TooltipContent className="break-all font-mono">{branchName}</TooltipContent>
+                  </Tooltip>
                 ) : (
                   <span className="text-muted-foreground">Auto-generated name</span>
                 )}

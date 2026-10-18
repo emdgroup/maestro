@@ -16,6 +16,7 @@ import { Input } from "@/ui/input";
 import { Textarea } from "@/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import {
   discardMcpAuthorization,
@@ -740,23 +741,32 @@ export function TestOutcome({ result }: { result: McpTestResult | null }) {
     return (
       <span className="flex min-w-0 items-center gap-1 text-[11px] text-destructive">
         <CircleX className="size-3.5 shrink-0" />
-        <span className="truncate" title={result.error ?? undefined}>
-          {result.error ?? "Failed"}
-        </span>
+        <Tooltip disabled={!result.error}>
+          <TooltipTrigger render={<span className="truncate" />}>
+            {result.error ?? "Failed"}
+          </TooltipTrigger>
+          <TooltipContent className="whitespace-pre-wrap break-words">
+            {result.error}
+          </TooltipContent>
+        </Tooltip>
       </span>
     );
   return (
-    <span
-      className="flex min-w-0 items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400"
-      title={result.tools.join(", ")}
-    >
-      <CircleCheck className="size-3.5 shrink-0" />
-      <span className="truncate">
-        {result.tools.length
-          ? `Connected: ${result.tools.length} tool${result.tools.length === 1 ? "" : "s"}`
-          : "Connected"}
-      </span>
-    </span>
+    <Tooltip disabled={!result.tools.length}>
+      <TooltipTrigger
+        render={
+          <span className="flex min-w-0 items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400" />
+        }
+      >
+        <CircleCheck className="size-3.5 shrink-0" />
+        <span className="truncate">
+          {result.tools.length
+            ? `Connected: ${result.tools.length} tool${result.tools.length === 1 ? "" : "s"}`
+            : "Connected"}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{result.tools.join(", ")}</TooltipContent>
+    </Tooltip>
   );
 }
 
