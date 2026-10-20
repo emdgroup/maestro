@@ -2234,6 +2234,43 @@ mod tests {
 
     const SEES_THEM: &str = "git hash-object tests/t.txt .maestro/loop/sealed/h.txt";
 
+    /// What a `git worktree remove` cut short on Windows leaves: the files, without the `.git`
+    /// link or the registration.
+    async fn half_remove(project: &str, dir: &str) {
+        std::fs::remove_file(Path::new(dir).join(".git")).unwrap();
+        git(project, &["worktree", "prune"]).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_half_removed_sandbox_is_cleared_and_made_again() {
+        let (_repo, store, task) = sealed_loop(SEES_THEM).await;
+        let (dir, task, _) = start(&store, &task).await;
+        let project = task.project_path.clone();
+        let project_head = git(&project, &["rev-parse", "HEAD"]).await.unwrap();
+
+        half_remove(&project, &dir).await;
+        let again = crate::worktree::prepare_task_workspace(
+            &store,
+            &task,
+            maestro_protocol::AgentRole::Worker,
+        )
+        .await
+        .expect("made again");
+        assert_eq!(again.cwd, dir);
+        assert!(Path::new(&dir).join(".git").exists(), "a checkout again");
+        assert_eq!(
+            git(&project, &["rev-parse", "HEAD"]).await.unwrap(),
+            project_head,
+            "the project's own checkout is untouched"
+        );
+
+        half_remove(&project, &dir).await;
+        crate::worktree::remove_sandbox(&project, task.id)
+            .await
+            .expect("Start over removes what is left");
+        assert!(!Path::new(&dir).exists());
+    }
+
     #[tokio::test]
     async fn an_iteration_is_committed_without_its_sealed_writes_and_checked_with_them() {
         let (_repo, store, task) = sealed_loop(SEES_THEM).await;

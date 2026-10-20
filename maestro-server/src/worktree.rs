@@ -388,7 +388,11 @@ async fn sync_sandbox(
     task: &maestro_protocol::Task,
 ) -> Result<String, String> {
     let sandbox = sandbox_dir(project_path, task.id);
-    if Path::new(&sandbox).exists() {
+    if !is_checkout(&sandbox) {
+        let _adding = adding(project_path).await;
+        clear_leftover(project_path, &sandbox).await?;
+    }
+    if is_checkout(&sandbox) {
         let held = git(&sandbox, &["rev-parse", "HEAD"]).await?;
         merge_back(context, held.trim()).await?;
         let head = git(context, &["rev-parse", "HEAD"]).await?;
@@ -432,11 +436,30 @@ pub(crate) async fn merge_back(context: &str, sha: &str) -> Result<(), String> {
     }
 }
 
-/// Remove a loop's sandbox, tolerating it being gone already.
+/// Whether `dir` is a checkout git still knows: its `.git` link is there. `git worktree remove`
+/// unregisters the worktree and deletes that link before the rest, so a removal Windows cut short
+/// on a held file leaves a directory without one. git run inside it would reach the project's own
+/// checkout instead.
+fn is_checkout(dir: &str) -> bool {
+    Path::new(dir).join(".git").exists()
+}
+
+/// Delete what a removal cut short left of a sandbox, and forget it in git.
+async fn clear_leftover(project_path: &str, dir: &str) -> Result<(), String> {
+    if Path::new(dir).exists() {
+        tokio::fs::remove_dir_all(dir)
+            .await
+            .map_err(|e| format!("cannot remove what is left of {dir}: {e}"))?;
+    }
+    git(project_path, &["worktree", "prune"]).await.map(|_| ())
+}
+
+/// Remove a loop's sandbox, tolerating it being gone already, or half gone.
 pub(crate) async fn remove_sandbox(project_path: &str, task_id: i32) -> Result<(), String> {
     let _adding = adding(project_path).await;
-    if Path::new(&sandbox_dir(project_path, task_id)).exists() {
-        git(
+    let dir = sandbox_dir(project_path, task_id);
+    if is_checkout(&dir) {
+        let removed = git(
             project_path,
             &[
                 "worktree",
@@ -445,11 +468,14 @@ pub(crate) async fn remove_sandbox(project_path: &str, task_id: i32) -> Result<(
                 &sandbox_relative_path(task_id),
             ],
         )
-        .await?;
-    } else {
-        git(project_path, &["worktree", "prune"]).await?;
+        .await;
+        if let Err(e) = removed {
+            if is_checkout(&dir) {
+                return Err(e);
+            }
+        }
     }
-    Ok(())
+    clear_leftover(project_path, &dir).await
 }
 
 /// Leave a loop's sealed paths out of its sandbox, as its config lists them now. A non-cone

@@ -545,11 +545,14 @@ function IterationRow({
   task,
   iteration,
   checks,
+  first,
   last,
 }: {
   task: Task;
   iteration: LoopIteration;
   checks: LoopCheck[];
+  /** The rail starts at its node: nothing is above it. */
+  first: boolean;
   last: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -569,7 +572,16 @@ function IterationRow({
   const note = sideNote(iteration);
   return (
     <li className={cn("relative pb-1", INDENT)}>
-      <span className={cn("absolute top-0 w-0.5 bg-border", RAIL, last ? "h-5" : "bottom-0")} />
+      {!(first && last) && (
+        <span
+          className={cn(
+            "absolute w-0.5 bg-border",
+            RAIL,
+            first ? "top-5" : "top-0",
+            last ? "h-5" : "bottom-0",
+          )}
+        />
+      )}
       <span className="absolute left-[30px] top-3.5 size-3 rounded-full border-2 border-border bg-background" />
       <div className={cn("rounded-lg", open && "border border-border bg-card")}>
         <button
@@ -737,6 +749,7 @@ export function LoopIterations({
           task={task}
           iteration={iteration}
           checks={checks}
+          first={!current && i === 0}
           last={i === earlier.length - 1}
         />
       ))}
