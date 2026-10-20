@@ -592,8 +592,12 @@ Visuals are the canvas mock `loops-app`.
   The check bar sits under the phase line.
 
 - **Detail modal**, with Loop as the first tab:
-  - Banner per state, and the meters (iterations, no-change streak) and the time per Build.
-  - The flaky banner names the check and both results, with Re-run checks and Edit checks.
+  - No banners. The head of the iteration timeline carries the state: the iteration at work, or
+    the one the loop stopped after, with a status word, the ring, step tiles ending on a **You**
+    or **Merge** tile when the turn is someone else's, and one line on why it waits. It explains
+    and does not ask; the footer holds the actions. A finished loop's head is one line.
+  - A flaky check shows its card under the head, with Re-run checks and Edit the check. A merge
+    conflict shows git's reason, kept on the iteration's `check_output`.
   - The digest.
   - Done when, with Accept and Reject on proposals and Mark done on manual checks.
   - The iteration list (files, lines, tokens, checks passed), with Join on the running one.
@@ -669,7 +673,7 @@ Settled before phase 4 started:
   or Re-run checks when flaky; a task a gate holds offers Try now.
 - The detail's side column shows the live session's activity line, not the agent's prose, and the
   last failing check output, or the passing commands once nothing fails. The digest shows only from
-  sign-off on. The gate banner names the agent by its id.
+  sign-off on. The usage-limit head names the agent by its id.
 - The Changes tab lists files and line counts parsed from the worktree's diff against its base;
   Review changes opens the review sheet.
 - The judge is a per-task `Judge` profile override, picked in the loop editor. The agents dialog

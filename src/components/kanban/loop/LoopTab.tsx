@@ -1,24 +1,5 @@
 import { useState } from "react";
-import {
-  BookOpen,
-  Check,
-  CircleCheck,
-  Dice5,
-  GitPullRequest,
-  Hourglass,
-  Lock,
-  OctagonX,
-  Pause,
-  Pencil,
-  Play,
-  Plus,
-  Repeat,
-  Sparkles,
-  StickyNote,
-  Undo2,
-  User,
-  X,
-} from "lucide-react";
+import { BookOpen, Lock, Pencil, Play, Plus, Sparkles, StickyNote, Undo2, X } from "lucide-react";
 import type { LoopCheck, LoopCheckKind, Task, TaskComment } from "@/types/bindings";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
@@ -31,13 +12,11 @@ import {
   useAnswerLoopProposalMutation,
   useLoopChecksQuery,
   useLoopIterationsQuery,
-  useOpenAgentGateMutation,
   useRerunLoopChecksMutation,
   useResumeLoopMutation,
   usePauseLoopMutation,
   useTickLoopCheckMutation,
 } from "@/services/loop.service";
-import { useBoardActions } from "@/store/boardStore";
 import { useTaskSession } from "@/contexts/BoardActionsContext";
 import { useSessionActivity } from "@/store/sessionActivityStore";
 import {
@@ -49,40 +28,9 @@ import {
   LimitCards,
   usePrefillHidden,
 } from "./LoopEditor";
-import { LoopIterations, type CurrentState } from "./LoopIterations";
+import { LoopIterations, type CurrentState, type Head } from "./LoopIterations";
 import { blankCheck, doneWhenRows, type CheckDraft, type LoopDraft } from "./loop-draft";
-import { clockTime, formatDuration, gateLine, loopHalt } from "./loop-state";
-
-function Banner({
-  tone,
-  icon: Icon,
-  title,
-  children,
-  actions,
-}: {
-  tone: "amber" | "red" | "green" | "muted";
-  icon: typeof Check;
-  title: string;
-  children?: React.ReactNode;
-  actions?: React.ReactNode;
-}) {
-  const tones = {
-    amber: ["border-amber-500/40 bg-amber-500/10", "text-amber-600"],
-    red: ["border-destructive/30 bg-destructive/10", "text-destructive"],
-    green: ["border-success/30 bg-success/10", "text-success"],
-    muted: ["border-border bg-muted/40", "text-muted-foreground"],
-  }[tone];
-  return (
-    <div className={cn("flex items-start gap-3 rounded-md border p-3 text-xs", tones[0])}>
-      <Icon className={cn("mt-0.5 size-4 shrink-0", tones[1])} />
-      <div className="flex-1 space-y-1">
-        <div className="font-medium">{title}</div>
-        {children && <div className="text-muted-foreground">{children}</div>}
-      </div>
-      {actions && <div className="flex shrink-0 gap-1.5">{actions}</div>}
-    </div>
-  );
-}
+import { gateLine, loopHalt } from "./loop-state";
 
 /** Accepting a proposal makes it a full check, of the kind the user picks, sealing what it names. */
 function AcceptForm({
@@ -312,8 +260,6 @@ export function LoopTab({
   const pause = usePauseLoopMutation();
   const addNote = useAddLoopNoteMutation();
   const tick = useTickLoopCheckMutation();
-  const openGate = useOpenAgentGateMutation();
-  const { openReview } = useBoardActions();
   const session = useTaskSession(task.id);
   const activity = useSessionActivity(session?.session_id);
   const [note, setNote] = useState("");
@@ -366,7 +312,6 @@ export function LoopTab({
   const pendingNotes = comments.filter(
     (c) => c.kind === "steer" && (!lastStart || c.created_at > lastStart),
   );
-  const yours = real.filter((c) => c.kind === "Manual");
   const flaky = real.filter((c) => c.state === "Flaky");
   const editFlaky = () => {
     const row = draft.checks.find((c) => flaky.some((f) => f.id === c.id));
@@ -374,168 +319,38 @@ export function LoopTab({
     if (row) editCheck(row);
   };
 
-  // The iteration the loop is in: building, being checked or judged, or stopped on its question.
+  // What heads the timeline: the iteration at work, or the one the loop stopped after and why.
   const last = iterations[iterations.length - 1];
   const steps: Partial<Record<string, 0 | 1 | 2>> = { Iterating: 0, Checking: 1, Judging: 2 };
   const step = steps[task.phase ?? ""];
   const blocked = halt === "Blocked" && last?.outcome === "Blocked";
-  const current: CurrentState | null =
-    last && ((live && step !== undefined) || blocked)
+  const head: Head | null = blocked
+    ? { kind: "blocked" }
+    : live && step !== undefined
       ? {
-          iteration: last,
-          step: blocked ? 0 : (step ?? 0),
-          blocked,
+          kind: "live",
+          step,
           activity:
-            activity && step === 0 && !blocked
+            activity && step === 0
               ? { status: activity.status, since: activity.stateChangedAt }
               : null,
         }
-      : null;
-
-  let banner: React.ReactNode = null;
-  if (gate && task.gate) {
-    const agentGate = task.gate;
-    banner = (
-      <Banner
-        tone="amber"
-        icon={Hourglass}
-        title={
-          agentGate.backoff
-            ? `${agentGate.agent_id} hit its usage limit. It tries again at ${clockTime(agentGate.resume_at)}`
-            : `Waiting for ${agentGate.agent_id}'s ${gate.label.toLowerCase()} to reset at ${clockTime(agentGate.resume_at)}`
-        }
-        actions={
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() =>
-              openGate.mutate({ projectId: task.project_id, agentId: agentGate.agent_id })
-            }
-          >
-            <Play className="size-3" />
-            Try now
-          </Button>
-        }
-      >
-        The refused iteration was saved as a WIP commit and runs again then, without counting. The
-        next session never sees the error.
-      </Banner>
-    );
-  } else if (halt === "Flaky") {
-    banner = (
-      <Banner
-        tone="amber"
-        icon={Dice5}
-        title={`Paused: ${flaky.map((c) => `"${c.label}"`).join(", ") || "a check"} is flaky`}
-        actions={
-          <>
-            <Button size="sm" variant="outline" onClick={() => rerun.mutate(key)}>
-              <Repeat className="size-3" />
-              Re-run checks
-            </Button>
-            {!readOnly && (
-              <Button size="sm" variant="outline" onClick={editFlaky}>
-                Edit the check
-              </Button>
-            )}
-          </>
-        }
-      >
-        It failed, then passed when run again on the same commit. A check that changes its mind
-        would spend iterations on nothing, so the loop waits for you. Fix the test on{" "}
-        {task.base_branch} or remove the check, then re-run checks. Re-running takes the hidden
-        files from {task.base_branch} again and costs no iteration.
-      </Banner>
-    );
-  } else if (halt === "Conflict") {
-    banner = (
-      <Banner tone="red" icon={OctagonX} title="Stopped: an iteration could not be merged back">
-        The loop's worktree has changes in the way of the last iteration's commit, which is kept.
-        Commit or revert them there, then resume: the next iteration merges it first. Git's reason
-        is in the Outcome thread.
-      </Banner>
-    );
-  } else if (halt === "Paused" || halt === "Stopped") {
-    banner = (
-      <Banner
-        tone="muted"
-        icon={halt === "Paused" ? Pause : OctagonX}
-        title={halt === "Paused" ? "Paused, as you asked" : "Stopped, as you asked"}
-      >
-        Nothing runs until you resume it. A note above goes into the next iteration.
-      </Banner>
-    );
-  } else if (halt && halt !== "Blocked" && config && summary) {
-    const title = {
-      Stalled: `Stopped: ${config.stall_limit} iterations in a row changed nothing`,
-      Failing: "Stopped: the last three iterations failed",
-      OutOfIterations: `Stopped: the loop used its ${config.max_iterations} iterations`,
-    }[halt];
-    banner = (
-      <Banner tone="red" icon={OctagonX} title={title}>
-        {summary.last_summary && <>The agent's last note: “{summary.last_summary}” </>}
-        {halt === "OutOfIterations"
-          ? "Raise the limit in Checks & settings and save, or answer with a note and resume."
-          : "Answer with a note and resume."}
-      </Banner>
-    );
-  } else if (signoff) {
-    const unticked = yours.filter((c) => c.state !== "Pass");
-    banner = (
-      <Banner
-        tone="amber"
-        icon={User}
-        title={
-          unticked.length > 0
-            ? `Every automatic check passes. ${unticked.length === 1 ? "One check is" : `${unticked.length} checks are`} yours.`
-            : "Every check passes."
-        }
-        actions={
-          <Button size="sm" variant="outline" onClick={() => openReview(task.id)}>
-            Review changes
-          </Button>
-        }
-      >
-        Read the digest and review the changes.{" "}
-        {unticked.length > 0 ? "Mark your checks done to approve, " : "Approve it, "}or send it back
-        with a note that goes into the next iteration.
-        {yours.length > 0 && (
-          <ul className="mt-2 space-y-1 text-foreground">
-            {yours.map((c) => (
-              <li key={c.id} className="flex items-center gap-2">
-                {c.state === "Pass" ? (
-                  <Check className="size-3.5 shrink-0 text-success" />
-                ) : (
-                  <User className="size-3.5 shrink-0 text-muted-foreground" />
-                )}
-                <span className="flex-1">{c.label}</span>
-                <button
-                  className="shrink-0 text-accent hover:underline"
-                  onClick={() => tick.mutate({ ...key, checkId: c.id, ticked: c.state !== "Pass" })}
-                >
-                  {c.state === "Pass" ? "Untick" : "Mark done"}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Banner>
-    );
-  } else if (task.phase === "AwaitingMerge") {
-    banner = (
-      <Banner tone="green" icon={GitPullRequest} title="Pull request open">
-        The digest is its description. Same merge step as every task.
-      </Banner>
-    );
-  } else if (task.status === "Done") {
-    banner = (
-      <Banner
-        tone="green"
-        icon={CircleCheck}
-        title={`Done after ${summary?.counted ?? 0} iterations and ${formatDuration(summary?.agent_secs ?? 0)}.`}
-      />
-    );
-  }
+      : gate && task.gate
+        ? {
+            kind: "gated",
+            label: gate.label,
+            agentId: task.gate.agent_id,
+            resumeAt: task.gate.resume_at,
+            backoff: task.gate.backoff,
+          }
+        : halt && halt !== "Blocked"
+          ? { kind: "halted", halt }
+          : signoff
+            ? { kind: "signoff" }
+            : task.phase === "AwaitingMerge"
+              ? { kind: "merge" }
+              : null;
+  const current: CurrentState | null = last && head ? { iteration: last, head } : null;
 
   // The note goes into the next iteration; on a loop that waits on the user it is also the answer
   // that lets it go on. A `loop_blocked` question is answered in its own card instead.
@@ -759,17 +574,11 @@ export function LoopTab({
   );
 
   if (!started) {
-    return (
-      <div className="space-y-4">
-        {banner}
-        {settings}
-      </div>
-    );
+    return <div className="space-y-4">{settings}</div>;
   }
 
   return (
     <div className="space-y-4">
-      {banner}
       {topRow}
       {view === "settings" ? (
         settings
@@ -797,8 +606,13 @@ export function LoopTab({
             checks={checks}
             comments={comments}
             current={current}
-            onJoin={session ? onJoin : null}
-            onResume={(answer) => resume.mutate({ ...key, note: answer })}
+            actions={{
+              onJoin: session ? onJoin : null,
+              onResume: (answer) => resume.mutate({ ...key, note: answer }),
+              onTick: (checkId, ticked) => tick.mutate({ ...key, checkId, ticked }),
+              onRerunChecks: () => rerun.mutate(key),
+              onEditCheck: readOnly ? null : editFlaky,
+            }}
           />
         </>
       )}

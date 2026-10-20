@@ -1,21 +1,28 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import {
   Check,
   ChevronDown,
+  CircleCheck,
   ChevronRight,
   CornerDownRight,
   Dice5,
   Gavel,
+  GitMerge,
+  GitPullRequest,
   Hammer,
+  Hourglass,
   Minus,
   OctagonX,
   Pause,
+  Pencil,
   Play,
+  Repeat,
   StickyNote,
   Terminal,
+  User,
   X,
 } from "lucide-react";
-import type { LoopCheck, LoopIteration, Task, TaskComment } from "@/types/bindings";
+import type { LoopCheck, LoopHalt, LoopIteration, Task, TaskComment } from "@/types/bindings";
 import { Button } from "@/ui/button";
 import { Textarea } from "@/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -25,6 +32,7 @@ import { formatTokens } from "@/views/usage/format";
 import type { SessionActivityStatus } from "@/store/sessionActivityStore";
 import {
   checkOutcomes,
+  clockTime,
   failedFirst,
   failingBefore,
   formatDuration,
@@ -55,58 +63,100 @@ const DOING: Record<SessionActivityStatus, string> = {
 /** Which of Build, Checks and Judge the current iteration is in. */
 type Step = 0 | 1 | 2;
 
-/** Where the current iteration stands, as the tab draws it. */
+/** Why the head of the timeline is where it is. */
+export type Head =
+  /** An iteration building, being checked or judged. */
+  | {
+      kind: "live";
+      step: Step;
+      /** The Build's session, while there is one. */
+      activity: { status: SessionActivityStatus; since: number } | null;
+    }
+  /** Stopped through `loop_blocked`, its question waiting for an answer. */
+  | { kind: "blocked" }
+  /** Refused by a usage limit, running again once it resets. */
+  | { kind: "gated"; label: string; agentId: string; resumeAt: string; backoff: boolean }
+  | { kind: "halted"; halt: Exclude<LoopHalt, "Blocked"> }
+  | { kind: "signoff" }
+  | { kind: "merge" };
+
+type Held = Exclude<Head, { kind: "live" } | { kind: "blocked" }>;
+
+/** The iteration that heads the timeline, and why. */
 export interface CurrentState {
   iteration: LoopIteration;
-  step: Step;
-  /** Stopped through `loop_blocked`, its question waiting for an answer. */
-  blocked: boolean;
-  /** The Build's session, while there is one. */
-  activity: { status: SessionActivityStatus; since: number } | null;
+  head: Head;
 }
 
-/**
- * The Build clock as a ring, the current iteration's node on the timeline. While it builds, the
- * time used against `max_build_secs`; once the Build is done, full, with the iteration's time so
- * far. Its own component so only it ticks.
- */
-function ClockRing({
-  current,
-  limitSecs,
-  amber,
-}: {
-  current: CurrentState;
-  limitSecs: number;
-  amber: boolean;
-}) {
-  const now = useNow(30_000);
-  const { iteration, step, blocked } = current;
-  const ended = iteration.ended_at ? Date.parse(iteration.ended_at) : now;
-  const used = secsBetween(iteration.started_at, blocked ? ended : now);
-  const building = step === 0;
-  const share = building ? Math.min(1, used / limitSecs) : 1;
-  const late = building && !blocked && limitSecs - used <= 10 * 60;
-  const tone = amber
-    ? "text-warning"
-    : !building
-      ? "text-success"
-      : late
-        ? "text-destructive"
-        : "text-accent";
+/** What the head card does itself: answer a question, tick a check, deal with a flaky one. */
+export interface HeadActions {
+  onJoin: (() => void) | null;
+  onResume: (answer: string) => void;
+  onTick: (checkId: number, ticked: boolean) => void;
+  onRerunChecks: () => void;
+  /** Opens the flaky check in Checks & settings; null where the loop cannot be edited. */
+  onEditCheck: (() => void) | null;
+}
+
+type Tone = "accent" | "warning" | "destructive" | "success" | "muted";
+
+const TEXT: Record<Tone, string> = {
+  accent: "text-accent",
+  warning: "text-warning",
+  destructive: "text-destructive",
+  success: "text-success",
+  muted: "text-muted-foreground",
+};
+const BORDER: Record<Tone, string> = {
+  accent: "border-accent/30",
+  warning: "border-warning/50",
+  destructive: "border-destructive/40",
+  success: "border-success/40",
+  muted: "border-border",
+};
+const DOT_TONE: Record<Tone, string> = {
+  accent: "animate-pulse bg-accent",
+  warning: "bg-warning",
+  destructive: "bg-destructive",
+  success: "bg-success",
+  muted: "bg-muted-foreground",
+};
+const LINK: Record<Tone, string> = {
+  accent: "bg-accent/40",
+  warning: "bg-warning/50",
+  destructive: "bg-destructive/40",
+  success: "bg-success/40",
+  muted: "bg-border",
+};
+const FROM: Record<Tone, string> = {
+  accent: "from-accent",
+  warning: "from-warning",
+  destructive: "from-destructive",
+  success: "from-success",
+  muted: "from-border",
+};
+
+interface RingProps {
+  share: number;
+  tone: Tone;
+  big: React.ReactNode;
+  small: string;
+  glow?: "accent" | "warning";
+  label: string;
+}
+
+/** The timeline's node: a ring filled to `share`, two short lines in it. */
+function Ring({ share, tone, big, small, glow, label }: RingProps) {
   const r = 34;
   const length = 2 * Math.PI * r;
   return (
     <div
-      role="progressbar"
-      aria-label={
-        building ? `Build: ${formatDuration(used)} of ${formatDuration(limitSecs)}` : "Build done"
-      }
-      aria-valuemin={0}
-      aria-valuemax={limitSecs}
-      aria-valuenow={Math.min(used, limitSecs)}
+      role="img"
+      aria-label={label}
       className={cn(
         "relative grid size-[72px] shrink-0 place-items-center rounded-full bg-card",
-        !blocked && (amber ? "animate-glow-warning" : "animate-glow-accent"),
+        glow === "accent" && "animate-glow-accent",
+        glow === "warning" && "animate-glow-warning",
       )}
     >
       <svg className="absolute inset-0 -rotate-90" viewBox="0 0 80 80" aria-hidden>
@@ -121,16 +171,47 @@ function ClockRing({
           stroke="currentColor"
           strokeDasharray={length}
           strokeDashoffset={length * (1 - share)}
-          className={cn("transition-[stroke-dashoffset] duration-700", tone)}
+          className={cn("transition-[stroke-dashoffset] duration-700", TEXT[tone])}
         />
       </svg>
       <div className="text-center leading-none">
-        <div className="text-sm font-bold tabular-nums">{formatDuration(used)}</div>
-        <div className="mt-0.5 text-[9px] text-muted-foreground">
-          {blocked ? "stopped" : building ? `of ${formatDuration(limitSecs)}` : "so far"}
-        </div>
+        <div className="text-sm font-bold tabular-nums">{big}</div>
+        <div className="mt-0.5 text-[9px] text-muted-foreground">{small}</div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The Build clock of an iteration in progress: while it builds, the time used against
+ * `max_build_secs`; once the Build is done, full, with the iteration's time so far. Its own
+ * component so only it ticks.
+ */
+function LiveRing({
+  iteration,
+  building,
+  limitSecs,
+  amber,
+}: {
+  iteration: LoopIteration;
+  building: boolean;
+  limitSecs: number;
+  amber: boolean;
+}) {
+  const now = useNow(30_000);
+  const used = secsBetween(iteration.started_at, now);
+  const late = building && limitSecs - used <= 10 * 60;
+  return (
+    <Ring
+      share={building ? Math.min(1, used / limitSecs) : 1}
+      tone={amber ? "warning" : !building ? "success" : late ? "destructive" : "accent"}
+      big={formatDuration(used)}
+      small={building ? `of ${formatDuration(limitSecs)}` : "so far"}
+      glow={amber ? "warning" : "accent"}
+      label={
+        building ? `Build: ${formatDuration(used)} of ${formatDuration(limitSecs)}` : "Build done"
+      }
+    />
   );
 }
 
@@ -141,20 +222,18 @@ function Since({ since }: { since: number }) {
   return secs < 60 ? null : <span>for {formatDuration(secs)}</span>;
 }
 
-function StepTile({
-  label,
-  icon: Icon,
-  sub,
-  state,
-  optional,
-}: {
+type TileState = "done" | "live" | "waiting" | "failed" | "todo";
+
+interface Tile {
   label: string;
   icon: typeof Check;
   sub: React.ReactNode;
-  state: "done" | "live" | "waiting" | "todo";
+  state: TileState;
   /** Runs only when the steps before it pass. */
   optional?: boolean;
-}) {
+}
+
+function StepTile({ label, icon: Icon, sub, state, optional }: Tile) {
   return (
     <div
       className={cn(
@@ -162,6 +241,7 @@ function StepTile({
         state === "done" && "border-success/40 bg-success/5",
         state === "live" && "border-accent/50 bg-accent/10",
         state === "waiting" && "border-warning/60 bg-warning/10",
+        state === "failed" && "border-destructive/40 bg-destructive/5",
         state === "todo" && (optional ? "border-dashed border-border" : "border-border"),
       )}
     >
@@ -173,6 +253,7 @@ function StepTile({
             "size-4 shrink-0",
             state === "live" && "text-accent",
             state === "waiting" && "text-warning",
+            state === "failed" && "text-destructive",
             state === "todo" && "text-muted-foreground",
           )}
         />
@@ -181,7 +262,7 @@ function StepTile({
         <div
           className={cn(
             "text-sm",
-            (state === "live" || state === "waiting") && "font-semibold",
+            state !== "done" && state !== "todo" && "font-semibold",
             state === "todo" && "text-muted-foreground",
           )}
         >
@@ -207,15 +288,468 @@ const changed = (iteration: LoopIteration) => (
   </span>
 );
 
-/** The head of the timeline: the clock ring on the rail, and beside it the iteration's card. */
-function CurrentIteration({
+const lasted = (iteration: LoopIteration) =>
+  secsBetween(iteration.started_at, Date.parse(iteration.ended_at ?? iteration.started_at));
+
+/** What the user's tile says while a halt waits on them. */
+const YOURS: Record<Exclude<LoopHalt, "Blocked">, string> = {
+  Paused: "resume when ready",
+  Stopped: "resume when ready",
+  Flaky: "fix or remove the check",
+  Conflict: "commit or revert, then resume",
+  Stalled: "add a note and resume",
+  Failing: "add a note and resume",
+  OutOfIterations: "raise the limit or add a note",
+};
+
+/** A held loop's iteration through its steps, from the results it recorded. */
+function heldTiles(head: Held, iteration: LoopIteration, checks: LoopCheck[]): Tile[] {
+  const outcomes = checkOutcomes(iteration, checks);
+  const commands = outcomes.filter((o) => o.check.kind === "Command");
+  const judge = outcomes.find((o) => o.check.kind === "Judge");
+  const passed = commands.filter((o) => o.result?.state === "Pass").length;
+  const flaky = commands.find((o) => o.result?.state === "Flaky");
+  const ran = commands.some((o) => o.result);
+  const tiles: Tile[] = [
+    head.kind === "gated"
+      ? {
+          label: "Build",
+          icon: Hourglass,
+          sub: `${head.label} · resumes ${clockTime(head.resumeAt)}`,
+          state: "waiting",
+        }
+      : iteration.outcome === "Interrupted"
+        ? {
+            label: "Build",
+            icon: Hammer,
+            sub: `cut off at ${formatDuration(lasted(iteration))}`,
+            state: "failed",
+          }
+        : {
+            label: "Build",
+            icon: Hammer,
+            sub: `done in ${formatDuration(lasted(iteration))}`,
+            state: "done",
+          },
+  ];
+  if (head.kind === "halted" && head.halt === "Conflict") {
+    tiles.push({ label: "Merge back", icon: GitMerge, sub: "changes in the way", state: "failed" });
+  } else {
+    tiles.push({
+      label: "Checks",
+      icon: flaky ? Dice5 : Terminal,
+      sub: flaky
+        ? `"${flaky.check.label}" is flaky`
+        : ran
+          ? `${passed} of ${plural(commands.length, "command")} pass`
+          : "did not run",
+      state: flaky ? "waiting" : !ran ? "todo" : passed === commands.length ? "done" : "failed",
+    });
+    if (judge) {
+      const verdict = judge.result?.state;
+      tiles.push({
+        label: "Judge",
+        icon: Gavel,
+        sub: !verdict ? "not reached" : verdict === "Pass" ? "passed" : "failed",
+        state: !verdict ? "todo" : verdict === "Pass" ? "done" : "failed",
+        optional: true,
+      });
+    }
+  }
+  if (head.kind === "merge") {
+    tiles.push({ label: "Merge", icon: GitPullRequest, sub: "pull request open", state: "live" });
+  } else if (head.kind === "signoff") {
+    const manual = outcomes.filter((o) => o.check.kind === "Manual");
+    const ticked = manual.filter((o) => o.check.state === "Pass").length;
+    tiles.push({
+      label: "You",
+      icon: User,
+      sub: manual.length
+        ? `${ticked} of ${plural(manual.length, "check")} ticked`
+        : "review and approve",
+      state: "waiting",
+    });
+  } else if (head.kind === "halted") {
+    tiles.push({ label: "You", icon: User, sub: YOURS[head.halt], state: "waiting" });
+  }
+  return tiles;
+}
+
+/** The head card's tone, status word and ring for a loop that waits rather than works. */
+function heldLook(
+  task: Task,
+  head: Held,
+  iteration: LoopIteration,
+): { tone: Tone; word: string; ring: RingProps } {
+  const config = task.loop_config;
+  const used = lasted(iteration);
+  const ring = (
+    tone: Tone,
+    small: string,
+    share = 1,
+    big: React.ReactNode = formatDuration(used),
+  ): RingProps => ({ share, tone, big, small, label: `Iteration ${iteration.n}: ${small}` });
+  switch (head.kind) {
+    case "gated":
+      return {
+        tone: "warning",
+        word: head.backoff
+          ? `${head.agentId} hit its usage limit`
+          : `Waiting for the ${head.label.toLowerCase()}`,
+        ring: { ...ring("warning", "resumes", 1, clockTime(head.resumeAt)), glow: "warning" },
+      };
+    case "signoff":
+      return { tone: "warning", word: "Ready for you", ring: ring("success", "all pass") };
+    case "merge":
+      return { tone: "success", word: "Pull request open", ring: ring("success", "checks pass") };
+    case "halted":
+      switch (head.halt) {
+        case "Paused":
+          return { tone: "muted", word: "Paused", ring: ring("muted", "paused") };
+        case "Stopped":
+          return iteration.outcome === "Interrupted"
+            ? {
+                tone: "muted",
+                word: "Interrupted",
+                ring: ring(
+                  "muted",
+                  "cut off",
+                  Math.min(1, used / (config?.max_build_secs ?? 7200)),
+                ),
+              }
+            : { tone: "muted", word: "Stopped", ring: ring("muted", "stopped") };
+        case "Flaky":
+          return {
+            tone: "warning",
+            word: "Paused: a check is flaky",
+            ring: ring("warning", "paused"),
+          };
+        case "Conflict":
+          return {
+            tone: "destructive",
+            word: "Stopped: could not merge back",
+            ring: ring("destructive", "stopped"),
+          };
+        case "Stalled":
+          return {
+            tone: "destructive",
+            word: `Stopped: ${config?.stall_limit ?? "several"} iterations changed nothing`,
+            ring: ring("destructive", "stopped"),
+          };
+        case "Failing":
+          return {
+            tone: "destructive",
+            word: "Stopped: the last three iterations failed",
+            ring: ring("destructive", "stopped"),
+          };
+        case "OutOfIterations":
+          return {
+            tone: "destructive",
+            word: "Out of iterations",
+            ring: ring("destructive", `of ${config?.max_iterations ?? "?"} used`, 1, iteration.n),
+          };
+      }
+  }
+}
+
+/** Why a held loop waits, in one paragraph. It explains; the footer holds what to do about it. */
+function heldReason(task: Task, head: Held, iteration: LoopIteration): string {
+  const base = task.base_branch || "the base branch";
+  if (head.kind === "gated") {
+    return `The refused attempt is kept as a WIP commit and runs again at ${clockTime(head.resumeAt)}, without counting. The next session never sees the error.`;
+  }
+  if (head.kind === "signoff") {
+    return "Review the changes to approve them, or send the loop back with a note that goes into the next iteration.";
+  }
+  if (head.kind === "merge") {
+    return "The digest is the pull request's description. Same merge step as every task.";
+  }
+  switch (head.halt) {
+    case "Paused":
+      return `Paused after #${iteration.n}, as you asked. Resume starts #${iteration.n + 1}, with any note you add.`;
+    case "Stopped":
+      return iteration.outcome === "Interrupted"
+        ? `Its work so far is kept as a WIP commit. Resume runs #${iteration.n} again from there, and this attempt does not count.`
+        : `Stopped, as you asked. Resume starts #${iteration.n + 1}, with any note you add.`;
+    case "Flaky":
+      return `It failed, then passed when run again on the same commit, so the loop waits rather than spend iterations on it. Fix the test on ${base} or remove the check, then re-run the checks: that takes the hidden files from ${base} again and costs no iteration.`;
+    case "Conflict":
+      return "The loop's worktree has changes in the way of this iteration's commit, which is kept. Commit or revert them there, then resume: the next iteration merges it first.";
+    case "OutOfIterations":
+      return "Raise the limit in Checks & settings and save, or add a note and resume.";
+    default:
+      return "Add a note and resume.";
+  }
+}
+
+/** What a waiting loop's card says under its steps. */
+function HeldBody({
+  task,
+  head,
+  iteration,
+  checks,
+  actions,
+}: {
+  task: Task;
+  head: Held;
+  iteration: LoopIteration;
+  checks: LoopCheck[];
+  actions: HeadActions;
+}) {
+  const [details, setDetails] = useState(false);
+  const outcomes = checkOutcomes(iteration, checks);
+  const flaky = outcomes.filter((o) => o.result?.state === "Flaky");
+  const manual = outcomes.filter((o) => o.check.kind === "Manual");
+  const halt = head.kind === "halted" ? head.halt : null;
+  const lastNote = task.loop_summary?.last_summary;
+  const hasDetails = iteration.results.length > 0 || !!iteration.summary;
+  return (
+    <div className="space-y-2.5">
+      {(halt === "Stalled" || halt === "Failing" || halt === "OutOfIterations") && lastNote && (
+        <p className="text-xs leading-relaxed">
+          <span className="font-medium">The agent's last note:</span> “{lastNote}”
+        </p>
+      )}
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        {heldReason(task, head, iteration)}
+      </p>
+      {halt === "Conflict" && iteration.check_output && (
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background p-2 font-mono text-[11px] leading-relaxed">
+          {iteration.check_output.trim()}
+        </pre>
+      )}
+      {halt === "Flaky" && flaky.length > 0 && (
+        <div className="space-y-2">
+          <CheckCards
+            outcomes={flaky}
+            open={new Set(flaky.map((o) => o.check.id))}
+            onToggle={() => {}}
+          />
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={actions.onRerunChecks}>
+              <Repeat className="size-3" />
+              Re-run checks
+            </Button>
+            {actions.onEditCheck && (
+              <Button size="sm" variant="outline" onClick={actions.onEditCheck}>
+                <Pencil className="size-3" />
+                Edit the check
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+      {head.kind === "signoff" && manual.length > 0 && (
+        <ul className="space-y-1 rounded-md border border-border bg-background p-2 text-xs">
+          {manual.map(({ check }) => (
+            <li key={check.id} className="flex items-center gap-2">
+              {check.state === "Pass" ? (
+                <Check className="size-3.5 shrink-0 text-success" />
+              ) : (
+                <User className="size-3.5 shrink-0 text-muted-foreground" />
+              )}
+              <span className="flex-1">{check.label}</span>
+              <button
+                type="button"
+                className="shrink-0 text-accent hover:underline"
+                onClick={() => actions.onTick(check.id, check.state !== "Pass")}
+              >
+                {check.state === "Pass" ? "Untick" : "Mark done"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {hasDetails && head.kind !== "gated" && (
+        <>
+          <button
+            type="button"
+            aria-expanded={details}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => setDetails(!details)}
+          >
+            {details ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+            Checks and outcome of #{iteration.n}
+          </button>
+          {details && <IterationDetail task={task} iteration={iteration} checks={checks} />}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** What the agent works on this time: the checks it left failing, the notes it was given. */
+function WorkingOn({
+  iteration,
+  iterations,
+  checks,
+  comments,
+}: {
+  iteration: LoopIteration;
+  iterations: LoopIteration[];
+  checks: LoopCheck[];
+  comments: TaskComment[];
+}) {
+  const failing = failingBefore(iterations, iteration, checks);
+  const notes = notesGiven(comments, iterations, iteration);
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        Working on
+      </span>
+      {failing.length === 0 && notes.length === 0 && (
+        <span className="text-xs text-muted-foreground">
+          The task and its checks{iteration.n === 1 ? ", for the first time" : ""}.
+        </span>
+      )}
+      {failing.map((f) => (
+        <span
+          key={f.label}
+          className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs"
+        >
+          <X className="size-3 shrink-0 text-destructive" />
+          <span className="truncate font-medium">{f.label}</span>
+          {f.line && (
+            <span className="truncate font-mono text-[11px] text-muted-foreground">{f.line}</span>
+          )}
+        </span>
+      ))}
+      {notes.map((note) => (
+        <span
+          key={note.id}
+          className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border bg-accent/5 px-2 py-1 text-xs"
+        >
+          <StickyNote className="size-3 shrink-0 text-accent" />
+          <span className="truncate">{note.body}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** The question an iteration stopped on, and the answer that resumes the loop. */
+function Question({
+  task,
+  iteration,
+  onResume,
+}: {
+  task: Task;
+  iteration: LoopIteration;
+  onResume: (answer: string) => void;
+}) {
+  const [answer, setAnswer] = useState("");
+  return (
+    <>
+      <div className="rounded-md border border-warning/40 bg-background p-3 text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_h3]:font-semibold">
+        <MarkdownBlock text={iteration.blocked ?? ""} projectId={task.project_id} />
+      </div>
+      <Textarea
+        value={answer}
+        rows={4}
+        placeholder={`Your answer, in markdown. Iteration ${iteration.n + 1} gets it with the question.`}
+        onChange={(e) => setAnswer(e.target.value)}
+        className="font-mono text-xs"
+      />
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">
+          Its work ({changed(iteration)}) is committed and the checks did not run.
+        </span>
+        <div className="flex-1" />
+        <Button
+          size="sm"
+          disabled={!answer.trim()}
+          onClick={() => {
+            onResume(answer.trim());
+            setAnswer("");
+          }}
+        >
+          <Play className="size-3" />
+          Resume with this answer
+        </Button>
+      </div>
+    </>
+  );
+}
+
+/** The head card of an iteration at work, or stopped on its question. */
+function workingCard(
+  task: Task,
+  current: CurrentState & { head: { kind: "live" | "blocked" } },
+  commands: number,
+  judged: boolean,
+) {
+  const { iteration, head } = current;
+  const config = task.loop_config;
+  const blocked = head.kind === "blocked";
+  const step = head.kind === "live" ? head.step : 0;
+  const activity = head.kind === "live" ? head.activity : null;
+  const asking = step === 0 && activity?.status === "awaiting_input";
+  const doing = activity ? DOING[activity.status] : "Working";
+  const tone: Tone = blocked || asking ? "warning" : "accent";
+  const ring = blocked ? (
+    <Ring
+      share={Math.min(1, lasted(iteration) / (config?.max_build_secs ?? 7200))}
+      tone="warning"
+      big={formatDuration(lasted(iteration))}
+      small="stopped"
+      label={`Build stopped after ${formatDuration(lasted(iteration))}`}
+    />
+  ) : (
+    <LiveRing
+      iteration={iteration}
+      building={step === 0}
+      limitSecs={config?.max_build_secs ?? 7200}
+      amber={asking}
+    />
+  );
+  const tiles: Tile[] = [
+    {
+      label: "Build",
+      icon: Hammer,
+      sub: blocked ? (
+        `stopped after ${formatDuration(lasted(iteration))}`
+      ) : step > 0 ? (
+        "done"
+      ) : (
+        <>
+          {doing} {activity && <Since since={activity.since} />}
+        </>
+      ),
+      state: step > 0 ? "done" : tone === "warning" ? "waiting" : "live",
+    },
+    {
+      label: "Checks",
+      icon: Terminal,
+      sub:
+        step > 1
+          ? `${commands} of ${commands} commands pass`
+          : config?.setup_command
+            ? `Run first, then ${plural(commands, "command")}`
+            : plural(commands, "command"),
+      state: step === 1 ? "live" : step > 1 ? "done" : "todo",
+    },
+  ];
+  if (judged) {
+    tiles.push({
+      label: "Judge",
+      icon: Gavel,
+      sub: step === 2 ? "reading the changes" : "if every command passes",
+      state: step === 2 ? "live" : "todo",
+      optional: true,
+    });
+  }
+  const word = blocked ? "Blocked" : step === 1 ? "Running checks" : step === 2 ? "Judging" : doing;
+  return { tone, word, ring, tiles, asking };
+}
+
+/** The head of the timeline: the ring on the rail, and beside it the iteration's card. */
+function HeadIteration({
   task,
   current,
   iterations,
   checks,
   comments,
-  onJoin,
-  onResume,
+  actions,
   railBelow,
 }: {
   task: Task;
@@ -223,37 +757,47 @@ function CurrentIteration({
   iterations: LoopIteration[];
   checks: LoopCheck[];
   comments: TaskComment[];
-  onJoin: (() => void) | null;
-  onResume: (answer: string) => void;
+  actions: HeadActions;
   /** Earlier iterations follow, so the rail runs on down to them. */
   railBelow: boolean;
 }) {
-  const [answer, setAnswer] = useState("");
-  const { iteration, step, blocked, activity } = current;
+  const { iteration, head } = current;
   const config = task.loop_config;
   const hold = task.loop_summary?.hold;
-  const asking = step === 0 && activity?.status === "awaiting_input";
-  const amber = blocked || asking;
   const real = checks.filter((c) => !c.proposed || c.accepted);
   const commands = real.filter((c) => c.kind === "Command").length;
   const judged = real.some((c) => c.kind === "Judge");
-  const doing = activity ? DOING[activity.status] : "Working";
+  const live = head.kind === "live";
 
-  const word = blocked ? "Blocked" : step === 1 ? "Running checks" : step === 2 ? "Judging" : doing;
-  const run = config?.setup_command
-    ? `Run first, then ${plural(commands, "command")}`
-    : plural(commands, "command");
-  const buildSub = blocked ? (
-    `stopped after ${formatDuration(secsBetween(iteration.started_at, Date.parse(iteration.ended_at ?? iteration.started_at)))}`
-  ) : step > 0 ? (
-    "done"
-  ) : (
-    <>
-      {doing} {activity && <Since since={activity.since} />}
-    </>
-  );
-  const failing = failingBefore(iterations, iteration, checks);
-  const notes = notesGiven(comments, iterations, iteration);
+  let tone: Tone;
+  let word: string;
+  let ring: React.ReactNode;
+  let tiles: Tile[];
+  let body: React.ReactNode;
+  let asking = false;
+  if (head.kind === "live" || head.kind === "blocked") {
+    const card = workingCard(task, { iteration, head }, commands, judged);
+    ({ tone, word, ring, tiles, asking } = card);
+    body =
+      head.kind === "blocked" ? (
+        <Question task={task} iteration={iteration} onResume={actions.onResume} />
+      ) : (
+        <WorkingOn
+          iteration={iteration}
+          iterations={iterations}
+          checks={checks}
+          comments={comments}
+        />
+      );
+  } else {
+    const look = heldLook(task, head, iteration);
+    ({ tone, word } = look);
+    ring = <Ring {...look.ring} />;
+    tiles = heldTiles(head, iteration, checks);
+    body = (
+      <HeldBody task={task} head={head} iteration={iteration} checks={checks} actions={actions} />
+    );
+  }
 
   return (
     <li className={cn("relative pb-4", INDENT)}>
@@ -262,49 +806,35 @@ function CurrentIteration({
           className={cn(
             "absolute bottom-0 top-[80px] w-0.5 bg-gradient-to-b to-border",
             RAIL,
-            amber ? "from-warning" : "from-accent",
+            FROM[tone],
           )}
         />
       )}
-      <span className="absolute left-0 top-2">
-        <ClockRing current={current} limitSecs={config?.max_build_secs ?? 7200} amber={amber} />
-      </span>
-      <span
-        className={cn(
-          "absolute left-[72px] top-[43px] h-0.5 w-4",
-          amber ? "bg-warning/50" : "bg-accent/40",
-        )}
-      />
-      <section
-        className={cn(
-          "space-y-3 rounded-xl border bg-card p-4",
-          amber ? "border-warning/50" : "border-accent/30",
-        )}
-      >
+      <span className="absolute left-0 top-2">{ring}</span>
+      <span className={cn("absolute left-[72px] top-[43px] h-0.5 w-4", LINK[tone])} />
+      <section className={cn("space-y-3 rounded-xl border bg-card p-4", BORDER[tone])}>
         <div className="flex items-center gap-3">
           <span className="text-xl font-bold tabular-nums">#{iteration.n}</span>
           <span className="text-xs text-muted-foreground">
-            of {config?.max_iterations ?? "?"} · started {time(iteration.started_at)}
+            of {config?.max_iterations ?? "?"} ·{" "}
+            {iteration.ended_at && !live
+              ? `ended ${time(iteration.ended_at)}`
+              : `started ${time(iteration.started_at)}`}
           </span>
           <span
             className={cn(
               "ml-1 flex items-center gap-2 text-sm font-medium",
-              amber && "text-warning",
+              tone !== "accent" && TEXT[tone],
             )}
           >
-            <span
-              className={cn(
-                "size-2.5 rounded-full",
-                amber ? "bg-warning" : "animate-pulse bg-accent",
-              )}
-            />
+            <span className={cn("size-2.5 rounded-full", DOT_TONE[tone])} />
             {word}
           </span>
           <div className="flex-1" />
-          {hold && !blocked && (
+          {live && hold && (
             <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
               {hold === "Stopped" ? <OctagonX className="size-3" /> : <Pause className="size-3" />}
-              {hold === "Stopped" ? "Stops" : "Pauses"} once this iteration ends
+              {hold === "Stopped" ? "Stops" : "Pauses"} once this step ends
             </span>
           )}
           {iteration.tokens != null && (
@@ -312,12 +842,12 @@ function CurrentIteration({
               {formatTokens(iteration.tokens)} tokens
             </span>
           )}
-          {onJoin && !blocked && (
+          {actions.onJoin && live && (
             <Button
               size="sm"
               variant="outline"
               className={cn(asking && "border-warning/60 text-warning")}
-              onClick={onJoin}
+              onClick={actions.onJoin}
             >
               <CornerDownRight className="size-3" />
               {asking ? "Join to answer" : "Join"}
@@ -326,98 +856,47 @@ function CurrentIteration({
         </div>
 
         <div className="flex items-center gap-2">
-          <StepTile
-            label="Build"
-            icon={Hammer}
-            sub={buildSub}
-            state={step > 0 ? "done" : amber ? "waiting" : "live"}
-          />
-          <ChevronRight className="size-4 shrink-0 text-muted-foreground/50" />
-          <StepTile
-            label="Checks"
-            icon={Terminal}
-            sub={step > 1 ? `${commands} of ${commands} commands pass` : run}
-            state={step === 1 ? "live" : step > 1 ? "done" : "todo"}
-          />
-          {judged && (
-            <>
-              <ChevronRight className="size-4 shrink-0 text-muted-foreground/50" />
-              <StepTile
-                label="Judge"
-                icon={Gavel}
-                sub={step === 2 ? "reading the changes" : "if every command passes"}
-                state={step === 2 ? "live" : "todo"}
-                optional
-              />
-            </>
-          )}
+          {tiles.map((tile, i) => (
+            <Fragment key={tile.label}>
+              {i > 0 && <ChevronRight className="size-4 shrink-0 text-muted-foreground/50" />}
+              <StepTile {...tile} />
+            </Fragment>
+          ))}
         </div>
 
-        {blocked ? (
-          <>
-            <div className="rounded-md border border-warning/40 bg-background p-3 text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_h3]:font-semibold">
-              <MarkdownBlock text={iteration.blocked ?? ""} projectId={task.project_id} />
-            </div>
-            <Textarea
-              value={answer}
-              rows={4}
-              placeholder={`Your answer, in markdown. Iteration ${iteration.n + 1} gets it with the question.`}
-              onChange={(e) => setAnswer(e.target.value)}
-              className="font-mono text-xs"
-            />
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">
-                Its work ({changed(iteration)}) is committed and the checks did not run.
-              </span>
-              <div className="flex-1" />
-              <Button
-                size="sm"
-                disabled={!answer.trim()}
-                onClick={() => {
-                  onResume(answer.trim());
-                  setAnswer("");
-                }}
-              >
-                <Play className="size-3" />
-                Resume with this answer
-              </Button>
-            </div>
-          </>
-        ) : (
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Working on
-            </span>
-            {failing.length === 0 && notes.length === 0 && (
-              <span className="text-xs text-muted-foreground">
-                The task and its checks{iteration.n === 1 ? ", for the first time" : ""}.
-              </span>
-            )}
-            {failing.map((f) => (
-              <span
-                key={f.label}
-                className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs"
-              >
-                <X className="size-3 shrink-0 text-destructive" />
-                <span className="truncate font-medium">{f.label}</span>
-                {f.line && (
-                  <span className="truncate font-mono text-[11px] text-muted-foreground">
-                    {f.line}
-                  </span>
-                )}
-              </span>
-            ))}
-            {notes.map((note) => (
-              <span
-                key={note.id}
-                className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border bg-accent/5 px-2 py-1 text-xs"
-              >
-                <StickyNote className="size-3 shrink-0 text-accent" />
-                <span className="truncate">{note.body}</span>
-              </span>
-            ))}
-          </div>
-        )}
+        {body}
+      </section>
+    </li>
+  );
+}
+
+/** A finished loop's head: one line, its ring a check. */
+function DoneHead({ task, railBelow }: { task: Task; railBelow: boolean }) {
+  const summary = task.loop_summary;
+  return (
+    <li className={cn("relative pb-4", INDENT)}>
+      {railBelow && (
+        <span
+          className={cn(
+            "absolute bottom-0 top-[72px] w-0.5 bg-gradient-to-b from-success to-border",
+            RAIL,
+          )}
+        />
+      )}
+      <span className="absolute left-0 top-0">
+        <Ring
+          share={1}
+          tone="success"
+          big={<Check className="mx-auto size-5 text-success" />}
+          small="done"
+          label="Done"
+        />
+      </span>
+      <span className={cn("absolute left-[72px] top-[35px] h-0.5 w-4", LINK.success)} />
+      <section className="flex min-h-[72px] items-center gap-2 rounded-xl border border-success/40 bg-card px-4 text-sm font-medium">
+        <CircleCheck className="size-4 shrink-0 text-success" />
+        Done after {plural(summary?.counted ?? 0, "iteration")} and{" "}
+        {formatDuration(summary?.agent_secs ?? 0)}.
       </section>
     </li>
   );
@@ -545,6 +1024,69 @@ function sideNote(iteration: LoopIteration): string | null {
   }
 }
 
+/** An iteration's checks, failed first and open, beside the outcome its agent wrote. */
+function IterationDetail({
+  task,
+  iteration,
+  checks,
+}: {
+  task: Task;
+  iteration: LoopIteration;
+  checks: LoopCheck[];
+}) {
+  const outcomes = checkOutcomes(iteration, checks);
+  const [openChecks, setOpenChecks] = useState<Set<number>>(() => {
+    const failed = failedFirst(outcomes).find((o) => o.result && o.result.state !== "Pass");
+    return new Set(failed ? [failed.check.id] : []);
+  });
+  const ran = iteration.results.length > 0;
+  const note = sideNote(iteration);
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      <div className="min-w-0 space-y-1.5">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Checks after it
+        </div>
+        {ran ? (
+          <CheckCards
+            outcomes={outcomes}
+            open={openChecks}
+            onToggle={(id) => {
+              const next = new Set(openChecks);
+              if (!next.delete(id)) next.add(id);
+              setOpenChecks(next);
+            }}
+          />
+        ) : (
+          <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+            {note ? `No checks ran: ${note}.` : "No results recorded for this iteration."}
+            {iteration.outcome === "Failed" && iteration.check_output && (
+              <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground">
+                {iteration.check_output.trim()}
+              </pre>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="min-w-0 space-y-1.5">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Outcome
+        </div>
+        <div className="rounded-md border border-border bg-background p-3 text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_h3]:font-semibold">
+          {iteration.summary || iteration.blocked ? (
+            <MarkdownBlock
+              text={iteration.summary ?? iteration.blocked ?? ""}
+              projectId={task.project_id}
+            />
+          ) : (
+            <span className="text-muted-foreground">The agent wrote no summary.</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** An earlier iteration on the rail: two lines closed, its checks and its outcome open. */
 function IterationRow({
   task,
@@ -561,19 +1103,12 @@ function IterationRow({
   last: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [openChecks, setOpenChecks] = useState<Set<number>>(new Set());
   const outcomes = checkOutcomes(iteration, checks);
   const ran = iteration.results.length > 0;
   const firstLine = iteration.blocked
     ? `Blocked: ${plainFirstLine(iteration.blocked)}`
     : plainFirstLine(iteration.summary);
-  const toggle = () => {
-    if (!open) {
-      const failed = failedFirst(outcomes).find((o) => o.result && o.result.state !== "Pass");
-      setOpenChecks(new Set(failed ? [failed.check.id] : []));
-    }
-    setOpen(!open);
-  };
+  const toggle = () => setOpen(!open);
   const note = sideNote(iteration);
   return (
     <li className={cn("relative pb-1", INDENT)}>
@@ -653,47 +1188,8 @@ function IterationRow({
           </span>
         </button>
         {open && (
-          <div className="grid grid-cols-2 gap-4 px-3 pb-3 pl-[68px]">
-            <div className="min-w-0 space-y-1.5">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Checks after it
-              </div>
-              {ran ? (
-                <CheckCards
-                  outcomes={outcomes}
-                  open={openChecks}
-                  onToggle={(id) => {
-                    const next = new Set(openChecks);
-                    if (!next.delete(id)) next.add(id);
-                    setOpenChecks(next);
-                  }}
-                />
-              ) : (
-                <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
-                  {note ? `No checks ran: ${note}.` : "No results recorded for this iteration."}
-                  {iteration.outcome === "Failed" && iteration.check_output && (
-                    <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground">
-                      {iteration.check_output.trim()}
-                    </pre>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="min-w-0 space-y-1.5">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Outcome
-              </div>
-              <div className="rounded-md border border-border bg-background p-3 text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_h3]:font-semibold">
-                {iteration.summary || iteration.blocked ? (
-                  <MarkdownBlock
-                    text={iteration.summary ?? iteration.blocked ?? ""}
-                    projectId={task.project_id}
-                  />
-                ) : (
-                  <span className="text-muted-foreground">The agent wrote no summary.</span>
-                )}
-              </div>
-            </div>
+          <div className="px-3 pb-3 pl-[68px]">
+            <IterationDetail task={task} iteration={iteration} checks={checks} />
           </div>
         )}
       </div>
@@ -711,22 +1207,22 @@ export function LoopIterations({
   checks,
   comments,
   current,
-  onJoin,
-  onResume,
+  actions,
 }: {
   task: Task;
   iterations: LoopIteration[];
   checks: LoopCheck[];
   comments: TaskComment[];
   current: CurrentState | null;
-  onJoin: (() => void) | null;
-  onResume: (answer: string) => void;
+  actions: HeadActions;
 }) {
   // An interrupted attempt runs again under the same number, so only the attempt that ran on shows.
   const earlier = [...iterations]
     .reverse()
     .filter((i) => i !== current?.iteration && i.outcome !== "Interrupted");
-  if (!current && earlier.length === 0) {
+  const done = !current && task.status === "Done";
+  const headed = !!current || done;
+  if (!headed && earlier.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
         No iterations yet
@@ -737,22 +1233,22 @@ export function LoopIterations({
     // Inset so the ring's glow is not clipped by the scrolling tab, which has no padding.
     <ul className="pl-1.5">
       {current && (
-        <CurrentIteration
+        <HeadIteration
           task={task}
           current={current}
           iterations={iterations}
           checks={checks}
           comments={comments}
-          onJoin={onJoin}
-          onResume={onResume}
+          actions={actions}
           railBelow={earlier.length > 0}
         />
       )}
+      {done && <DoneHead task={task} railBelow={earlier.length > 0} />}
       {earlier.length > 0 && (
         <li className={cn("relative pb-1 pt-1", INDENT)}>
-          {current && <span className={cn("absolute inset-y-0 w-0.5 bg-border", RAIL)} />}
+          {headed && <span className={cn("absolute inset-y-0 w-0.5 bg-border", RAIL)} />}
           <span className="px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            {current ? "Earlier iterations" : "Iterations"}
+            {headed ? "Earlier iterations" : "Iterations"}
           </span>
         </li>
       )}
@@ -762,7 +1258,7 @@ export function LoopIterations({
           task={task}
           iteration={iteration}
           checks={checks}
-          first={!current && i === 0}
+          first={!headed && i === 0}
           last={i === earlier.length - 1}
         />
       ))}

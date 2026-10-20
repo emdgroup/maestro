@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { LoopCheck, LoopIteration, Task, TaskComment } from "@/types/bindings";
-import { LoopIterations, type CurrentState } from "./LoopIterations";
+import { LoopIterations, type CurrentState, type HeadActions } from "./LoopIterations";
 
 vi.mock("@/components/execution/activity/MarkdownBlock", () => ({
   MarkdownBlock: ({ text }: { text: string }) => <div>{text}</div>,
@@ -53,6 +53,14 @@ const fifth = iteration(5, {
 });
 const sixth = iteration(6, { outcome: "Running", ended_at: null, tokens: 96_000 });
 
+const actions: HeadActions = {
+  onJoin: null,
+  onResume: () => {},
+  onTick: () => {},
+  onRerunChecks: () => {},
+  onEditCheck: null,
+};
+
 describe("LoopIterations", () => {
   it("heads the timeline with the running iteration and what it works on", () => {
     const note = {
@@ -63,9 +71,7 @@ describe("LoopIterations", () => {
     } as TaskComment;
     const current: CurrentState = {
       iteration: sixth,
-      step: 0,
-      blocked: false,
-      activity: { status: "awaiting_input", since: Date.now() },
+      head: { kind: "live", step: 0, activity: { status: "awaiting_input", since: Date.now() } },
     };
     render(
       <LoopIterations
@@ -74,13 +80,12 @@ describe("LoopIterations", () => {
         checks={checks}
         comments={[note]}
         current={current}
-        onJoin={() => {}}
-        onResume={() => {}}
+        actions={{ ...actions, onJoin: () => {} }}
       />,
     );
     expect(screen.getByText("#6")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Join to answer/ })).toBeTruthy();
-    expect(screen.getByText("Pauses once this iteration ends")).toBeTruthy();
+    expect(screen.getByText("Pauses once this step ends")).toBeTruthy();
     expect(screen.getByText("96K tokens")).toBeTruthy();
     // #5 left the frontend tests failing, and the note was written before #6 started.
     expect(screen.getAllByText("Frontend tests pass").length).toBeGreaterThan(0);
@@ -97,8 +102,7 @@ describe("LoopIterations", () => {
         checks={checks}
         comments={[]}
         current={null}
-        onJoin={null}
-        onResume={() => {}}
+        actions={actions}
       />,
     );
     expect(screen.getByText("Done")).toBeTruthy();
@@ -133,8 +137,7 @@ describe("LoopIterations", () => {
         checks={checks}
         comments={[]}
         current={null}
-        onJoin={null}
-        onResume={() => {}}
+        actions={actions}
       />,
     );
     expect(screen.getByText("commit failed")).toBeTruthy();
@@ -152,10 +155,67 @@ describe("LoopIterations", () => {
         checks={checks}
         comments={[]}
         current={null}
-        onJoin={null}
-        onResume={() => {}}
+        actions={actions}
       />,
     );
     expect(screen.getAllByRole("button", { expanded: false })).toHaveLength(2);
+  });
+
+  it("heads a paused loop with the iteration it stopped after, and hands the turn to the user", () => {
+    render(
+      <LoopIterations
+        task={task}
+        iterations={[iteration(4), fifth]}
+        checks={checks}
+        comments={[]}
+        current={{ iteration: fifth, head: { kind: "halted", halt: "Paused" } }}
+        actions={actions}
+      />,
+    );
+    expect(screen.getByText("Paused")).toBeTruthy();
+    expect(screen.getByText("1 of 2 commands pass")).toBeTruthy();
+    expect(screen.getByText("You")).toBeTruthy();
+    expect(screen.getByText(/Resume starts #6/)).toBeTruthy();
+    // #5 heads the timeline, so the history holds only #4.
+    expect(screen.getAllByText("#5")).toHaveLength(1);
+    expect(screen.getByText("#4")).toBeTruthy();
+  });
+
+  it("shows a flaky check under its card, with re-run and edit beside it", async () => {
+    const onRerunChecks = vi.fn();
+    const onEditCheck = vi.fn();
+    const shaky = iteration(5, {
+      results: [{ check_id: 2, state: "Flaky", detail: "passed on the second run", command: null }],
+    });
+    render(
+      <LoopIterations
+        task={task}
+        iterations={[shaky]}
+        checks={checks}
+        comments={[]}
+        current={{ iteration: shaky, head: { kind: "halted", halt: "Flaky" } }}
+        actions={{ ...actions, onRerunChecks, onEditCheck }}
+      />,
+    );
+    expect(screen.getByText('"Frontend tests pass" is flaky')).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: /Re-run checks/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Edit the check/ }));
+    expect(onRerunChecks).toHaveBeenCalled();
+    expect(onEditCheck).toHaveBeenCalled();
+  });
+
+  it("heads a finished loop with one line", () => {
+    render(
+      <LoopIterations
+        task={{ ...task, status: "Done", loop_summary: { counted: 5, agent_secs: 2520 } } as Task}
+        iterations={[fifth]}
+        checks={checks}
+        comments={[]}
+        current={null}
+        actions={actions}
+      />,
+    );
+    expect(screen.getByText(/Done after 5 iterations and 42m/)).toBeTruthy();
+    expect(screen.getByText("Earlier iterations")).toBeTruthy();
   });
 });
