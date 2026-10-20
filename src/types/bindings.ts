@@ -4025,6 +4025,18 @@ proposed: boolean; accepted: boolean; passed_at_sha?: string | null; updated_at:
 export type LoopCheckEntry = { id?: number | null; kind: LoopCheckKind; label: string; command?: string | null }
 export type LoopCheckKind = "Command" | "Judge" | "Manual"
 /**
+ * One check's result after one iteration, as it was run.
+ */
+export type LoopCheckResult = { check_id: number; state: LoopCheckState; 
+/**
+ * The output tail, or the judge's reason.
+ */
+detail?: string | null; 
+/**
+ * What a command check ran.
+ */
+command?: string | null }
+/**
  * What the user writes of a check.
  */
 export type LoopCheckSpec = { kind: LoopCheckKind; label: string; command?: string | null }
@@ -4054,11 +4066,15 @@ export type LoopHiddenFile = { path: string; content: string }
 /**
  * One attempt at one iteration.
  */
-export type LoopIteration = { n: number; attempt: number; acp_session_id?: string | null; agent_id?: string | null; started_at: string; ended_at?: string | null; outcome: LoopIterationOutcome; counted: boolean; touched_sealed: boolean; commit_sha?: string | null; files: number; added: number; removed: number; summary?: string | null; check_output?: string | null; peeks: string[]; tokens?: number | null; 
+export type LoopIteration = { n: number; attempt: number; acp_session_id?: string | null; agent_id?: string | null; started_at: string; ended_at?: string | null; outcome: LoopIterationOutcome; counted: boolean; commit_sha?: string | null; files: number; added: number; removed: number; summary?: string | null; check_output?: string | null; tokens?: number | null; 
 /**
  * Why the worker said it cannot go on.
  */
-blocked?: string | null }
+blocked?: string | null; 
+/**
+ * What each check concluded after this iteration, on the newest attempt of its number.
+ */
+results: LoopCheckResult[] }
 export type LoopIterationOutcome = "Running" | "Checked" | "Interrupted" | "Empty" | "Failed" | "Blocked"
 /**
  * A loop as its card and its detail's meters show it, read with the task.

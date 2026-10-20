@@ -135,7 +135,6 @@ async fn iteration_ended(
     let ended = Ended {
         summary: end.facts.closing_message.as_deref(),
         agent_failed: end.stop_reason != "end_turn",
-        git_commands: &end.facts.git_commands,
         cut: end.limited_until.map(Cut::Limit),
     };
     finish(store, everyone, path, &task, &iteration, ended).await;
@@ -247,17 +246,7 @@ async fn judge_ended(
     }
     let n = iterations.last().map_or(0, |i| i.n);
     let comment = match digest_of(&reply) {
-        Some(digest) => {
-            let found = maestro_protocol::loop_sealed_findings(&iterations);
-            let body = match found.is_empty() {
-                true => digest,
-                false => format!(
-                    "{digest}\n\nSealed paths, from the loop's record:\n\n- {}",
-                    found.join("\n- ")
-                ),
-            };
-            entry("digest", "judge", body)
-        }
+        Some(digest) => entry("digest", "judge", digest),
         None => entry(
             "note",
             "maestro",
@@ -379,7 +368,6 @@ struct Ended<'a> {
     /// Its last words.
     summary: Option<&'a str>,
     agent_failed: bool,
-    git_commands: &'a [String],
     /// Cut off before it ended: what it wrote is kept as a WIP commit, and the iteration runs
     /// again uncounted.
     cut: Option<Cut>,
@@ -431,7 +419,7 @@ async fn finish(
     let config = task.loop_config.clone().unwrap_or_default();
     // Removed before the sparse checkout is set again, which then marks them cleanly: set first,
     // and a sealed file the worker changed would stay, and its removal be staged.
-    let touched_sealed = remove_sealed(&dir, &config.sealed_paths).await;
+    remove_sealed(&dir, &config.sealed_paths).await;
     let resealed = crate::worktree::seal(&dir, task).await;
     let committed = match resealed {
         Ok(()) => {
@@ -460,11 +448,7 @@ async fn finish(
             return;
         }
     }
-    let row = Committed {
-        touched_sealed,
-        peeks: peeks(ended.git_commands, &config.sealed_paths),
-        ..committed.clone().ok().flatten().unwrap_or_default()
-    };
+    let row = committed.clone().ok().flatten().unwrap_or_default();
     if let Err(e) = loops::record_commit(
         &*store.lock().await,
         path,
@@ -474,15 +458,6 @@ async fn finish(
         &row,
     ) {
         send_diag("warn", format!("[loop] task {task_id}: {e}"));
-    }
-    if touched_sealed {
-        send_diag(
-            "info",
-            format!(
-                "[loop] iteration {} of task {task_id} wrote at a sealed path",
-                iteration.n
-            ),
-        );
     }
 
     if let Some(cut) = ended.cut {
@@ -629,21 +604,6 @@ async fn conflict(
         Some(note_entry(note)),
     )
     .await;
-}
-
-// ponytail: a substring match, so a sealed `tests` also matches `git log -- latests.rs`. Parse the
-// command's paths if the false hits get in the way.
-/// The commands that name a sealed path.
-fn peeks(commands: &[String], sealed: &[String]) -> Vec<String> {
-    commands
-        .iter()
-        .filter(|command| {
-            sealed
-                .iter()
-                .any(|path| command.contains(path.trim_end_matches('/')))
-        })
-        .cloned()
-        .collect()
 }
 
 /// `RerunLoopChecks`, `ReadLoopNotes`, `AnswerLoopProposal`, `OpenAgentGate`, `PauseLoop`,
@@ -1447,9 +1407,8 @@ async fn worktree_dir(store: &Store, path: &str, task_id: i32) -> Option<String>
         .map(|w| crate::worktree::absolute(path, &w.path))
 }
 
-/// Remove every sealed path and the hidden files' folder. Whether anything was there.
-async fn remove_sealed(dir: &str, sealed: &[String]) -> bool {
-    let mut found = false;
+/// Remove every sealed path and the hidden files' folder.
+async fn remove_sealed(dir: &str, sealed: &[String]) {
     let paths = sealed
         .iter()
         .map(|p| p.trim_end_matches('/'))
@@ -1460,7 +1419,6 @@ async fn remove_sealed(dir: &str, sealed: &[String]) -> bool {
         let Ok(meta) = tokio::fs::symlink_metadata(&target).await else {
             continue;
         };
-        found = true;
         let removed = if meta.is_dir() {
             tokio::fs::remove_dir_all(&target).await
         } else {
@@ -1473,7 +1431,6 @@ async fn remove_sealed(dir: &str, sealed: &[String]) -> bool {
             );
         }
     }
-    found
 }
 
 /// `git add -A` and commit, the repository's hooks included. `None` when there was nothing to
@@ -1927,16 +1884,15 @@ mod tests {
             ended_at: Some("2026-10-12T10:10:00Z".to_string()),
             outcome,
             counted: true,
-            touched_sealed: false,
             commit_sha: None,
             files: 0,
             added: 0,
             removed: 0,
             summary: None,
             check_output: output.map(str::to_string),
-            peeks: vec![],
             tokens: None,
             blocked: None,
+            results: vec![],
         }
     }
 
@@ -2113,20 +2069,6 @@ mod tests {
             Some("### What changed\nThe handler.")
         );
         assert_eq!(digest_of("1. PASS: fine"), None);
-    }
-
-    #[test]
-    fn a_peek_is_a_git_command_naming_a_sealed_path() {
-        let commands = [
-            "git show main:tests/t.rs".to_string(),
-            "git status".to_string(),
-            "git log -- scripts/check.sh".to_string(),
-        ];
-        let sealed = ["tests/".to_string(), "scripts/check.sh".to_string()];
-        assert_eq!(
-            peeks(&commands, &sealed),
-            [commands[0].clone(), commands[2].clone()]
-        );
     }
 
     #[test]
@@ -2325,7 +2267,6 @@ mod tests {
             &iteration,
             Ended {
                 summary: Some("added b"),
-                git_commands: &["git show main:tests/t.txt".to_string()],
                 ..Ended::default()
             },
         )
@@ -2345,8 +2286,6 @@ mod tests {
             );
             let row = &loops::list_iterations(&conn, &path, task.id).unwrap()[0];
             assert_eq!(row.outcome, LoopIterationOutcome::Checked);
-            assert!(row.touched_sealed);
-            assert_eq!(row.peeks, ["git show main:tests/t.txt"]);
             assert_eq!((row.files, row.summary.as_deref()), (1, Some("added b")));
         }
         let committed = git(&dir, &["show", "--name-only", "--format=", "HEAD"])
@@ -2606,11 +2545,15 @@ Try the cache first."
         let (dir, task, iteration) = start(&store, &task).await;
         std::fs::write(Path::new(&dir).join("src/b.txt"), "b").unwrap();
         let everyone = crate::client_sink::ClientSink::detached();
-        let ended = Ended {
-            git_commands: &["git show main:tests/t.txt".to_string()],
-            ..Ended::default()
-        };
-        finish(&store, &everyone, &path, &task, &iteration, ended).await;
+        finish(
+            &store,
+            &everyone,
+            &path,
+            &task,
+            &iteration,
+            Ended::default(),
+        )
+        .await;
 
         let (checks, sha) = {
             let conn = store.lock().await;
@@ -2701,11 +2644,7 @@ Try the cache first."
             .unwrap()
             .and_then(|c| c.body)
             .unwrap();
-        assert!(digest.starts_with("### What changed\nAdded b."), "{digest}");
-        assert!(
-            digest.contains("Iteration 1 ran `git show main:tests/t.txt`."),
-            "the peek is worth a look: {digest}"
-        );
+        assert_eq!(digest, "### What changed\nAdded b.");
     }
 
     #[tokio::test]

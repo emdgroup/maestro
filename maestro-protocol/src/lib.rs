@@ -1608,8 +1608,6 @@ pub struct LoopIteration {
     pub outcome: LoopIterationOutcome,
     /// Whether it counts against `max_iterations`.
     pub counted: bool,
-    /// The worker wrote at a sealed path, and the write was discarded.
-    pub touched_sealed: bool,
     #[serde(default)]
     pub commit_sha: Option<String>,
     pub files: i32,
@@ -1621,33 +1619,29 @@ pub struct LoopIteration {
     /// The tail of the checks' output.
     #[serde(default)]
     pub check_output: Option<String>,
-    /// The `git` commands the worker ran that name a sealed path.
-    #[serde(default)]
-    pub peeks: Vec<String>,
     /// Tokens its session's turns used, from the usage record, while that still has them.
     #[serde(default)]
     pub tokens: Option<i64>,
     /// Why the worker said it cannot go on, through `loop_blocked`.
     #[serde(default)]
     pub blocked: Option<String>,
+    /// What each check concluded after this iteration, passing ones included. Filled for the
+    /// newest attempt of its number, and only in `ListLoopIterations`: the engine never reads it.
+    #[serde(default)]
+    pub results: Vec<LoopCheckResult>,
 }
 
-/// What a loop's record says deserves a look before sign-off: the iterations that wrote at a sealed
-/// path, and the `git` commands that named one. The digest and the pull request body both list it.
-pub fn loop_sealed_findings(iterations: &[LoopIteration]) -> Vec<String> {
-    let mut found = Vec::new();
-    for iteration in iterations {
-        if iteration.touched_sealed {
-            found.push(format!(
-                "Iteration {} wrote at a sealed path, and the write was discarded.",
-                iteration.n
-            ));
-        }
-        for peek in &iteration.peeks {
-            found.push(format!("Iteration {} ran `{peek}`.", iteration.n));
-        }
-    }
-    found
+/// One check's result after one iteration, as it was run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LoopCheckResult {
+    pub check_id: i32,
+    pub state: LoopCheckState,
+    /// The output tail, or the judge's reason.
+    #[serde(default)]
+    pub detail: Option<String>,
+    /// What a `Command` check ran.
+    #[serde(default)]
+    pub command: Option<String>,
 }
 
 /// A file only the checks see, stored by the daemon and never in the repository.

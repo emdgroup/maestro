@@ -356,7 +356,7 @@ pub fn answer(
         }
         Q::ListLoopIterations(mut r) => {
             canonical(&mut r.project_path);
-            let iterations = loops::list_iterations(conn, &r.project_path, r.task_id)?;
+            let iterations = loops::list_iterations_with_results(conn, &r.project_path, r.task_id)?;
             let reply = A::ListLoopIterationsOk(LoopIterationList { iterations });
             (r.project_path, reply, Changed::default())
         }

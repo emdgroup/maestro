@@ -4,9 +4,9 @@
 
 use chrono::Utc;
 use maestro_protocol::{
-    AnswerLoopProposalRequest, LoopCheck, LoopCheckKind, LoopCheckSpec, LoopCheckState, LoopConfig,
-    LoopHalt, LoopHiddenFile, LoopIteration, LoopIterationOutcome, RunMode, SetLoopChecksRequest,
-    SetLoopHiddenFilesRequest, TickLoopCheckRequest, WorkspaceMode,
+    AnswerLoopProposalRequest, LoopCheck, LoopCheckKind, LoopCheckResult, LoopCheckSpec,
+    LoopCheckState, LoopConfig, LoopHalt, LoopHiddenFile, LoopIteration, LoopIterationOutcome,
+    RunMode, SetLoopChecksRequest, SetLoopHiddenFilesRequest, TickLoopCheckRequest, WorkspaceMode,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -61,15 +61,12 @@ CREATE TABLE IF NOT EXISTS loop_iterations (
     ended_at TEXT,
     outcome TEXT NOT NULL DEFAULT 'Running',
     counted INTEGER NOT NULL DEFAULT 0,
-    touched_sealed INTEGER NOT NULL DEFAULT 0,
     commit_sha TEXT,
     files INTEGER NOT NULL DEFAULT 0,
     added INTEGER NOT NULL DEFAULT 0,
     removed INTEGER NOT NULL DEFAULT 0,
     summary TEXT,
     check_output TEXT,
-    -- JSON array of the git commands the worker ran that named a sealed path.
-    peeks TEXT,
     -- Why the worker said it cannot go on, through `loop_blocked`.
     blocked TEXT,
     PRIMARY KEY (project_path, task_id, n, attempt),
@@ -92,6 +89,24 @@ CREATE TABLE IF NOT EXISTS agent_gates (
     resume_at TEXT NOT NULL,
     reason TEXT,
     backoff_step INTEGER NOT NULL DEFAULT 0
+);
+";
+
+/// Version 13 of `projects.db`: every check's result after each iteration, passing ones included,
+/// which the iteration's row in the Loop tab shows. `loop_checks` keeps only the latest.
+///
+/// Not shipped yet, so it may still be rewritten. Frozen once a release carries it.
+pub const V13_LOOP_CHECK_RESULTS: &str = "
+CREATE TABLE IF NOT EXISTS loop_check_results (
+    project_path TEXT NOT NULL,
+    task_id INTEGER NOT NULL,
+    n INTEGER NOT NULL,
+    check_id INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    detail TEXT,
+    command TEXT,
+    PRIMARY KEY (project_path, task_id, n, check_id),
+    FOREIGN KEY (project_path, task_id) REFERENCES tasks(project_path, id) ON DELETE CASCADE
 );
 ";
 
@@ -473,24 +488,56 @@ pub fn list_iterations(
                 outcome: parse(&row.get::<_, String>("outcome")?)
                     .unwrap_or(LoopIterationOutcome::Failed),
                 counted: row.get("counted")?,
-                touched_sealed: row.get("touched_sealed")?,
                 commit_sha: row.get("commit_sha")?,
                 files: row.get("files")?,
                 added: row.get("added")?,
                 removed: row.get("removed")?,
                 summary: row.get("summary")?,
                 check_output: row.get("check_output")?,
-                peeks: row
-                    .get::<_, Option<String>>("peeks")?
-                    .and_then(|json| serde_json::from_str(&json).ok())
-                    .unwrap_or_default(),
                 tokens: row.get("tokens")?,
                 blocked: row.get("blocked")?,
+                results: Vec::new(),
             })
         })
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
+    Ok(iterations)
+}
+
+/// [`list_iterations`] with each number's check results on its newest attempt, for the Loop tab.
+pub fn list_iterations_with_results(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+) -> Result<Vec<LoopIteration>, String> {
+    let mut iterations = list_iterations(conn, project_path, task_id)?;
+    let mut statement = conn
+        .prepare(
+            "SELECT n, check_id, state, detail, command FROM loop_check_results
+             WHERE project_path = ?1 AND task_id = ?2",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map(params![project_path, task_id], |row| {
+            Ok((
+                row.get::<_, i32>(0)?,
+                LoopCheckResult {
+                    check_id: row.get(1)?,
+                    state: parse(&row.get::<_, String>(2)?).unwrap_or(LoopCheckState::Fail),
+                    detail: row.get(3)?,
+                    command: row.get(4)?,
+                },
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        let (n, result) = row.map_err(|e| e.to_string())?;
+        // Oldest first, so the last attempt of `n` is the one the checks ran after.
+        if let Some(iteration) = iterations.iter_mut().rev().find(|i| i.n == n) {
+            iteration.results.push(result);
+        }
+    }
     Ok(iterations)
 }
 
@@ -584,6 +631,12 @@ pub(crate) fn clear_progress(
     )
     .and_then(|_| {
         tx.execute(
+            "DELETE FROM loop_check_results WHERE project_path = ?1 AND task_id = ?2",
+            params![project_path, task_id],
+        )
+    })
+    .and_then(|_| {
+        tx.execute(
             "UPDATE loop_checks SET state = 'Pending', detail = NULL, passed_at_sha = NULL,
                  updated_at = ?3
              WHERE project_path = ?1 AND task_id = ?2",
@@ -653,14 +706,11 @@ pub(crate) fn start_iteration(
 /// What ending an iteration found in its worktree.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub(crate) struct Committed {
-    pub touched_sealed: bool,
     /// `None` when there was nothing to commit, or the commit failed.
     pub commit_sha: Option<String>,
     pub files: i32,
     pub added: i32,
     pub removed: i32,
-    /// The `git` commands it ran that name a sealed path.
-    pub peeks: Vec<String>,
 }
 
 /// How many proposals a loop may hold unanswered, so a worker cannot bury the list.
@@ -744,14 +794,10 @@ pub(crate) fn record_commit(
     summary: Option<&str>,
     committed: &Committed,
 ) -> Result<(), String> {
-    let peeks = (!committed.peeks.is_empty())
-        .then(|| serde_json::to_string(&committed.peeks).ok())
-        .flatten();
     conn.execute(
         "UPDATE loop_iterations
          SET ended_at = COALESCE(ended_at, ?5), counted = 1, summary = COALESCE(?6, summary),
-             touched_sealed = ?7, commit_sha = ?8, files = ?9, added = ?10, removed = ?11,
-             peeks = ?12
+             commit_sha = ?7, files = ?8, added = ?9, removed = ?10
          WHERE project_path = ?1 AND task_id = ?2 AND n = ?3 AND attempt = ?4",
         params![
             project_path,
@@ -760,12 +806,10 @@ pub(crate) fn record_commit(
             iteration.attempt,
             Utc::now().to_rfc3339(),
             summary,
-            committed.touched_sealed,
             committed.commit_sha,
             committed.files,
             committed.added,
             committed.removed,
-            peeks,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -821,24 +865,67 @@ pub(crate) fn record_results(
         let Some(check) = ran.iter().find(|c| c.id == *id) else {
             continue;
         };
-        tx.execute(
-            "UPDATE loop_checks SET state = ?4, detail = ?5, updated_at = ?6
-             WHERE project_path = ?1 AND task_id = ?2 AND id = ?3
-               AND kind = ?7 AND command IS ?8",
-            params![
+        let updated = tx
+            .execute(
+                "UPDATE loop_checks SET state = ?4, detail = ?5, updated_at = ?6
+                 WHERE project_path = ?1 AND task_id = ?2 AND id = ?3
+                   AND kind = ?7 AND command IS ?8",
+                params![
+                    project_path,
+                    task_id,
+                    id,
+                    text(*state),
+                    detail,
+                    now,
+                    text(check.kind),
+                    check.command
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+        if updated > 0 {
+            let command = check.command.as_deref();
+            keep_result(
+                &tx,
                 project_path,
                 task_id,
-                id,
-                text(*state),
-                detail,
-                now,
-                text(check.kind),
-                check.command
-            ],
-        )
-        .map_err(|e| e.to_string())?;
+                *id,
+                *state,
+                detail.as_deref(),
+                command,
+            )?;
+        }
     }
     commit(tx)
+}
+
+/// A check's result, kept against the newest iteration: the one the checks ran after. Run again
+/// on the same iteration, the newer result replaces it.
+fn keep_result(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+    check_id: i32,
+    state: LoopCheckState,
+    detail: Option<&str>,
+    command: Option<&str>,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR REPLACE INTO loop_check_results
+             (project_path, task_id, n, check_id, state, detail, command)
+         SELECT ?1, ?2, MAX(n), ?3, ?4, ?5, ?6 FROM loop_iterations
+         WHERE project_path = ?1 AND task_id = ?2
+         HAVING MAX(n) IS NOT NULL",
+        params![
+            project_path,
+            task_id,
+            check_id,
+            text(state),
+            detail,
+            command
+        ],
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
 }
 
 /// What the judge concluded, by check id: passed or not, and its reason. A pass holds for `sha`.
@@ -871,6 +958,7 @@ pub(crate) fn record_judged(
             ],
         )
         .map_err(|e| e.to_string())?;
+        keep_result(&tx, project_path, task_id, *id, state, Some(reason), None)?;
     }
     commit(tx)
 }
@@ -1267,6 +1355,105 @@ mod tests {
             .map(|c| c.state)
             .collect();
         assert_eq!(states, [LoopCheckState::Pending, LoopCheckState::Pass]);
+    }
+
+    #[test]
+    fn every_result_is_kept_against_the_iteration_it_followed() {
+        let mut conn = crate::project_store::open_in_memory();
+        let task = create(&mut conn, RunMode::Loop, None);
+        let ran = set(
+            &mut conn,
+            task,
+            vec![
+                entry(None, LoopCheckKind::Command, "Tests pass", Some("bun test")),
+                entry(None, LoopCheckKind::Judge, "Reads well", None),
+            ],
+        )
+        .unwrap();
+        let (tests, judge) = (ran[0].id, ran[1].id);
+        let newest =
+            |conn: &Connection| list_iterations(conn, PROJECT, task).unwrap().pop().unwrap();
+        // A first attempt cut off, then the attempt the checks run after.
+        start_iteration(&conn, PROJECT, task, 1, "a", "claude").unwrap();
+        let cut = newest(&conn);
+        record_outcome(
+            &conn,
+            PROJECT,
+            task,
+            &cut,
+            LoopIterationOutcome::Interrupted,
+            None,
+        )
+        .unwrap();
+        start_iteration(&conn, PROJECT, task, 1, "b", "claude").unwrap();
+        let failing = [(tests, LoopCheckState::Fail, Some("1 failed".to_string()))];
+        record_results(&mut conn, PROJECT, task, &ran, &failing).unwrap();
+        let first = newest(&conn);
+        record_outcome(
+            &conn,
+            PROJECT,
+            task,
+            &first,
+            LoopIterationOutcome::Checked,
+            None,
+        )
+        .unwrap();
+
+        start_iteration(&conn, PROJECT, task, 2, "c", "claude").unwrap();
+        let passing = [(tests, LoopCheckState::Pass, Some("ok".to_string()))];
+        record_results(&mut conn, PROJECT, task, &ran, &failing).unwrap();
+        // Re-run on the same iteration: the newer result replaces it.
+        record_results(&mut conn, PROJECT, task, &ran, &passing).unwrap();
+        record_judged(
+            &mut conn,
+            PROJECT,
+            task,
+            "abc",
+            &[(judge, true, "fine".to_string())],
+        )
+        .unwrap();
+
+        let rows = list_iterations_with_results(&conn, PROJECT, task).unwrap();
+        let read = |i: usize| {
+            let mut results: Vec<_> = rows[i]
+                .results
+                .iter()
+                .map(|r| (r.check_id, r.state, r.detail.clone(), r.command.clone()))
+                .collect();
+            results.sort_by_key(|r| r.0);
+            results
+        };
+        assert!(rows[0].results.is_empty(), "the cut attempt has none");
+        let bun = Some("bun test".to_string());
+        assert_eq!(
+            read(1),
+            [(
+                tests,
+                LoopCheckState::Fail,
+                Some("1 failed".into()),
+                bun.clone()
+            )]
+        );
+        assert_eq!(
+            read(2),
+            [
+                (tests, LoopCheckState::Pass, Some("ok".into()), bun),
+                (judge, LoopCheckState::Pass, Some("fine".into()), None),
+            ]
+        );
+        assert!(
+            list_iterations(&conn, PROJECT, task)
+                .unwrap()
+                .iter()
+                .all(|i| i.results.is_empty()),
+            "the engine's list never reads them"
+        );
+
+        clear_progress(&mut conn, PROJECT, task).unwrap();
+        let left: i64 = conn
+            .query_row("SELECT COUNT(*) FROM loop_check_results", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(left, 0, "Start over clears them");
     }
 
     #[test]

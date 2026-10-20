@@ -102,7 +102,6 @@ pub struct LoopIteration {
     pub ended_at: Option<String>,
     pub outcome: LoopIterationOutcome,
     pub counted: bool,
-    pub touched_sealed: bool,
     #[specta(optional)]
     pub commit_sha: Option<String>,
     pub files: i32,
@@ -112,12 +111,27 @@ pub struct LoopIteration {
     pub summary: Option<String>,
     #[specta(optional)]
     pub check_output: Option<String>,
-    pub peeks: Vec<String>,
     #[specta(optional)]
     pub tokens: Option<i64>,
     /// Why the worker said it cannot go on.
     #[specta(optional)]
     pub blocked: Option<String>,
+    /// What each check concluded after this iteration, on the newest attempt of its number.
+    pub results: Vec<LoopCheckResult>,
+}
+
+/// One check's result after one iteration, as it was run.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct LoopCheckResult {
+    pub check_id: i32,
+    pub state: LoopCheckState,
+    /// The output tail, or the judge's reason.
+    #[specta(optional)]
+    pub detail: Option<String>,
+    /// What a command check ran.
+    #[specta(optional)]
+    pub command: Option<String>,
 }
 
 /// An acceptance file that exists only in the loop's record, never in the repository.

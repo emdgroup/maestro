@@ -139,17 +139,7 @@ fn loop_body(
 ) -> String {
     let mut body = match digest.map(str::trim).filter(|d| !d.is_empty()) {
         Some(digest) => digest.to_string(),
-        None => {
-            let mut body = description.unwrap_or_default().trim().to_string();
-            let found = maestro_protocol::loop_sealed_findings(iterations);
-            if !found.is_empty() {
-                body.push_str(&format!(
-                    "\n\nSealed paths, from the loop's record:\n\n- {}",
-                    found.join("\n- ")
-                ));
-            }
-            body
-        }
+        None => description.unwrap_or_default().trim().to_string(),
     };
     if !checks.is_empty() {
         body.push_str("\n\n### Checks\n");
@@ -1325,7 +1315,7 @@ mod loop_tests {
         }
     }
 
-    fn iteration(n: i32, touched_sealed: bool) -> LoopIteration {
+    fn iteration(n: i32) -> LoopIteration {
         LoopIteration {
             n,
             attempt: 1,
@@ -1335,16 +1325,15 @@ mod loop_tests {
             ended_at: None,
             outcome: maestro_protocol::LoopIterationOutcome::Checked,
             counted: true,
-            touched_sealed,
             commit_sha: None,
             files: 0,
             added: 0,
             removed: 0,
             summary: None,
             check_output: None,
-            peeks: vec![],
             tokens: None,
             blocked: None,
+            results: vec![],
         }
     }
 
@@ -1381,7 +1370,7 @@ mod loop_tests {
             check("Tests pass", LoopCheckKind::Command, LoopCheckState::Pass),
             check("Reads well", LoopCheckKind::Judge, LoopCheckState::Pass),
         ];
-        let iterations = [iteration(1, true), iteration(2, false)];
+        let iterations = [iteration(1), iteration(2)];
         let with = loop_body(
             Some("Make it fast"),
             Some("### What changed\nThe cache."),
@@ -1395,10 +1384,7 @@ mod loop_tests {
         );
         let without = loop_body(Some("Make it fast"), None, &checks, &iterations);
         assert!(
-            without.starts_with(
-                "Make it fast\n\nSealed paths, from the loop's record:\n\n- Iteration 1 wrote at a \
-                 sealed path, and the write was discarded.\n\n### Checks"
-            ),
+            without.starts_with("Make it fast\n\n### Checks"),
             "{without}"
         );
     }

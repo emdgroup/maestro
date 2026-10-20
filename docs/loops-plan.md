@@ -239,9 +239,12 @@ way V8 added `claimed_from`.
   (`pending`/`pass`/`fail`/`flaky`), `detail` (last output tail or judge reason), `proposed` (bool),
   `accepted` (bool), `passed_at_sha` (the commit a judge last passed on), `updated_at`.
 - `loop_iterations`: `n`, `attempt`, `acp_session_id`, `agent_id`, `started_at`, `ended_at`,
-  `outcome` (`running`/`checked`/`interrupted`/`empty`/`failed`), `counted` (bool), `touched_sealed`
-  (bool), `commit_sha`, `files`, `added`, `removed`, `summary` (the agent's final message),
-  `check_output` (tail).
+  `outcome` (`running`/`checked`/`interrupted`/`empty`/`failed`), `counted` (bool), `commit_sha`,
+  `files`, `added`, `removed`, `summary` (the agent's final message), `check_output` (the failing
+  checks' tail).
+- `loop_check_results`: `n`, `check_id`, `state`, `detail`, `command`. Every check's result after
+  iteration `n`, passing ones and judge verdicts included, replaced when the checks run again on
+  the same iteration. The Loop tab's iteration rows read it; the engine never does.
 - `loop_hidden_files`: `path` (relative, under the sealed folder), `content`.
 - `agent_gates` (daemon-wide, not per project): `agent_id`, `resume_at`, `reason`, `backoff_step`.
 
@@ -422,7 +425,7 @@ since no session is live.
   judge pass always runs before sign-off.
 - **Digest.** On the last judge pass, the prompt also asks for the digest, filed as comment kind
   `digest`. It has three sections: what changed, what the loop decided on its own, and what deserves
-  a look. "What deserves a look" includes any iteration flagged `touched_sealed`.
+  a look.
 - **Proposals.** Accepting a proposed check adds the files it names to `sealed_paths`. The sparse
   checkout is updated before the next iteration.
 - **Steering.** "Add a note for the next iteration" files a `steer` comment. The next prompt includes
@@ -456,10 +459,9 @@ since no session is live.
   prefills them in phase 4. A path that does not exist on the base branch is refused: the snapshot
   comes from there, so the user commits the test to the base branch or adds it as a hidden file.
 - **Judge time is not Build time.** The limit closes the worker's session only.
-- **Peeking is reported.** While an iteration runs the daemon notes every shell tool call that runs
-  `git` and names a sealed path, and stores them on the iteration. The digest's "what deserves a
-  look" lists them beside `touched_sealed`; a loop with no digest lists them in the pull request
-  body.
+- **Hidden-file writes are discarded, not reported.** Whatever the worker wrote at a sealed path is
+  deleted before the checks run. Reporting it, and the `git` commands that named one, was dropped
+  with the Loop tab redesign: a substring scan of commands flagged too much to be worth a look.
 
 **As built** (`loop_engine.rs`, `task_store/loops.rs`, `task_prompt.rs`, `src-tauri/src/git/merge.rs`):
 
@@ -470,9 +472,7 @@ since no session is live.
   commit they were judged at, so a check edited or added meanwhile cannot shift the numbering. Its
   answer is read by number (`1. PASS: reason`), decorations ignored; the first line for a number
   wins. A pass is recorded with that commit in `passed_at_sha`.
-- The digest is a `digest` comment, one per task like a plan: a new one replaces the last. The
-  daemon appends "Sealed paths, from the loop's record" to it when an iteration touched or named
-  one (`loop_sealed_findings`, shared with the app's pull request body).
+- The digest is a `digest` comment, one per task like a plan: a new one replaces the last.
 - A failed judge check reaches the next prompt as "The judge on ...", with the reason. Its failures
   never count as a stall: the judge's wording changes every time, so the budget is what ends a
   loop the judge keeps failing.
