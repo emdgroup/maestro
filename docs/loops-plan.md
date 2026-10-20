@@ -323,7 +323,7 @@ first creation.
    - Ended by the user? Then stop here.
    - Any other agent error fails the iteration. Three failed iterations in a row stop the loop.
 2. **Close the session**, then **discard** anything at a sealed path, then **commit** the rest:
-   `git add -A` and `git commit -m "loop: iteration n"` in the worktree, with `--allow-empty` off. An
+   `git add -A` and `git commit -m "chore(loop): iteration n"` in the worktree, with `--allow-empty` off. An
    empty diff makes the iteration `empty`.
 3. **Check.** The phase becomes `Checking`. The daemon:
    1. writes the sealed snapshot in,
@@ -389,7 +389,9 @@ since no session is live.
   stop the loop. An empty iteration runs no checks.
 - **The iteration commit runs the repository's hooks**, with the user's git identity. A hook that
   fails fails the iteration, and its output is fed to the next one like a failing check's. A missing
-  identity fails it the same way, with git's message.
+  identity fails it the same way, with git's message. The message is a conventional commit, so a
+  `commit-msg` hook such as commitlint's accepts it: one that refused `loop: iteration n` failed
+  every iteration that left anything to commit, and the worker could do nothing about it.
 - The sealed snapshot comes from the local `base_branch` ref. The daemon fetches nothing.
 - Until phase 2, a loop whose command checks all pass goes straight to the `Approval` gate, with any
   `judge` check still pending. Phase 2 puts the judge in between.
@@ -555,7 +557,7 @@ Settled before phase 3 started:
   `next_stage` now asks for the role of any working phase waiting on an agent. A first stage
   (`Implementing`, `Drafting`, `Refining`) cut off this way waits for a free slot, like a loop's
   next iteration, since its session is closed.
-- A cut-off iteration is committed as `loop: iteration N, cut off (WIP)`, recorded `Interrupted`
+- A cut-off iteration is committed as `chore(loop): iteration N, cut off (WIP)`, recorded `Interrupted`
   and uncounted, and runs again as the next attempt of the same number. A cut-off judge judges
   again; nothing is recorded against its checks.
 - The note reads "The agent hit its usage limit, so this task waits until Tue 20:00 and then goes
@@ -739,7 +741,7 @@ Settled before phase 5 started:
   "iteration n is over". Any session of a loop, the judge's included, is that loop's own for
   `get_task` and `update_task`.
 - `loop_blocked` writes its reason on the running iteration's row (`loop_iterations.blocked`).
-  `finish` reads it: the work is committed as `loop: iteration n`, the iteration's outcome is
+  `finish` reads it: the work is committed as `chore(loop): iteration n`, the iteration's outcome is
   `Blocked` (counted, and neither a failure nor a stall), the loop halts as `LoopHalt::Blocked`, and
   the thread gets the question. A stop by the user still wins over it; a usage limit after the call
   does not. The next iteration's prompt carries the question above the user's answer.

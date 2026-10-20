@@ -424,8 +424,8 @@ async fn finish(
     let committed = match resealed {
         Ok(()) => {
             let message = match ended.cut {
-                Some(_) => format!("loop: iteration {}, cut off (WIP)", iteration.n),
-                None => format!("loop: iteration {}", iteration.n),
+                Some(_) => format!("chore(loop): iteration {}, cut off (WIP)", iteration.n),
+                None => format!("chore(loop): iteration {}", iteration.n),
             };
             commit(
                 &dir,
@@ -2972,7 +2972,7 @@ Try the cache first."
             assert!(note.contains("usage limit"), "{note}");
         }
         let log = git(&dir, &["log", "-1", "--format=%s"]).await.unwrap();
-        assert_eq!(log.trim(), "loop: iteration 1, cut off (WIP)");
+        assert_eq!(log.trim(), "chore(loop): iteration 1, cut off (WIP)");
 
         // A judge cut off judges again: nothing is recorded against its checks.
         let judging = "UPDATE tasks SET phase = 'Judging', phase_status = 'Running' WHERE id = ?1";
@@ -3050,7 +3050,7 @@ Try the cache first."
         );
         drop(conn);
         let log = git(&dir, &["log", "-1", "--format=%s"]).await.unwrap();
-        assert_eq!(log.trim(), "loop: iteration 1");
+        assert_eq!(log.trim(), "chore(loop): iteration 1");
     }
 
     #[tokio::test]

@@ -120,4 +120,25 @@ describe("LoopIterations", () => {
     // Its last line heads the card, and the whole output opens under it.
     expect(screen.getAllByText("Finished in 41s")).toHaveLength(2);
   });
+
+  it("says a failed commit is not the agent's failure, and shows git's reason", async () => {
+    const refused = iteration(1, {
+      outcome: "Failed",
+      check_output: "The iteration's commit failed:\n✖ type must be one of [feat, fix]",
+    });
+    render(
+      <LoopIterations
+        task={task}
+        iterations={[refused]}
+        checks={checks}
+        comments={[]}
+        current={null}
+        onJoin={null}
+        onResume={() => {}}
+      />,
+    );
+    expect(screen.getByText("commit failed")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { expanded: false }));
+    expect(screen.getByText(/type must be one of/)).toBeTruthy();
+  });
 });

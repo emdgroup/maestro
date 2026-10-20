@@ -531,8 +531,13 @@ function sideNote(iteration: LoopIteration): string | null {
       return "cut off, not counted";
     case "Empty":
       return "changed nothing";
+    // A failed commit or merge back records git's reason; the agent failing records none.
     case "Failed":
-      return "the agent failed";
+      return iteration.check_output?.startsWith("The iteration's commit failed")
+        ? "commit failed"
+        : iteration.check_output?.includes("could not be merged")
+          ? "merge failed"
+          : "the agent failed";
     case "Blocked":
       return "blocked, checks not run";
     default:
@@ -664,9 +669,14 @@ function IterationRow({
                   }}
                 />
               ) : (
-                <p className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+                <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
                   {note ? `No checks ran: ${note}.` : "No results recorded for this iteration."}
-                </p>
+                  {iteration.outcome === "Failed" && iteration.check_output && (
+                    <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground">
+                      {iteration.check_output.trim()}
+                    </pre>
+                  )}
+                </div>
               )}
             </div>
             <div className="min-w-0 space-y-1.5">
