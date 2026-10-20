@@ -141,4 +141,21 @@ describe("LoopIterations", () => {
     await userEvent.click(screen.getByRole("button", { expanded: false }));
     expect(screen.getByText(/type must be one of/)).toBeTruthy();
   });
+
+  it("leaves an interrupted attempt out of the history", () => {
+    const cut = iteration(2, { outcome: "Interrupted", counted: false });
+    const rerun = iteration(2, { attempt: 2 });
+    render(
+      <LoopIterations
+        task={task}
+        iterations={[iteration(1), cut, rerun]}
+        checks={checks}
+        comments={[]}
+        current={null}
+        onJoin={null}
+        onResume={() => {}}
+      />,
+    );
+    expect(screen.getAllByRole("button", { expanded: false })).toHaveLength(2);
+  });
 });

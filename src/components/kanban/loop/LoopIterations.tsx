@@ -722,7 +722,10 @@ export function LoopIterations({
   onJoin: (() => void) | null;
   onResume: (answer: string) => void;
 }) {
-  const earlier = [...iterations].reverse().filter((i) => i !== current?.iteration);
+  // An interrupted attempt runs again under the same number, so only the attempt that ran on shows.
+  const earlier = [...iterations]
+    .reverse()
+    .filter((i) => i !== current?.iteration && i.outcome !== "Interrupted");
   if (!current && earlier.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
