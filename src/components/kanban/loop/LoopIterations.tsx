@@ -709,7 +709,8 @@ export function LoopIterations({
     );
   }
   return (
-    <ul>
+    // Inset so the ring's glow is not clipped by the scrolling tab, which has no padding.
+    <ul className="pl-1.5">
       {current && (
         <CurrentIteration
           task={task}
