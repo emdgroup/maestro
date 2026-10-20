@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TaskCard } from "./TaskCard";
 import type { Task, TaskPhase, PhaseStatus, TaskBall } from "@/types/bindings";
@@ -82,12 +82,13 @@ vi.mock("@/services/task.service", () => ({
   useEndSelfReviewMutation: () => ({ mutate: endSelfReview, isPending: false }),
 }));
 
-/** A loop's controls. Stop halts it in place, so it goes straight to the daemon. */
+/** A loop's controls. Halt asks whether to wait for the running step or cut it. */
+const pauseLoop = vi.hoisted(() => vi.fn());
 const stopLoop = vi.hoisted(() => vi.fn());
 const openGate = vi.hoisted(() => vi.fn());
 
 vi.mock("@/services/loop.service", () => ({
-  usePauseLoopMutation: () => ({ mutate: vi.fn() }),
+  usePauseLoopMutation: () => ({ mutate: pauseLoop }),
   useStopLoopMutation: () => ({ mutate: stopLoop }),
   useResumeLoopMutation: () => ({ mutate: vi.fn() }),
   useRerunLoopChecksMutation: () => ({ mutate: vi.fn() }),
@@ -1617,9 +1618,18 @@ describe("TaskCard as a loop", () => {
     expect(screen.getByLabelText("1 of 3 checks pass")).toBeInTheDocument();
   });
 
-  it("stops a loop in place, with no abandon confirmation", () => {
+  it("halts a loop after its step, or now, never through the abandon confirmation", async () => {
     renderCard(loopTask);
-    fireEvent.click(screen.getByRole("button", { name: /Stop/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Halt/ }));
+    const dialog = screen.getByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Halt" }));
+    expect(pauseLoop).toHaveBeenCalledWith({ projectId: 1, taskId: 7 });
+
+    await userEvent.click(screen.getByRole("button", { name: /Halt/ }));
+    await userEvent.click(screen.getByRole("radio", { name: "Now" }));
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Halt" }),
+    );
     expect(stopLoop).toHaveBeenCalledWith({ projectId: 1, taskId: 7 });
     expect(interrupt.mutate).not.toHaveBeenCalled();
   });

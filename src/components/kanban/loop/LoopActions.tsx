@@ -1,15 +1,15 @@
-import { CornerDownRight, Pause, Play, Repeat, Square } from "lucide-react";
+import { useState } from "react";
+import { CornerDownRight, Pause, Play, Repeat } from "lucide-react";
 import { toast } from "sonner";
 import type { Task } from "@/types/bindings";
 import { Button } from "@/ui/button";
 import {
   useOpenAgentGateMutation,
-  usePauseLoopMutation,
   useRerunLoopChecksMutation,
   useResumeLoopMutation,
-  useStopLoopMutation,
 } from "@/services/loop.service";
 import { useBoardActions } from "@/store/boardStore";
+import { HaltLoopDialog, haltOptions } from "./HaltLoopDialog";
 import { gateLine, loopHalt } from "./loop-state";
 
 /**
@@ -27,14 +27,12 @@ export function LoopActions({
   beforeResume: () => Promise<void>;
 }) {
   const key = { projectId: task.project_id, taskId: task.id };
-  const pause = usePauseLoopMutation();
-  const stop = useStopLoopMutation();
+  const [halting, setHalting] = useState(false);
   const rerun = useRerunLoopChecksMutation();
   const resume = useResumeLoopMutation();
   const openGate = useOpenAgentGateMutation();
   const { openReview } = useBoardActions();
   const live = task.phase_status === "Running" || task.phase_status === "Blocked";
-  const waiting = task.phase_status === "Waiting" && task.ball === "Agent";
   const halt = loopHalt(task);
 
   if (task.status !== "InProgress" && task.phase !== "Approval") return null;
@@ -87,18 +85,13 @@ export function LoopActions({
           Join
         </Button>
       )}
-      {live && !task.loop_summary?.hold && (
-        <Button size="sm" variant="outline" onClick={() => pause.mutate(key)}>
+      {haltOptions(task).length > 0 && (
+        <Button size="sm" variant="outline" onClick={() => setHalting(true)}>
           <Pause className="size-3" />
-          Pause
+          Halt
         </Button>
       )}
-      {(live || waiting) && (
-        <Button size="sm" variant="outline" onClick={() => stop.mutate(key)}>
-          <Square className="size-3" />
-          Stop
-        </Button>
-      )}
+      <HaltLoopDialog task={task} open={halting} onOpenChange={setHalting} />
     </>
   );
 }

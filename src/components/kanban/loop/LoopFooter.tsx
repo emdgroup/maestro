@@ -1,19 +1,20 @@
 import type { Task } from "@/types/bindings";
 import { Button } from "@/ui/button";
 import { cn } from "@/lib/utils";
-import { BotMessageSquare, Pause, Play, RotateCw, Square } from "lucide-react";
+import { BotMessageSquare, Pause, Play, RotateCw } from "lucide-react";
+import { haltOptions } from "./HaltLoopDialog";
 import { loopHalt } from "./loop-state";
 
 export interface LoopFooterActions {
-  onPause: () => void;
-  onStop: () => void;
+  /** Asks how to halt it: once the running step ends, or now. */
+  onHalt: () => void;
   onResume: () => void;
   onRerunChecks: () => void;
 }
 
 /**
- * The controls of a loop in progress. Stop halts it where it is, so it needs no confirmation: the
- * worktree, the iterations and the checks all stay. The decisions a halted loop asks for (a note,
+ * The controls of a loop in progress. Halt asks whether to wait for the running step or cut it,
+ * and the worktree, the iterations and the checks stay either way. The decisions a halted loop asks for (a note,
  * an edited check) are in its detail; the card offers the one move that needs none.
  */
 export function LoopFooter({
@@ -58,17 +59,16 @@ export function LoopFooter({
   const live = task.phase_status === "Running" || task.phase_status === "Blocked";
   const waiting = task.phase_status === "Waiting" && task.ball === "Agent";
   if (!live && !waiting) return null;
+  const canHalt = haltOptions(task).length > 0;
   return (
     <div className="flex gap-1 mt-1.5">
-      {live &&
-        !task.loop_summary?.hold &&
-        button("Pause", <Pause className="w-2.5 h-2.5" />, actions.onPause)}
-      {button(
-        "Stop",
-        <Square className="w-2.5 h-2.5 fill-current" />,
-        actions.onStop,
-        "bg-foreground text-background",
-      )}
+      {canHalt &&
+        button(
+          "Halt",
+          <Pause className="w-2.5 h-2.5 fill-current" />,
+          actions.onHalt,
+          "bg-foreground text-background",
+        )}
       {hasActiveSession &&
         button("Join", <BotMessageSquare className="w-2.5 h-2.5" />, actions.onJoin)}
     </div>

@@ -67,7 +67,7 @@ left out on purpose.
 | Orchestration tax ("you are the ceiling")      | A cap on loops waiting on the user; past it, new loops queue                                            | 5         |
 | Token cost vigilance                           | Tokens per iteration from `usage_turns`. No cost budget, by decision                                    | 4         |
 | † Steering mid-run                             | "Add a note for the next iteration", put in the next prompt                                             | 2, 4      |
-| Human escape hatch                             | Pause, Stop, Try now, Send back with a note, Answer and resume, Re-run checks                           | 2, 4      |
+| Human escape hatch                             | Halt (pause or stop), Try now, Send back with a note, Answer and resume, Re-run checks                  | 2, 4      |
 | Observability                                  | Iteration list, check output, per-iteration session reopenable, outcome thread                          | 4         |
 | Tool abstraction                               | Any ACP agent can run a loop. Only the reset-time reading is Claude-specific; others back off           | 3         |
 | Sub-agents to ideate                           | Left out: planner and executor loops are not in scope                                                   | none      |
@@ -663,7 +663,9 @@ Settled before phase 4 started:
 - Each iteration's tokens are summed from `usage_turns` by its ACP session id.
 - The sealed paths are prefilled from each command's tokens that look like paths and exist on the
   base branch. That can include a file the agent must edit; the user removes its chip.
-- The card's footer for a loop in progress is Pause, Stop and Join; a halted loop offers Resume,
+- The card's footer for a loop in progress is Halt and Join. Halt asks whether to pause once the
+  running step ends or to interrupt it now, offering only what the step allows (checks cannot be
+  cut, a loop between steps halts at once); the detail's footer has the same button. A halted loop offers Resume,
   or Re-run checks when flaky; a task a gate holds offers Try now.
 - The detail's side column shows the live session's activity line, not the agent's prose, and the
   last failing check output, or the passing commands once nothing fails. The digest shows only from

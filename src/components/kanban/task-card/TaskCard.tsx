@@ -64,11 +64,10 @@ import {
 } from "@/components/kanban/loop/loop-state";
 import {
   useOpenAgentGateMutation,
-  usePauseLoopMutation,
   useRerunLoopChecksMutation,
   useResumeLoopMutation,
-  useStopLoopMutation,
 } from "@/services/loop.service";
+import { HaltLoopDialog } from "@/components/kanban/loop/HaltLoopDialog";
 
 interface TaskCardProps {
   task: Task;
@@ -417,6 +416,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
   const [dialog, setDialog] = useState<CardDialog>(null);
   const closeDialog = () => setDialog(null);
   const [proposalOpen, setProposalOpen] = useState(false);
+  const [haltOpen, setHaltOpen] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [profilesOpen, setProfilesOpen] = useState(false);
   // The board's, not the card's: one instance of `useExecuteTask` and one of each list query serve
@@ -441,8 +441,6 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
   const taskWorkspace = useTaskWorkspace(task);
   const recoverSession = useRecoverTaskSessionMutation();
   const cancelSession = useCancelActiveSessionMutation();
-  const pauseLoop = usePauseLoopMutation();
-  const stopLoop = useStopLoopMutation();
   const resumeLoop = useResumeLoopMutation();
   const rerunChecks = useRerunLoopChecksMutation();
   const openGate = useOpenAgentGateMutation();
@@ -643,8 +641,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
               task.gate &&
               openGate.mutate({ projectId: task.project_id, agentId: task.gate.agent_id }),
             loop: {
-              onPause: () => pauseLoop.mutate(taskKey),
-              onStop: () => stopLoop.mutate(taskKey),
+              onHalt: () => setHaltOpen(true),
               onResume: () => resumeLoop.mutate({ ...taskKey, note: null }),
               onRerunChecks: () => rerunChecks.mutate(taskKey),
             },
@@ -652,6 +649,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
         />
       </div>
       <ProposalGate task={task} open={proposalOpen} onOpenChange={setProposalOpen} />
+      <HaltLoopDialog task={task} open={haltOpen} onOpenChange={setHaltOpen} />
       <PlanGate
         task={task}
         open={planOpen}
