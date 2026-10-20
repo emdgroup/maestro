@@ -215,7 +215,7 @@ export function HomeView() {
         <span aria-hidden className="home-edge home-edge-top" />
         <span aria-hidden className="home-edge home-edge-bottom" />
         <div ref={scrollRef} className="absolute inset-0 scrollbar-none overflow-y-auto">
-          <main className="relative z-10 mx-auto max-w-[1200px] px-12 pt-8 pb-4">
+          <main className="relative z-10 mx-auto max-w-[1200px] px-12 pt-8 pb-10">
             {/* Into the charts and back: the Usage view rises in, Home recedes behind it. */}
             <AnimatePresence mode="wait" initial={false}>
               {usageOpen ? (
