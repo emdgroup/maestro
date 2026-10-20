@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { LoopSummary, Task } from "@/types/bindings";
+import type { LoopCheck, LoopIteration, LoopSummary, Task, TaskComment } from "@/types/bindings";
 import {
   buildTimeLeft,
+  checkOutcomes,
+  failedFirst,
+  failingBefore,
+  lastLine,
+  notesGiven,
   draftLine,
   gateLine,
   loopLine,
@@ -225,5 +230,50 @@ describe("the waiting cap and drafts", () => {
     expect(draftLine({ ...drafted, drafted_by: { automation: "Old" } })?.detail).toBe("from Old");
     expect(draftLine({ ...drafted, status: "Queue" })).toBeNull();
     expect(draftLine(loop())).toBeNull();
+  });
+});
+
+describe("an iteration's checks", () => {
+  const check = (id: number, position: number, kind: LoopCheck["kind"] = "Command") =>
+    ({ id, position, kind, label: `Check ${id}`, proposed: false, accepted: false }) as LoopCheck;
+  const iteration = (n: number, started_at: string, results: LoopIteration["results"] = []) =>
+    ({ n, attempt: 1, started_at, outcome: "Checked", results }) as unknown as LoopIteration;
+  const checks = [check(2, 1), check(1, 0), check(3, 2, "Judge")];
+
+  it("follows the list order, failed first when opened, and leaves a waiting proposal out", () => {
+    const proposal = { ...check(4, 3), proposed: true };
+    const it5 = iteration(5, "2026-10-19T10:21:00Z", [
+      { check_id: 2, state: "Fail", detail: "x\n  Tests 2 failed  \n\n" },
+      { check_id: 1, state: "Pass", detail: "ok" },
+    ]);
+    const outcomes = checkOutcomes(it5, [...checks, proposal]);
+    expect(outcomes.map((o) => [o.check.id, o.result?.state ?? null])).toEqual([
+      [1, "Pass"],
+      [2, "Fail"],
+      [3, null],
+    ]);
+    expect(failedFirst(outcomes).map((o) => o.check.id)).toEqual([2, 1, 3]);
+    expect(lastLine(outcomes[1].result?.detail)).toBe("Tests 2 failed");
+  });
+
+  it("works on what the latest earlier round left failing, and the notes written since", () => {
+    const it4 = iteration(4, "2026-10-19T10:02:00Z", [
+      { check_id: 1, state: "Fail", detail: "1 failed" },
+    ]);
+    const it5 = iteration(5, "2026-10-19T10:21:00Z");
+    const it6 = iteration(6, "2026-10-19T10:42:00Z");
+    const all = [it4, it5, it6];
+    expect(failingBefore(all, it6, checks)).toEqual([{ label: "Check 1", line: "1 failed" }]);
+    expect(failingBefore(all, it4, checks)).toEqual([]);
+
+    const note = (id: number, created_at: string, kind = "steer") =>
+      ({ id, kind, body: `note ${id}`, created_at }) as TaskComment;
+    const comments = [
+      note(1, "2026-10-19T10:10:00Z"),
+      note(2, "2026-10-19T10:30:00Z"),
+      note(3, "2026-10-19T10:31:00Z", "note"),
+      note(4, "2026-10-19T10:50:00Z"),
+    ];
+    expect(notesGiven(comments, all, it6).map((c) => c.id)).toEqual([2]);
   });
 });

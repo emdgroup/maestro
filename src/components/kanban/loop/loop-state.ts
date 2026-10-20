@@ -1,4 +1,13 @@
-import type { AgentGateState, LoopCheckState, LoopHalt, Task } from "@/types/bindings";
+import type {
+  AgentGateState,
+  LoopCheck,
+  LoopCheckResult,
+  LoopCheckState,
+  LoopHalt,
+  LoopIteration,
+  Task,
+  TaskComment,
+} from "@/types/bindings";
 
 /** What a card says on its phase line, and how loudly. */
 export interface StateLine {
@@ -245,4 +254,69 @@ export function pathsInCommand(command: string): string[] {
         (token.includes("/") || /\.[a-z0-9]+$/i.test(token)),
     )
     .map((token) => token.replace(/^\.\//, ""));
+}
+
+/** A check of the loop's list and what it concluded after one iteration, `null` where it did not run. */
+export interface CheckOutcome {
+  check: LoopCheck;
+  result: LoopCheckResult | null;
+}
+
+/** The loop's checks in list order, proposals still waiting left out, each with its result. */
+export function checkOutcomes(iteration: LoopIteration, checks: LoopCheck[]): CheckOutcome[] {
+  return checks
+    .filter((c) => !c.proposed || c.accepted)
+    .sort((a, b) => a.position - b.position)
+    .map((check) => ({
+      check,
+      result: iteration.results.find((r) => r.check_id === check.id) ?? null,
+    }));
+}
+
+/** Failed and flaky first, then passed, then those that did not run, each kept in list order. */
+export function failedFirst(outcomes: CheckOutcome[]): CheckOutcome[] {
+  const rank = (o: CheckOutcome) => (!o.result ? 2 : o.result.state === "Pass" ? 1 : 0);
+  return [...outcomes].sort((a, b) => rank(a) - rank(b));
+}
+
+/** The last line with something on it, which for a test run is usually its count. */
+export function lastLine(text: string | null | undefined): string {
+  return (
+    (text ?? "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .pop() ?? ""
+  );
+}
+
+/**
+ * What the current iteration works on: the checks the latest earlier round left failing, with their
+ * result line, as the prompt gave them.
+ */
+export function failingBefore(
+  iterations: LoopIteration[],
+  current: LoopIteration,
+  checks: LoopCheck[],
+): { label: string; line: string }[] {
+  const before = [...iterations].reverse().find((i) => i.n < current.n && i.results.length > 0);
+  if (!before) return [];
+  return checkOutcomes(before, checks)
+    .filter((o) => o.result && o.result.state !== "Pass")
+    .map((o) => ({ label: o.check.label, line: lastLine(o.result?.detail) }));
+}
+
+/** The notes an iteration's prompt carried: every one written after the previous attempt started. */
+export function notesGiven(
+  comments: TaskComment[],
+  iterations: LoopIteration[],
+  current: LoopIteration,
+): TaskComment[] {
+  const at = iterations.indexOf(current);
+  const from = at > 0 ? Date.parse(iterations[at - 1].started_at) : -Infinity;
+  const to = Date.parse(current.started_at);
+  return comments.filter((c) => {
+    const written = Date.parse(c.created_at);
+    return c.kind === "steer" && written > from && written <= to;
+  });
 }

@@ -6,11 +6,7 @@ import { Input } from "@/ui/input";
 import { Textarea } from "@/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { useMcpServersQuery } from "@/services/mcp.service";
-import { useSkillsQuery } from "@/services/skill.service";
 import { sealablePaths, useSealablePathsQuery } from "@/services/loop.service";
-import { useSelectedProject } from "@/store/projectStore";
-import { connectionKeyFromProject } from "@/lib/connection-utils";
 import type { CheckDraft, LoopDraft } from "./loop-draft";
 import { pathsInCommand } from "./loop-state";
 
@@ -543,22 +539,5 @@ export function HiddenCard({
         </p>
       </div>
     </section>
-  );
-}
-
-/** The skills and MCP servers every session on this connection gets, loop sessions included. */
-export function ConnectionToolsLine() {
-  const project = useSelectedProject();
-  const connection = project ? connectionKeyFromProject(project) : { type: "local" as const };
-  const { data: skills } = useSkillsQuery(connection, project?.path ?? "");
-  const { data: mcp } = useMcpServersQuery(connection, project?.path ?? "");
-  if (!skills && !mcp) return null;
-  const skillCount = (skills?.skills.length ?? 0) + (skills?.project.length ?? 0);
-  const mcpCount = (mcp?.servers.length ?? 0) + (mcp?.project.length ?? 0);
-  return (
-    <p className="text-xs text-muted-foreground">
-      Every iteration gets {skillCount} skill{skillCount === 1 ? "" : "s"} and {mcpCount} MCP server
-      {mcpCount === 1 ? "" : "s"} from this connection.
-    </p>
   );
 }
