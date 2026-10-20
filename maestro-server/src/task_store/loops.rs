@@ -1248,6 +1248,26 @@ mod tests {
     }
 
     #[test]
+    fn a_loop_being_prepared_has_not_started() {
+        let mut conn = crate::project_store::open_in_memory();
+        let id = create(&mut conn, RunMode::Loop, None);
+        conn.execute(
+            "UPDATE tasks SET phase = 'Refining', phase_status = 'Waiting' WHERE id = ?1",
+            params![id],
+        )
+        .unwrap();
+        let sealed = TaskUpdate {
+            loop_config: Some(LoopConfig {
+                sealed_paths: vec!["tests/".to_string()],
+                ..LoopConfig::default()
+            }),
+            ..TaskUpdate::default()
+        };
+        let task = super::super::update(&mut conn, PROJECT, id, &sealed).unwrap();
+        assert_eq!(task.loop_config.unwrap().sealed_paths, ["tests/"]);
+    }
+
+    #[test]
     fn setting_the_list_keeps_unchanged_checks_and_resets_changed_ones() {
         let mut conn = crate::project_store::open_in_memory();
         let task = create(&mut conn, RunMode::Loop, None);

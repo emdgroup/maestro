@@ -476,10 +476,12 @@ fn write_update(
         sets.push(("external_updated_at", Box::new(v.clone())));
     }
     // A started task has a worktree and sessions made for the mode it started in, and a started
-    // loop's worktree is sealed to its paths.
+    // loop's worktree is sealed to its paths. Prepare loop's `Refining` comes before the start:
+    // the sandbox is sealed at the first Build.
     let started = || -> Result<Option<(bool, Option<String>)>, String> {
         conn.query_row(
-            "SELECT phase IS NOT NULL OR status NOT IN ('Planning', 'Queue'), loop_config
+            "SELECT (phase IS NOT NULL AND phase != 'Refining') OR status NOT IN ('Planning', 'Queue'),
+                    loop_config
              FROM tasks WHERE project_path = ?1 AND id = ?2",
             params![project_path, task_id],
             |row| Ok((row.get(0)?, row.get(1)?)),

@@ -17,9 +17,13 @@ export interface LoopDetailsHandle {
   save: () => Promise<void>;
 }
 
-/** Whether the loop has started, after which its worktree is sealed to the paths it has. */
+/**
+ * Whether the loop has started, after which its worktree is sealed to the paths it has. Prepare
+ * loop's `Refining` comes before the start.
+ */
 export const loopStarted = (task: Task) =>
-  task.phase != null || (task.status !== "Planning" && task.status !== "Queue");
+  (task.phase != null && task.phase !== "Refining") ||
+  (task.status !== "Planning" && task.status !== "Queue");
 
 /**
  * The loop tab, holding the draft of its checks, hidden files and limits, saved with the rest of

@@ -1110,7 +1110,10 @@ async fn task_tool(
                 if fields.loop_only() && !looping {
                     return Err(NOT_A_LOOP.to_string());
                 }
-                let started = task.phase.is_some()
+                // Prepare loop runs in `Refining`, before the loop starts, and writes exactly these.
+                let started = task
+                    .phase
+                    .is_some_and(|phase| phase != maestro_protocol::TaskPhase::Refining)
                     || !matches!(task.status, TaskStatus::Planning | TaskStatus::Queue);
                 if started && fields.shape() {
                     return Err("once a loop has started only its budgets change here; its \
