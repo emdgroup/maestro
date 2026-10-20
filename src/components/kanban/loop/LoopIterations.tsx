@@ -216,6 +216,7 @@ function CurrentIteration({
   comments,
   onJoin,
   onResume,
+  railBelow,
 }: {
   task: Task;
   current: CurrentState;
@@ -224,6 +225,8 @@ function CurrentIteration({
   comments: TaskComment[];
   onJoin: (() => void) | null;
   onResume: (answer: string) => void;
+  /** Earlier iterations follow, so the rail runs on down to them. */
+  railBelow: boolean;
 }) {
   const [answer, setAnswer] = useState("");
   const { iteration, step, blocked, activity } = current;
@@ -254,13 +257,15 @@ function CurrentIteration({
 
   return (
     <li className={cn("relative pb-4", INDENT)}>
-      <span
-        className={cn(
-          "absolute bottom-0 top-[80px] w-0.5 bg-gradient-to-b to-border",
-          RAIL,
-          amber ? "from-warning" : "from-accent",
-        )}
-      />
+      {railBelow && (
+        <span
+          className={cn(
+            "absolute bottom-0 top-[80px] w-0.5 bg-gradient-to-b to-border",
+            RAIL,
+            amber ? "from-warning" : "from-accent",
+          )}
+        />
+      )}
       <span className="absolute left-0 top-2">
         <ClockRing current={current} limitSecs={config?.max_build_secs ?? 7200} amber={amber} />
       </span>
@@ -714,6 +719,7 @@ export function LoopIterations({
           comments={comments}
           onJoin={onJoin}
           onResume={onResume}
+          railBelow={earlier.length > 0}
         />
       )}
       {earlier.length > 0 && (
