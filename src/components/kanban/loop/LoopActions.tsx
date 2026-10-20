@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CornerDownRight, Pause, Play, Repeat } from "lucide-react";
+import { CornerDownRight, OctagonPause, Play, Repeat } from "lucide-react";
 import { toast } from "sonner";
 import type { Task } from "@/types/bindings";
 import { Button } from "@/ui/button";
@@ -87,7 +87,7 @@ export function LoopActions({
       )}
       {haltOptions(task).length > 0 && (
         <Button size="sm" variant="outline" onClick={() => setHalting(true)}>
-          <Pause className="size-3" />
+          <OctagonPause className="size-3" />
           Halt
         </Button>
       )}

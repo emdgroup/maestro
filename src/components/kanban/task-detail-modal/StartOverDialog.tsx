@@ -10,8 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
-import { Label } from "@/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
+import { ChoiceCards } from "@/components/common/ChoiceCards";
 import { useRestartTaskMutation } from "@/services/task.service";
 
 /** Whether starting over gives the task a new branch from the base, rather than rewinding its own. */
@@ -32,9 +31,9 @@ export function runControls(task: Task) {
   return { live, startOver: hasRun && !busy && !handingOff };
 }
 
-const LANDINGS: { status: TaskStatus; label: string; hint: string }[] = [
-  { status: "Planning", label: "Planning", hint: "Edit it first, then drag it to Queue." },
-  { status: "Queue", label: "Queue", hint: "Runs again as soon as a slot is free." },
+const LANDINGS: { value: TaskStatus; label: string; hint: string }[] = [
+  { value: "Planning", label: "Planning", hint: "Edit it first, then drag it to Queue." },
+  { value: "Queue", label: "Queue", hint: "Runs again as soon as a slot is free." },
 ];
 
 /** Asks before throwing a task's work away, and where it lands. */
@@ -76,29 +75,7 @@ export function StartOverDialog({
                 } are cleared. ${kept}`}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <RadioGroup
-          value={landing}
-          onValueChange={(value) => setLanding(value as TaskStatus)}
-          className="space-y-2"
-        >
-          <div className="text-xs font-medium">Put it in</div>
-          {LANDINGS.map(({ status, label, hint }) => (
-            <div key={status} className="flex items-start gap-3 rounded-md border p-2">
-              <RadioGroupItem
-                tone="accent"
-                value={status}
-                id={`start-over-${status}`}
-                className="mt-1"
-              />
-              <div className="min-w-0 flex-1">
-                <Label htmlFor={`start-over-${status}`} className="text-sm font-medium">
-                  {label}
-                </Label>
-                <div className="text-xs text-muted-foreground">{hint}</div>
-              </div>
-            </div>
-          ))}
-        </RadioGroup>
+        <ChoiceCards label="Put it in" options={LANDINGS} value={landing} onChange={setLanding} />
         <AlertDialogFooter>
           <AlertDialogCancel>{fresh ? "Keep it as is" : "Keep its progress"}</AlertDialogCancel>
           <AlertDialogAction

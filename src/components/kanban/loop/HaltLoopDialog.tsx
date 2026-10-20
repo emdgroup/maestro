@@ -10,11 +10,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
-import { Label } from "@/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
+import { ChoiceCards } from "@/components/common/ChoiceCards";
 import { usePauseLoopMutation, useStopLoopMutation } from "@/services/loop.service";
 
-type Halt = { id: "after" | "now"; label: string; hint: string };
+type Halt = { value: "after" | "now"; label: string; hint: string };
 
 /**
  * The ways a loop can be halted from where it is, or none. A pause waits for the running step to
@@ -25,7 +24,7 @@ export function haltOptions(task: Task): Halt[] {
   const live = task.phase_status === "Running" || task.phase_status === "Blocked";
   const waiting = task.phase_status === "Waiting" && task.ball === "Agent";
   if (waiting) {
-    return [{ id: "now", label: "Now", hint: "Nothing is running, so the loop halts at once." }];
+    return [{ value: "now", label: "Now", hint: "Nothing is running, so the loop halts at once." }];
   }
   if (!live) return [];
   const options: Halt[] = [];
@@ -37,14 +36,14 @@ export function haltOptions(task: Task): Halt[] {
       Judging:
         "The judge finishes, then the loop pauses. If the judge passes the loop, it goes to sign-off instead.",
     }[task.phase as string];
-    if (after) options.push({ id: "after", label: "After this step", hint: after });
+    if (after) options.push({ value: "after", label: "After this step", hint: after });
   }
   const now = {
     Iterating:
       "The agent's session closes. Its work so far is kept as a WIP commit, and the iteration does not count.",
     Judging: "The judge's session closes without a verdict.",
   }[task.phase as string];
-  if (now) options.push({ id: "now", label: "Now", hint: now });
+  if (now) options.push({ value: "now", label: "Now", hint: now });
   return options;
 }
 
@@ -59,10 +58,10 @@ export function HaltLoopDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const options = haltOptions(task);
-  const [picked, setPicked] = useState<Halt["id"]>("after");
+  const [picked, setPicked] = useState<Halt["value"]>("after");
   const pause = usePauseLoopMutation();
   const stop = useStopLoopMutation();
-  const choice = options.find((o) => o.id === picked) ?? options[0];
+  const choice = options.find((o) => o.value === picked) ?? options[0];
 
   return (
     <AlertDialog open={open && !!choice} onOpenChange={onOpenChange}>
@@ -73,30 +72,14 @@ export function HaltLoopDialog({
             Nothing runs until you resume it. The worktree, the iterations and the checks stay.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <RadioGroup
-          value={choice?.id}
-          onValueChange={(value) => setPicked(value as Halt["id"])}
-          className="space-y-2"
-        >
-          {options.map(({ id, label, hint }) => (
-            <div key={id} className="flex items-start gap-3 rounded-md border p-2">
-              <RadioGroupItem tone="accent" value={id} id={`halt-${id}`} className="mt-1" />
-              <div className="min-w-0 flex-1">
-                <Label htmlFor={`halt-${id}`} className="text-sm font-medium">
-                  {label}
-                </Label>
-                <div className="text-xs text-muted-foreground">{hint}</div>
-              </div>
-            </div>
-          ))}
-        </RadioGroup>
+        <ChoiceCards options={options} value={choice?.value} onChange={setPicked} />
         <AlertDialogFooter>
           <AlertDialogCancel>Keep running</AlertDialogCancel>
           <AlertDialogAction
             onClick={() => {
               onOpenChange(false);
               const key = { projectId: task.project_id, taskId: task.id };
-              if (choice?.id === "now") stop.mutate(key);
+              if (choice?.value === "now") stop.mutate(key);
               else pause.mutate(key);
             }}
           >

@@ -1626,7 +1626,7 @@ describe("TaskCard as a loop", () => {
     expect(pauseLoop).toHaveBeenCalledWith({ projectId: 1, taskId: 7 });
 
     await userEvent.click(screen.getByRole("button", { name: /Halt/ }));
-    await userEvent.click(screen.getByRole("radio", { name: "Now" }));
+    await userEvent.click(screen.getByRole("radio", { name: /^Now/ }));
     await userEvent.click(
       within(screen.getByRole("alertdialog")).getByRole("button", { name: "Halt" }),
     );
