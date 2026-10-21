@@ -1,48 +1,50 @@
 import { describe, it, expect } from "vitest";
-import { resolveRecordedWorktree } from "./useSessionHistory";
+import type { WorktreeWithStatus } from "@/types/bindings";
+import { resumeWorkspace } from "./useSessionHistory";
 
 const REPO = "/home/me/proj";
 const worktrees = [
   { path: "/home/me/proj", branch_name: "main" },
   { path: "/home/me/proj/.maestro/worktrees/task-7", branch_name: "feat/seven" },
-];
+] as WorktreeWithStatus[];
 
-describe("resolveRecordedWorktree", () => {
-  it("gives up when no folder was ever recorded", () => {
-    expect(resolveRecordedWorktree(null, REPO, worktrees)).toBeNull();
-    expect(resolveRecordedWorktree(undefined, REPO, worktrees)).toBeNull();
+describe("resumeWorkspace", () => {
+  it("offers a new worktree when no folder was ever recorded", () => {
+    expect(resumeWorkspace(null, REPO, worktrees)).toEqual({ workspaceMode: "NewWorktree" });
+    expect(resumeWorkspace(undefined, REPO, worktrees)).toEqual({ workspaceMode: "NewWorktree" });
   });
 
-  it("reopens a session recorded in the project root at the root", () => {
-    expect(resolveRecordedWorktree("", REPO, worktrees)).toEqual({
-      cwd: REPO,
-      branch: "main",
+  it("uses the project directory for a session recorded in the root", () => {
+    expect(resumeWorkspace("", REPO, worktrees)).toEqual({ workspaceMode: "RepositoryDirectory" });
+  });
+
+  it("uses the project directory even when git does not list the root as a worktree", () => {
+    expect(resumeWorkspace("", REPO, [worktrees[1]!])).toEqual({
+      workspaceMode: "RepositoryDirectory",
     });
   });
 
-  it("reopens in the root even when git does not list it as a worktree", () => {
-    expect(resolveRecordedWorktree("", REPO, [worktrees[1]!])).toEqual({
-      cwd: REPO,
-      branch: null,
+  it("reuses the recorded worktree, resolved against the current root", () => {
+    expect(resumeWorkspace(".maestro/worktrees/task-7", REPO, worktrees)).toEqual({
+      workspaceMode: "ReuseWorkspace",
+      worktree: worktrees[1],
     });
   });
 
-  it("resolves a relative folder against the current root and carries its branch", () => {
-    expect(resolveRecordedWorktree(".maestro/worktrees/task-7", REPO, worktrees)).toEqual({
-      cwd: "/home/me/proj/.maestro/worktrees/task-7",
-      branch: "feat/seven",
+  it("offers a new worktree when the recorded one no longer exists", () => {
+    expect(resumeWorkspace(".maestro/worktrees/task-99", REPO, worktrees)).toEqual({
+      workspaceMode: "NewWorktree",
     });
-  });
-
-  it("gives up when the recorded worktree no longer exists", () => {
-    expect(resolveRecordedWorktree(".maestro/worktrees/task-99", REPO, worktrees)).toBeNull();
   });
 
   it("matches across separator styles", () => {
-    expect(
-      resolveRecordedWorktree(".maestro/worktrees/task-7", "C:/dev/proj", [
-        { path: "C:\\dev\\proj\\.maestro\\worktrees\\task-7\\", branch_name: "feat/seven" },
-      ]),
-    ).toEqual({ cwd: "C:\\dev\\proj\\.maestro\\worktrees\\task-7\\", branch: "feat/seven" });
+    const wt = {
+      path: "C:\\dev\\proj\\.maestro\\worktrees\\task-7\\",
+      branch_name: "feat/seven",
+    } as WorktreeWithStatus;
+    expect(resumeWorkspace(".maestro/worktrees/task-7", "C:/dev/proj", [wt])).toEqual({
+      workspaceMode: "ReuseWorkspace",
+      worktree: wt,
+    });
   });
 });

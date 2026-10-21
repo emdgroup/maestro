@@ -5,6 +5,8 @@ import type { WorktreeWithStatus } from "@/types/bindings";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
+const loadAcp = vi.hoisted(() => vi.fn());
+
 vi.mock("@/services/execution.service", () => ({
   // A real agent, so the dialog does not fall back to a terminal session — which forces the
   // repository directory and hides the branch picker entirely.
@@ -14,6 +16,7 @@ vi.mock("@/services/execution.service", () => ({
   }),
   useSpawnAcpSessionMutation: () => ({ mutate: vi.fn(), isPending: false }),
   useSpawnInteractiveExecutionMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  useLoadAcpSessionMutation: () => ({ mutate: loadAcp, isPending: false }),
 }));
 
 vi.mock("@/services/project.service", () => ({
@@ -77,7 +80,9 @@ function worktree(): WorktreeWithStatus {
   };
 }
 
-function renderDialog(seed?: Parameters<typeof SpawnSessionDialog>[0]["seed"]) {
+type Props = Parameters<typeof SpawnSessionDialog>[0];
+
+function renderDialog(seed?: Props["seed"], resume?: Props["resume"]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
@@ -90,6 +95,7 @@ function renderDialog(seed?: Parameters<typeof SpawnSessionDialog>[0]["seed"]) {
         worktrees={[worktree()]}
         onSuccess={vi.fn()}
         seed={seed}
+        resume={resume}
       />
     </QueryClientProvider>,
   );
@@ -196,5 +202,32 @@ describe("SpawnSessionDialog seeding", () => {
     expect(resolveWorktree).toHaveBeenCalledWith(
       expect.objectContaining({ pullRequest: null, baseBranch: "origin/maestro/great-lynx-58" }),
     );
+  });
+});
+
+describe("SpawnSessionDialog resuming", () => {
+  /**
+   * Session History reopens a conversation the agent recorded, so only that agent can take it and
+   * a terminal cannot. The seeded workspace is where it reopens, under the seeded name.
+   */
+  it("offers only the session's agent and reopens it in the seeded worktree", async () => {
+    renderDialog(
+      { workspaceMode: "ReuseWorkspace", worktree: worktree(), sessionName: "Old chat" },
+      { agentId: "claude-acp", acpSessionId: "acp-1" },
+    );
+
+    expect(screen.getByText("Resume Session", { selector: "h2" })).toBeInTheDocument();
+    expect(screen.queryByText("Terminal")).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue("Old chat")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Resume Session" }));
+    await waitFor(() => expect(loadAcp).toHaveBeenCalled());
+    expect(loadAcp.mock.calls[0]![0]).toMatchObject({
+      agentId: "claude-acp",
+      acpSessionId: "acp-1",
+      cwd: "C:/repo/.maestro/worktrees/session-42",
+      sessionName: "Old chat",
+      worktreeBranch: "maestro/other-42",
+    });
   });
 });

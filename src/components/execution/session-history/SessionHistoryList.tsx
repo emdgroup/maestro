@@ -25,8 +25,6 @@ interface Props {
   onToggleTick: (id: string) => void;
   onSetTicked: (s: Set<string>) => void;
   onRowClick: (id: string, title: string | null) => void;
-  onOpenTicked: () => void;
-  loadMutationPending: boolean;
   agentName: string;
   renamingId: string | null;
   renameValue: string;
@@ -56,8 +54,6 @@ export function SessionHistoryList({
   onToggleTick,
   onSetTicked,
   onRowClick,
-  onOpenTicked,
-  loadMutationPending,
   agentName,
   renamingId,
   renameValue,
@@ -106,14 +102,16 @@ export function SessionHistoryList({
 
       {/* Summary bar */}
       <div className="px-3 py-1.5 border-b border-border shrink-0 flex items-center gap-2">
-        <span onClick={(e) => e.stopPropagation()} className="shrink-0">
-          <Checkbox
-            className="border-border"
-            checked={allSelected}
-            indeterminate={someSelected}
-            onCheckedChange={onSelectAll}
-          />
-        </span>
+        {supportsSessionDelete && (
+          <span onClick={(e) => e.stopPropagation()} className="shrink-0">
+            <Checkbox
+              className="border-border"
+              checked={allSelected}
+              indeterminate={someSelected}
+              onCheckedChange={onSelectAll}
+            />
+          </span>
+        )}
         <span className="text-[10px] text-muted-foreground/60">{summaryLabel}</span>
       </div>
 
@@ -177,13 +175,16 @@ export function SessionHistoryList({
                     ticked.has(entry.session_id) ? "bg-muted/40" : "hover:bg-muted/20",
                   )}
                 >
-                  <span onClick={(e) => e.stopPropagation()} className="shrink-0">
-                    <Checkbox
-                      className="border-border"
-                      checked={ticked.has(entry.session_id)}
-                      onCheckedChange={() => onToggleTick(entry.session_id)}
-                    />
-                  </span>
+                  {/* Selecting is only for deleting, so an agent that cannot delete offers none. */}
+                  {supportsSessionDelete && (
+                    <span onClick={(e) => e.stopPropagation()} className="shrink-0">
+                      <Checkbox
+                        className="border-border"
+                        checked={ticked.has(entry.session_id)}
+                        onCheckedChange={() => onToggleTick(entry.session_id)}
+                      />
+                    </span>
+                  )}
                   <span className="flex-1 min-w-0 text-xs font-medium text-foreground truncate">
                     {entry.title ?? entry.session_id}
                   </span>
@@ -246,15 +247,6 @@ export function SessionHistoryList({
               onClick={() => onSetTicked(new Set())}
             >
               Clear
-            </Button>
-            <Button
-              variant="accent"
-              size="sm"
-              className="h-7 text-xs"
-              disabled={loadMutationPending}
-              onClick={onOpenTicked}
-            >
-              Open
             </Button>
           </div>
         </div>
