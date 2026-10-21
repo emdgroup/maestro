@@ -500,10 +500,6 @@ function HeldBody({
   actions: HeadActions;
 }) {
   const halt = head.kind === "halted" ? head.halt : null;
-  // A limit halt is explained by what the agent said, so its outcome starts open.
-  const [details, setDetails] = useState(
-    halt === "Stalled" || halt === "Failing" || halt === "OutOfIterations",
-  );
   const outcomes = checkOutcomes(iteration, checks);
   const flaky = outcomes.filter((o) => o.result?.state === "Flaky");
   const manual = outcomes.filter((o) => o.check.kind === "Manual");
@@ -561,18 +557,7 @@ function HeldBody({
         </ul>
       )}
       {hasDetails && head.kind !== "gated" && (
-        <>
-          <button
-            type="button"
-            aria-expanded={details}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => setDetails(!details)}
-          >
-            {details ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-            Checks and outcome of #{iteration.n}
-          </button>
-          {details && <IterationDetail task={task} iteration={iteration} checks={checks} />}
-        </>
+        <IterationDetail task={task} iteration={iteration} checks={checks} />
       )}
     </div>
   );
