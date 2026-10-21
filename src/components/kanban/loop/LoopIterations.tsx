@@ -826,7 +826,7 @@ function HeadIteration({
               checks={checks}
               comments={comments}
             />
-            <AgentNotes key={panelKey} notes={notes} />
+            <AgentNotes key={panelKey} task={task} notes={notes} />
           </div>
         ) : head.kind === "gated" ? (
           <p className="text-xs leading-relaxed text-muted-foreground">
@@ -839,7 +839,7 @@ function HeadIteration({
               <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Left for the next iteration
               </div>
-              <NotesFile notes={notes} />
+              <NotesFile task={task} notes={notes} />
             </div>
           </div>
         );
@@ -1194,7 +1194,7 @@ function AgentSummary({ task, iteration }: { task: Task; iteration: LoopIteratio
  * which every fresh session reads first and updates before it stops. `.maestro/` is excluded from
  * git, so they are never committed.
  */
-function NotesFile({ notes }: { notes: string | null | undefined }) {
+function NotesFile({ task, notes }: { task: Task; notes: string | null | undefined }) {
   return (
     <div className="overflow-hidden rounded-md border border-border bg-background">
       <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs">
@@ -1202,15 +1202,19 @@ function NotesFile({ notes }: { notes: string | null | undefined }) {
         <span className="font-mono">.maestro/loop/PROGRESS.md</span>
         <span className="text-muted-foreground">written by the agent, never committed</span>
       </div>
-      <pre className="max-h-80 overflow-auto whitespace-pre-wrap p-3 font-mono text-[11px] leading-relaxed">
-        {notes?.trim() || "The agent left no notes."}
-      </pre>
+      <div className="max-h-80 overflow-auto p-3 text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_h3]:font-semibold">
+        {notes?.trim() ? (
+          <MarkdownBlock text={notes} projectId={task.project_id} />
+        ) : (
+          <span className="text-muted-foreground">The agent left no notes.</span>
+        )}
+      </div>
     </div>
   );
 }
 
 /** While the agent builds, its notes behind one line: it read them first and updates them as it goes. */
-function AgentNotes({ notes }: { notes: string | null | undefined }) {
+function AgentNotes({ task, notes }: { task: Task; notes: string | null | undefined }) {
   const [open, setOpen] = useState(false);
   const lines = notes?.trim() ? notes.trim().split("\n").length : 0;
   return (
@@ -1226,7 +1230,7 @@ function AgentNotes({ notes }: { notes: string | null | undefined }) {
         It read the agent notes first
         <span>· {lines ? plural(lines, "line") : "none yet"}</span>
       </button>
-      {open && <NotesFile notes={notes} />}
+      {open && <NotesFile task={task} notes={notes} />}
     </div>
   );
 }
