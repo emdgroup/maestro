@@ -683,8 +683,14 @@ pub(crate) async fn answer(
         };
     }
     let notes = Path::new(&crate::worktree::sandbox_dir(&path, task.task_id))
-        .join(".maestro/loop/PROGRESS.md");
-    let content = tokio::fs::read_to_string(notes).await.ok();
+        .join(crate::worktree::LOOP_NOTES);
+    let content = match tokio::fs::read_to_string(notes).await {
+        Ok(content) => Some(content),
+        // No sandbox, between runs: the notes its removal kept.
+        Err(_) => tokio::fs::read_to_string(crate::worktree::kept_notes(&path, task.task_id))
+            .await
+            .ok(),
+    };
     let notes = maestro_protocol::LoopNotes { content };
     (ServerResponse::ReadLoopNotesOk(notes), Vec::new())
 }
@@ -2275,6 +2281,56 @@ mod tests {
     async fn half_remove(project: &str, dir: &str) {
         std::fs::remove_file(Path::new(dir).join(".git")).unwrap();
         git(project, &["worktree", "prune"]).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_agents_notes_outlive_the_sandbox_until_the_loop_starts_over() {
+        let (_repo, store, task) = sealed_loop(SEES_THEM).await;
+        let (dir, task, _) = start(&store, &task).await;
+        let project = task.project_path.clone();
+        let notes = Path::new(&dir).join(crate::worktree::LOOP_NOTES);
+        std::fs::create_dir_all(notes.parent().unwrap()).unwrap();
+        let text = "## Left\n- the sealed suite";
+        std::fs::write(&notes, text).unwrap();
+
+        // Sign-off takes the loop out of In Progress, and the sweep removes its sandbox.
+        crate::worktree::remove_sandbox(&project, task.id)
+            .await
+            .unwrap();
+        assert!(!Path::new(&dir).exists());
+        let kept = crate::worktree::kept_notes(&project, task.id);
+        assert_eq!(std::fs::read_to_string(&kept).unwrap(), text);
+
+        // Sent back, the next iteration finds them where it always reads them.
+        let again = crate::worktree::prepare_task_workspace(
+            &store,
+            &task,
+            maestro_protocol::AgentRole::Worker,
+        )
+        .await
+        .expect("made again");
+        assert_eq!(
+            std::fs::read_to_string(Path::new(&again.cwd).join(crate::worktree::LOOP_NOTES))
+                .unwrap(),
+            text
+        );
+
+        store
+            .lock()
+            .await
+            .execute(
+                "UPDATE tasks SET status = 'Review', phase = 'Approval', phase_status = 'Waiting'
+                 WHERE id = ?1",
+                [task.id],
+            )
+            .unwrap();
+        let request = maestro_protocol::RestartTaskRequest {
+            project_path: project.clone(),
+            task_id: task.id,
+            status: maestro_protocol::TaskStatus::Planning,
+        };
+        crate::start_over::restart(&store, request).await.unwrap();
+        assert!(!Path::new(&kept).exists(), "started over, it forgets them");
     }
 
     #[tokio::test]

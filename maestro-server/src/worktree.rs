@@ -376,12 +376,31 @@ pub(crate) fn sandbox_dir(project_path: &str, task_id: i32) -> String {
     absolute(project_path, &sandbox_relative_path(task_id))
 }
 
+/// The agent's notes in a loop's sandbox, which every iteration reads first and updates.
+pub(crate) const LOOP_NOTES: &str = ".maestro/loop/PROGRESS.md";
+
+/// Where a loop's notes are kept while it has no sandbox: one is removed whenever its loop leaves
+/// In Progress, at sign-off or a send back included, and the notes are the loop's memory.
+pub(crate) fn kept_notes(project_path: &str, task_id: i32) -> String {
+    absolute(
+        project_path,
+        &format!(".maestro/loop-notes/task-{task_id}.md"),
+    )
+}
+
+async fn write_notes(path: &Path, notes: &[u8]) -> std::io::Result<()> {
+    if let Some(dir) = path.parent() {
+        tokio::fs::create_dir_all(dir).await?;
+    }
+    tokio::fs::write(path, notes).await
+}
+
 /// Bring the loop's sandbox to the context's HEAD, making it the first time, and return it.
 ///
 /// Work the sandbox holds that the context lacks, an iteration whose merge back failed, is merged
 /// back first, so a reset never throws it away. A reset keeps what git ignores, so build output,
 /// installed dependencies and `.maestro/loop/PROGRESS.md` carry over from one iteration to the
-/// next. Detached: the sandbox's commits reach a branch only by being merged into the context.
+/// next; a sandbox made again gets the notes its removal kept. Detached: the sandbox's commits reach a branch only by being merged into the context.
 async fn sync_sandbox(
     project_path: &str,
     context: &str,
@@ -406,6 +425,11 @@ async fn sync_sandbox(
             &["worktree", "add", "-q", "--detach", &relative, head.trim()],
         )
         .await?;
+        if let Ok(notes) = tokio::fs::read(kept_notes(project_path, task.id)).await {
+            write_notes(&Path::new(&sandbox).join(LOOP_NOTES), &notes)
+                .await
+                .map_err(|e| format!("cannot restore the loop's notes: {e}"))?;
+        }
     }
     seal(&sandbox, task).await?;
     Ok(sandbox)
@@ -454,10 +478,16 @@ async fn clear_leftover(project_path: &str, dir: &str) -> Result<(), String> {
     git(project_path, &["worktree", "prune"]).await.map(|_| ())
 }
 
-/// Remove a loop's sandbox, tolerating it being gone already, or half gone.
+/// Remove a loop's sandbox, tolerating it being gone already, or half gone. The agent's notes are
+/// kept first, for the sandbox made next.
 pub(crate) async fn remove_sandbox(project_path: &str, task_id: i32) -> Result<(), String> {
     let _adding = adding(project_path).await;
     let dir = sandbox_dir(project_path, task_id);
+    if let Ok(notes) = tokio::fs::read(Path::new(&dir).join(LOOP_NOTES)).await {
+        write_notes(Path::new(&kept_notes(project_path, task_id)), &notes)
+            .await
+            .map_err(|e| format!("cannot keep the loop's notes: {e}"))?;
+    }
     if is_checkout(&dir) {
         let removed = git(
             project_path,

@@ -117,6 +117,13 @@ pub(crate) async fn restart(
 
     if looping {
         crate::worktree::remove_sandbox(&path, task_id).await?;
+        // A loop started over begins with no memory of the last one.
+        let kept = crate::worktree::kept_notes(&path, task_id);
+        if let Err(e) = tokio::fs::remove_file(&kept).await {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                return Err(format!("cannot clear the loop's notes: {e}"));
+            }
+        }
     }
     let mut conn = store.lock().await;
     if looping {
