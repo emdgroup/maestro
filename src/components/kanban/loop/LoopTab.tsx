@@ -17,7 +17,10 @@ import {
   usePauseLoopMutation,
   useTickLoopCheckMutation,
 } from "@/services/loop.service";
-import { useTaskSession } from "@/contexts/BoardActionsContext";
+import { useTaskSession, useTaskWorktree } from "@/contexts/BoardActionsContext";
+import { useWorktreeDiffStatsQuery } from "@/services/worktree.service";
+import { useBoardActions } from "@/store/boardStore";
+import { fileCountFrom } from "@/components/execution/diff/useReviewItems";
 import { useSessionActivity } from "@/store/sessionActivityStore";
 import {
   CHECK_KINDS,
@@ -261,6 +264,14 @@ export function LoopTab({
   const addNote = useAddLoopNoteMutation();
   const tick = useTickLoopCheckMutation();
   const session = useTaskSession(task.id);
+  const worktree = useTaskWorktree(task.id);
+  const { data: changes } = useWorktreeDiffStatsQuery(
+    task.project_id,
+    worktree?.path ?? null,
+    { type: "BranchAll", branch: worktree?.base_branch ?? task.base_branch },
+    { refetchInterval: false },
+  );
+  const { openReview } = useBoardActions();
   const activity = useSessionActivity(session?.session_id);
   const [note, setNote] = useState("");
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -612,6 +623,7 @@ export function LoopTab({
               onTick: (checkId, ticked) => tick.mutate({ ...key, checkId, ticked }),
               onRerunChecks: () => rerun.mutate(key),
               onEditCheck: readOnly ? null : editFlaky,
+              onReview: fileCountFrom(changes) > 0 ? () => openReview(task.id) : null,
             }}
           />
         </>

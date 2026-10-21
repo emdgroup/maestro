@@ -59,6 +59,7 @@ const actions: HeadActions = {
   onTick: () => {},
   onRerunChecks: () => {},
   onEditCheck: null,
+  onReview: null,
 };
 
 describe("LoopIterations", () => {

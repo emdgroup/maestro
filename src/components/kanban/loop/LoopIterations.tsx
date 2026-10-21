@@ -96,6 +96,8 @@ export interface HeadActions {
   onRerunChecks: () => void;
   /** Opens the flaky check in Checks & settings; null where the loop cannot be edited. */
   onEditCheck: (() => void) | null;
+  /** Opens the review of the loop's work, all iterations together; null while it has none. */
+  onReview: (() => void) | null;
 }
 
 type Tone = "accent" | "warning" | "destructive" | "success" | "muted";
@@ -826,6 +828,14 @@ function HeadIteration({
             <span className="text-xs tabular-nums text-muted-foreground">
               {formatTokens(iteration.tokens)} tokens
             </span>
+          )}
+          {!live && iteration.outcome !== "Interrupted" && (
+            <span className="text-xs text-muted-foreground">{changed(iteration)}</span>
+          )}
+          {actions.onReview && !live && head.kind !== "signoff" && (
+            <Button size="sm" variant="outline" onClick={actions.onReview}>
+              Review changes
+            </Button>
           )}
           {actions.onJoin && live && (
             <Button
