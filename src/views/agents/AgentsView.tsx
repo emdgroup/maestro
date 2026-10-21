@@ -507,9 +507,10 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           projectId={projectId ?? 0}
           worktrees={worktrees}
           onClose={() => setShowHistory(false)}
-          onSessionLoaded={(key) => {
+          onSessionLoaded={(key, createdWorktree) => {
             setSelectedSessionId(key);
             setShowHistory(false);
+            if (createdWorktree) autoWorktrees.current.set(key, createdWorktree);
           }}
         />
       </div>
