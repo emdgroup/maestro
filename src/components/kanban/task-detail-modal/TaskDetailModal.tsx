@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useBoardActionsContext, useTaskSession } from "@/contexts/BoardActionsContext";
-import { LoopChangesTab, LoopNotesTab } from "@/components/kanban/loop/LoopWorkTabs";
+import { LoopNotesTab } from "@/components/kanban/loop/LoopWorkTabs";
 import { LoopActions } from "@/components/kanban/loop/LoopActions";
 import {
   LoopDetailsSection,
@@ -78,7 +78,7 @@ interface TaskDraft {
   labels: string[];
 }
 
-type Tab = "loop" | "details" | "changes" | "notes" | "outcome";
+type Tab = "loop" | "details" | "notes" | "outcome";
 
 interface TaskDetailModalProps {
   taskId: number | null;
@@ -324,7 +324,6 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                 <TabsList variant="line" className="shrink-0">
                   {isLoop && <TabsTrigger value="loop">Loop</TabsTrigger>}
                   <TabsTrigger value="details">Details</TabsTrigger>
-                  {isLoop && <TabsTrigger value="changes">Changes</TabsTrigger>}
                   {isLoop && <TabsTrigger value="notes">Agent notes</TabsTrigger>}
                   <TabsTrigger value="outcome">
                     Outcome{comments.length > 0 ? ` (${comments.length})` : ""}
@@ -368,11 +367,6 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                           : null
                       }
                     />
-                  </TabsContent>
-                )}
-                {isLoop && (
-                  <TabsContent value="changes" className="min-h-0 overflow-y-auto pr-1">
-                    <LoopChangesTab task={task} />
                   </TabsContent>
                 )}
                 {isLoop && (
