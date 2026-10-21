@@ -297,12 +297,15 @@ function StepTile({
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-const changed = (iteration: LoopIteration) => (
-  <span className="tabular-nums">
-    {plural(iteration.files, "file")} <span className="text-success">+{iteration.added}</span>{" "}
-    <span className="text-destructive">−{iteration.removed}</span>
-  </span>
-);
+const changed = (iteration: LoopIteration) =>
+  iteration.files === 0 ? (
+    "No changes"
+  ) : (
+    <span className="tabular-nums">
+      {plural(iteration.files, "file")} <span className="text-success">+{iteration.added}</span>{" "}
+      <span className="text-destructive">−{iteration.removed}</span>
+    </span>
+  );
 
 const lasted = (iteration: LoopIteration) =>
   secsBetween(iteration.started_at, Date.parse(iteration.ended_at ?? iteration.started_at));
@@ -662,7 +665,11 @@ function Question({
       />
       <div className="flex items-center gap-2">
         <span className="text-xs text-muted-foreground">
-          Its work ({changed(iteration)}) is committed and the checks did not run.
+          {iteration.files === 0 ? (
+            "It changed nothing, and the checks did not run."
+          ) : (
+            <>Its work ({changed(iteration)}) is committed and the checks did not run.</>
+          )}
         </span>
         <div className="flex-1" />
         <Button
