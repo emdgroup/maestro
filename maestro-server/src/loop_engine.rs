@@ -521,6 +521,9 @@ async fn finish(
         .await;
         return;
     }
+    // Nothing new to commit, but the checks never answered on what the loop holds: run them rather
+    // than call it a stall, which no resume could get out of.
+    let unchecked = matches!(committed, Ok(None)) && never_checked(store, path, task_id).await;
     let (outcome, output) = match committed {
         _ if ended.agent_failed => (LoopIterationOutcome::Failed, None),
         Err(e) => (
@@ -530,8 +533,8 @@ async fn finish(
                 tail_chars(&e, OUTPUT_CHARS)
             )),
         ),
-        Ok(None) => (LoopIterationOutcome::Empty, None),
-        Ok(Some(_)) => {
+        Ok(None) if !unchecked => (LoopIterationOutcome::Empty, None),
+        Ok(_) => {
             let moved = apply(
                 store,
                 everyone,
@@ -1509,6 +1512,15 @@ fn numstat(output: &str) -> Committed {
         committed.files += 1;
     }
     committed
+}
+
+/// Whether a command check has not answered since it was made or changed.
+async fn never_checked(store: &Store, path: &str, task_id: i32) -> bool {
+    loops::list_checks(&*store.lock().await, path, task_id).is_ok_and(|checks| {
+        checks
+            .iter()
+            .any(|c| loops::is_runnable(c) && c.state == LoopCheckState::Pending)
+    })
 }
 
 /// What one run of the checks found.
@@ -2935,6 +2947,11 @@ Try the cache first."
     async fn an_iteration_with_nothing_to_commit_runs_no_checks() {
         let (_repo, store, task) = sealed_loop(SEES_THEM).await;
         let (_dir, task, iteration) = start(&store, &task).await;
+        store
+            .lock()
+            .await
+            .execute("UPDATE loop_checks SET state = 'Fail'", [])
+            .unwrap();
         let everyone = crate::client_sink::ClientSink::detached();
         let path = task.project_path.clone();
         finish(
@@ -2951,7 +2968,30 @@ Try the cache first."
         let row = &loops::list_iterations(&conn, &path, task.id).unwrap()[0];
         assert_eq!(row.outcome, LoopIterationOutcome::Empty);
         let check = &loops::list_checks(&conn, &path, task.id).unwrap()[0];
-        assert_eq!(check.state, LoopCheckState::Pending);
+        assert_eq!(check.state, LoopCheckState::Fail, "not run again");
+    }
+
+    #[tokio::test]
+    async fn an_iteration_with_nothing_to_commit_runs_checks_that_never_answered() {
+        let (_repo, store, task) = sealed_loop(SEES_THEM).await;
+        let (_dir, task, iteration) = start(&store, &task).await;
+        let everyone = crate::client_sink::ClientSink::detached();
+        let path = task.project_path.clone();
+        finish(
+            &store,
+            &everyone,
+            &path,
+            &task,
+            &iteration,
+            Ended::default(),
+        )
+        .await;
+
+        let conn = store.lock().await;
+        let row = &loops::list_iterations(&conn, &path, task.id).unwrap()[0];
+        assert_eq!(row.outcome, LoopIterationOutcome::Checked);
+        let check = &loops::list_checks(&conn, &path, task.id).unwrap()[0];
+        assert_eq!(check.state, LoopCheckState::Pass);
     }
 
     #[tokio::test]

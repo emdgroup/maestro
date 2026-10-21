@@ -386,7 +386,9 @@ since no session is live.
   can write its own plan into `PROGRESS.md`.
 - **Stall.** An iteration makes no progress when it has nothing to commit, or when the same command
   checks fail with the same output as the iteration before. `stall_limit` such iterations in a row
-  stop the loop. An empty iteration runs no checks.
+  stop the loop. An empty iteration runs no checks, unless a command check has not answered since
+  it was made or changed: then they run, so a loop whose worker committed nothing new cannot stall
+  on checks that never ran. The iteration's commit counts the worker's own commits too.
 - **The iteration commit runs the repository's hooks**, with the user's git identity. A hook that
   fails fails the iteration, and its output is fed to the next one like a failing check's. A missing
   identity fails it the same way, with git's message. The message is a conventional commit, so a
