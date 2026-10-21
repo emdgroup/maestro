@@ -1202,7 +1202,7 @@ function NotesFile({ task, notes }: { task: Task; notes: string | null | undefin
         <span className="font-mono">.maestro/loop/PROGRESS.md</span>
         <span className="text-muted-foreground">written by the agent, never committed</span>
       </div>
-      <div className="max-h-80 overflow-auto p-3 text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_h3]:font-semibold">
+      <div className="p-3 text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_h3]:font-semibold">
         {notes?.trim() ? (
           <MarkdownBlock text={notes} projectId={task.project_id} />
         ) : (
