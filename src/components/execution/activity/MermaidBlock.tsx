@@ -1,5 +1,6 @@
 import { useState, useEffect, useId } from "react";
 import { ZoomableContent } from "@/ui/zoomable-content";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { CodeBlockWrapper } from "./HighlightedCode";
 import { useTheme } from "@/providers/ThemeProvider";
 
@@ -66,9 +67,12 @@ export function MermaidBlock({ code }: { code: string }) {
     return (
       <div className="my-2">
         <CodeBlockWrapper code={code} lang="mermaid" />
-        <p className="text-[11px] text-muted-foreground mt-1 px-1" title={error}>
-          Not shown as a diagram — {error.split("\n")[0]}
-        </p>
+        <Tooltip>
+          <TooltipTrigger render={<p className="text-[11px] text-muted-foreground mt-1 px-1" />}>
+            Not shown as a diagram — {error.split("\n")[0]}
+          </TooltipTrigger>
+          <TooltipContent className="whitespace-pre-wrap break-words">{error}</TooltipContent>
+        </Tooltip>
       </div>
     );
   }

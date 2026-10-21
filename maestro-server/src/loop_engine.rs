@@ -144,7 +144,9 @@ async fn iteration_ended(
 /// end its turn on its own in the same moment, and only the first of the two may finish it. Never
 /// cleared, since an attempt ends once.
 // ponytail: one small entry per iteration for the daemon's lifetime; prune on finish if it matters.
-static ENDED: LazyLock<Mutex<HashSet<(String, i32, i32, i32)>>> = LazyLock::new(Default::default);
+/// An attempt: project path, task, iteration number and attempt.
+type Attempt = (String, i32, i32, i32);
+static ENDED: LazyLock<Mutex<HashSet<Attempt>>> = LazyLock::new(Default::default);
 
 /// Claim the ending of `iteration`: false when it was already claimed.
 fn claim_end(path: &str, task_id: i32, iteration: &LoopIteration) -> bool {
@@ -2542,6 +2544,7 @@ mod tests {
             Some(TaskPhase::Iterating),
             maestro_protocol::AgentRole::Worker,
             None,
+            true,
             None,
         )
         .unwrap()
@@ -2608,6 +2611,7 @@ Try the cache first."
             Some(TaskPhase::Iterating),
             maestro_protocol::AgentRole::Worker,
             None,
+            true,
             None,
         )
         .unwrap()
@@ -2704,6 +2708,7 @@ Try the cache first."
                 Some(TaskPhase::Judging),
                 maestro_protocol::AgentRole::Judge,
                 None,
+                true,
                 Some(" src/b.txt | 1 +"),
             )
             .unwrap()
@@ -2742,6 +2747,7 @@ Try the cache first."
                 Some(TaskPhase::Iterating),
                 maestro_protocol::AgentRole::Worker,
                 None,
+                true,
                 None,
             )
             .unwrap()
@@ -3232,6 +3238,7 @@ Try the cache first."
             Some(TaskPhase::Iterating),
             maestro_protocol::AgentRole::Worker,
             None,
+            true,
             None,
         )
         .unwrap()

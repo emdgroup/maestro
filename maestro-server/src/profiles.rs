@@ -148,6 +148,18 @@ pub(crate) fn profile_id_for(task: &Task, role: AgentRole) -> Option<String> {
         .flatten()
 }
 
+/// The role prompt of the profile a stage runs on: `profile_id`'s when it names one, else the
+/// role's default profile's.
+pub fn role_prompt(
+    project_path: &str,
+    role: AgentRole,
+    profile_id: Option<&str>,
+) -> Option<String> {
+    read_profiles(project_path)
+        .resolve(role, profile_id)
+        .and_then(|profile| profile.role_prompt.clone())
+}
+
 /// What the agent offers, as reported at spawn. Empty lists mean "unknown", not "nothing".
 #[derive(Debug, Clone, Default)]
 pub struct AgentCapabilities {

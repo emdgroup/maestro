@@ -19,6 +19,7 @@ import { WorkspaceSelector } from "@/components/common/workspace-mode/WorkspaceS
 import {
   useSpawnInteractiveExecutionMutation,
   useSpawnAcpSessionMutation,
+  useLoadAcpSessionMutation,
   useAgentDiscoveryQuery,
 } from "@/services/execution.service";
 import { useProjectSettings } from "@/services/project.service";
@@ -55,6 +56,16 @@ interface SpawnSessionDialogProps {
    * does.
    */
   seed?: SpawnSeed | null;
+  /**
+   * Reopen this conversation instead of starting a new one. Session History sends it: the agent is
+   * the one that recorded the conversation, so it is the only agent offered and a terminal is not.
+   */
+  resume?: ResumeTarget | null;
+}
+
+export interface ResumeTarget {
+  agentId: string;
+  acpSessionId: string;
 }
 
 export interface SpawnSeed {
@@ -86,6 +97,7 @@ export function SpawnSessionDialog({
   worktrees: allWorktrees,
   onSuccess,
   seed,
+  resume,
 }: SpawnSessionDialogProps) {
   // A worktree on its way out is not somewhere to start a session.
   const deletingPaths = useDeletingWorktreePaths();
@@ -104,6 +116,7 @@ export function SpawnSessionDialog({
   const defaultBaseBranch = useDefaultBaseBranch(projectId);
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const spawnAcpMutation = useSpawnAcpSessionMutation();
+  const loadAcpMutation = useLoadAcpSessionMutation();
   const { resolveWorktree, isCreatingWorktree } = useResolveWorktree();
 
   const isGitRepo = useIsGitRepo();
@@ -113,7 +126,7 @@ export function SpawnSessionDialog({
   const pullRequestNumber = seed?.pullRequestNumber ?? null;
   const toolChecks = usePreflightToolChecks(connection);
   const unavailableTools = new Set(toolChecks.filter((t) => !t.available).map((t) => t.tool));
-  const visibleAgents = discovery?.agents ?? [];
+  const visibleAgents = (discovery?.agents ?? []).filter((a) => !resume || a.id === resume.agentId);
 
   // The repo root is a mode of its own, so it is not one of the workspaces to reuse.
   const reusableWorktrees = worktrees.filter((wt) => wt.path !== repoPath);
@@ -137,7 +150,7 @@ export function SpawnSessionDialog({
 
     const defaultAgent = projectSettings?.default_agent;
     const agentExists = defaultAgent && visibleAgents.some((a) => a.id === defaultAgent);
-    setSessionType(agentExists ? defaultAgent : "terminal");
+    setSessionType(resume ? resume.agentId : agentExists ? defaultAgent : "terminal");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -235,6 +248,25 @@ export function SpawnSessionDialog({
           onError: (error) => setSpawnError(String(error)),
         },
       );
+    } else if (resume) {
+      loadAcpMutation.mutate(
+        {
+          agentId: resume.agentId,
+          acpSessionId: resume.acpSessionId,
+          cwd: worktree.path,
+          connection,
+          sessionName: resolvedName,
+          projectId,
+          worktreeBranch: worktree.branchName,
+        },
+        {
+          onSuccess: (sessionId) => {
+            onOpenChange(false);
+            onSuccess(sessionId, created);
+          },
+          onError: (error) => setSpawnError(String(error)),
+        },
+      );
     } else {
       spawnAcpMutation.mutate(
         {
@@ -276,7 +308,11 @@ export function SpawnSessionDialog({
           // on, which comes from the main worktree row.
           !isTerminal || !!mainWorktree;
 
-  const isPending = spawnMutation.isPending || spawnAcpMutation.isPending || isCreatingWorktree;
+  const isPending =
+    spawnMutation.isPending ||
+    spawnAcpMutation.isPending ||
+    loadAcpMutation.isPending ||
+    isCreatingWorktree;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -284,11 +320,13 @@ export function SpawnSessionDialog({
           refs, which are the longest single value any dialog here shows. */}
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>New Session</DialogTitle>
+          <DialogTitle>{resume ? "Resume Session" : "New Session"}</DialogTitle>
           <p className="text-xs text-muted-foreground">
-            {isGitRepo
-              ? "Choose an agent and worktree to get started."
-              : "Choose an agent to get started."}
+            {resume
+              ? "Choose where the conversation continues."
+              : isGitRepo
+                ? "Choose an agent and worktree to get started."
+                : "Choose an agent to get started."}
           </p>
         </DialogHeader>
         <form
@@ -307,33 +345,35 @@ export function SpawnSessionDialog({
                 Agent
               </p>
               <div className="grid grid-cols-2 gap-1.5">
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setSessionType("terminal");
-                  }}
-                  className={cn(
-                    "flex items-center gap-2.5 px-3 py-2.5 h-auto rounded-lg border text-left justify-start transition-colors",
-                    sessionType === "terminal"
-                      ? "bg-accent/8 border-accent/30"
-                      : "border-border/60 hover:bg-muted/20 hover:border-border",
-                  )}
-                >
-                  <div className="w-7 h-7 rounded-md bg-muted/40 border border-border flex items-center justify-center shrink-0">
-                    <TerminalIcon className="w-3.5 h-3.5 text-accent" />
-                  </div>
-                  <div className="min-w-0">
-                    <p
-                      className={cn(
-                        "text-xs font-medium",
-                        sessionType === "terminal" && "text-accent",
-                      )}
-                    >
-                      Terminal
-                    </p>
-                    <p className="text-[10px] text-muted-foreground/60">Shell session</p>
-                  </div>
-                </Button>
+                {!resume && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setSessionType("terminal");
+                    }}
+                    className={cn(
+                      "flex items-center gap-2.5 px-3 py-2.5 h-auto rounded-lg border text-left justify-start transition-colors",
+                      sessionType === "terminal"
+                        ? "bg-accent/8 border-accent/30"
+                        : "border-border/60 hover:bg-muted/20 hover:border-border",
+                    )}
+                  >
+                    <div className="w-7 h-7 rounded-md bg-muted/40 border border-border flex items-center justify-center shrink-0">
+                      <TerminalIcon className="w-3.5 h-3.5 text-accent" />
+                    </div>
+                    <div className="min-w-0">
+                      <p
+                        className={cn(
+                          "text-xs font-medium",
+                          sessionType === "terminal" && "text-accent",
+                        )}
+                      >
+                        Terminal
+                      </p>
+                      <p className="text-[10px] text-muted-foreground/60">Shell session</p>
+                    </div>
+                  </Button>
+                )}
 
                 {discoveryLoading && (
                   <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-border/40 opacity-50">
@@ -506,7 +546,13 @@ export function SpawnSessionDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={!canSpawn || isPending}>
-              {isPending ? "Starting..." : "Start Session"}
+              {resume
+                ? isPending
+                  ? "Resuming..."
+                  : "Resume Session"
+                : isPending
+                  ? "Starting..."
+                  : "Start Session"}
             </Button>
           </DialogFooter>
         </form>

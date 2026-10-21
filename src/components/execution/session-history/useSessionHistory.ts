@@ -3,18 +3,18 @@ import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import type { ConnectionKey, DiscoveredAgent, WorktreeWithStatus } from "@/types/bindings";
 import { toPosixPath } from "@/lib/path-utils";
+import type { SpawnSeed } from "@/components/execution/spawn-session-dialog/SpawnSessionDialog";
 import {
   useSessionListQuery,
-  useLoadAcpSessionMutation,
   useRenameAcpSessionMutation,
   useDeleteAcpSessionMutation,
 } from "@/services/execution.service";
 
 export type Preset = "all" | "today" | "yesterday" | "7d" | "30d" | "custom";
 
-export interface PendingRestore {
+export interface PendingResume {
   acpSessionId: string;
-  title: string | null;
+  seed: SpawnSeed;
 }
 
 function samePath(a: string, b: string) {
@@ -23,23 +23,21 @@ function samePath(a: string, b: string) {
 }
 
 /**
- * Where a session should reopen, given the folder it was recorded as having run in.
+ * Where the resume dialog starts, given the folder the session was recorded as having run in.
  *
- * `folder` is relative to the project root — `""` is the root itself, `null`/`undefined` means
- * nothing was recorded. Returns `null` when the answer is unknown, either because there is no
- * record or because the worktree it names no longer exists; both leave the caller to ask.
+ * `folder` is relative to the project root: `""` is the root itself, `null`/`undefined` means
+ * nothing was recorded. The project directory for the root, the worktree it names if that still
+ * exists, and a new worktree for everything else, since there is nothing left to reuse.
  */
-export function resolveRecordedWorktree(
+export function resumeWorkspace(
   folder: string | null | undefined,
   repoPath: string,
-  worktrees: Pick<WorktreeWithStatus, "path" | "branch_name">[],
-): { cwd: string; branch: string | null } | null {
-  if (folder == null) return null;
-  const target = folder === "" ? repoPath : `${repoPath}/${folder}`;
-  const wt = worktrees.find((w) => samePath(w.path, target));
-  // The root is always reopenable, whether or not git reports it among the worktrees.
-  if (folder === "") return { cwd: repoPath, branch: wt?.branch_name ?? null };
-  return wt ? { cwd: wt.path, branch: wt.branch_name } : null;
+  worktrees: WorktreeWithStatus[],
+): Pick<SpawnSeed, "workspaceMode" | "worktree"> {
+  if (folder === "") return { workspaceMode: "RepositoryDirectory" };
+  const wt =
+    folder == null ? undefined : worktrees.find((w) => samePath(w.path, `${repoPath}/${folder}`));
+  return wt ? { workspaceMode: "ReuseWorkspace", worktree: wt } : { workspaceMode: "NewWorktree" };
 }
 
 interface Props {
@@ -50,8 +48,6 @@ interface Props {
   connection: ConnectionKey;
   projectId: number;
   worktrees: WorktreeWithStatus[];
-  onClose: () => void;
-  onSessionLoaded: (sessionId: string) => void;
 }
 
 export function useSessionHistory({
@@ -62,8 +58,6 @@ export function useSessionHistory({
   connection,
   projectId,
   worktrees,
-  onClose,
-  onSessionLoaded,
 }: Props) {
   const [agentId, setAgentId] = useState<string | null>(defaultAgentId ?? agents[0]?.id ?? null);
   const [preset, setPreset] = useState<Preset>("all");
@@ -74,9 +68,7 @@ export function useSessionHistory({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
-  const [pendingRestore, setPendingRestore] = useState<PendingRestore | null>(null);
-  const [selectedWorktreePath, setSelectedWorktreePath] = useState(repoPath);
-  const [worktreeFilter, setWorktreeFilter] = useState("");
+  const [pendingResume, setPendingResume] = useState<PendingResume | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
 
   useEffect(() => {
@@ -99,7 +91,6 @@ export function useSessionHistory({
   } = useSessionListQuery(agentId, repoPath, connection, projectId, open);
   const sessions = useMemo(() => sessionListResult?.sessions ?? [], [sessionListResult]);
   const supportsSessionDelete = sessionListResult?.supports_session_delete ?? false;
-  const loadMutation = useLoadAcpSessionMutation();
   const renameMutation = useRenameAcpSessionMutation();
   const deleteMutation = useDeleteAcpSessionMutation();
 
@@ -192,129 +183,17 @@ export function useSessionHistory({
     setTicked(new Set());
   }
 
-  const recordedTarget = useCallback(
-    (acpSessionId: string) =>
-      resolveRecordedWorktree(
-        sessions.find((s) => s.session_id === acpSessionId)?.folder,
-        repoPath,
-        worktrees,
-      ),
-    [sessions, repoPath, worktrees],
-  );
-
-  const openSession = useCallback(
-    (acpSessionId: string, title: string | null) => {
-      if (!agentId) return;
-      const recorded = recordedTarget(acpSessionId);
-      if (recorded || worktrees.length <= 1) {
-        loadMutation.mutate(
-          {
-            agentId,
-            acpSessionId,
-            cwd: recorded?.cwd ?? repoPath,
-            connection,
-            sessionName: title,
-            projectId,
-            worktreeBranch: recorded ? recorded.branch : (worktrees[0]?.branch_name ?? null),
-          },
-          {
-            onSuccess: (key) => {
-              onSessionLoaded(key);
-              onClose();
-            },
-          },
-        );
-      } else {
-        setSelectedWorktreePath(repoPath);
-        setWorktreeFilter("");
-        setPendingRestore({ acpSessionId, title });
-      }
-    },
-    [
-      agentId,
-      worktrees,
-      repoPath,
-      connection,
-      projectId,
-      loadMutation,
-      onSessionLoaded,
-      onClose,
-      recordedTarget,
-    ],
-  );
-
   function handleRowClick(acpSessionId: string, title: string | null) {
     if (ticked.size > 0) {
       toggleTick(acpSessionId);
       return;
     }
-    openSession(acpSessionId, title);
+    const folder = sessions.find((s) => s.session_id === acpSessionId)?.folder;
+    setPendingResume({
+      acpSessionId,
+      seed: { ...resumeWorkspace(folder, repoPath, worktrees), sessionName: title ?? "" },
+    });
   }
-
-  function openTicked() {
-    if (!agentId) return;
-    const ids = [...ticked];
-    let completed = 0;
-    let lastSessionId: string | null = null;
-    for (const acpSessionId of ids) {
-      const entry = sessions.find((s) => s.session_id === acpSessionId);
-      const recorded = recordedTarget(acpSessionId);
-      loadMutation.mutate(
-        {
-          agentId,
-          acpSessionId,
-          cwd: recorded?.cwd ?? repoPath,
-          connection,
-          sessionName: entry?.title ?? null,
-          projectId,
-          worktreeBranch: recorded ? recorded.branch : (worktrees[0]?.branch_name ?? null),
-        },
-        {
-          onSuccess: (key) => {
-            lastSessionId = key;
-            completed++;
-            if (completed === ids.length) {
-              onSessionLoaded(lastSessionId!);
-              onClose();
-            }
-          },
-        },
-      );
-    }
-  }
-
-  const commitRestore = useCallback(() => {
-    if (!pendingRestore || !agentId) return;
-    const wt = worktrees.find((w) => w.path === selectedWorktreePath);
-    loadMutation.mutate(
-      {
-        agentId,
-        acpSessionId: pendingRestore.acpSessionId,
-        cwd: selectedWorktreePath,
-        connection,
-        sessionName: pendingRestore.title,
-        projectId,
-        worktreeBranch: wt?.branch_name ?? null,
-      },
-      {
-        onSuccess: (key) => {
-          setPendingRestore(null);
-          onSessionLoaded(key);
-          onClose();
-        },
-      },
-    );
-  }, [
-    pendingRestore,
-    agentId,
-    selectedWorktreePath,
-    worktrees,
-    connection,
-    projectId,
-    loadMutation,
-    onSessionLoaded,
-    onClose,
-  ]);
 
   const startRename = useCallback(
     (acpSessionId: string, currentTitle: string | null, e: React.MouseEvent) => {
@@ -341,14 +220,6 @@ export function useSessionHistory({
     },
     [renameValue, agentId, projectId, renameMutation],
   );
-
-  const filteredWorktrees = useMemo(() => {
-    const q = worktreeFilter.trim().toLowerCase();
-    if (!q) return worktrees;
-    return worktrees.filter(
-      (wt) => wt.branch_name.toLowerCase().includes(q) || wt.path.toLowerCase().includes(q),
-    );
-  }, [worktrees, worktreeFilter]);
 
   return {
     agentId,
@@ -378,19 +249,11 @@ export function useSessionHistory({
     renameValue,
     setRenameValue,
     renameInputRef,
-    pendingRestore,
-    setPendingRestore,
-    selectedWorktreePath,
-    setSelectedWorktreePath,
-    worktreeFilter,
-    setWorktreeFilter,
-    filteredWorktrees,
+    pendingResume,
+    setPendingResume,
     handleRowClick,
-    openTicked,
-    commitRestore,
     startRename,
     commitRename,
-    loadMutation,
     supportsSessionDelete,
     allSelected,
     someSelected,

@@ -43,6 +43,29 @@ describe("which highlighter the diff view actually uses", () => {
     expect(file.getNewSyntaxLine(2)?.nodeList.length).toBeGreaterThan(1);
   });
 
+  it("tokenizes the new side of a diff whose base another diff already highlighted", async () => {
+    const lezer = await getDiffHighlighter();
+    const base = "const a = 1;\nconst b = 2;\n";
+    const diff = (b: string) =>
+      `--- a/a.ts\n+++ b/a.ts\n@@ -1,2 +1,2 @@\n const a = 1;\n-const b = 2;\n+const b = ${b};\n`;
+    const highlighted = (hunk: string) => {
+      const file = new DiffFile("a.ts", base, "a.ts", "", [hunk], "typescript", "typescript");
+      file.initRaw();
+      // `DiffView` only calls `initSyntax` when the file does not already claim the highlighter.
+      if (file._getHighlighterName() !== lezer.name) {
+        file.initSyntax({ registerHighlighter: lezer as never });
+      }
+      return file;
+    };
+
+    highlighted(diff("3"));
+    // The next poll: same base, different post-image.
+    const next = highlighted(diff("4"));
+    // The added line, and the context line, which unified mode also paints from the new side.
+    expect(next.getNewSyntaxLine(2)?.nodeList.length).toBeGreaterThan(1);
+    expect(next.getNewSyntaxLine(1)?.nodeList.length).toBeGreaterThan(1);
+  });
+
   // Every name `detectLanguage` can hand a diff has to reach a grammar, or that file renders plain.
   it.each([
     ...new Set([...Object.values(LANGUAGE_BY_EXTENSION), ...Object.values(LANGUAGE_BY_FILENAME)]),

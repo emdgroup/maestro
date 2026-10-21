@@ -1035,6 +1035,7 @@ pub(crate) async fn dispatch_message(
                     &req.agent_id,
                     &req.cwd,
                     &req.additional_directories,
+                    None,
                     Arc::clone(&stdout_task),
                 )
                 .await;

@@ -321,6 +321,7 @@ async fn resume(
         &row.agent_id,
         &row.cwd,
         &[],
+        crate::task_prompt::session_instructions(path, row.meta.role.as_deref()).as_deref(),
         Arc::clone(everyone),
     )
     .await;

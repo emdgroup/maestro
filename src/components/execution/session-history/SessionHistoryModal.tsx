@@ -2,10 +2,13 @@ import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIco
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/ui/dialog";
 import type { ConnectionKey, DiscoveredAgent, WorktreeWithStatus } from "@/types/bindings";
+import {
+  SpawnSessionDialog,
+  type CreatedWorktree,
+} from "@/components/execution/spawn-session-dialog/SpawnSessionDialog";
 import { useSessionHistory } from "./useSessionHistory";
 import { SessionHistorySidebar } from "./SessionHistorySidebar";
 import { SessionHistoryList } from "./SessionHistoryList";
-import { WorktreePicker } from "./WorktreePicker";
 
 export interface SessionHistoryModalProps {
   open: boolean;
@@ -16,11 +19,12 @@ export interface SessionHistoryModalProps {
   projectId: number;
   worktrees: WorktreeWithStatus[];
   onClose: () => void;
-  onSessionLoaded: (sessionId: string) => void;
+  onSessionLoaded: (sessionId: string, createdWorktree: CreatedWorktree | null) => void;
 }
 
 export function SessionHistoryModal(props: SessionHistoryModalProps) {
-  const { open, agents, repoPath, worktrees, onClose } = props;
+  const { open, agents, repoPath, connection, projectId, worktrees, onClose, onSessionLoaded } =
+    props;
   const h = useSessionHistory(props);
 
   const agentName = agents.find((a) => a.id === h.agentId)?.name ?? "";
@@ -98,8 +102,6 @@ export function SessionHistoryModal(props: SessionHistoryModalProps) {
             onToggleTick={h.toggleTick}
             onSetTicked={h.setTicked}
             onRowClick={h.handleRowClick}
-            onOpenTicked={h.openTicked}
-            loadMutationPending={h.loadMutation.isPending}
             agentName={agentName}
             renamingId={h.renamingId}
             renameValue={h.renameValue}
@@ -117,21 +119,26 @@ export function SessionHistoryModal(props: SessionHistoryModalProps) {
           />
         </div>
 
-        {h.pendingRestore && (
-          <WorktreePicker
-            pendingRestore={h.pendingRestore}
-            repoPath={repoPath}
-            filteredWorktrees={h.filteredWorktrees}
-            worktreeFilter={h.worktreeFilter}
-            onWorktreeFilterChange={h.setWorktreeFilter}
-            showFilter={worktrees.length > 5}
-            selectedWorktreePath={h.selectedWorktreePath}
-            onSelectWorktreePath={h.setSelectedWorktreePath}
-            onCommit={h.commitRestore}
-            onCancel={() => h.setPendingRestore(null)}
-            isPending={h.loadMutation.isPending}
-          />
-        )}
+        <SpawnSessionDialog
+          open={h.pendingResume !== null && h.agentId !== null}
+          onOpenChange={(isOpen) => {
+            if (!isOpen) h.setPendingResume(null);
+          }}
+          projectId={projectId}
+          repoPath={repoPath}
+          connection={connection}
+          worktrees={worktrees}
+          seed={h.pendingResume?.seed}
+          resume={
+            h.pendingResume && h.agentId
+              ? { agentId: h.agentId, acpSessionId: h.pendingResume.acpSessionId }
+              : null
+          }
+          onSuccess={(key, createdWorktree) => {
+            onSessionLoaded(key, createdWorktree);
+            onClose();
+          }}
+        />
       </DialogContent>
     </Dialog>
   );
