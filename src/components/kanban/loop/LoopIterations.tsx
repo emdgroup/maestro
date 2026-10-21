@@ -1375,10 +1375,6 @@ function IterationRow({
                 {iteration.ended_at &&
                   ` · ${formatDuration(secsBetween(iteration.started_at, Date.parse(iteration.ended_at)))}`}
               </span>
-              {iteration.attempt > 1 && (
-                <span className="shrink-0">attempt {iteration.attempt}</span>
-              )}
-              {iteration.agent_id && <span className="shrink-0">{iteration.agent_id}</span>}
               {iteration.tokens != null && (
                 <span className="shrink-0 tabular-nums">
                   {formatTokens(iteration.tokens)} tokens
