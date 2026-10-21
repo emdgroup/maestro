@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CornerDownRight, CirclePause, Play, Repeat } from "lucide-react";
+import { CirclePause, Play, Repeat } from "lucide-react";
 import { toast } from "sonner";
 import type { Task } from "@/types/bindings";
 import { Button } from "@/ui/button";
@@ -17,11 +17,9 @@ import { gateLine, loopHalt } from "./loop-state";
  */
 export function LoopActions({
   task,
-  onJoin,
   beforeResume,
 }: {
   task: Task;
-  onJoin: () => void;
   /** Saves the loop tab's edits, so a resumed loop runs on them. Rejects with what is wrong. */
   beforeResume: () => Promise<void>;
 }) {
@@ -30,7 +28,6 @@ export function LoopActions({
   const rerun = useRerunLoopChecksMutation();
   const resume = useResumeLoopMutation();
   const openGate = useOpenAgentGateMutation();
-  const live = task.phase_status === "Running" || task.phase_status === "Blocked";
   const halt = loopHalt(task);
 
   if (task.status !== "InProgress" && task.phase !== "Approval") return null;
@@ -70,12 +67,6 @@ export function LoopActions({
         >
           <Play className="size-3" />
           Resume
-        </Button>
-      )}
-      {live && task.phase === "Iterating" && (
-        <Button size="sm" variant="outline" onClick={onJoin}>
-          <CornerDownRight className="size-3" />
-          Join
         </Button>
       )}
       {haltOptions(task).length > 0 && (

@@ -637,7 +637,6 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
               {isLoop ? (
                 <LoopActions
                   task={task}
-                  onJoin={join}
                   beforeResume={async () => {
                     await loopDetails.current?.save();
                   }}
