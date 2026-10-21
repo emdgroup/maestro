@@ -421,14 +421,17 @@ async fn finish(
     // and a sealed file the worker changed would stay, and its removal be staged.
     remove_sealed(&dir, &config.sealed_paths).await;
     let resealed = crate::worktree::seal(&dir, task).await;
-    let committed = match resealed {
-        Ok(()) => {
+    // Where the sandbox started: it was reset to the loop's worktree when the iteration began.
+    let base = git(&context, &["rev-parse", "HEAD"]).await;
+    let committed = match resealed.and(base) {
+        Ok(base) => {
             let message = match ended.cut {
                 Some(_) => format!("chore(loop): iteration {}, cut off (WIP)", iteration.n),
                 None => format!("chore(loop): iteration {}", iteration.n),
             };
             commit(
                 &dir,
+                base.trim(),
                 &message,
                 Duration::from_secs(config.check_timeout_secs.into()),
             )
@@ -1433,17 +1436,38 @@ async fn remove_sealed(dir: &str, sealed: &[String]) {
     }
 }
 
-/// `git add -A` and commit, the repository's hooks included. `None` when there was nothing to
-/// commit; the error is git's output, a failing hook's included.
-async fn commit(dir: &str, message: &str, limit: Duration) -> Result<Option<Committed>, String> {
+/// `git add -A` and commit, the repository's hooks included, then count everything since `base`:
+/// a worker that committed its own work leaves nothing to add. `None` when the sandbox has nothing
+/// past `base`; the error is git's output, a failing hook's included.
+async fn commit(
+    dir: &str,
+    base: &str,
+    message: &str,
+    limit: Duration,
+) -> Result<Option<Committed>, String> {
     git(dir, &["add", "-A"]).await?;
-    if git(dir, &["diff", "--cached", "--name-only"])
+    let staged = !git(dir, &["diff", "--cached", "--name-only"])
         .await?
         .trim()
-        .is_empty()
+        .is_empty();
+    if staged {
+        commit_staged(dir, message, limit).await?;
+    }
+    if git(dir, &["merge-base", "--is-ancestor", "HEAD", base])
+        .await
+        .is_ok()
     {
         return Ok(None);
     }
+    let sha = git(dir, &["rev-parse", "HEAD"]).await?.trim().to_string();
+    let stats = git(dir, &["diff", "--numstat", &format!("{base}...HEAD")]).await?;
+    Ok(Some(Committed {
+        commit_sha: Some(sha),
+        ..numstat(&stats)
+    }))
+}
+
+async fn commit_staged(dir: &str, message: &str, limit: Duration) -> Result<(), String> {
     let mut command = crate::worktree::git_command(dir, &["commit", "-m", message]);
     command
         .kill_on_drop(true)
@@ -1466,12 +1490,7 @@ async fn commit(dir: &str, message: &str, limit: Duration) -> Result<Option<Comm
         .trim()
         .to_string());
     }
-    let sha = git(dir, &["rev-parse", "HEAD"]).await?.trim().to_string();
-    let stats = git(dir, &["show", "--numstat", "--format=", "HEAD"]).await?;
-    Ok(Some(Committed {
-        commit_sha: Some(sha),
-        ..numstat(&stats)
-    }))
+    Ok(())
 }
 
 /// Files, lines added and lines removed. A binary file counts as a file with no lines.
@@ -2933,6 +2952,34 @@ Try the cache first."
         assert_eq!(row.outcome, LoopIterationOutcome::Empty);
         let check = &loops::list_checks(&conn, &path, task.id).unwrap()[0];
         assert_eq!(check.state, LoopCheckState::Pending);
+    }
+
+    #[tokio::test]
+    async fn a_worker_that_commits_its_own_work_is_counted_and_checked() {
+        let (_repo, store, task) = sealed_loop(SEES_THEM).await;
+        let (dir, task, iteration) = start(&store, &task).await;
+        std::fs::write(Path::new(&dir).join("src/b.txt"), "b\nc\n").unwrap();
+        git_in(&dir, &["add", "-A"]).await;
+        git_in(&dir, &["commit", "-q", "-m", "feat: b"]).await;
+        let everyone = crate::client_sink::ClientSink::detached();
+        let path = task.project_path.clone();
+        finish(
+            &store,
+            &everyone,
+            &path,
+            &task,
+            &iteration,
+            Ended::default(),
+        )
+        .await;
+
+        let conn = store.lock().await;
+        let row = &loops::list_iterations(&conn, &path, task.id).unwrap()[0];
+        assert_eq!(row.outcome, LoopIterationOutcome::Checked);
+        assert_eq!((row.files, row.added, row.removed), (1, 2, 0));
+        assert!(row.commit_sha.is_some());
+        let check = &loops::list_checks(&conn, &path, task.id).unwrap()[0];
+        assert_eq!(check.state, LoopCheckState::Pass);
     }
 
     #[tokio::test]
