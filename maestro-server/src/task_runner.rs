@@ -615,14 +615,24 @@ async fn run(
     // A loop session carries what it was started for, which is how its turn end finds the loop
     // engine and how a stale iteration's is told from the live one's.
     if let Some(crate::loop_engine::LoopSession::Iteration(n)) = loop_session {
-        let started = crate::task_store::loops::start_iteration(
-            &*launcher.store.lock().await,
-            &project_path,
-            task.id,
-            n,
-            &result.acp_session_id,
-            &agent_id,
-        );
+        // The sandbox starts at the loop's worktree HEAD, which is where Start over goes back to.
+        let head = crate::worktree::git(&workspace.cwd, &["rev-parse", "HEAD"]).await;
+        let conn = launcher.store.lock().await;
+        let started = head
+            .and_then(|head| {
+                crate::task_store::loops::anchor_start(&conn, &project_path, task.id, head.trim())
+            })
+            .and_then(|()| {
+                crate::task_store::loops::start_iteration(
+                    &conn,
+                    &project_path,
+                    task.id,
+                    n,
+                    &result.acp_session_id,
+                    &agent_id,
+                )
+            });
+        drop(conn);
         if let Err(e) = started {
             send_diag("warn", format!("[loop] task {}: {e}", task.id));
         }

@@ -682,6 +682,24 @@ pub(crate) fn running_iteration_tasks(conn: &Connection) -> Result<Vec<(String, 
 }
 
 /// The row of an iteration whose session is up, as the next attempt of its number.
+/// Where a loop starts: its worktree's HEAD as its first iteration begins, after anything its
+/// preparation committed. Written before that iteration's row, so later ones leave it alone.
+pub(crate) fn anchor_start(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+    sha: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE tasks SET execution_start_sha = ?3
+         WHERE project_path = ?1 AND id = ?2
+           AND NOT EXISTS (SELECT 1 FROM loop_iterations WHERE project_path = ?1 AND task_id = ?2)",
+        params![project_path, task_id, sha],
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
 pub(crate) fn start_iteration(
     conn: &Connection,
     project_path: &str,

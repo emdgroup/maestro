@@ -80,8 +80,9 @@ pub(crate) async fn restart(
         }
     } else if let Some(dir) = &dir {
         let start = if looping {
-            // Where the loop started is the parent of the first commit an iteration made: the
-            // preparation commits its tests before the first iteration, and those stay.
+            // Where the loop started is the parent of the first commit an iteration made, else
+            // its anchor: the preparation commits its tests before the first iteration, and those
+            // stay.
             let first = loops::list_iterations(&*store.lock().await, &path, task_id)?
                 .into_iter()
                 .find_map(|i| i.commit_sha);
@@ -92,7 +93,7 @@ pub(crate) async fn restart(
                         .trim()
                         .to_string(),
                 ),
-                None => None,
+                None => task.execution_start_sha.clone(),
             }
         } else {
             task.execution_start_sha.clone()

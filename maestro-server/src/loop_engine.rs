@@ -2250,8 +2250,10 @@ mod tests {
         )
         .await
         .expect("prepare");
+        let head = git(&workspace.cwd, &["rev-parse", "HEAD"]).await.unwrap();
         let conn = store.lock().await;
         let path = task.project_path.as_str();
+        loops::anchor_start(&conn, path, task.id, head.trim()).unwrap();
         loops::start_iteration(&conn, path, task.id, 1, "acp-1", "claude").unwrap();
         conn.execute(
             "UPDATE tasks SET status = 'InProgress', phase = 'Iterating', phase_status = 'Running',
@@ -2758,6 +2760,37 @@ Try the cache first."
             .await
             .unwrap();
         assert_eq!(next.branch, Some(format!("{old}-2")));
+    }
+
+    #[tokio::test]
+    async fn a_restarted_loop_goes_back_to_its_anchor_when_no_iteration_recorded_a_commit() {
+        let (_repo, store, task) = sealed_loop(SEES_THEM).await;
+        let (_dir, task, _iteration) = start(&store, &task).await;
+        let path = task.project_path.clone();
+        let context = worktree_dir(&store, &path, task.id).await.unwrap();
+        let anchor = git(&context, &["rev-parse", "HEAD"]).await.unwrap();
+        std::fs::write(Path::new(&context).join("src/b.txt"), "b").unwrap();
+        git_in(&context, &["add", "-A"]).await;
+        git_in(&context, &["commit", "-q", "-m", "unrecorded"]).await;
+        store
+            .lock()
+            .await
+            .execute(
+                "UPDATE tasks SET phase = 'Iterating', phase_status = 'Waiting', ball = 'User',
+                                  loop_halt = 'Stalled' WHERE id = ?1",
+                [task.id],
+            )
+            .unwrap();
+        let request = maestro_protocol::RestartTaskRequest {
+            project_path: path.clone(),
+            task_id: task.id,
+            status: maestro_protocol::TaskStatus::Planning,
+        };
+        crate::start_over::restart(&store, request).await.unwrap();
+
+        let head = git(&context, &["rev-parse", "HEAD"]).await.unwrap();
+        assert_eq!(head.trim(), anchor.trim());
+        assert!(!Path::new(&context).join("src/b.txt").exists());
     }
 
     #[tokio::test]
