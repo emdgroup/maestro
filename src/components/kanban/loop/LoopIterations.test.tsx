@@ -170,6 +170,7 @@ describe("LoopIterations", () => {
         checks={checks}
         comments={[]}
         current={{ iteration: fifth, head: { kind: "halted", halt: "Paused" } }}
+        notes={"## Left\n- Wire the button into BoardView"}
         actions={actions}
       />,
     );
@@ -182,6 +183,7 @@ describe("LoopIterations", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /Build/, pressed: false }));
     expect(screen.getByText(/Moved reorder into the daemon/)).toBeTruthy();
+    expect(screen.getByText(/Wire the button into BoardView/)).toBeTruthy();
   });
 
   it("heads a paused loop with the iteration it stopped after, and hands the turn to the user", () => {

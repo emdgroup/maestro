@@ -1,10 +1,20 @@
 import { useState } from "react";
-import { BookOpen, Lock, Pencil, Play, Plus, Sparkles, StickyNote, Undo2, X } from "lucide-react";
+import {
+  BookOpen,
+  Lock,
+  Pencil,
+  Play,
+  Plus,
+  Settings2,
+  Sparkles,
+  StickyNote,
+  Undo2,
+  X,
+} from "lucide-react";
 import type { LoopCheck, LoopCheckKind, Task, TaskComment } from "@/types/bindings";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
-import { cn } from "@/lib/utils";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { useTaskCommentsQuery } from "@/services/task.service";
 import {
@@ -12,6 +22,7 @@ import {
   useAnswerLoopProposalMutation,
   useLoopChecksQuery,
   useLoopIterationsQuery,
+  useLoopNotesQuery,
   useRerunLoopChecksMutation,
   useResumeLoopMutation,
   usePauseLoopMutation,
@@ -232,7 +243,7 @@ type View = "iterations" | "settings";
  * A loop on one tab. Before it starts, its settings: the checks it is done when, its limits, what
  * runs around the checks and what is hidden from the agent. Once started, the iterations come
  * first, as a timeline headed by the one running, with the note for the next iteration above
- * them; the settings are a switch away. Edits go into the draft, saved with the rest of the task.
+ * them; Setup opens the settings in their place, and Close brings the timeline back. Edits go into the draft, saved with the rest of the task.
  */
 export function LoopTab({
   task,
@@ -258,6 +269,7 @@ export function LoopTab({
   const { data: checks = [] } = useLoopChecksQuery(task.project_id, task.id);
   const { data: iterations = [] } = useLoopIterationsQuery(task.project_id, task.id);
   const { data: comments = [] } = useTaskCommentsQuery(task.project_id, task.id);
+  const { data: agentNotes } = useLoopNotesQuery(task.project_id, task.id);
   const rerun = useRerunLoopChecksMutation();
   const resume = useResumeLoopMutation();
   const pause = usePauseLoopMutation();
@@ -368,31 +380,31 @@ export function LoopTab({
   const resumes = (!!halt && !blocked) || signoff;
   const takesNote =
     live || resumes || blocked || (task.phase_status === "Waiting" && task.ball === "Agent");
-  const segment = (id: View, label: string, badge?: number) => (
-    <button
-      type="button"
-      aria-pressed={view === id}
-      className={cn(
-        "flex h-7 items-center gap-1.5 rounded-md px-3 text-xs",
-        view === id ? "bg-background font-medium shadow-sm" : "text-muted-foreground",
-      )}
-      onClick={() => setView(id)}
-    >
-      {label}
-      {!!badge && (
+  const setupButton = (
+    <Button size="sm" variant="outline" onClick={() => setView("settings")}>
+      <Settings2 className="size-3" />
+      Setup
+      {proposals > 0 && (
         <span className="rounded-full bg-accent px-1.5 text-[10px] font-semibold text-accent-foreground">
-          {badge}
+          {proposals}
         </span>
       )}
-    </button>
+    </Button>
+  );
+  const settingsHeader = (
+    <div className="flex items-center gap-2">
+      <Settings2 className="size-4 text-muted-foreground" />
+      <h3 className="text-sm font-medium">Checks & settings</h3>
+      <div className="flex-1" />
+      <Button size="sm" variant="outline" onClick={() => setView("iterations")}>
+        <X className="size-3" />
+        Close
+      </Button>
+    </div>
   );
   const topRow = (
     <div className="space-y-2">
-      <div className="flex items-center gap-3">
-        <div className="inline-flex shrink-0 rounded-lg bg-muted p-0.5">
-          {segment("iterations", "Iterations")}
-          {segment("settings", "Checks & settings", proposals)}
-        </div>
+      <div className="flex items-center gap-2">
         {takesNote &&
           (blocked ? (
             <span className="flex-1 px-1 text-xs text-muted-foreground">
@@ -450,6 +462,9 @@ export function LoopTab({
               </Button>
             </>
           ))}
+        {!takesNote && <div className="flex-1" />}
+        {takesNote && <span className="mx-1 h-5 w-px bg-border" />}
+        {setupButton}
       </div>
       {!blocked &&
         pendingNotes.map((c) => (
@@ -590,7 +605,7 @@ export function LoopTab({
 
   return (
     <div className="space-y-4">
-      {topRow}
+      {view === "settings" ? settingsHeader : topRow}
       {view === "settings" ? (
         settings
       ) : (
@@ -619,6 +634,7 @@ export function LoopTab({
             comments={comments}
             current={current}
             digest={digest?.body ?? undefined}
+            notes={agentNotes}
             actions={{
               onJoin: session ? onJoin : null,
               onResume: (answer) => resume.mutate({ ...key, note: answer }),

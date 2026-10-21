@@ -13,6 +13,7 @@ import {
   Hammer,
   Hourglass,
   Minus,
+  NotebookPen,
   OctagonX,
   Pause,
   Pencil,
@@ -759,6 +760,7 @@ function HeadIteration({
   checks,
   comments,
   digest,
+  notes,
   actions,
   railBelow,
 }: {
@@ -768,6 +770,7 @@ function HeadIteration({
   checks: LoopCheck[];
   comments: TaskComment[];
   digest: string | undefined;
+  notes: string | null | undefined;
   actions: HeadActions;
   /** Earlier iterations follow, so the rail runs on down to them. */
   railBelow: boolean;
@@ -816,18 +819,29 @@ function HeadIteration({
         head.kind === "blocked" ? (
           <Question task={task} iteration={iteration} onResume={actions.onResume} />
         ) : step === 0 ? (
-          <WorkingOn
-            iteration={iteration}
-            iterations={iterations}
-            checks={checks}
-            comments={comments}
-          />
+          <div className="space-y-2">
+            <WorkingOn
+              iteration={iteration}
+              iterations={iterations}
+              checks={checks}
+              comments={comments}
+            />
+            <AgentNotes key={panelKey} notes={notes} />
+          </div>
         ) : head.kind === "gated" ? (
           <p className="text-xs leading-relaxed text-muted-foreground">
             {heldReason(task, head, iteration)}
           </p>
         ) : (
-          <BuildOutcome task={task} iteration={iteration} />
+          <div className="space-y-2">
+            <BuildOutcome task={task} iteration={iteration} />
+            <div className="space-y-1.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Left for the next iteration
+              </div>
+              <NotesFile notes={notes} />
+            </div>
+          </div>
         );
       break;
     case "Checks":
@@ -1175,6 +1189,48 @@ function AgentSummary({ task, iteration }: { task: Task; iteration: LoopIteratio
   );
 }
 
+/**
+ * The agent's own notes, `.maestro/loop/PROGRESS.md` in the loop's worktree: the loop's memory,
+ * which every fresh session reads first and updates before it stops. `.maestro/` is excluded from
+ * git, so they are never committed.
+ */
+function NotesFile({ notes }: { notes: string | null | undefined }) {
+  return (
+    <div className="overflow-hidden rounded-md border border-border bg-background">
+      <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs">
+        <NotebookPen className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="font-mono">.maestro/loop/PROGRESS.md</span>
+        <span className="text-muted-foreground">written by the agent, never committed</span>
+      </div>
+      <pre className="max-h-80 overflow-auto whitespace-pre-wrap p-3 font-mono text-[11px] leading-relaxed">
+        {notes?.trim() || "The agent left no notes."}
+      </pre>
+    </div>
+  );
+}
+
+/** While the agent builds, its notes behind one line: it read them first and updates them as it goes. */
+function AgentNotes({ notes }: { notes: string | null | undefined }) {
+  const [open, setOpen] = useState(false);
+  const lines = notes?.trim() ? notes.trim().split("\n").length : 0;
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        aria-expanded={open}
+        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+        onClick={() => setOpen(!open)}
+      >
+        {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+        <NotebookPen className="size-3.5" />
+        It read the agent notes first
+        <span>· {lines ? plural(lines, "line") : "none yet"}</span>
+      </button>
+      {open && <NotesFile notes={notes} />}
+    </div>
+  );
+}
+
 /** A finished Build: what the agent wrote, and git's reason when its work could not be committed. */
 function BuildOutcome({ task, iteration }: { task: Task; iteration: LoopIteration }) {
   return (
@@ -1380,6 +1436,7 @@ export function LoopIterations({
   comments,
   current,
   digest,
+  notes,
   actions,
 }: {
   task: Task;
@@ -1389,6 +1446,8 @@ export function LoopIterations({
   current: CurrentState | null;
   /** The judge's review digest, shown at sign-off and while the pull request is open. */
   digest?: string;
+  /** The agent's notes, shown in the head iteration's Build step. */
+  notes?: string | null;
   actions: HeadActions;
 }) {
   // An interrupted attempt runs again under the same number, so only the attempt that ran on shows.
@@ -1415,6 +1474,7 @@ export function LoopIterations({
           checks={checks}
           comments={comments}
           digest={digest}
+          notes={notes}
           actions={actions}
           railBelow={earlier.length > 0}
         />

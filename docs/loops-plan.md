@@ -606,8 +606,7 @@ Visuals are the canvas mock `loops-app`.
   - "Add a note for the next iteration".
   - The live column with the last check output.
 
-  The other tabs are Details (the goal is the description, and the sealed paths), Changes, Agent notes
-  (`PROGRESS.md`) and Outcome.
+  The other tabs are Details (the goal is the description, and the sealed paths) and Outcome.
 
   As built after the test campaign (2026-10-16): the Loop tab is the loop's whole setup too, and the
   Setup tab and the live column are gone. The three limits are cards whose limit is edited in place,
@@ -676,8 +675,13 @@ Settled before phase 4 started:
 - The detail's side column shows the live session's activity line, not the agent's prose, and the
   last failing check output, or the passing commands once nothing fails. The digest shows only from
   sign-off on. The usage-limit head names the agent by its id.
-- The Changes tab lists files and line counts parsed from the worktree's diff against its base;
-  Review changes opens the review sheet.
+- The head iteration's card shows one step under its tiles: the step at hand, or one already
+  reached that the user picked. Build shows what the agent wrote and then `PROGRESS.md`, "left for
+  the next iteration" (while it builds, what it is working on, with the notes one click away).
+  Checks shows the command results, Judge each criterion with its verdict and reasons, and You why
+  the loop waits, with the digest at sign-off. The Changes and Agent notes tabs are gone: Review
+  covers the first, the Build step the second. The settings open from a Setup button beside the
+  note box and close back to the timeline.
 - The judge is a per-task `Judge` profile override, picked in the loop editor. The agents dialog
   shows Iterations and Judging for a loop.
 - The skills and MCP line counts the connection's library and the project's entries, not per agent.
@@ -791,7 +795,10 @@ they differ, and "Sealed checks" is rewritten to match once it is built.
   when the loop ends.
 - Each iteration resets the sandbox to the context's HEAD, the worker commits there, and the commit
   is fast-forwarded into the context. A reset keeps what git ignores, so build caches,
-  `node_modules` and `.maestro/loop/PROGRESS.md` survive from one iteration to the next.
+  `node_modules` and `.maestro/loop/PROGRESS.md` survive from one iteration to the next. Removing
+  the sandbox, which happens whenever the loop leaves In Progress, sign-off included, keeps the
+  notes in `.maestro/loop-notes/task-<id>.md` first, and a sandbox made again gets them back, so a
+  send back does not lose the loop's memory. Start over deletes them.
 - The checks run in the context, where the sealed files simply exist. There is no sealed snapshot
   any more: the tests are the context's. Hidden files stay in the context, out of git.
 - A merge back that fails (the context moved, or holds edits in the way) halts the loop with a new
