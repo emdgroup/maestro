@@ -1,5 +1,6 @@
 import { Fragment, useState } from "react";
 import {
+  BookOpen,
   Check,
   ChevronDown,
   CircleCheck,
@@ -235,11 +236,23 @@ interface Tile {
   optional?: boolean;
 }
 
-function StepTile({ label, icon: Icon, sub, state, optional }: Tile) {
+function StepTile({
+  label,
+  icon: Icon,
+  sub,
+  state,
+  optional,
+  selected,
+  onSelect,
+}: Tile & { selected: boolean; onSelect: (() => void) | null }) {
+  const Box = onSelect ? "button" : "div";
   return (
-    <div
+    <Box
+      {...(onSelect && { type: "button", "aria-pressed": selected, onClick: onSelect })}
       className={cn(
-        "relative flex min-w-0 flex-1 items-center gap-3 overflow-hidden rounded-lg border px-3 py-2.5",
+        "relative flex min-w-0 flex-1 items-center gap-3 overflow-hidden rounded-lg border px-3 py-2.5 text-left",
+        onSelect && "hover:brightness-110",
+        selected && "ring-2 ring-foreground/25",
         state === "done" && "border-success/40 bg-success/5",
         state === "live" && "border-accent/50 bg-accent/10",
         state === "waiting" && "border-warning/60 bg-warning/10",
@@ -277,7 +290,7 @@ function StepTile({ label, icon: Icon, sub, state, optional }: Tile) {
           <div className="absolute inset-y-0 left-0 w-[60%] animate-rail-comet bg-gradient-to-r from-transparent via-accent/50 to-accent" />
         </div>
       )}
-    </div>
+    </Box>
   );
 }
 
@@ -487,35 +500,31 @@ function heldReason(task: Task, head: Held, iteration: LoopIteration): string {
   }
 }
 
-/** What a waiting loop's card says under its steps. */
+/** What a waiting loop's last step says: why it waits on the user, and what they can do there. */
 function HeldBody({
   task,
   head,
   iteration,
   checks,
+  digest,
   actions,
 }: {
   task: Task;
   head: Held;
   iteration: LoopIteration;
   checks: LoopCheck[];
+  digest: string | undefined;
   actions: HeadActions;
 }) {
   const halt = head.kind === "halted" ? head.halt : null;
   const outcomes = checkOutcomes(iteration, checks);
   const flaky = outcomes.filter((o) => o.result?.state === "Flaky");
   const manual = outcomes.filter((o) => o.check.kind === "Manual");
-  const hasDetails = iteration.results.length > 0 || !!iteration.summary;
   return (
     <div className="space-y-2.5">
       <p className="text-xs leading-relaxed text-muted-foreground">
         {heldReason(task, head, iteration)}
       </p>
-      {halt === "Conflict" && iteration.check_output && (
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background p-2 font-mono text-[11px] leading-relaxed">
-          {iteration.check_output.trim()}
-        </pre>
-      )}
       {halt === "Flaky" && flaky.length > 0 && (
         <div className="space-y-2">
           <CheckCards
@@ -558,8 +567,21 @@ function HeldBody({
           ))}
         </ul>
       )}
-      {hasDetails && head.kind !== "gated" && (
-        <IterationDetail task={task} iteration={iteration} checks={checks} />
+      {(head.kind === "signoff" || head.kind === "merge") && digest && (
+        <section className="space-y-1.5">
+          <h3 className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <BookOpen className="size-3.5" />
+              Review digest
+            </span>
+            <span className="font-normal normal-case tracking-normal">
+              by the judge, from the notes, iterations and diff
+            </span>
+          </h3>
+          <div className={MARKDOWN_BOX}>
+            <MarkdownBlock text={digest} projectId={task.project_id} />
+          </div>
+        </section>
       )}
     </div>
   );
@@ -736,6 +758,7 @@ function HeadIteration({
   iterations,
   checks,
   comments,
+  digest,
   actions,
   railBelow,
 }: {
@@ -744,6 +767,7 @@ function HeadIteration({
   iterations: LoopIteration[];
   checks: LoopCheck[];
   comments: TaskComment[];
+  digest: string | undefined;
   actions: HeadActions;
   /** Earlier iterations follow, so the rail runs on down to them. */
   railBelow: boolean;
@@ -760,30 +784,88 @@ function HeadIteration({
   let word: string;
   let ring: React.ReactNode;
   let tiles: Tile[];
-  let body: React.ReactNode;
   let asking = false;
   if (head.kind === "live" || head.kind === "blocked") {
-    const card = workingCard(task, { iteration, head }, commands, judged);
-    ({ tone, word, ring, tiles, asking } = card);
-    body =
-      head.kind === "blocked" ? (
-        <Question task={task} iteration={iteration} onResume={actions.onResume} />
-      ) : (
-        <WorkingOn
-          iteration={iteration}
-          iterations={iterations}
-          checks={checks}
-          comments={comments}
-        />
-      );
+    ({ tone, word, ring, tiles, asking } = workingCard(
+      task,
+      { iteration, head },
+      commands,
+      judged,
+    ));
   } else {
     const look = heldLook(task, head, iteration);
     ({ tone, word } = look);
     ring = <Ring {...look.ring} />;
     tiles = heldTiles(head, iteration, checks);
-    body = (
-      <HeldBody task={task} head={head} iteration={iteration} checks={checks} actions={actions} />
-    );
+  }
+
+  // The step at hand shows under the tiles; a step already reached can be picked instead. The pick
+  // lapses once the loop moves on to another step.
+  const reached = tiles.filter((t) => t.state !== "todo");
+  const atHand = reached[reached.length - 1]?.label ?? tiles[0].label;
+  const at = `${iteration.n}-${iteration.attempt}-${atHand}`;
+  const [picked, setPicked] = useState<{ at: string; label: string } | null>(null);
+  const shown = picked?.at === at ? picked.label : atHand;
+  const step = head.kind === "live" ? head.step : null;
+  const outcomes = checkOutcomes(iteration, checks);
+  const panelKey = `${at}-${shown}`;
+  let body: React.ReactNode;
+  switch (shown) {
+    case "Build":
+      body =
+        head.kind === "blocked" ? (
+          <Question task={task} iteration={iteration} onResume={actions.onResume} />
+        ) : step === 0 ? (
+          <WorkingOn
+            iteration={iteration}
+            iterations={iterations}
+            checks={checks}
+            comments={comments}
+          />
+        ) : head.kind === "gated" ? (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {heldReason(task, head, iteration)}
+          </p>
+        ) : (
+          <BuildOutcome task={task} iteration={iteration} />
+        );
+      break;
+    case "Checks":
+      body = (
+        <CheckList
+          key={panelKey}
+          outcomes={outcomes.filter((o) => o.check.kind === "Command")}
+          running={step === 1}
+        />
+      );
+      break;
+    case "Judge":
+      body = (
+        <JudgeVerdicts
+          task={task}
+          outcomes={outcomes.filter((o) => o.check.kind === "Judge")}
+          running={step === 2}
+        />
+      );
+      break;
+    case "Merge back":
+      body = (
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background p-2 font-mono text-[11px] leading-relaxed">
+          {iteration.check_output?.trim() || "Git gave no output."}
+        </pre>
+      );
+      break;
+    default:
+      body = head.kind !== "live" && head.kind !== "blocked" && (
+        <HeldBody
+          task={task}
+          head={head}
+          iteration={iteration}
+          checks={checks}
+          digest={digest}
+          actions={actions}
+        />
+      );
   }
 
   return (
@@ -854,7 +936,15 @@ function HeadIteration({
           {tiles.map((tile, i) => (
             <Fragment key={tile.label}>
               {i > 0 && <ChevronRight className="size-4 shrink-0 text-muted-foreground/50" />}
-              <StepTile {...tile} />
+              <StepTile
+                {...tile}
+                selected={reached.length > 1 && tile.label === shown}
+                onSelect={
+                  reached.length > 1 && tile.state !== "todo"
+                    ? () => setPicked({ at, label: tile.label })
+                    : null
+                }
+              />
             </Fragment>
           ))}
         </div>
@@ -917,10 +1007,13 @@ function CheckCards({
   outcomes,
   open,
   onToggle,
+  running = false,
 }: {
   outcomes: CheckOutcome[];
   open: Set<number>;
   onToggle: (checkId: number) => void;
+  /** The checks are running now, so one without a result has not answered yet. */
+  running?: boolean;
 }) {
   return (
     <ul className="divide-y divide-border overflow-hidden rounded-md border border-border bg-background">
@@ -929,11 +1022,13 @@ function CheckCards({
         const opened = open.has(check.id);
         const tail = result
           ? lastLine(result.detail)
-          : check.kind === "Judge"
-            ? "runs once every command passes"
-            : check.kind === "Manual"
-              ? "ticked at sign-off"
-              : "did not run";
+          : running
+            ? "running"
+            : check.kind === "Judge"
+              ? "runs once every command passes"
+              : check.kind === "Manual"
+                ? "ticked at sign-off"
+                : "did not run";
         const head = (
           <span className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs">
             {result ? (
@@ -991,6 +1086,109 @@ function CheckCards({
   );
 }
 
+/** Check cards that open on their own on the first one that did not pass. */
+function CheckList({ outcomes, running }: { outcomes: CheckOutcome[]; running?: boolean }) {
+  const [open, setOpen] = useState<Set<number>>(() => {
+    const failed = failedFirst(outcomes).find((o) => o.result && o.result.state !== "Pass");
+    return new Set(failed ? [failed.check.id] : []);
+  });
+  return (
+    <CheckCards
+      outcomes={outcomes}
+      open={open}
+      running={running}
+      onToggle={(id) => {
+        const next = new Set(open);
+        if (!next.delete(id)) next.add(id);
+        setOpen(next);
+      }}
+    />
+  );
+}
+
+/** The judge's checks: each criterion, its verdict, and the judge's reasons in prose. */
+function JudgeVerdicts({
+  task,
+  outcomes,
+  running,
+}: {
+  task: Task;
+  outcomes: CheckOutcome[];
+  running: boolean;
+}) {
+  return (
+    <ul className="space-y-2">
+      {outcomes.map(({ check, result }) => {
+        const { icon: Mark, tone } = MARK[result?.state ?? "Pending"];
+        const failed = result?.state === "Fail";
+        return (
+          <li
+            key={check.id}
+            className={cn(
+              "space-y-2 rounded-md border p-3 text-xs",
+              failed ? "border-destructive/40 bg-destructive/5" : "border-border bg-background",
+            )}
+          >
+            <div className="flex items-start gap-2 font-medium">
+              <Mark className={cn("mt-px size-3.5 shrink-0", tone)} />
+              <span className="flex-1">{check.label}</span>
+              <span className={cn("shrink-0", tone)}>
+                {!result
+                  ? running
+                    ? "judging"
+                    : "not reached"
+                  : result.state === "Pass"
+                    ? "passed"
+                    : result.state === "Fail"
+                      ? "failed"
+                      : result.state.toLowerCase()}
+              </span>
+            </div>
+            {result?.detail?.trim() && (
+              <div className="pl-5.5 leading-relaxed text-muted-foreground">
+                <MarkdownBlock text={result.detail} projectId={task.project_id} />
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+const MARKDOWN_BOX =
+  "rounded-md border border-border bg-background p-3 text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_h3]:font-semibold";
+
+/** What the agent wrote when its Build ended, or the question it stopped on. */
+function AgentSummary({ task, iteration }: { task: Task; iteration: LoopIteration }) {
+  return (
+    <div className={MARKDOWN_BOX}>
+      {iteration.summary || iteration.blocked ? (
+        <MarkdownBlock
+          text={iteration.summary ?? iteration.blocked ?? ""}
+          projectId={task.project_id}
+        />
+      ) : (
+        <span className="text-muted-foreground">The agent wrote no summary.</span>
+      )}
+    </div>
+  );
+}
+
+/** A finished Build: what the agent wrote, and git's reason when its work could not be committed. */
+function BuildOutcome({ task, iteration }: { task: Task; iteration: LoopIteration }) {
+  return (
+    <div className="space-y-2">
+      <AgentSummary task={task} iteration={iteration} />
+      {iteration.outcome === "Failed" && iteration.check_output && (
+        <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md border border-destructive/40 bg-destructive/5 p-2 font-mono text-[11px] leading-relaxed">
+          {iteration.check_output.trim()}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 /** A markdown text's first line with something on it, its heading or list marks dropped. */
 const plainFirstLine = (text: string | null | undefined) =>
   (text ?? "")
@@ -1030,10 +1228,6 @@ function IterationDetail({
   checks: LoopCheck[];
 }) {
   const outcomes = checkOutcomes(iteration, checks);
-  const [openChecks, setOpenChecks] = useState<Set<number>>(() => {
-    const failed = failedFirst(outcomes).find((o) => o.result && o.result.state !== "Pass");
-    return new Set(failed ? [failed.check.id] : []);
-  });
   const ran = iteration.results.length > 0;
   const note = sideNote(iteration);
   return (
@@ -1043,15 +1237,7 @@ function IterationDetail({
           Checks after it
         </div>
         {ran ? (
-          <CheckCards
-            outcomes={outcomes}
-            open={openChecks}
-            onToggle={(id) => {
-              const next = new Set(openChecks);
-              if (!next.delete(id)) next.add(id);
-              setOpenChecks(next);
-            }}
-          />
+          <CheckList outcomes={outcomes} />
         ) : (
           <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
             {note ? `No checks ran: ${note}.` : "No results recorded for this iteration."}
@@ -1067,16 +1253,7 @@ function IterationDetail({
         <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
           Outcome
         </div>
-        <div className="rounded-md border border-border bg-background p-3 text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_h3]:font-semibold">
-          {iteration.summary || iteration.blocked ? (
-            <MarkdownBlock
-              text={iteration.summary ?? iteration.blocked ?? ""}
-              projectId={task.project_id}
-            />
-          ) : (
-            <span className="text-muted-foreground">The agent wrote no summary.</span>
-          )}
-        </div>
+        <AgentSummary task={task} iteration={iteration} />
       </div>
     </div>
   );
@@ -1202,6 +1379,7 @@ export function LoopIterations({
   checks,
   comments,
   current,
+  digest,
   actions,
 }: {
   task: Task;
@@ -1209,6 +1387,8 @@ export function LoopIterations({
   checks: LoopCheck[];
   comments: TaskComment[];
   current: CurrentState | null;
+  /** The judge's review digest, shown at sign-off and while the pull request is open. */
+  digest?: string;
   actions: HeadActions;
 }) {
   // An interrupted attempt runs again under the same number, so only the attempt that ran on shows.
@@ -1234,6 +1414,7 @@ export function LoopIterations({
           iterations={iterations}
           checks={checks}
           comments={comments}
+          digest={digest}
           actions={actions}
           railBelow={earlier.length > 0}
         />

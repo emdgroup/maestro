@@ -595,7 +595,8 @@ export function LoopTab({
         settings
       ) : (
         <>
-          {digest?.body && (
+          {/* At sign-off and while merging, the head card shows it under its last step. */}
+          {digest?.body && !current && (
             <section className="space-y-2">
               <h3 className="flex items-center justify-between px-1 text-sm font-medium">
                 <span className="flex items-center gap-1.5">
@@ -617,6 +618,7 @@ export function LoopTab({
             checks={checks}
             comments={comments}
             current={current}
+            digest={digest?.body ?? undefined}
             actions={{
               onJoin: session ? onJoin : null,
               onResume: (answer) => resume.mutate({ ...key, note: answer }),

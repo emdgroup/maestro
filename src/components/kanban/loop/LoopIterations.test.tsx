@@ -162,6 +162,28 @@ describe("LoopIterations", () => {
     expect(screen.getAllByRole("button", { expanded: false })).toHaveLength(2);
   });
 
+  it("shows the step at hand under the tiles, and a reached step once picked", async () => {
+    render(
+      <LoopIterations
+        task={task}
+        iterations={[fifth]}
+        checks={checks}
+        comments={[]}
+        current={{ iteration: fifth, head: { kind: "halted", halt: "Paused" } }}
+        actions={actions}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /You/, pressed: true })).toBeTruthy();
+    expect(screen.queryByText("$ bun run test")).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: /Checks/, pressed: false }));
+    expect(screen.getByText("$ bun run test")).toBeTruthy();
+    expect(screen.queryByText(/Resume starts #6/)).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: /Build/, pressed: false }));
+    expect(screen.getByText(/Moved reorder into the daemon/)).toBeTruthy();
+  });
+
   it("heads a paused loop with the iteration it stopped after, and hands the turn to the user", () => {
     render(
       <LoopIterations
