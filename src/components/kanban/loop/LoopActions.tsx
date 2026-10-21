@@ -8,7 +8,6 @@ import {
   useRerunLoopChecksMutation,
   useResumeLoopMutation,
 } from "@/services/loop.service";
-import { useBoardActions } from "@/store/boardStore";
 import { HaltLoopDialog, haltOptions } from "./HaltLoopDialog";
 import { gateLine, loopHalt } from "./loop-state";
 
@@ -31,7 +30,6 @@ export function LoopActions({
   const rerun = useRerunLoopChecksMutation();
   const resume = useResumeLoopMutation();
   const openGate = useOpenAgentGateMutation();
-  const { openReview } = useBoardActions();
   const live = task.phase_status === "Running" || task.phase_status === "Blocked";
   const halt = loopHalt(task);
 
@@ -72,11 +70,6 @@ export function LoopActions({
         >
           <Play className="size-3" />
           Resume
-        </Button>
-      )}
-      {task.phase === "Approval" && (
-        <Button size="sm" variant="outline" onClick={() => openReview(task.id)}>
-          Review changes
         </Button>
       )}
       {live && task.phase === "Iterating" && (

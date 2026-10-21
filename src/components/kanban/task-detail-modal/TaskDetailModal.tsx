@@ -6,6 +6,7 @@ import {
   Play,
   Repeat,
   RotateCcw,
+  ScanEye,
   Square,
   Trash2,
   X,
@@ -19,6 +20,7 @@ import {
   type LoopDetailsHandle,
 } from "@/components/kanban/loop/LoopDetailsSection";
 import { useNavigate } from "@/store/navigationStore";
+import { useBoardActions } from "@/store/boardStore";
 import type { BranchMode, TaskPriority, WorkspaceMode, WorktreeWithStatus } from "@/types/bindings";
 import { MAESTRO_BRANCH_PREFIX, taskBranchName } from "@/lib/generateSessionName";
 import { Button } from "@/ui/button";
@@ -118,6 +120,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
   const loopDetails = useRef<LoopDetailsHandle>(null);
   const navigate = useNavigate();
   const { execute, canPrepare, executingTaskId } = useBoardActionsContext();
+  const { openReview } = useBoardActions();
   const session = useTaskSession(taskId ?? -1);
   const stopTask = useStopTaskMutation();
   const join = () => {
@@ -667,6 +670,14 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                 <Button size="sm" variant="outline" onClick={() => setStartOverOpen(true)}>
                   <RotateCcw className="size-3" />
                   Start over
+                </Button>
+              )}
+
+              {/* A loop at sign-off waits on this review: it is the move to make. */}
+              {isLoop && task.phase === "Approval" && (
+                <Button size="sm" variant="accent" onClick={() => openReview(task.id)}>
+                  <ScanEye className="size-3" />
+                  Review
                 </Button>
               )}
 
