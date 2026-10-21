@@ -297,9 +297,9 @@ const YOURS: Record<Exclude<LoopHalt, "Blocked">, string> = {
   Stopped: "resume when ready",
   Flaky: "fix or remove the check",
   Conflict: "commit or revert, then resume",
-  Stalled: "add a note and resume",
-  Failing: "add a note and resume",
-  OutOfIterations: "raise the limit or add a note",
+  Stalled: "resume when ready",
+  Failing: "resume when ready",
+  OutOfIterations: "raise the limit to go on",
 };
 
 /** A held loop's iteration through its steps, from the results it recorded. */
@@ -424,29 +424,30 @@ function heldLook(
             word: "Paused: a check is flaky",
             ring: ring("warning", "paused"),
           };
+        // Halts the loop decided on: they wait on the user, nothing broke.
         case "Conflict":
           return {
-            tone: "destructive",
-            word: "Stopped: could not merge back",
-            ring: ring("destructive", "stopped"),
+            tone: "warning",
+            word: "Halted: could not merge back",
+            ring: ring("warning", "halted"),
           };
         case "Stalled":
           return {
-            tone: "destructive",
-            word: `Stopped: ${config?.stall_limit ?? "several"} iterations changed nothing`,
-            ring: ring("destructive", "stopped"),
+            tone: "warning",
+            word: `Halted: ${config?.stall_limit ?? "several"} iterations changed nothing`,
+            ring: ring("warning", "halted"),
           };
         case "Failing":
           return {
-            tone: "destructive",
-            word: "Stopped: the last three iterations failed",
-            ring: ring("destructive", "stopped"),
+            tone: "warning",
+            word: "Halted: the last three iterations failed",
+            ring: ring("warning", "halted"),
           };
         case "OutOfIterations":
           return {
-            tone: "destructive",
+            tone: "warning",
             word: "Out of iterations",
-            ring: ring("destructive", `of ${config?.max_iterations ?? "?"} used`, 1, iteration.n),
+            ring: ring("warning", `of ${config?.max_iterations ?? "?"} used`, 1, iteration.n),
           };
       }
   }
@@ -476,9 +477,11 @@ function heldReason(task: Task, head: Held, iteration: LoopIteration): string {
     case "Conflict":
       return "The loop's worktree has changes in the way of this iteration's commit, which is kept. Commit or revert them there, then resume: the next iteration merges it first.";
     case "OutOfIterations":
-      return "Raise the limit in Checks & settings and save, or add a note and resume.";
-    default:
-      return "Add a note and resume.";
+      return `It used all ${plural(task.loop_config?.max_iterations ?? iteration.n, "iteration")} without every check passing. Raising the limit in Checks & settings lets it go on.`;
+    case "Stalled":
+      return "Its last iterations committed nothing, so it halted rather than spend more. What the agent said is below.";
+    case "Failing":
+      return "Its last iterations failed, so it halted rather than spend more. What the agent said is below.";
   }
 }
 
@@ -496,20 +499,17 @@ function HeldBody({
   checks: LoopCheck[];
   actions: HeadActions;
 }) {
-  const [details, setDetails] = useState(false);
+  const halt = head.kind === "halted" ? head.halt : null;
+  // A limit halt is explained by what the agent said, so its outcome starts open.
+  const [details, setDetails] = useState(
+    halt === "Stalled" || halt === "Failing" || halt === "OutOfIterations",
+  );
   const outcomes = checkOutcomes(iteration, checks);
   const flaky = outcomes.filter((o) => o.result?.state === "Flaky");
   const manual = outcomes.filter((o) => o.check.kind === "Manual");
-  const halt = head.kind === "halted" ? head.halt : null;
-  const lastNote = task.loop_summary?.last_summary;
   const hasDetails = iteration.results.length > 0 || !!iteration.summary;
   return (
     <div className="space-y-2.5">
-      {(halt === "Stalled" || halt === "Failing" || halt === "OutOfIterations") && lastNote && (
-        <p className="text-xs leading-relaxed">
-          <span className="font-medium">The agent's last note:</span> “{lastNote}”
-        </p>
-      )}
       <p className="text-xs leading-relaxed text-muted-foreground">
         {heldReason(task, head, iteration)}
       </p>
