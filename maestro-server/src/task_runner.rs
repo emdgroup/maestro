@@ -633,8 +633,16 @@ async fn run(
                 )
             });
         drop(conn);
-        if let Err(e) = started {
-            send_diag("warn", format!("[loop] task {}: {e}", task.id));
+        match started {
+            // The task's change went out with `LoopIterationStarted`, before this row: a board
+            // that read it then shows no iteration until told again.
+            Ok(()) => {
+                let changed = ServerResponse::TasksChanged(maestro_protocol::ProjectRef {
+                    project_path: project_path.clone(),
+                });
+                broadcast(everyone, changed).await;
+            }
+            Err(e) => send_diag("warn", format!("[loop] task {}: {e}", task.id)),
         }
     }
     let role_json = match loop_session {
