@@ -67,11 +67,13 @@ export function StartOverDialog({
             {fresh
               ? `It starts on a new branch from ${task.base_branch || "the base"}. ${named(
                   "Its old branch",
-                )} and anything already merged from it are left alone. Its stages and review are cleared. ${kept}`
+                )} and anything already merged from it are left alone. Its stages and review${
+                  isLoop ? ", iterations, check results and outcome" : ""
+                } are cleared. ${kept}`
               : `Its progress will be lost. ${named("Its branch")} goes back to where the ${
                   isLoop ? "loop" : "task"
                 } started, so the code its agents wrote is gone. Its stages and review${
-                  isLoop ? ", iterations and check results" : ""
+                  isLoop ? ", iterations, check results and outcome" : ""
                 } are cleared. ${kept}`}
           </AlertDialogDescription>
         </AlertDialogHeader>

@@ -616,8 +616,9 @@ pub(crate) fn next_iteration(
     .map_err(|e| e.to_string())
 }
 
-/// Everything a loop's run left behind: its iterations, its checks' results, its halt, hold and
-/// resume mark. The checks themselves and the hidden files stay, as the loop's definition.
+/// Everything a loop's run left behind: its iterations, its checks' results, the proposals still
+/// unanswered, its outcome thread, its halt, hold and resume mark. The checks themselves and the
+/// hidden files stay, as the loop's definition.
 pub(crate) fn clear_progress(
     conn: &mut Connection,
     project_path: &str,
@@ -641,6 +642,19 @@ pub(crate) fn clear_progress(
                  updated_at = ?3
              WHERE project_path = ?1 AND task_id = ?2",
             params![project_path, task_id, at],
+        )
+    })
+    .and_then(|_| {
+        tx.execute(
+            "DELETE FROM loop_checks
+             WHERE project_path = ?1 AND task_id = ?2 AND proposed = 1 AND accepted = 0",
+            params![project_path, task_id],
+        )
+    })
+    .and_then(|_| {
+        tx.execute(
+            "DELETE FROM task_comments WHERE project_path = ?1 AND task_id = ?2",
+            params![project_path, task_id],
         )
     })
     .and_then(|_| {
@@ -1469,11 +1483,24 @@ mod tests {
             "the engine's list never reads them"
         );
 
+        crate::task_store::threads::append(
+            &conn,
+            PROJECT,
+            task,
+            "note",
+            "maestro",
+            Some("x"),
+            None,
+            None,
+        )
+        .unwrap();
         clear_progress(&mut conn, PROJECT, task).unwrap();
-        let left: i64 = conn
-            .query_row("SELECT COUNT(*) FROM loop_check_results", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(left, 0, "Start over clears them");
+        let count = |table: &str| -> i64 {
+            conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(count("loop_check_results"), 0, "Start over clears them");
+        assert_eq!(count("task_comments"), 0, "and the outcome thread");
     }
 
     #[test]

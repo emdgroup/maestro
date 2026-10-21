@@ -148,7 +148,8 @@ pub(crate) async fn restart(
         event: TaskTransition::ManualMove(request.status),
         guard: TransitionGuard::Always,
         update: None,
-        comment: Some(crate::loop_engine::note_entry(note)),
+        // A loop starts over as a new one would, with nothing in its thread.
+        comment: (!looping).then(|| crate::loop_engine::note_entry(note)),
     });
     let (_, moved) = crate::task_store::requests::answer(&mut conn, move_back)?;
     pushes.extend(moved);

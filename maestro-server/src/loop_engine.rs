@@ -1439,31 +1439,34 @@ async fn remove_sealed(dir: &str, sealed: &[String]) {
     }
 }
 
-/// `git add -A` and commit, the repository's hooks included, then count everything since `base`:
-/// a worker that committed its own work leaves nothing to add. `None` when the sandbox has nothing
-/// past `base`; the error is git's output, a failing hook's included.
+/// Everything the sandbox holds past `base` as one commit, the repository's hooks included. A
+/// worker that committed its own work has it folded in, so an iteration stays one commit, which
+/// Start over rewinds past. `None` when there was nothing to commit; the error is git's output, a
+/// failing hook's included, with the worker's own commits put back.
 async fn commit(
     dir: &str,
     base: &str,
     message: &str,
     limit: Duration,
 ) -> Result<Option<Committed>, String> {
+    let head = git(dir, &["rev-parse", "HEAD"]).await?;
+    let start = git(dir, &["merge-base", base, head.trim()]).await?;
+    git(dir, &["reset", "-q", "--soft", start.trim()]).await?;
     git(dir, &["add", "-A"]).await?;
-    let staged = !git(dir, &["diff", "--cached", "--name-only"])
+    if git(dir, &["diff", "--cached", "--name-only"])
         .await?
         .trim()
-        .is_empty();
-    if staged {
-        commit_staged(dir, message, limit).await?;
-    }
-    if git(dir, &["merge-base", "--is-ancestor", "HEAD", base])
-        .await
-        .is_ok()
+        .is_empty()
     {
         return Ok(None);
     }
+    let committed = commit_staged(dir, message, limit).await;
+    if committed.is_err() {
+        let _ = git(dir, &["reset", "-q", "--soft", head.trim()]).await;
+    }
+    committed?;
     let sha = git(dir, &["rev-parse", "HEAD"]).await?.trim().to_string();
-    let stats = git(dir, &["diff", "--numstat", &format!("{base}...HEAD")]).await?;
+    let stats = git(dir, &["show", "--numstat", "--format=", "HEAD"]).await?;
     Ok(Some(Committed {
         commit_sha: Some(sha),
         ..numstat(&stats)
@@ -2852,6 +2855,12 @@ Try the cache first."
             loops::halt_and_hold(&conn, &path, task.id).unwrap(),
             (None, None)
         );
+        assert!(
+            crate::task_store::list_comments(&conn, &path, task.id)
+                .unwrap()
+                .is_empty(),
+            "a new loop's thread is empty"
+        );
     }
 
     #[tokio::test]
@@ -3018,6 +3027,14 @@ Try the cache first."
         assert_eq!(row.outcome, LoopIterationOutcome::Checked);
         assert_eq!((row.files, row.added, row.removed), (1, 2, 0));
         assert!(row.commit_sha.is_some());
+        drop(conn);
+        let log = git(&dir, &["log", "-1", "--format=%s"]).await.unwrap();
+        assert_eq!(
+            log.trim(),
+            "chore(loop): iteration 1",
+            "folded into one commit"
+        );
+        let conn = store.lock().await;
         let check = &loops::list_checks(&conn, &path, task.id).unwrap()[0];
         assert_eq!(check.state, LoopCheckState::Pass);
     }
