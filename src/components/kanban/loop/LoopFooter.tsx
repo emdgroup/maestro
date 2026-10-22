@@ -1,7 +1,7 @@
 import type { Task } from "@/types/bindings";
 import { Button } from "@/ui/button";
 import { cn } from "@/lib/utils";
-import { BotMessageSquare, CirclePause, Play, RotateCw } from "lucide-react";
+import { BotMessageSquare, SquarePause, Play, RotateCw } from "lucide-react";
 import { haltOptions } from "./HaltLoopDialog";
 import { loopHalt } from "./loop-state";
 
@@ -65,7 +65,7 @@ export function LoopFooter({
       {canHalt &&
         button(
           "Halt",
-          <CirclePause className="w-3 h-3 fill-current [&_line]:stroke-foreground" />,
+          <SquarePause className="w-3 h-3 fill-current [&_line]:stroke-foreground" />,
           actions.onHalt,
           "bg-foreground text-background",
         )}

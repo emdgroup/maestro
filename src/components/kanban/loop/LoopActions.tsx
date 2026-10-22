@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CirclePause, Play, Repeat } from "lucide-react";
+import { SquarePause, Play, Repeat } from "lucide-react";
 import { toast } from "sonner";
 import type { Task } from "@/types/bindings";
 import { Button } from "@/ui/button";
@@ -83,7 +83,7 @@ export function LoopActions({
       )}
       {haltOptions(task).length > 0 && (
         <Button size="sm" variant="outline" onClick={() => setHalting(true)}>
-          <CirclePause className="size-3.5 fill-current [&_line]:stroke-background" />
+          <SquarePause className="size-3.5 fill-current [&_line]:stroke-background" />
           Halt
         </Button>
       )}
