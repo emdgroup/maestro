@@ -60,23 +60,23 @@ export const LoopDetailsSection = forwardRef<
     }
   }, [task.loop_config, checks, hiddenFiles]);
 
-  useImperativeHandle(ref, () => ({
-    save: async () => {
-      if (!dirty.current) return;
-      const read = loopFromDraft(draft);
-      if ("error" in read) throw new Error(read.error);
-      await updateTask.mutateAsync({ ...key, updates: { loop_config: read.config } });
-      await setChecks.mutateAsync({ ...key, checks: read.checks });
-      await setHidden.mutateAsync({ ...key, files: draft.hiddenFiles });
-      dirty.current = false;
-      onDirtyChange(false);
-    },
-  }));
+  const save = async () => {
+    if (!dirty.current) return;
+    const read = loopFromDraft(draft);
+    if ("error" in read) throw new Error(read.error);
+    await updateTask.mutateAsync({ ...key, updates: { loop_config: read.config } });
+    await setChecks.mutateAsync({ ...key, checks: read.checks });
+    await setHidden.mutateAsync({ ...key, files: draft.hiddenFiles });
+    dirty.current = false;
+    onDirtyChange(false);
+  };
+  useImperativeHandle(ref, () => ({ save }));
 
   return (
     <LoopTab
       task={task}
       draft={draft}
+      onSave={save}
       onDraftChange={(next) => {
         dirty.current = true;
         onDirtyChange(true);

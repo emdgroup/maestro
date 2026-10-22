@@ -60,10 +60,13 @@ pub(crate) enum Action {
 }
 
 /// The role a phase is worked by on a task run as `run_mode`: a loop's `Refining` is its
-/// preparation.
+/// preparation, and its rework, a merge conflict's included, and its CI fixes are iterations.
 pub(crate) fn role(phase: Option<TaskPhase>, run_mode: RunMode) -> Option<AgentRole> {
     match phase? {
         TaskPhase::Refining if run_mode == RunMode::Loop => Some(AgentRole::Preparer),
+        TaskPhase::Rework | TaskPhase::AwaitingMerge if run_mode == RunMode::Loop => {
+            Some(AgentRole::Worker)
+        }
         TaskPhase::Refining => Some(AgentRole::Refiner),
         TaskPhase::Drafting => Some(AgentRole::Planner),
         TaskPhase::Implementing | TaskPhase::Rework | TaskPhase::AwaitingMerge => {

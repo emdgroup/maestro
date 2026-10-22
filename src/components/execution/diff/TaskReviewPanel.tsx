@@ -362,9 +362,13 @@ export function TaskReviewPanel({
                   }
                   if (result?.pull_request_url) {
                     const url = result.pull_request_url;
-                    toast.success("Pull request opened", {
-                      action: { label: "Open", onClick: () => void openUrl(url) },
-                    });
+                    // A loop that fixed its pull request's CI is signed off onto that one.
+                    toast.success(
+                      task.pull_request_url ? "Pushed to the pull request" : "Pull request opened",
+                      {
+                        action: { label: "Open", onClick: () => void openUrl(url) },
+                      },
+                    );
                   }
                   setApproveModalOpen(false);
                   reviewStore.clearTask(task.id);
@@ -379,6 +383,7 @@ export function TaskReviewPanel({
     [
       task.project_id,
       task.id,
+      task.pull_request_url,
       saveReview,
       approveAndMerge,
       onClose,

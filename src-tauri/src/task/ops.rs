@@ -117,11 +117,10 @@ pub async fn interrupt_task(
     project_id: i32,
     task_id: i32,
 ) -> Result<(), String> {
-    // A loop is halted where it is, keeping its iterations and worktree; the daemon cuts its
-    // session.
+    // A loop is never abandoned: what it built is kept, as `stop_task` keeps it.
     let task = crate::task::crud::get_task_on_server(&app_state, project_id, task_id).await?;
     if task.is_some_and(|t| t.run_mode == crate::task::models::RunMode::Loop) {
-        return crate::task::loops::stop_loop_on_server(&app_state, project_id, task_id).await;
+        return stop_task(app_state, project_id, task_id).await;
     }
     tear_down_task_sessions(&app_state, project_id, task_id).await;
 
@@ -142,7 +141,8 @@ pub async fn interrupt_task(
 
 /// Stop the agent working on a task and leave everything it produced where it is: the task stays
 /// in its column and phase, failed and the user's, so it can be recovered, sent on or started over.
-/// A loop is halted the same way `interrupt_task` halts one.
+/// A loop at work is halted where it is, keeping its iterations and worktree, and the daemon cuts
+/// its session. A loop being prepared is no iteration, so its preparer stops as any agent does.
 #[tauri::command]
 #[specta::specta]
 pub async fn stop_task(
@@ -151,7 +151,10 @@ pub async fn stop_task(
     task_id: i32,
 ) -> Result<(), String> {
     let task = crate::task::crud::get_task_on_server(&app_state, project_id, task_id).await?;
-    if task.is_some_and(|t| t.run_mode == crate::task::models::RunMode::Loop) {
+    if task.is_some_and(|t| {
+        t.run_mode == crate::task::models::RunMode::Loop
+            && t.phase != Some(crate::task::models::TaskPhase::Refining)
+    }) {
         return crate::task::loops::stop_loop_on_server(&app_state, project_id, task_id).await;
     }
     tear_down_task_sessions(&app_state, project_id, task_id).await;

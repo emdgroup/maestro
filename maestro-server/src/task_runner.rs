@@ -253,6 +253,21 @@ pub(crate) fn begin(
             stage(role)
         )));
     }
+    // A loop is done when its checks say so, and one with none would reach sign-off on nothing.
+    if role == AgentRole::Worker
+        && !crate::task_store::loops::list_checks(conn, &project_path, task.id)?
+            .iter()
+            .any(|c| !c.proposed || c.accepted)
+    {
+        let reason = format!(
+            "\"{}\" has no checks, so nothing would say when it is done. Add one, or prepare the loop.",
+            task.title
+        );
+        if request.unattended {
+            add_note(conn, &project_path, task.id, reason.clone(), pushes);
+        }
+        return Err(NotBegun::Unstartable(reason));
+    }
 
     // Only a fixed limit defers; Auto at its limit starts anyway, as the app's `Warn` does. A
     // limit that cannot be read starts too: the claim below is what decides.
@@ -297,7 +312,7 @@ pub(crate) fn begin(
         if request.unattended {
             add_note(conn, &project_path, task.id, reason.clone(), pushes);
         }
-        return Err(NotBegun::NoAgent(reason));
+        return Err(NotBegun::Unstartable(reason));
     };
     // A user's own start goes ahead: it is the probe they asked for.
     if request.unattended
@@ -364,9 +379,9 @@ pub(crate) fn begin(
 /// Why `begin` claimed nothing.
 #[derive(Debug)]
 pub(crate) enum NotBegun {
-    /// The task has no agent for the stage, or one unknown on this machine: nothing short of a
-    /// change to the task or its profiles starts it.
-    NoAgent(String),
+    /// The task has no agent for the stage, one unknown on this machine, or is a loop with no
+    /// checks: nothing short of a change to the task or its profiles starts it.
+    Unstartable(String),
     Other(String),
 }
 
@@ -379,7 +394,7 @@ impl From<String> for NotBegun {
 impl std::fmt::Display for NotBegun {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NotBegun::NoAgent(message) | NotBegun::Other(message) => f.write_str(message),
+            NotBegun::Unstartable(message) | NotBegun::Other(message) => f.write_str(message),
         }
     }
 }
@@ -1176,6 +1191,34 @@ mod tests {
             [task.id],
         )
         .unwrap();
+        let refused = begin(
+            &mut conn,
+            &request(&project, &task),
+            0,
+            &agents,
+            &mut Vec::new(),
+        );
+        assert!(
+            matches!(&refused, Err(NotBegun::Unstartable(why)) if why.contains("no checks")),
+            "a loop with no checks has nothing to work toward: {:?}",
+            refused.err()
+        );
+        crate::task_store::loops::set_checks(
+            &mut conn,
+            &maestro_protocol::SetLoopChecksRequest {
+                project_path: task.project_path.clone(),
+                task_id: task.id,
+                checks: vec![maestro_protocol::LoopCheckEntry {
+                    id: None,
+                    spec: maestro_protocol::LoopCheckSpec {
+                        kind: maestro_protocol::LoopCheckKind::Manual,
+                        label: "Looks right".to_string(),
+                        command: None,
+                    },
+                }],
+            },
+        )
+        .unwrap();
         match begin(
             &mut conn,
             &request(&project, &task),
@@ -1185,6 +1228,54 @@ mod tests {
         ) {
             Ok(Begun::Claimed(claimed)) => assert_eq!(claimed.role, AgentRole::Worker),
             other => panic!("{:?}", other.err()),
+        }
+    }
+
+    /// A loop whose approval hit a merge conflict, or whose pull request's CI failed, is retried by
+    /// its worker, as the app's start asks for the coder.
+    #[test]
+    fn a_loops_merge_conflict_and_ci_fix_are_its_workers() {
+        let agents = [agent("fake")];
+        for (phase, status, phase_status, ball) in [
+            ("Rework", "InProgress", "Failed", "User"),
+            ("AwaitingMerge", "Review", "Waiting", "Agent"),
+        ] {
+            let (_dir, project, mut conn, task) = setup(Some("fake"));
+            conn.execute(
+                "UPDATE tasks SET run_mode = 'Loop', status = ?2, phase = ?3, phase_status = ?4,
+                     ball = ?5
+                 WHERE id = ?1",
+                rusqlite::params![task.id, status, phase, phase_status, ball],
+            )
+            .unwrap();
+            crate::task_store::loops::set_checks(
+                &mut conn,
+                &maestro_protocol::SetLoopChecksRequest {
+                    project_path: task.project_path.clone(),
+                    task_id: task.id,
+                    checks: vec![maestro_protocol::LoopCheckEntry {
+                        id: None,
+                        spec: maestro_protocol::LoopCheckSpec {
+                            kind: maestro_protocol::LoopCheckKind::Manual,
+                            label: "Looks right".to_string(),
+                            command: None,
+                        },
+                    }],
+                },
+            )
+            .unwrap();
+            match begin(
+                &mut conn,
+                &request(&project, &task),
+                0,
+                &agents,
+                &mut Vec::new(),
+            ) {
+                Ok(Begun::Claimed(claimed)) => {
+                    assert_eq!(claimed.role, AgentRole::Worker, "{phase}")
+                }
+                other => panic!("{phase}: {:?}", other.err()),
+            }
         }
     }
 

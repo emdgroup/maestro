@@ -75,10 +75,11 @@ enum Msg {
 static TX: OnceLock<mpsc::UnboundedSender<Msg>> = OnceLock::new();
 /// Taken while a drain counts and claims slots.
 static RESERVE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-/// Tasks refused for want of an agent (none, or one unknown here), as they stood when refused, so
-/// the tick does not file the same note every minute. One is tried again once it is written or
-/// leaves the queue, or a user releases a hold on it. Execute still starts it directly. Kept with
-/// when it was refused, so another project's entry lapses after [`REFUSAL_TTL`].
+/// Tasks refused for want of an agent (none, or one unknown here) or of a loop's checks, as they
+/// stood when refused, so the tick does not file the same note every minute. One is tried again
+/// once it is written or leaves the queue, or a user releases a hold on it. Execute still starts it
+/// directly. Kept with when it was refused, so another project's entry lapses after
+/// [`REFUSAL_TTL`].
 static REFUSED: LazyLock<Mutex<HashMap<(String, i32), Refusal>>> = LazyLock::new(Default::default);
 
 type Refusal = (Task, std::time::Instant);
@@ -397,9 +398,9 @@ fn handoffs(
         .collect())
 }
 
-/// A task refused for want of an agent is left alone until it is written to.
+/// A task refused for want of an agent, or of checks, is left alone until it is written to.
 fn refuse(conn: &Connection, path: &str, task_id: i32, e: &crate::task_runner::NotBegun) {
-    if let crate::task_runner::NotBegun::NoAgent(_) = e {
+    if let crate::task_runner::NotBegun::Unstartable(_) = e {
         if let Ok(Some(task)) = crate::task_store::get(conn, path, task_id) {
             refused().insert(
                 (path.to_string(), task_id),

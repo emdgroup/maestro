@@ -115,6 +115,11 @@ Locked while drafting. Do not reopen without the user.
     to the Approval gate, with the manual checks still to tick.
   - Approval, the pull request, CI polling and merging are the pipeline's own. The forge token stays
     in the app, as it does today.
+  - What the pipeline hands back to its coder, a merge conflict at approval, a Rework from the
+    review or a failing CI run on the open pull request, a loop hands to its next iteration, with
+    the review or the CI report in its prompt. It runs its checks and comes back for sign-off, and
+    a loop with a pull request open is signed off onto that pull request: the fix is pushed and
+    the forge is waited on again.
 - **The daemon owns the loop.** It runs with every window closed, survives a restart through the
   existing startup pass, and is driven by the existing scheduler.
 - **No cost budget.** Iterations, the time per Build and the stall limit are the budget. Tokens are

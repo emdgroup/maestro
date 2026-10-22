@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import {
   BookOpen,
   Lock,
@@ -254,10 +255,13 @@ export function LoopTab({
   readOnly,
   onJoin,
   onPrepare,
+  onSave,
 }: {
   task: Task;
   draft: LoopDraft;
   onDraftChange: (draft: LoopDraft) => void;
+  /** Writes the draft's edits. Rejects with what is wrong with it. */
+  onSave: () => Promise<void>;
   baseBranch: string;
   sealedLocked: boolean;
   readOnly: boolean;
@@ -288,6 +292,18 @@ export function LoopTab({
   const [note, setNote] = useState("");
   const [editing, setEditing] = useState<Editing | null>(null);
   const [view, setView] = useState<View>("iterations");
+
+  // Resume and Re-run checks run the loop as it is saved, so they save the draft first, and an
+  // invalid one runs nothing.
+  const saved = async (action: () => void) => {
+    try {
+      await onSave();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    action();
+  };
 
   const set = (patch: Partial<LoopDraft>) => onDraftChange({ ...draft, ...patch });
   const setCheck = (rowKey: string, patch: Partial<CheckDraft>) =>
@@ -438,8 +454,14 @@ export function LoopTab({
                 disabled={!resumes && !note.trim()}
                 onClick={() => {
                   const body = note.trim();
-                  if (resumes) resume.mutate({ ...key, note: body || null });
-                  else addNote.mutate({ ...key, body });
+                  if (resumes) {
+                    void saved(() => {
+                      resume.mutate({ ...key, note: body || null });
+                      setNote("");
+                    });
+                    return;
+                  }
+                  addNote.mutate({ ...key, body });
                   setNote("");
                 }}
               >
@@ -637,9 +659,9 @@ export function LoopTab({
             notes={agentNotes}
             actions={{
               onJoin: session ? onJoin : null,
-              onResume: (answer) => resume.mutate({ ...key, note: answer }),
+              onResume: (answer) => void saved(() => resume.mutate({ ...key, note: answer })),
               onTick: (checkId, ticked) => tick.mutate({ ...key, checkId, ticked }),
-              onRerunChecks: () => rerun.mutate(key),
+              onRerunChecks: () => void saved(() => rerun.mutate(key)),
               onEditCheck: readOnly ? null : editFlaky,
               onReview: fileCountFrom(changes) > 0 ? () => openReview(task.id) : null,
             }}

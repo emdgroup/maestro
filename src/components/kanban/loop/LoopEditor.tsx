@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Gavel, Lock, Terminal, User, X } from "lucide-react";
 import type { LoopCheckKind, LoopConfig, LoopHiddenFile, LoopSummary } from "@/types/bindings";
 import { Button } from "@/ui/button";
@@ -245,6 +245,12 @@ export function usePrefillHidden(
   baseBranch: string,
   locked: boolean,
 ) {
+  // The lookup is a round trip, and the user may edit the draft before it answers: the paths go
+  // into the draft as it is then, not as it was when asked.
+  const latest = useRef(value);
+  useEffect(() => {
+    latest.current = value;
+  });
   return (command: string) => {
     if (locked) return;
     const candidates = pathsInCommand(command).filter(
@@ -253,9 +259,11 @@ export function usePrefillHidden(
     if (candidates.length === 0) return;
     void sealablePaths(projectId, baseBranch, candidates)
       .then((found) => {
-        if (found.length > 0) {
-          onChange({ ...value, sealedPaths: [...new Set([...value.sealedPaths, ...found])] });
-        }
+        const draft = latest.current;
+        const added = found.filter(
+          (p) => !draft.sealedPaths.includes(p) && !draft.dismissed.includes(p),
+        );
+        if (added.length > 0) onChange({ ...draft, sealedPaths: [...draft.sealedPaths, ...added] });
       })
       .catch(() => undefined);
   };

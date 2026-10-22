@@ -3087,7 +3087,8 @@ async interruptTask(projectId: number, taskId: number) : Promise<Result<null, st
 /**
  * Stop the agent working on a task and leave everything it produced where it is: the task stays
  * in its column and phase, failed and the user's, so it can be recovered, sent on or started over.
- * A loop is halted the same way `interrupt_task` halts one.
+ * A loop at work is halted where it is, keeping its iterations and worktree, and the daemon cuts
+ * its session. A loop being prepared is no iteration, so its preparer stops as any agent does.
  */
 async stopTask(projectId: number, taskId: number) : Promise<Result<null, string>> {
     try {

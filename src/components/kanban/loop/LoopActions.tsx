@@ -20,7 +20,7 @@ export function LoopActions({
   beforeResume,
 }: {
   task: Task;
-  /** Saves the loop tab's edits, so a resumed loop runs on them. Rejects with what is wrong. */
+  /** Saves the loop tab's edits, so a resumed or rechecked loop runs on them. Rejects with what is wrong. */
   beforeResume: () => Promise<void>;
 }) {
   const key = { projectId: task.project_id, taskId: task.id };
@@ -46,7 +46,19 @@ export function LoopActions({
         </Button>
       )}
       {halt === "Flaky" && (
-        <Button size="sm" variant="outline" onClick={() => rerun.mutate(key)}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={async () => {
+            try {
+              await beforeResume();
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : String(e));
+              return;
+            }
+            rerun.mutate(key);
+          }}
+        >
           <Repeat className="size-3" />
           Re-run checks
         </Button>

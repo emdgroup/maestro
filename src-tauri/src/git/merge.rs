@@ -83,6 +83,9 @@ async fn require_signed_off(
 
 /// What still stands between a loop and its sign-off, one phrase per check.
 fn unsigned(checks: &[LoopCheck]) -> Vec<String> {
+    if !checks.iter().any(|check| !check.proposed || check.accepted) {
+        return vec!["it has no checks to say it is done".to_string()];
+    }
     checks
         .iter()
         .filter_map(|check| {
@@ -475,6 +478,43 @@ pub async fn approve_task_and_merge(
         )
         .await
         .map_err(|e| format!("Failed to commit changes: {}", e))?;
+    }
+
+    // A loop sent back by its pull request's CI is signed off onto that pull request, whatever
+    // strategy was picked: the fix is pushed and the forge is waited on again, as a coder's is.
+    if task.run_mode == RunMode::Loop && task.pull_request_number.is_some() {
+        let status = crate::integration::code_hosting_handlers::code_hosting_status(
+            app_state.inner(),
+            project_id,
+        )
+        .await?;
+        let Some(remote) = status.remote else {
+            return Err(
+                "This project has no git remote, so the fix cannot reach its pull request."
+                    .to_string(),
+            );
+        };
+        crate::git::push_branch(&git_conn, &full_worktree_path, &remote, &branch_name).await?;
+        // The verdict that asked for the fix must not outlive it.
+        apply_transition_writing(
+            app_state.inner(),
+            project_id,
+            task_id,
+            TaskTransition::CiFixPushed,
+            TransitionGuard::Always,
+            Some(TaskUpdate {
+                pull_request_ci: Some(None),
+                ..Default::default()
+            }),
+            None,
+        )
+        .await?;
+        return Ok(MergeResult {
+            success: true,
+            task_status: "Review".to_string(),
+            conflicts: vec![],
+            pull_request_url: task.pull_request_url.clone(),
+        });
     }
 
     // Push before landing, so a push that fails leaves the task in Review rather than reporting
@@ -1362,6 +1402,12 @@ mod loop_tests {
             ]
         );
         assert!(unsigned(&checks[..1]).is_empty());
+        assert_eq!(
+            unsigned(&checks[2..]),
+            ["it has no checks to say it is done"],
+            "nothing but a proposal"
+        );
+        assert_eq!(unsigned(&[]), ["it has no checks to say it is done"]);
     }
 
     #[test]

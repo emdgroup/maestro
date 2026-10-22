@@ -144,13 +144,21 @@ async fn iteration_ended(
 /// end its turn on its own in the same moment, and only the first of the two may finish it. Never
 /// cleared, since an attempt ends once.
 // ponytail: one small entry per iteration for the daemon's lifetime; prune on finish if it matters.
-/// An attempt: project path, task, iteration number and attempt.
-type Attempt = (String, i32, i32, i32);
+/// An attempt: project path, task, iteration number, attempt and when it started. Start over
+/// numbers a loop's iterations from 1 again, so only the start tells its attempts from the last
+/// run's.
+type Attempt = (String, i32, i32, i32, String);
 static ENDED: LazyLock<Mutex<HashSet<Attempt>>> = LazyLock::new(Default::default);
 
 /// Claim the ending of `iteration`: false when it was already claimed.
 fn claim_end(path: &str, task_id: i32, iteration: &LoopIteration) -> bool {
-    let key = (path.to_string(), task_id, iteration.n, iteration.attempt);
+    let key = (
+        path.to_string(),
+        task_id,
+        iteration.n,
+        iteration.attempt,
+        iteration.started_at.clone(),
+    );
     ENDED.lock().unwrap_or_else(|e| e.into_inner()).insert(key)
 }
 
@@ -1801,9 +1809,11 @@ pub(crate) async fn sweep_sandboxes(store: &Store) {
             rows.collect()
         };
         rows("SELECT DISTINCT project_path, 0 FROM tasks").and_then(|projects| {
+            // A conflict halt keeps the iteration's commit only in its sandbox, merged on resume,
+            // so that sandbox stays wherever the loop is moved until it is started over.
             let running = rows(
                 "SELECT project_path, id FROM tasks
-                 WHERE run_mode = 'Loop' AND status = 'InProgress'",
+                 WHERE run_mode = 'Loop' AND (status = 'InProgress' OR loop_halt = 'Conflict')",
             )?;
             Ok((projects, running))
         })
@@ -2054,6 +2064,14 @@ mod tests {
         assert!(
             claim_end("/overdue", 1, &again),
             "another attempt is its own"
+        );
+        let started_over = LoopIteration {
+            started_at: "2030-01-01T00:00:00+00:00".to_string(),
+            ..again
+        };
+        assert!(
+            claim_end("/overdue", 1, &started_over),
+            "a run started over numbers from 1 again, and is its own"
         );
     }
 
@@ -2968,7 +2986,20 @@ Try the cache first."
             .lock()
             .await
             .execute(
-                "UPDATE tasks SET status = 'Review' WHERE id = ?1",
+                "UPDATE tasks SET status = 'Planning', loop_halt = 'Conflict' WHERE id = ?1",
+                [task.id],
+            )
+            .unwrap();
+        sweep_sandboxes(&store).await;
+        assert!(
+            Path::new(&dir).exists(),
+            "kept while it holds a commit that could not be merged back"
+        );
+        store
+            .lock()
+            .await
+            .execute(
+                "UPDATE tasks SET status = 'Review', loop_halt = NULL WHERE id = ?1",
                 [task.id],
             )
             .unwrap();

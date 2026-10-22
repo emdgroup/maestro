@@ -170,6 +170,13 @@ pub fn compose(
 
     if looping {
         blocks.push(text(loop_context(conn, project_path, task)?));
+        if phase == Some(TaskPhase::AwaitingMerge) {
+            if let Some(ci) = latest("ci")? {
+                blocks.push(text(format!(
+                    "## CI is failing on the open pull request\n\n{ci}\n\nReproduce the failure locally, fix it, and commit. Once the checks pass and the user signs off, your commits are pushed to the existing pull request."
+                )));
+            }
+        }
     } else if preparing {
         blocks.push(text(prepare_context(conn, project_path, task)?));
     } else if role == AgentRole::Judge {
@@ -203,8 +210,9 @@ pub fn compose(
 
     let mut tail = Vec::new();
 
-    // Only the coder acts on a review's per-file comments, and a loop has no review.
-    if role == AgentRole::Coder {
+    // A review's comments are for whoever writes the code: the coder, or a loop sent back from its
+    // sign-off or by a merge conflict.
+    if looping || role == AgentRole::Coder {
         if let Some(review) = task_store::reviews::get_review(conn, project_path, task.id)?
             .filter(|r| r.decision == "RequestChanges")
         {
@@ -816,6 +824,45 @@ The button is dead."
             texts(&prompt)[1..],
             ["## CI is failing on the open pull request\n\nbuild failed: test_login\n\nReproduce the failure locally, fix it, and commit. Your commits are pushed to the existing pull request."]
         );
+    }
+
+    #[test]
+    fn a_loops_worker_gets_the_ci_report_and_a_merge_conflicts_feedback() {
+        let (mut conn, task) = setup(P, None);
+        note(&conn, &task, "ci", "build failed: test_login");
+        let phase = Some(TaskPhase::AwaitingMerge);
+        let prompt = compose(&conn, P, &task, phase, AgentRole::Worker, None, true, None)
+            .unwrap()
+            .embed();
+        assert!(
+            texts(&prompt).iter().any(|t| t.starts_with(
+                "## CI is failing on the open pull request\n\nbuild failed: test_login"
+            )),
+            "{:?}",
+            texts(&prompt)
+        );
+
+        task_store::reviews::save_review(
+            &mut conn,
+            &SaveTaskReviewRequest {
+                project_path: P.to_string(),
+                task_id: task.id,
+                decision: "RequestChanges".to_string(),
+                general_feedback: Some("Merge conflict in a.rs".to_string()),
+                comments: None,
+            },
+        )
+        .unwrap();
+        let rework = Some(TaskPhase::Rework);
+        let prompt = compose(&conn, P, &task, rework, AgentRole::Worker, None, true, None)
+            .unwrap()
+            .embed();
+        let t = texts(&prompt);
+        assert_eq!(
+            t.last(),
+            Some(&"## General feedback\nMerge conflict in a.rs\n")
+        );
+        assert!(!t.iter().any(|t| t.contains("CI is failing")), "{t:?}");
     }
 
     #[test]

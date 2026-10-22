@@ -1094,7 +1094,8 @@ pub(crate) fn is_runnable(check: &LoopCheck) -> bool {
 }
 
 /// Move a loop that is not running into `Checking`, for Re-run checks: paused on a flaky check,
-/// stopped, failed, or at sign-off, with a commit to check.
+/// stopped, failed, or at sign-off, once an iteration has ended. Not only one that committed: an
+/// iteration that changed nothing still has its checks run on what the loop holds.
 pub(crate) fn claim_recheck(
     conn: &mut Connection,
     project_path: &str,
@@ -1117,11 +1118,11 @@ pub(crate) fn claim_recheck(
     if !settled {
         return Err("The checks can only run again while the loop is stopped".to_string());
     }
-    let checked = list_iterations(&tx, project_path, task_id)?
+    let ended = list_iterations(&tx, project_path, task_id)?
         .iter()
-        .any(|i| i.commit_sha.is_some());
-    if !checked {
-        return Err("No iteration has committed anything to check yet".to_string());
+        .any(|i| i.outcome != LoopIterationOutcome::Running);
+    if !ended {
+        return Err("No iteration has ended yet, so there is nothing to check".to_string());
     }
     let task = super::transition::apply(
         &tx,
@@ -1746,7 +1747,7 @@ mod tests {
     }
 
     #[test]
-    fn the_checks_run_again_only_on_a_stopped_loop_with_a_commit() {
+    fn the_checks_run_again_only_on_a_stopped_loop_after_an_iteration() {
         let mut conn = crate::project_store::open_in_memory();
         let task = create(&mut conn, RunMode::Loop, None);
         let set_state = |conn: &Connection, phase: &str, status: &str| {
@@ -1761,11 +1762,13 @@ mod tests {
         assert!(err.contains("No iteration"), "got: {err}");
 
         start_iteration(&conn, PROJECT, task, 1, "acp", "claude").unwrap();
-        conn.execute(
-            "UPDATE loop_iterations SET commit_sha = 'abc', outcome = 'Checked'",
-            [],
-        )
-        .unwrap();
+        assert!(
+            claim_recheck(&mut conn, PROJECT, task).is_err(),
+            "an iteration still running"
+        );
+        // Changed nothing, so committed nothing, and its checks ran on what the loop held.
+        conn.execute("UPDATE loop_iterations SET outcome = 'Checked'", [])
+            .unwrap();
         set_state(&conn, "Iterating", "Running");
         assert!(
             claim_recheck(&mut conn, PROJECT, task).is_err(),
