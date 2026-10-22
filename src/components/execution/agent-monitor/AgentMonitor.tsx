@@ -523,14 +523,6 @@ export function AgentMonitor({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {session.execution_mode === "acp" && (
-            <SessionUsageMeters
-              sessionId={session.session_id}
-              agentId={session.agent_id ?? null}
-              acpSessionId={session.acp_session_id ?? null}
-              connection={connection}
-            />
-          )}
           {/* Reopening Maestro used to be the only way to get a session's output back, and closing
               the session instead can take its worktree with it. */}
           {session.execution_mode === "acp" && session.acp_session_id && projectId != null && (
@@ -563,6 +555,14 @@ export function AgentMonitor({
               </TooltipTrigger>
               <TooltipContent>Reload session. It keeps running, worktree included.</TooltipContent>
             </Tooltip>
+          )}
+          {session.execution_mode === "acp" && (
+            <SessionUsageMeters
+              sessionId={session.session_id}
+              agentId={session.agent_id ?? null}
+              acpSessionId={session.acp_session_id ?? null}
+              connection={connection}
+            />
           )}
           {onClose && (
             <Button
