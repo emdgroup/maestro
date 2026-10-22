@@ -487,7 +487,9 @@ export function CreateTaskModal({
                       generatedBranchSuffix={null}
                       worktrees={worktrees ?? []}
                       repoPath={project?.path ?? ""}
-                      selectedWorktreeId={workspaceWorktreeId}
+                      selectedWorktreePath={
+                        worktrees?.find((wt) => wt.id === workspaceWorktreeId)?.path ?? null
+                      }
                       onSelectedWorktreeChange={(wt: WorktreeWithStatus | null) =>
                         setValue("workspaceWorktreeId", wt?.id ?? null)
                       }

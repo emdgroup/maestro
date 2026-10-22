@@ -128,10 +128,9 @@ export function SpawnSessionDialog({
   const unavailableTools = new Set(toolChecks.filter((t) => !t.available).map((t) => t.tool));
   const visibleAgents = (discovery?.agents ?? []).filter((a) => !resume || a.id === resume.agentId);
 
-  // The repo root is a mode of its own, so it is not one of the workspaces to reuse. Nor is an
-  // untracked worktree: `WorkspaceSelector` does not offer one, so defaulting to it would select
-  // something the dropdown cannot show.
-  const reusableWorktrees = worktrees.filter((wt) => wt.path !== repoPath && wt.id != null);
+  // The repo root is a mode of its own, so it is not one of the workspaces to reuse. An untracked
+  // worktree is: a session claims nothing, so it runs there by path.
+  const reusableWorktrees = worktrees.filter((wt) => wt.path !== repoPath && wt.path !== "");
   // The main worktree carries the branch the project is checked out on, which a terminal spawn
   // needs even when the session runs in the repository directory.
   const mainWorktree = worktrees.find((wt) => wt.path === repoPath) ?? null;
@@ -510,7 +509,7 @@ export function SpawnSessionDialog({
                 generatedBranchSuffix={slugifyName(sessionName) || null}
                 worktrees={worktrees}
                 repoPath={repoPath}
-                selectedWorktreeId={selectedWorktree?.id ?? null}
+                selectedWorktreePath={selectedWorktree?.path ?? null}
                 onSelectedWorktreeChange={setSelectedWorktree}
                 allowNewWorktree={!isTerminal}
               />

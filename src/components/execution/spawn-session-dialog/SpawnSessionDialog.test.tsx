@@ -238,6 +238,27 @@ describe("SpawnSessionDialog reusing a worktree", () => {
       worktreeBranch: "feature/pr-head",
     });
   });
+
+  /**
+   * A worktree card's "Start session" seeds that worktree even when Maestro does not track it. The
+   * dropdown offered tracked worktrees only, so the seed sat in state with nothing shown selected.
+   */
+  it("shows a seeded untracked worktree as selected", async () => {
+    const untracked = {
+      ...worktree(),
+      id: null,
+      is_orphan: true,
+      branch_name: "feature/elsewhere",
+      path: "C:/repo/.claude/worktrees/elsewhere",
+    };
+    renderDialog({ workspaceMode: "ReuseWorkspace", worktree: untracked }, undefined, [
+      worktree(),
+      untracked,
+    ]);
+
+    const trigger = await screen.findByRole("combobox", { name: "Workspace" });
+    expect(trigger.textContent).toContain("feature/elsewhere");
+  });
 });
 
 describe("SpawnSessionDialog resuming", () => {

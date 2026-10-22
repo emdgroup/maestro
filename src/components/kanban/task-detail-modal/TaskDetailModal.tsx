@@ -450,7 +450,9 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                         )}
                         worktrees={worktrees ?? []}
                         repoPath={selectedProject?.path ?? ""}
-                        selectedWorktreeId={draft.workspaceWorktreeId}
+                        selectedWorktreePath={
+                          worktrees?.find((wt) => wt.id === draft.workspaceWorktreeId)?.path ?? null
+                        }
                         onSelectedWorktreeChange={(wt: WorktreeWithStatus | null) =>
                           markDirtySetDraft((d) => ({ ...d, workspaceWorktreeId: wt?.id ?? null }))
                         }

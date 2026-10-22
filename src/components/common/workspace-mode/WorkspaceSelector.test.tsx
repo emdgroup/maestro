@@ -67,7 +67,7 @@ function renderReuse(worktrees: WorktreeWithStatus[], props: { claimsOwnership?:
       generatedBranchSuffix="1-demo"
       worktrees={worktrees}
       repoPath={REPO}
-      selectedWorktreeId={null}
+      selectedWorktreePath={null}
       onSelectedWorktreeChange={onSelectedWorktreeChange}
       claimsOwnership={props.claimsOwnership}
     />,
@@ -94,7 +94,7 @@ function renderModeSelect(worktrees: WorktreeWithStatus[]) {
       generatedBranchSuffix="1-demo"
       worktrees={worktrees}
       repoPath={REPO}
-      selectedWorktreeId={null}
+      selectedWorktreePath={null}
       onSelectedWorktreeChange={vi.fn()}
     />,
   );
