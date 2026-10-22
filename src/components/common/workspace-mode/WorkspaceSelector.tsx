@@ -27,7 +27,8 @@ interface WorkspaceSelectorProps {
   /** Every worktree of the project, repo root included — it is filtered out below. */
   worktrees: WorktreeWithStatus[];
   repoPath: string;
-  selectedWorktreeId: number | null;
+  /** By path rather than id: a worktree Maestro does not track has none, and a session may use it. */
+  selectedWorktreePath: string | null;
   onSelectedWorktreeChange: (worktree: WorktreeWithStatus | null) => void;
   /** False for terminal sessions, which attach to a checkout rather than creating one. */
   allowNewWorktree?: boolean;
@@ -59,7 +60,7 @@ export function WorkspaceSelector({
   generatedBranchSuffix,
   worktrees,
   repoPath,
-  selectedWorktreeId,
+  selectedWorktreePath,
   onSelectedWorktreeChange,
   allowNewWorktree = true,
   claimsOwnership = false,
@@ -71,14 +72,17 @@ export function WorkspaceSelector({
   // a timer per row.
   const now = useNow();
   // The repo root is its own mode now, and a row still being created (empty path, no id yet) is
-  // not something to offer.
-  const reusable = worktrees.filter((wt) => wt.path !== repoPath && wt.id != null);
+  // not something to offer. A worktree Maestro does not track has no id for a task to claim, but a
+  // session claims nothing and runs in it by path.
+  const reusable = worktrees.filter(
+    (wt) => wt.path !== repoPath && wt.path !== "" && (wt.id != null || !claimsOwnership),
+  );
   const takenBy = (wt: WorktreeWithStatus) =>
     claimsOwnership && wt.task_id != null && wt.task_id !== ownerTaskId
       ? (wt.task_name ?? `task #${wt.task_id}`)
       : null;
 
-  const selected = reusable.find((wt) => wt.id === selectedWorktreeId) ?? null;
+  const selected = reusable.find((wt) => wt.path === selectedWorktreePath) ?? null;
 
   // The name a read-only summary can put in words: what was typed, else the preview, else nothing
   // to name yet — a task's branch carries an id it only gets on creation.
@@ -177,7 +181,7 @@ export function WorkspaceSelector({
           useExistingBlockedReason={(conflict) => {
             if (newWorktreeOnly) return newWorktreeOnly;
             if (conflict.kind === "repositoryDirectory") return null;
-            if (conflict.worktree.id == null) {
+            if (claimsOwnership && conflict.worktree.id == null) {
               return "That worktree is not one Maestro tracks, so it cannot be reused here.";
             }
             const taken = takenBy(conflict.worktree);
@@ -197,9 +201,9 @@ export function WorkspaceSelector({
           </p>
         ) : (
           <Select
-            value={selected ? String(selected.id) : ""}
+            value={selected?.path ?? ""}
             onValueChange={(value) =>
-              onSelectedWorktreeChange(reusable.find((wt) => String(wt.id) === value) ?? null)
+              onSelectedWorktreeChange(reusable.find((wt) => wt.path === value) ?? null)
             }
           >
             {/* See `WorkspaceModeSelect` on why the height override carries the size variant. */}
@@ -221,8 +225,8 @@ export function WorkspaceSelector({
                 const taken = takenBy(wt);
                 return (
                   <SelectItem
-                    key={wt.id}
-                    value={String(wt.id)}
+                    key={wt.path}
+                    value={wt.path}
                     disabled={taken !== null}
                     className="py-2"
                   >
