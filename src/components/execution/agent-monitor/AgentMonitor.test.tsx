@@ -11,6 +11,7 @@ vi.mock("../agent-activity-panel/AgentActivityPanel", () => ({
 vi.mock("@/services/execution.service", () => ({
   useRenameAcpSessionMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useCancelActiveSessionMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useReloadAcpSessionMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
 const baseSession = {

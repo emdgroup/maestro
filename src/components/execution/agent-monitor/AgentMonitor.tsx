@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback, useRef, useEffect, memo } from "react";
-import { BotOff, GitBranch, Terminal, X } from "lucide-react";
+import { BotOff, GitBranch, RotateCw, Terminal, X } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
@@ -18,7 +18,9 @@ import {
 import {
   useRenameAcpSessionMutation,
   useCancelActiveSessionMutation,
+  useReloadAcpSessionMutation,
 } from "@/services/execution.service";
+import { releaseSession } from "@/components/execution/activity/sessionRuntime";
 import { STAGE_NAMES } from "@/lib/default-profiles";
 import { useAgentProfilesQuery } from "@/services/project.service";
 import { useAutomationRunsQuery } from "@/services/automation.service";
@@ -331,6 +333,7 @@ export function AgentMonitor({
   const renameCanceledRef = useRef(false);
   const renameMutation = useRenameAcpSessionMutation();
   const cancelSession = useCancelActiveSessionMutation();
+  const reloadSession = useReloadAcpSessionMutation();
   // A session stores the profile's id; the name lives in the project's profile document. Memoized
   // into a map because `SessionRow` is memoized, and a lookup closure rebuilt each render would
   // re-render every row on every poll.
@@ -527,6 +530,39 @@ export function AgentMonitor({
               acpSessionId={session.acp_session_id ?? null}
               connection={connection}
             />
+          )}
+          {/* Reopening Maestro used to be the only way to get a session's output back, and closing
+              the session instead can take its worktree with it. */}
+          {session.execution_mode === "acp" && session.acp_session_id && projectId != null && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Reload session"
+                    disabled={reloadSession.isPending}
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      if (reloadSession.isPending) return;
+                      reloadSession.mutate(
+                        { sessionId: session.session_id, projectId },
+                        {
+                          onSuccess: (sessionId) => {
+                            if (sessionId === session.session_id) return;
+                            onSelect(sessionId);
+                            releaseSession(session.session_id);
+                          },
+                        },
+                      );
+                    }}
+                  />
+                }
+              >
+                <RotateCw className={cn("w-4 h-4", reloadSession.isPending && "animate-spin")} />
+              </TooltipTrigger>
+              <TooltipContent>Reload session. It keeps running, worktree included.</TooltipContent>
+            </Tooltip>
           )}
           {onClose && (
             <Button

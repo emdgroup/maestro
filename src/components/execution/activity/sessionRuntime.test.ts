@@ -14,7 +14,7 @@ vi.mock("@/services/canvas.service", () => ({
   saveCanvasSurface: () => Promise.resolve(),
 }));
 
-import { getActivity, getLifecycle, subscribeSession } from "./sessionRuntime";
+import { getActivity, getLifecycle, releaseSession, subscribeSession } from "./sessionRuntime";
 
 const emit = (name: string, payload: unknown) => handlers.get(name)?.({ payload });
 const chunk = (text: string) => ({
@@ -50,6 +50,34 @@ describe("sessionRuntime", () => {
     expect(items[0]).toMatchObject({ type: "message", item: { text: "before after" } });
     expect(getLifecycle(sid).pendingPermission?.requestId).toBe("r1");
     expect(drainAcpReplay).toHaveBeenCalledTimes(1);
+  });
+
+  it("drains again when the backend takes the session back, keeping what it had", async () => {
+    const sid = "reattached";
+    const unsubscribe = subscribeSession(sid, () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    emit(`acp://session-update/${sid}`, chunk("before"));
+    await vi.advanceTimersByTimeAsync(60);
+    unsubscribe();
+    await vi.advanceTimersByTimeAsync(0);
+
+    emit(`acp://session-attached/${sid}`, null);
+    subscribeSession(sid, () => {});
+    expect(drainAcpReplay).toHaveBeenCalledTimes(2);
+    expect(getActivity(sid).items).toHaveLength(1);
+  });
+
+  it("is dropped on release although the session has not ended", async () => {
+    const sid = "released";
+    subscribeSession(sid, () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    emit(`acp://session-update/${sid}`, chunk("hi"));
+    await vi.advanceTimersByTimeAsync(60);
+    releaseSession(sid);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(getActivity(sid).items).toHaveLength(0);
+    expect(handlers.has(`acp://session-update/${sid}`)).toBe(false);
   });
 
   it("is dropped once the session ends with nothing watching", async () => {

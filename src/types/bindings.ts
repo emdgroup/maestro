@@ -2406,6 +2406,21 @@ async recoverTaskSession(taskId: number, projectId: number) : Promise<Result<str
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Drop a session from this window and attach it again from the daemon, as reopening the app does.
+ * 
+ * Nothing is ended: the daemon keeps running the session, and its worktree is not touched. An idle
+ * session is closed on the agent and loaded back under a new id, with its whole transcript; one
+ * mid-turn is adopted as it stands, under the same id. Returns the id it ends up under.
+ */
+async reloadAcpSession(sessionId: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reload_acp_session", { sessionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async deleteAcpSession(agentId: string, sessionId: string, cwd: string, connection: ConnectionKey) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_acp_session", { agentId, sessionId, cwd, connection }) };

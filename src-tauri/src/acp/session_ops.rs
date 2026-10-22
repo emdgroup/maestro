@@ -487,6 +487,18 @@ pub async fn attach_project_sessions(
             )
             .await;
         }
+        // The window may still hold a runtime for this id, from before it left the project. That
+        // runtime drained its replay buffer once, when it was built, and will not again on its
+        // own, so without this every update from here on would sit in the fresh buffer above.
+        if let Err(e) = app_state
+            .app_handle
+            .emit(&format!("acp://session-attached/{}", live.session_id), ())
+        {
+            log::warn!(
+                "[acp] emit session-attached/{} failed: {e}",
+                live.session_id
+            );
+        }
         attached += 1;
     }
 
