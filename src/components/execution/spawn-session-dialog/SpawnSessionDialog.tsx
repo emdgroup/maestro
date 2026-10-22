@@ -128,8 +128,10 @@ export function SpawnSessionDialog({
   const unavailableTools = new Set(toolChecks.filter((t) => !t.available).map((t) => t.tool));
   const visibleAgents = (discovery?.agents ?? []).filter((a) => !resume || a.id === resume.agentId);
 
-  // The repo root is a mode of its own, so it is not one of the workspaces to reuse.
-  const reusableWorktrees = worktrees.filter((wt) => wt.path !== repoPath);
+  // The repo root is a mode of its own, so it is not one of the workspaces to reuse. Nor is an
+  // untracked worktree: `WorkspaceSelector` does not offer one, so defaulting to it would select
+  // something the dropdown cannot show.
+  const reusableWorktrees = worktrees.filter((wt) => wt.path !== repoPath && wt.id != null);
   // The main worktree carries the branch the project is checked out on, which a terminal spawn
   // needs even when the session runs in the repository directory.
   const mainWorktree = worktrees.find((wt) => wt.path === repoPath) ?? null;
@@ -154,12 +156,13 @@ export function SpawnSessionDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Fill defaults if worktrees or branches load after the dialog was already opened
+  // Fill defaults if worktrees load after the dialog was already opened. Functional update for the
+  // same reason as `baseBranch` below: on mount this runs in the reset's commit, still holding the
+  // initial null, and would replace a seeded worktree with the first one in the list.
   useEffect(() => {
-    if (open && selectedWorktree === null && reusableWorktrees.length > 0) {
-      setSelectedWorktree(reusableWorktrees[0]);
-    }
-  }, [open, reusableWorktrees, selectedWorktree]);
+    if (!open || reusableWorktrees.length === 0) return;
+    setSelectedWorktree((current) => current ?? reusableWorktrees[0]);
+  }, [open, reusableWorktrees]);
 
   // Functional update, and `baseBranch` deliberately out of the deps: on mount this effect and the
   // reset above run in the same commit, so the `baseBranch` this closure captured is still the

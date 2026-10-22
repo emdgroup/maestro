@@ -6,6 +6,7 @@ import type { WorktreeWithStatus } from "@/types/bindings";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 const loadAcp = vi.hoisted(() => vi.fn());
+const spawnAcp = vi.hoisted(() => vi.fn());
 
 vi.mock("@/services/execution.service", () => ({
   // A real agent, so the dialog does not fall back to a terminal session — which forces the
@@ -14,7 +15,7 @@ vi.mock("@/services/execution.service", () => ({
     data: { agents: [{ id: "claude-acp", name: "Claude", spawn_deps: [] }] },
     isLoading: false,
   }),
-  useSpawnAcpSessionMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  useSpawnAcpSessionMutation: () => ({ mutate: spawnAcp, isPending: false }),
   useSpawnInteractiveExecutionMutation: () => ({ mutate: vi.fn(), isPending: false }),
   useLoadAcpSessionMutation: () => ({ mutate: loadAcp, isPending: false }),
 }));
@@ -82,7 +83,11 @@ function worktree(): WorktreeWithStatus {
 
 type Props = Parameters<typeof SpawnSessionDialog>[0];
 
-function renderDialog(seed?: Props["seed"], resume?: Props["resume"]) {
+function renderDialog(
+  seed?: Props["seed"],
+  resume?: Props["resume"],
+  worktrees: WorktreeWithStatus[] = [worktree()],
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
@@ -92,7 +97,7 @@ function renderDialog(seed?: Props["seed"], resume?: Props["resume"]) {
         projectId={1}
         repoPath="C:/repo"
         connection={{ type: "local" }}
-        worktrees={[worktree()]}
+        worktrees={worktrees}
         onSuccess={vi.fn()}
         seed={seed}
         resume={resume}
@@ -202,6 +207,36 @@ describe("SpawnSessionDialog seeding", () => {
     expect(resolveWorktree).toHaveBeenCalledWith(
       expect.objectContaining({ pullRequest: null, baseBranch: "origin/maestro/great-lynx-58" }),
     );
+  });
+});
+
+describe("SpawnSessionDialog reusing a worktree", () => {
+  /**
+   * A pull request row seeds the worktree on its branch. The "fill a default once worktrees load"
+   * effect ran in the same commit as the reset, still holding the initial null, and replaced the
+   * seed with the first worktree in the list, so the session started on some other branch.
+   */
+  it("keeps the seeded worktree rather than the first one in the list", async () => {
+    spawnAcp.mockClear();
+    const first = worktree();
+    const seeded = {
+      ...worktree(),
+      id: 8,
+      branch_name: "feature/pr-head",
+      path: "C:/repo/.maestro/worktrees/session-43",
+    };
+    renderDialog(
+      { workspaceMode: "ReuseWorkspace", worktree: seeded, sessionName: "Review it" },
+      undefined,
+      [first, seeded],
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Start Session" }));
+    await waitFor(() => expect(spawnAcp).toHaveBeenCalled());
+    expect(spawnAcp.mock.calls[0]![0]).toMatchObject({
+      cwd: "C:/repo/.maestro/worktrees/session-43",
+      worktreeBranch: "feature/pr-head",
+    });
   });
 });
 

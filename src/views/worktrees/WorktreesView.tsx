@@ -284,12 +284,18 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
       case "open-session":
         navigate({ sessionId: entry.action.sessionId });
         return;
+      // The branch may be checked out in the repository itself, which is its own mode rather than
+      // a worktree to reuse, the same as `onStartSession` below.
       case "reuse-worktree":
-        setSpawnSeed({
-          workspaceMode: "ReuseWorkspace",
-          worktree: entry.action.worktree,
-          sessionName: entry.pullRequest.title,
-        });
+        setSpawnSeed(
+          isRepositoryRoot(entry.action.worktree.path, repoPath ?? "")
+            ? { workspaceMode: "RepositoryDirectory", sessionName: entry.pullRequest.title }
+            : {
+                workspaceMode: "ReuseWorkspace",
+                worktree: entry.action.worktree,
+                sessionName: entry.pullRequest.title,
+              },
+        );
         return;
       case "new-worktree":
         setSpawnSeed({
