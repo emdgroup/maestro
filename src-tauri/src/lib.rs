@@ -237,6 +237,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::save_clipboard_image,
         crate::ipc::close_acp_session,
         crate::ipc::recover_task_session,
+        crate::ipc::reload_acp_session,
         crate::ipc::delete_acp_session,
         crate::ipc::rename_acp_session,
         crate::ipc::save_canvas_surface,

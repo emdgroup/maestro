@@ -319,8 +319,9 @@ export function SpawnSessionDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* One step wider than the default: this dialog's branch row carries fully-qualified remote
-          refs, which are the longest single value any dialog here shows. */}
-      <DialogContent className="sm:max-w-lg">
+          refs, which are the longest single value any dialog here shows. Resuming opens it over
+          Session History, so it takes a shadow to stand off that dialog. */}
+      <DialogContent className={cn("sm:max-w-lg", resume && "shadow-2xl")}>
         <DialogHeader>
           <DialogTitle>{resume ? "Resume Session" : "New Session"}</DialogTitle>
           <p className="text-xs text-muted-foreground">

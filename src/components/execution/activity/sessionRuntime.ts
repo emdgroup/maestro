@@ -24,8 +24,8 @@ import type { PendingCanvasAwait } from "./canvas/await-matching";
   for another project, while the session itself keeps running. State owned by the panel went with
   it: the transcript, and worse, a permission request that arrived meanwhile, leaving the agent
   blocked on a prompt nobody could see. The replay buffer cannot cover for it either, since it is
-  drained once, on first mount. So the listeners and everything they build live here, one runtime
-  per session, and the panel only subscribes.
+  drained on first mount and then only when the backend takes the session back. So the listeners
+  and everything they build live here, one runtime per session, and the panel only subscribes.
 
   A runtime is dropped once its session has ended and no panel is watching it.
 */
@@ -118,6 +118,10 @@ function maybeDispose(sessionId: string, rt: Runtime) {
   if (rt.subscribers.size > 0 || !rt.activity.sessionEnded || runtimes.get(sessionId) !== rt) {
     return;
   }
+  dispose(sessionId, rt);
+}
+
+function dispose(sessionId: string, rt: Runtime) {
   runtimes.delete(sessionId);
   if (rt.flushTimer != null) clearTimeout(rt.flushTimer);
   rt.pending = [];
@@ -304,6 +308,11 @@ function create(sessionId: string): Runtime {
       const raw = event.payload as Record<string, unknown>;
       enqueue({ type: "event", payload: raw as unknown as SessionUpdatePayload, raw }, raw);
     }),
+    // The window let go of the session, for Home or another project, and has just taken it back.
+    // Its updates wait in a fresh replay buffer, and this runtime drained only the first one.
+    listen<null>(`acp://session-attached/${sessionId}`, () => {
+      drainAcpReplay(sessionId).catch(console.error);
+    }),
     listen<null>(`acp://session-ended/${sessionId}`, () => {
       // Reopening this session will restore its canvases into an agent that is listening to
       // nothing again, so the ask is owed a second time.
@@ -489,6 +498,15 @@ function ensure(sessionId: string): Runtime {
     runtimes.set(sessionId, rt);
   }
   return rt;
+}
+
+/**
+ * Drop a session's runtime although the session has not ended: a reload brought it back under
+ * another id, so nothing will ever end this one.
+ */
+export function releaseSession(sessionId: string) {
+  const rt = runtimes.get(sessionId);
+  if (rt) dispose(sessionId, rt);
 }
 
 export function subscribeSession(sessionId: string, fn: () => void): () => void {

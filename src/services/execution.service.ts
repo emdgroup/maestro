@@ -718,6 +718,24 @@ export function useResizeTerminalMutation() {
   });
 }
 
+/** Attach a session again from the daemon, as reopening the app does. Resolves to its id then. */
+export function useReloadAcpSessionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ sessionId }: { sessionId: string; projectId: number }) => {
+      const result = await commands.reloadAcpSession(sessionId);
+      if (result.status === "error") throw new Error(result.error);
+      return result.data;
+    },
+    onSuccess: (_sessionId, { projectId }) => {
+      void queryClient.invalidateQueries({
+        queryKey: executionQueryKeys.activeSessions(projectId),
+      });
+    },
+    onError: createErrorToastHandler("Failed to reload session"),
+  });
+}
+
 export function useRecoverTaskSessionMutation() {
   const queryClient = useQueryClient();
   return useMutation({

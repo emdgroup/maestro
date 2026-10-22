@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import type { LoopCheck, LoopHalt, LoopIteration, Task, TaskComment } from "@/types/bindings";
 import { Button } from "@/ui/button";
+import { Checkbox } from "@/ui/checkbox";
 import { Textarea } from "@/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useNow } from "@/hooks/useNow";
@@ -553,23 +554,22 @@ function HeldBody({
       {head.kind === "signoff" && manual.length > 0 && (
         <ul className="space-y-1 rounded-md border border-border bg-background p-2 text-xs">
           {manual.map(({ check }) => (
-            <li key={check.id} className="flex items-center gap-2">
-              {check.state === "Pass" ? (
-                <Check className="size-3.5 shrink-0 text-success" />
-              ) : (
-                <User className="size-3.5 shrink-0 text-muted-foreground" />
-              )}
-              <span className="flex-1">{check.label}</span>
-              <button
-                type="button"
-                className="shrink-0 text-accent hover:underline"
-                onClick={() => actions.onTick(check.id, check.state !== "Pass")}
-              >
-                {check.state === "Pass" ? "Untick" : "Mark done"}
-              </button>
+            <li key={check.id}>
+              <label className="flex cursor-pointer items-center gap-2">
+                <Checkbox
+                  checked={check.state === "Pass"}
+                  onCheckedChange={(ticked) => actions.onTick(check.id, ticked)}
+                />
+                <span className="flex-1">{check.label}</span>
+              </label>
             </li>
           ))}
         </ul>
+      )}
+      {head.kind === "signoff" && manual.some(({ check }) => check.state !== "Pass") && (
+        <p className="text-xs text-muted-foreground">
+          Approving needs every box ticked. If one fails, send the loop back with a note.
+        </p>
       )}
       {(head.kind === "signoff" || head.kind === "merge") && digest && (
         <section className="space-y-1.5">

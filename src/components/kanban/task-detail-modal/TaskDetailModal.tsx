@@ -350,7 +350,13 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                   typed. The loop's checks, hidden files and limits are saved with the rest of the
                   task. */}
                 {isLoop && (
-                  <TabsContent value="loop" keepMounted className="min-h-0 overflow-y-auto pr-1">
+                  <TabsContent
+                    value="loop"
+                    keepMounted
+                    // A scroll box clips at its padding edge, so a field flush with it loses its
+                    // 3px focus ring. The padding is that room, the negative margin keeps the layout.
+                    className="-mx-1 -mt-1 min-h-0 overflow-y-auto px-1 pt-1"
+                  >
                     <LoopDetailsSection
                       ref={loopDetails}
                       task={task}

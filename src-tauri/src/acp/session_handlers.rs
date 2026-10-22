@@ -740,6 +740,62 @@ pub async fn recover_task_session(
         .ok_or_else(|| format!("No recoverable session for task {}", task_id))
 }
 
+/// Drop a session from this window and attach it again from the daemon, as reopening the app does.
+///
+/// Nothing is ended: the daemon keeps running the session, and its worktree is not touched. An idle
+/// session is closed on the agent and loaded back under a new id, with its whole transcript; one
+/// mid-turn is adopted as it stands, under the same id. Returns the id it ends up under.
+#[tauri::command]
+#[specta::specta]
+pub async fn reload_acp_session(
+    app_state: State<'_, Arc<AppState>>,
+    session_id: String,
+) -> Result<String, String> {
+    let (project_id, connection_key, agent_id, acp_session_id) = {
+        let sessions = app_state.acp.sessions.lock().await;
+        let process = sessions
+            .get(&session_id)
+            .ok_or_else(|| "This session is no longer open.".to_string())?;
+        let project_id = process
+            .project_id
+            .ok_or_else(|| "Only a project's sessions can be reloaded.".to_string())?;
+        let acp_session_id = process
+            .acp_session_id
+            .lock()
+            .ok()
+            .and_then(|id| id.clone())
+            .ok_or_else(|| "The agent has not started this session yet.".to_string())?;
+        (
+            project_id,
+            process.connection_key,
+            process.agent_id_meta.clone(),
+            acp_session_id,
+        )
+    };
+
+    crate::acp::session_ops::forget_sessions(&app_state, std::slice::from_ref(&session_id)).await;
+    crate::acp::session_ops::attach_project_sessions(connection_key, project_id, None, &app_state)
+        .await;
+
+    app_state
+        .acp
+        .sessions
+        .lock()
+        .await
+        .iter()
+        .find(|(_, process)| {
+            process.agent_id_meta == agent_id
+                && process
+                    .acp_session_id
+                    .lock()
+                    .is_ok_and(|id| id.as_deref() == Some(acp_session_id.as_str()))
+        })
+        .map(|(session_id, _)| session_id.clone())
+        .ok_or_else(|| {
+            "The session could not be attached again. Reopen it from Session History.".to_string()
+        })
+}
+
 /// Close an ACP session stored on the agent server (not a live Tauri session).
 #[tauri::command]
 #[specta::specta]
