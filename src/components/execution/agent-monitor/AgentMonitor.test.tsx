@@ -129,3 +129,23 @@ describe("AgentMonitor role chip", () => {
     expect(queryByText("Implement")).toBeNull();
   });
 });
+
+describe("AgentMonitor reload button", () => {
+  it("is not offered for a session with nothing in it yet", () => {
+    const { queryByLabelText } = renderMonitor({
+      ...defaultProps,
+      projectId: 1,
+      selectedSessionId: "fresh",
+      sessions: [
+        {
+          ...baseSession,
+          session_id: "fresh",
+          execution_mode: "acp" as const,
+          agent_id: "claude-acp",
+          acp_session_id: "acp-fresh",
+        },
+      ],
+    });
+    expect(queryByLabelText("Reload session")).not.toBeInTheDocument();
+  });
+});

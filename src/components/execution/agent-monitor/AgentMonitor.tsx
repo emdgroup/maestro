@@ -1,4 +1,12 @@
-import { useMemo, useState, useCallback, useRef, useEffect, memo } from "react";
+import {
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  memo,
+  useSyncExternalStore,
+} from "react";
 import { BotOff, GitBranch, RotateCw, Terminal, X } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { cn } from "@/lib/utils";
@@ -20,7 +28,11 @@ import {
   useCancelActiveSessionMutation,
   useReloadAcpSessionMutation,
 } from "@/services/execution.service";
-import { releaseSession } from "@/components/execution/activity/sessionRuntime";
+import {
+  getActivity,
+  releaseSession,
+  subscribeSession,
+} from "@/components/execution/activity/sessionRuntime";
 import { STAGE_NAMES } from "@/lib/default-profiles";
 import { useAgentProfilesQuery } from "@/services/project.service";
 import { useAutomationRunsQuery } from "@/services/automation.service";
@@ -293,6 +305,59 @@ const SessionRow = memo(function SessionRow({
   );
 });
 
+/**
+ * Attach the session again from the daemon. Reopening Maestro used to be the only way to get a
+ * session's output back, and closing the session instead can take its worktree with it.
+ *
+ * Hidden while the session has nothing in it: there is no output to get back, and an agent cannot
+ * load a conversation that never started, so the reload would lose the session.
+ */
+function ReloadSessionButton({
+  sessionId,
+  projectId,
+  onReloaded,
+}: {
+  sessionId: string;
+  projectId: number;
+  onReloaded: (sessionId: string) => void;
+}) {
+  const reloadSession = useReloadAcpSessionMutation();
+  const subscribe = useCallback((fn: () => void) => subscribeSession(sessionId, fn), [sessionId]);
+  const empty = useSyncExternalStore(subscribe, () => getActivity(sessionId).items.length === 0);
+  if (empty) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Reload session"
+            disabled={reloadSession.isPending}
+            className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              if (reloadSession.isPending) return;
+              reloadSession.mutate(
+                { sessionId, projectId },
+                {
+                  onSuccess: (reloaded) => {
+                    if (reloaded === sessionId) return;
+                    onReloaded(reloaded);
+                    releaseSession(sessionId);
+                  },
+                },
+              );
+            }}
+          />
+        }
+      >
+        <RotateCw className={cn("w-4 h-4", reloadSession.isPending && "animate-spin")} />
+      </TooltipTrigger>
+      <TooltipContent>Reload session. It keeps running, worktree included.</TooltipContent>
+    </Tooltip>
+  );
+}
+
 interface AgentMonitorProps {
   sessions: ActiveSessionInfo[];
   selectedSessionId: string | null;
@@ -333,7 +398,6 @@ export function AgentMonitor({
   const renameCanceledRef = useRef(false);
   const renameMutation = useRenameAcpSessionMutation();
   const cancelSession = useCancelActiveSessionMutation();
-  const reloadSession = useReloadAcpSessionMutation();
   // A session stores the profile's id; the name lives in the project's profile document. Memoized
   // into a map because `SessionRow` is memoized, and a lookup closure rebuilt each render would
   // re-render every row on every poll.
@@ -523,38 +587,12 @@ export function AgentMonitor({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {/* Reopening Maestro used to be the only way to get a session's output back, and closing
-              the session instead can take its worktree with it. */}
           {session.execution_mode === "acp" && session.acp_session_id && projectId != null && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    aria-label="Reload session"
-                    disabled={reloadSession.isPending}
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                    onClick={() => {
-                      if (reloadSession.isPending) return;
-                      reloadSession.mutate(
-                        { sessionId: session.session_id, projectId },
-                        {
-                          onSuccess: (sessionId) => {
-                            if (sessionId === session.session_id) return;
-                            onSelect(sessionId);
-                            releaseSession(session.session_id);
-                          },
-                        },
-                      );
-                    }}
-                  />
-                }
-              >
-                <RotateCw className={cn("w-4 h-4", reloadSession.isPending && "animate-spin")} />
-              </TooltipTrigger>
-              <TooltipContent>Reload session. It keeps running, worktree included.</TooltipContent>
-            </Tooltip>
+            <ReloadSessionButton
+              sessionId={session.session_id}
+              projectId={projectId}
+              onReloaded={onSelect}
+            />
           )}
           {session.execution_mode === "acp" && (
             <SessionUsageMeters
