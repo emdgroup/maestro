@@ -112,11 +112,12 @@ function AddProjectSheet({
     dockerConnectionId: connection.key.type === "docker" ? connection.key.id : null,
   };
 
+  // The sheet stays while a clone or a new repository is made, and closes once the project exists:
+  // opening it is Home's to show from there.
   const finish = async (work: () => Promise<void>) => {
     setBusy(true);
     try {
       await work();
-      onClose();
     } catch {
       // The mutations report their own failures.
     } finally {
@@ -169,7 +170,11 @@ function AddProjectSheet({
               <button
                 type="button"
                 disabled={busy || !folder.trim()}
-                onClick={() => void finish(() => onOpenPath(folder.trim()))}
+                onClick={() => {
+                  // Home shows the project opening, and reports a failure itself.
+                  onClose();
+                  void onOpenPath(folder.trim());
+                }}
                 className={BUTTON}
               >
                 Open
@@ -233,6 +238,7 @@ function AddProjectSheet({
                         ...ids,
                         provider,
                       });
+                      onClose();
                       await onOpenProject(created.id);
                     })
                   }
@@ -278,6 +284,7 @@ function AddProjectSheet({
                         folderName: name.trim(),
                         ...ids,
                       });
+                      onClose();
                       await onOpenProject(created.id);
                     })
                   }

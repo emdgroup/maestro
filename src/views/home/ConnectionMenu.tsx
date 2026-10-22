@@ -78,7 +78,6 @@ export function ConnectionMenu({
   onRemove,
 }: ConnectionMenuProps) {
   const [confirm, setConfirm] = useState<Confirm | null>(null);
-  const [busy, setBusy] = useState(false);
   const up = phase.kind === "up";
 
   const state =
@@ -138,18 +137,18 @@ export function ConnectionMenu({
     },
   };
 
+  // Closed as soon as the action starts: the panel shows the server stopping or starting again,
+  // which can take many seconds, and a failure comes back as a toast.
   const run = async () => {
     if (!confirm) return;
-    setBusy(true);
+    const action = confirm;
+    setConfirm(null);
     try {
-      if (confirm === "stop") await stopServer(connection.key);
-      if (confirm === "restart") await restartServer(connection.key);
-      if (confirm === "remove") await onRemove?.();
-      setConfirm(null);
+      if (action === "stop") await stopServer(connection.key);
+      if (action === "restart") await restartServer(connection.key);
+      if (action === "remove") await onRemove?.();
     } catch (error) {
       toast.error(getErrorMessage(error));
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -239,12 +238,11 @@ export function ConnectionMenu({
         </ul>
         <div className="mt-3 text-xs text-muted-foreground">{confirm && copy[confirm].note}</div>
         <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => setConfirm(null)} disabled={busy}>
+          <Button variant="ghost" onClick={() => setConfirm(null)}>
             Cancel
           </Button>
           <Button
             onClick={() => void run()}
-            disabled={busy}
             className={confirm === "restart" ? "" : "bg-rose-600 text-white hover:bg-rose-600/90"}
           >
             {confirm && copy[confirm].action}
