@@ -19,6 +19,7 @@ import {
   buildCanvasImportedPrompt,
 } from "@/components/execution/activity/canvas/canvas-prompt";
 import { readImportedCanvasFile, saveCanvasImport } from "@/services/canvas.service";
+import { getErrorMessage } from "@/lib/error-utils";
 import type { CanvasSurface } from "@/components/execution/activity/types";
 
 /** What the dialog is asking, with nothing in it the dialog does not display. */
@@ -86,7 +87,7 @@ export function useCanvasImport({
             : { kind: "convert", html: text, fileName },
         );
       })
-      .catch(() => toast.error(`Could not read ${path}`));
+      .catch((e) => toast.error(`Could not read ${path}`, { description: getErrorMessage(e) }));
   }, []);
 
   // Live the moment it is dispatched; the copy the agent reads follows. A failed copy is worth

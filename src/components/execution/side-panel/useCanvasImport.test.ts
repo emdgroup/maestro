@@ -15,6 +15,9 @@ vi.mock("@/services/canvas.service", () => ({
     saveCanvasImport(sessionId, name, html),
 }));
 
+const toastError = vi.fn();
+vi.mock("sonner", () => ({ toast: { error: (...args: unknown[]) => toastError(...args) } }));
+
 const SURFACE: CanvasSurface = {
   surfaceId: "dash",
   title: "Deploy dashboard",
@@ -47,6 +50,7 @@ async function importFile(
 
 beforeEach(() => {
   readImportedCanvasFile.mockReset();
+  toastError.mockReset();
   saveCanvasImport.mockReset();
   saveCanvasImport.mockResolvedValue("/srv/wt/.maestro/imports/dash.html");
 });
@@ -119,5 +123,17 @@ describe("useCanvasImport", () => {
       expect.objectContaining({ surfaceId: "report", title: "Report", theme: "none", sources: [] }),
     );
     expect(onPrompt).not.toHaveBeenCalled();
+  });
+
+  it("says why a file could not be read", async () => {
+    readImportedCanvasFile.mockRejectedValue("File too large (1906 KB, max 512 KB)");
+    const { view } = setup();
+
+    await importFile(view, "/home/u/big.html");
+
+    expect(toastError).toHaveBeenCalledWith("Could not read /home/u/big.html", {
+      description: "File too large (1906 KB, max 512 KB)",
+    });
+    expect(view.result.current.request).toBeNull();
   });
 });

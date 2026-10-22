@@ -141,7 +141,11 @@ pub async fn read_local_file(path: String) -> Result<String, String> {
         }
         let bytes = fs::read(&path).map_err(|e| e.to_string())?;
         if bytes.len() > TEXT_LIMIT {
-            return Err("File too large".to_string());
+            return Err(format!(
+                "File too large ({} KB, max {} KB)",
+                bytes.len() / 1024,
+                TEXT_LIMIT / 1024
+            ));
         }
         String::from_utf8(bytes).map_err(|e| e.to_string())
     })
