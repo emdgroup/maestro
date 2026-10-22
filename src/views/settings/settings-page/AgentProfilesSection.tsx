@@ -97,7 +97,7 @@ type Mode = "pipeline" | "loop";
 
 const MODES: Record<Mode, { help: string; roles: RoleEntry[] }> = {
   pipeline: {
-    help: "A task moves through these stages in order, skipping any marked Skipped. Review can send the work back to Implement, and you approve it at the gates.",
+    help: "Stages run in order, and Review can send work back to Implement. You approve at the gates.",
     roles: PIPELINE_ROLES,
   },
   loop: {
@@ -285,11 +285,7 @@ function StageButton({
         <span
           className={cn(
             "inline-block size-2 shrink-0 rounded-full",
-            runs.kind === "profile"
-              ? "bg-chart-2"
-              : runs.kind === "skip"
-                ? "bg-muted-foreground/40"
-                : "bg-chart-4",
+            runs.kind === "profile" ? "bg-success" : "bg-warning",
           )}
         />
         <span className="truncate">{runs.text}</span>
