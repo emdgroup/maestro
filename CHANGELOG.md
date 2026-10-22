@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.39.0](https://github.com/emdgroup/maestro/compare/v0.38.0...v0.39.0) (2026-10-22)
+
+
+### Features
+
+* **sessions:** add Reload session to the session header ([86e3d98](https://github.com/emdgroup/maestro/commit/86e3d98be177b9bc4e9cd19d7b8890cf5e763303))
+
+
+### Bug Fixes
+
+* **home:** close confirmation and Add project sheets as soon as the action starts ([86e3d98](https://github.com/emdgroup/maestro/commit/86e3d98be177b9bc4e9cd19d7b8890cf5e763303))
+* **loops:** hold back Approve until every manual check is ticked ([86e3d98](https://github.com/emdgroup/maestro/commit/86e3d98be177b9bc4e9cd19d7b8890cf5e763303))
+* **sessions:** show agent output again after returning to a project from Home ([86e3d98](https://github.com/emdgroup/maestro/commit/86e3d98be177b9bc4e9cd19d7b8890cf5e763303))
+
 ## [0.38.0](https://github.com/emdgroup/maestro/compare/v0.37.0...v0.38.0) (2026-10-22)
 
 
