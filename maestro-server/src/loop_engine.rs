@@ -1768,8 +1768,9 @@ async fn kill_tree(pid: u32) {
 
 #[cfg(not(windows))]
 async fn kill_tree(pid: u32) {
+    // `--` before the group: procps-ng's `kill -KILL -<pid>` exits 0 having signalled nothing.
     let _ = tokio::process::Command::new("kill")
-        .args(["-KILL", &format!("-{pid}")])
+        .args(["-s", "KILL", "--", &format!("-{pid}")])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
