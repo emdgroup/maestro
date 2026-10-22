@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { LoopCheck, LoopIteration, LoopSummary, Task, TaskComment } from "@/types/bindings";
 import {
   buildTimeLeft,
+  canSignOff,
   checkOutcomes,
   failedFirst,
   failingBefore,
@@ -254,6 +255,16 @@ describe("an iteration's checks", () => {
     ]);
     expect(failedFirst(outcomes).map((o) => o.check.id)).toEqual([2, 1, 3]);
     expect(lastLine(outcomes[1].result?.detail)).toBe("Tests 2 failed");
+  });
+
+  it("signs off only once every check passes, the manual ones ticked, and no proposal waits", () => {
+    const pass = (c: LoopCheck) => ({ ...c, state: "Pass" }) as LoopCheck;
+    const passing = [pass(check(1, 0)), pass(check(2, 1, "Judge"))];
+    expect(canSignOff(passing)).toBe(true);
+    expect(canSignOff([...passing, { ...check(3, 2, "Manual"), state: "Pending" }])).toBe(false);
+    expect(canSignOff([...passing, pass(check(3, 2, "Manual"))])).toBe(true);
+    expect(canSignOff([...passing, pass({ ...check(4, 3), proposed: true })])).toBe(false);
+    expect(canSignOff([])).toBe(false);
   });
 
   it("works on what the latest earlier round left failing, and the notes written since", () => {

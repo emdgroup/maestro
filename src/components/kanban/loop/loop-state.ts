@@ -273,6 +273,16 @@ export function checkOutcomes(iteration: LoopIteration, checks: LoopCheck[]): Ch
     }));
 }
 
+/**
+ * Whether the loop may be signed off, as `require_signed_off` decides: it has checks, every one
+ * passes (a manual one once the user ticks it), and no proposal waits for an answer.
+ */
+export function canSignOff(checks: LoopCheck[]): boolean {
+  return (
+    checks.length > 0 && checks.every((c) => (!c.proposed || c.accepted) && c.state === "Pass")
+  );
+}
+
 /** Failed and flaky first, then passed, then those that did not run, each kept in list order. */
 export function failedFirst(outcomes: CheckOutcome[]): CheckOutcome[] {
   const rank = (o: CheckOutcome) => (!o.result ? 2 : o.result.state === "Pass" ? 1 : 0);

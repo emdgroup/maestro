@@ -566,6 +566,11 @@ function HeldBody({
           ))}
         </ul>
       )}
+      {head.kind === "signoff" && manual.some(({ check }) => check.state !== "Pass") && (
+        <p className="text-xs text-muted-foreground">
+          Approving needs every box ticked. If one fails, send the loop back with a note.
+        </p>
+      )}
       {(head.kind === "signoff" || head.kind === "merge") && digest && (
         <section className="space-y-1.5">
           <h3 className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">

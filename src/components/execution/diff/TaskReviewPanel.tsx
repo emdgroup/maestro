@@ -47,6 +47,9 @@ import { toast } from "sonner";
 import { useReviewStore } from "@/store/reviewStore";
 import { api } from "@/lib/tauri-utils";
 import { displayItemPath, canApprove } from "@/types/review";
+import { useLoopChecksQuery } from "@/services/loop.service";
+import { canSignOff } from "@/components/kanban/loop/loop-state";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { DiffTarget, MergeResult, Task } from "@/types/bindings";
 
 /** The approve modal's radio values, mapped to what `approve_task_and_merge` expects. */
@@ -279,6 +282,15 @@ export function TaskReviewPanel({
   const hasComments = comments.length > 0;
   const approveAllowed = canApprove(task);
   const defaultAction = hasComments || !approveAllowed ? "rework" : "approve";
+  // A loop is signed off only once every check passes, so an unticked manual check holds Approve
+  // back. The daemon refuses it too; this says why before the approve dialog does.
+  const isLoop = task.run_mode === "Loop";
+  const loopChecksQuery = useLoopChecksQuery(
+    isLoop ? task.project_id : null,
+    isLoop ? task.id : null,
+  );
+  const signOffBlocked = isLoop && !canSignOff(loopChecksQuery.data ?? []);
+  const approveBlocked = defaultAction === "approve" && signOffBlocked;
 
   const handleActionSelect = useCallback((value: string) => {
     switch (value) {
@@ -449,13 +461,28 @@ export function TaskReviewPanel({
           totalFileCount={scopeFileCount}
           splitButtonNode={
             <ButtonGroup>
-              <Button
-                variant={defaultAction === "approve" ? "accent" : "outline"}
-                size="sm"
-                onClick={() => handleActionSelect(defaultAction)}
-              >
-                {defaultAction === "approve" ? "Approve" : "Rework"}
-              </Button>
+              {/* `aria-disabled` rather than `disabled`, so the button still takes the hover that
+                  shows why. A tooltip on a wrapper would break the group's joined corners. */}
+              <Tooltip disabled={!approveBlocked}>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant={defaultAction === "approve" ? "accent" : "outline"}
+                      size="sm"
+                      aria-disabled={approveBlocked || undefined}
+                      className={cn(approveBlocked && "opacity-50")}
+                      onClick={() => {
+                        if (!approveBlocked) handleActionSelect(defaultAction);
+                      }}
+                    />
+                  }
+                >
+                  {defaultAction === "approve" ? "Approve" : "Rework"}
+                </TooltipTrigger>
+                <TooltipContent>
+                  Tick every check in the Loop tab, or send the loop back with a note.
+                </TooltipContent>
+              </Tooltip>
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
@@ -470,7 +497,10 @@ export function TaskReviewPanel({
                 />
                 <DropdownMenuContent align="end" className="w-40">
                   {approveAllowed && defaultAction !== "approve" && (
-                    <DropdownMenuItem onClick={() => handleActionSelect("approve")}>
+                    <DropdownMenuItem
+                      disabled={signOffBlocked}
+                      onClick={() => handleActionSelect("approve")}
+                    >
                       Approve
                     </DropdownMenuItem>
                   )}
