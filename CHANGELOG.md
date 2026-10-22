@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.38.0](https://github.com/emdgroup/maestro/compare/v0.37.0...v0.38.0) (2026-10-22)
+
+
+### Features
+
+* **session-history:** resume sessions through the new session dialog ([#537](https://github.com/emdgroup/maestro/issues/537)) ([9853ac8](https://github.com/emdgroup/maestro/commit/9853ac83b9cc122ed82352c3a5857ffa54bc2489))
+* **usage:** drill into a day or month, filter from the model legend ([#527](https://github.com/emdgroup/maestro/issues/527)) ([ab999d4](https://github.com/emdgroup/maestro/commit/ab999d4a61e48df54ff223fe1cb37bb4d2f52042))
+
+
+### Bug Fixes
+
+* keep the seeded worktree when opening a pull request in a session ([#545](https://github.com/emdgroup/maestro/issues/545)) ([d8d2951](https://github.com/emdgroup/maestro/commit/d8d29518357a75a39f07518a7a142bf90c1fc4f1))
+* show an untracked worktree as selected when starting a session in it ([#548](https://github.com/emdgroup/maestro/issues/548)) ([9f2db8d](https://github.com/emdgroup/maestro/commit/9f2db8d299c751dec055044479e909ca9a287de0))
+* **ui:** replace native title tooltips with the app tooltip ([#533](https://github.com/emdgroup/maestro/issues/533)) ([068c13e](https://github.com/emdgroup/maestro/commit/068c13e8d2dfd1814ffebf9aa6527f41dd9aab2c))
+
 ## [0.37.0](https://github.com/emdgroup/maestro/compare/v0.36.0...v0.37.0) (2026-10-15)
 
 
