@@ -97,7 +97,7 @@ type Mode = "pipeline" | "loop";
 
 const MODES: Record<Mode, { help: string; roles: RoleEntry[] }> = {
   pipeline: {
-    help: "A task goes through these stages once, in order. You approve the work at the gates.",
+    help: "A task moves through these stages in order, skipping any marked Skipped. Review can send the work back to Implement, and you approve it at the gates.",
     roles: PIPELINE_ROLES,
   },
   loop: {
