@@ -14,7 +14,7 @@ use std::collections::HashSet;
 use std::sync::{Arc, LazyLock, Mutex};
 
 use maestro_protocol::{
-    AgentRole, ApplyTaskTransitionRequest, NewTaskComment, PhaseStatus, ProjectSession,
+    AgentRole, ApplyTaskTransitionRequest, NewTaskComment, PhaseStatus, ProjectSession, RunMode,
     ServerRequest, TaskPhase, TaskSessionStarted, TaskTransition, TransitionGuard,
 };
 use rusqlite::Connection;
@@ -53,17 +53,28 @@ pub(crate) enum Action {
     Fail(&'static str),
     /// A hand-off the old daemon did not get to start.
     StartNext(AgentRole),
+    /// A loop whose checks were running: they died with the daemon, so they run again.
+    Recheck,
+    /// A loop iteration whose session had already closed: committed and checked now.
+    FinishIteration,
 }
 
-/// The role a phase is worked by.
-pub(crate) fn role(phase: Option<TaskPhase>) -> Option<AgentRole> {
+/// The role a phase is worked by on a task run as `run_mode`: a loop's `Refining` is its
+/// preparation, and its rework, a merge conflict's included, and its CI fixes are iterations.
+pub(crate) fn role(phase: Option<TaskPhase>, run_mode: RunMode) -> Option<AgentRole> {
     match phase? {
+        TaskPhase::Refining if run_mode == RunMode::Loop => Some(AgentRole::Preparer),
+        TaskPhase::Rework | TaskPhase::AwaitingMerge if run_mode == RunMode::Loop => {
+            Some(AgentRole::Worker)
+        }
         TaskPhase::Refining => Some(AgentRole::Refiner),
         TaskPhase::Drafting => Some(AgentRole::Planner),
         TaskPhase::Implementing | TaskPhase::Rework | TaskPhase::AwaitingMerge => {
             Some(AgentRole::Coder)
         }
+        TaskPhase::Iterating => Some(AgentRole::Worker),
         TaskPhase::SelfReview => Some(AgentRole::Reviewer),
+        TaskPhase::Judging => Some(AgentRole::Judge),
         _ => None,
     }
 }
@@ -72,6 +83,7 @@ pub(crate) fn role(phase: Option<TaskPhase>) -> Option<AgentRole> {
 /// `turn_was_live` whether a row's session was mid-turn when the last daemon stopped.
 pub(crate) fn decide(
     task_id: i32,
+    run_mode: RunMode,
     phase: Option<TaskPhase>,
     status: Option<PhaseStatus>,
     next: Option<AgentRole>,
@@ -85,12 +97,15 @@ pub(crate) fn decide(
     if let Some(next) = next {
         return Some(Action::StartNext(next));
     }
+    if (phase, status) == (Some(TaskPhase::Checking), Some(PhaseStatus::Running)) {
+        return Some(Action::Recheck);
+    }
     let unblock = match status {
         Some(PhaseStatus::Running) => false,
         Some(PhaseStatus::Blocked) => true,
         _ => return None,
     };
-    let role = role(phase)?;
+    let role = role(phase, run_mode)?;
     // The newest, which is the one a supersede left open.
     let row = rows
         .iter()
@@ -107,6 +122,8 @@ pub(crate) fn decide(
             unblock,
         }),
         Some(_) => Some(Action::Fail("its agent cannot reload a session")),
+        // The engine closes an iteration's session before it commits.
+        None if phase == Some(TaskPhase::Iterating) && !unblock => Some(Action::FinishIteration),
         None => Some(Action::Fail("it left no session to reload")),
     }
 }
@@ -148,6 +165,7 @@ pub(crate) fn plan(conn: &Connection) -> Vec<(String, i32, Action)> {
         };
         if let Some(action) = decide(
             task_id,
+            task.run_mode,
             task.phase,
             task.phase_status,
             next,
@@ -222,6 +240,24 @@ pub(crate) fn spawn(driver: Driver, planned: Vec<(String, i32, Action)>) {
                 Action::Fail(why) => fail(&driver, &everyone, &path, task_id, why).await,
                 // The drain starts hand-offs, whoever left them.
                 Action::StartNext(_) => crate::scheduler::request_drain(&path),
+                Action::Recheck => {
+                    Box::pin(crate::loop_engine::recheck(
+                        &driver.store,
+                        &everyone,
+                        &path,
+                        task_id,
+                    ))
+                    .await
+                }
+                Action::FinishIteration => {
+                    Box::pin(crate::loop_engine::finish_orphan(
+                        &driver.store,
+                        &everyone,
+                        &path,
+                        task_id,
+                    ))
+                    .await
+                }
                 Action::Resume { row, role, unblock } => {
                     let acp_session_id = row.acp_session_id.clone();
                     let resumed = Box::pin(resume(
@@ -400,6 +436,13 @@ mod tests {
     use super::*;
     use maestro_protocol::SessionMeta;
 
+    #[test]
+    fn a_loops_refining_phase_is_worked_by_its_preparer() {
+        let refining = Some(TaskPhase::Refining);
+        assert_eq!(role(refining, RunMode::Loop), Some(AgentRole::Preparer));
+        assert_eq!(role(refining, RunMode::Pipeline), Some(AgentRole::Refiner));
+    }
+
     /// A window's load of a session the pass is reloading is told to wait, not that it failed.
     #[test]
     fn a_load_during_the_reload_is_refused_as_reloading() {
@@ -431,13 +474,27 @@ mod tests {
     fn a_dead_claim_is_released_and_a_failed_spawn_left_alone() {
         let spawning = Some(TaskPhase::Spawning);
         assert_eq!(
-            decide(1, spawning, Some(PhaseStatus::Running), None, &[], |_| {
-                false
-            }),
+            decide(
+                1,
+                RunMode::Pipeline,
+                spawning,
+                Some(PhaseStatus::Running),
+                None,
+                &[],
+                |_| { false }
+            ),
             Some(Action::Release)
         );
         assert_eq!(
-            decide(1, spawning, Some(PhaseStatus::Failed), None, &[], |_| false),
+            decide(
+                1,
+                RunMode::Pipeline,
+                spawning,
+                Some(PhaseStatus::Failed),
+                None,
+                &[],
+                |_| false
+            ),
             None
         );
     }
@@ -447,6 +504,7 @@ mod tests {
         assert_eq!(
             decide(
                 1,
+                RunMode::Pipeline,
                 Some(TaskPhase::SelfReview),
                 Some(PhaseStatus::Waiting),
                 Some(AgentRole::Reviewer),
@@ -459,6 +517,7 @@ mod tests {
         assert_eq!(
             decide(
                 1,
+                RunMode::Pipeline,
                 Some(TaskPhase::PlanReview),
                 Some(PhaseStatus::Waiting),
                 None,
@@ -470,12 +529,73 @@ mod tests {
     }
 
     #[test]
+    fn a_loop_runs_its_checks_again_or_finishes_an_iteration_whose_session_closed() {
+        let running = Some(PhaseStatus::Running);
+        assert_eq!(
+            decide(
+                1,
+                RunMode::Pipeline,
+                Some(TaskPhase::Checking),
+                running,
+                None,
+                &[],
+                |_| false
+            ),
+            Some(Action::Recheck)
+        );
+        assert_eq!(
+            decide(
+                1,
+                RunMode::Pipeline,
+                Some(TaskPhase::Iterating),
+                running,
+                None,
+                &[],
+                |_| false
+            ),
+            Some(Action::FinishIteration)
+        );
+        // Paused on a flaky check: the user's.
+        let failed = Some(PhaseStatus::Failed);
+        assert_eq!(
+            decide(
+                1,
+                RunMode::Pipeline,
+                Some(TaskPhase::Checking),
+                failed,
+                None,
+                &[],
+                |_| false
+            ),
+            None
+        );
+        let rows = [row(1, true, false)];
+        assert_eq!(
+            decide(
+                1,
+                RunMode::Pipeline,
+                Some(TaskPhase::Iterating),
+                running,
+                None,
+                &rows,
+                |_| { false }
+            ),
+            Some(Action::Resume {
+                row: Box::new(rows[0].clone()),
+                role: AgentRole::Worker,
+                unblock: false
+            })
+        );
+    }
+
+    #[test]
     fn a_task_mid_turn_resumes_its_newest_open_session() {
         let rows = [row(2, true, false), row(1, true, true), row(1, true, false)];
         let implementing = Some(TaskPhase::Implementing);
         assert_eq!(
             decide(
                 1,
+                RunMode::Pipeline,
                 implementing,
                 Some(PhaseStatus::Running),
                 None,
@@ -491,6 +611,7 @@ mod tests {
         assert_eq!(
             decide(
                 1,
+                RunMode::Pipeline,
                 Some(TaskPhase::SelfReview),
                 Some(PhaseStatus::Blocked),
                 None,
@@ -511,10 +632,18 @@ mod tests {
         let rows = [row(1, true, false)];
         let review = Some(TaskPhase::SelfReview);
         let blocked = Some(PhaseStatus::Blocked);
-        assert_eq!(decide(1, review, blocked, None, &rows, |_| false), None);
-        assert_eq!(decide(1, review, blocked, None, &[], |_| true), None);
+        assert_eq!(
+            decide(1, RunMode::Pipeline, review, blocked, None, &rows, |_| {
+                false
+            }),
+            None
+        );
+        assert_eq!(
+            decide(1, RunMode::Pipeline, review, blocked, None, &[], |_| true),
+            None
+        );
         assert!(matches!(
-            decide(1, review, blocked, None, &rows, |_| true),
+            decide(1, RunMode::Pipeline, review, blocked, None, &rows, |_| true),
             Some(Action::Resume { unblock: true, .. })
         ));
     }
@@ -553,6 +682,7 @@ mod tests {
         assert!(matches!(
             decide(
                 1,
+                RunMode::Pipeline,
                 implementing,
                 running,
                 None,
@@ -564,6 +694,7 @@ mod tests {
         assert!(matches!(
             decide(
                 1,
+                RunMode::Pipeline,
                 implementing,
                 running,
                 None,

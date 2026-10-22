@@ -274,6 +274,32 @@ pub enum ServerRequest {
     GetTaskReview(TaskRef),
     SaveTaskReview(SaveTaskReviewRequest),
     ClearTaskReview(TaskRef),
+    /// A loop task's checks in list order, pending proposals included.
+    ListLoopChecks(TaskRef),
+    /// The user's whole list. Pending proposals are left alone.
+    SetLoopChecks(SetLoopChecksRequest),
+    AnswerLoopProposal(AnswerLoopProposalRequest),
+    /// Tick or untick a `Manual` check.
+    TickLoopCheck(TickLoopCheckRequest),
+    /// Oldest first.
+    ListLoopIterations(TaskRef),
+    ListLoopHiddenFiles(TaskRef),
+    /// The whole set, replacing what was there.
+    SetLoopHiddenFiles(SetLoopHiddenFilesRequest),
+    /// Take the sealed snapshot again and run the checks on the loop's current commit. Not an
+    /// iteration. Answered once the checks have started.
+    RerunLoopChecks(TaskRef),
+    /// Hold the loop for the user once the running iteration and its checks end, or now if
+    /// nothing runs.
+    PauseLoop(TaskRef),
+    /// Halt the loop now: a running session is cut, its work kept as an uncounted WIP commit.
+    StopLoop(TaskRef),
+    /// Start a task that is not running over from scratch, parked in `status`: its branch back to
+    /// where it started, or a new branch from the base once it is Done or Cancelled, and its
+    /// progress gone.
+    RestartTask(RestartTaskRequest),
+    /// The worker's `.maestro/loop/PROGRESS.md`, as it stands in the loop's worktree.
+    ReadLoopNotes(TaskRef),
     /// The project's prompt collection, favorites first, then most recently edited.
     ListPrompts(ProjectRef),
     GetPrompt(PromptRef),
@@ -295,10 +321,16 @@ pub enum ServerRequest {
     /// Answered with `AutoModeOk`; `enabled` is ignored.
     GetAutoMode(ProjectRef),
     SetAutoMode(AutoModeSetting),
+    /// Answered with `LoopWaitCapOk`; `cap` is ignored.
+    GetLoopWaitCap(ProjectRef),
+    /// Answered with `LoopWaitCapOk`.
+    SetLoopWaitCap(LoopWaitCap),
     /// Take or renew a hold.
     HoldTask(HoldTaskRequest),
     /// Drop a hold and let the scheduler look at the task again.
     ReleaseTaskHold(TaskRef),
+    /// Open an agent's usage-limit gate now, so the drain starts its waiting tasks ("Try now").
+    OpenAgentGate(OpenAgentGateRequest),
     StartTask(StartTaskRequest),
     /// Heartbeat acknowledgment sent by Tauri in response to a `Ping`.
     Pong {
@@ -1241,6 +1273,12 @@ pub enum TaskPhase {
     SelfReview,
     Approval,
     AwaitingMerge,
+    /// A loop's coder, one fresh session per iteration.
+    Iterating,
+    /// A loop's checks running, with no session live.
+    Checking,
+    /// A loop's judge deciding its `judge` checks, once every command check passes.
+    Judging,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1281,6 +1319,13 @@ pub enum AgentRole {
     Planner,
     Coder,
     Reviewer,
+    /// Decides a loop's `judge` checks and writes its review digest. Read-only.
+    Judge,
+    /// Prepares a loop with the user before it runs: writes its tests in the loop's worktree and
+    /// sets its checks. Works a loop's `Refining` phase, which is the refiner's on a pipeline task.
+    Preparer,
+    /// Works a loop's iterations, each in a fresh session, as the coder works a pipeline task.
+    Worker,
 }
 
 /// One task, every column the app reads.
@@ -1355,6 +1400,256 @@ pub struct Task {
     /// failure is a start that did not come up, which a retry of that phase's stage answers.
     #[serde(default)]
     pub claimed_from: Option<TaskPhase>,
+    #[serde(default)]
+    pub run_mode: RunMode,
+    /// Set on every loop task.
+    #[serde(default)]
+    pub loop_config: Option<LoopConfig>,
+    /// What the board shows of a loop, read with it. Set on every loop task the daemon lists.
+    /// Boxed, like `gate`: a `Task` rides in many of the daemon's futures, on a stack at its limit.
+    #[serde(default)]
+    pub loop_summary: Option<Box<LoopSummary>>,
+    /// The usage-limit gate of the agent that last refused this task, while it holds the task
+    /// waiting.
+    #[serde(default)]
+    pub gate: Option<Box<AgentGateState>>,
+    /// The automation run that created this task through `create_task`, if one did.
+    #[serde(default)]
+    pub drafted_by: Option<Box<TaskDraft>>,
+}
+
+/// The automation run a task came from.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskDraft {
+    pub automation: String,
+    /// The run's number among its automation's runs, `None` for a run recorded before runs were
+    /// numbered.
+    #[serde(default)]
+    pub run: Option<u32>,
+}
+
+/// A loop as its card and its detail's meters show it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct LoopSummary {
+    /// The number of the latest iteration, running or ended; 0 before the first.
+    pub iteration: i32,
+    /// Iterations that count against `max_iterations`.
+    pub counted: i32,
+    /// The agent time those iterations took, in seconds.
+    pub agent_secs: i64,
+    /// Iterations in a row with no progress, as the stall limit counts them.
+    pub no_change: i32,
+    /// The latest iteration's closing words.
+    #[serde(default)]
+    pub last_summary: Option<String>,
+    /// Every check's state in list order, proposals still waiting left out.
+    pub checks: Vec<LoopCheckState>,
+    /// Proposals waiting for the user's answer.
+    pub proposals: i32,
+    /// Why the loop last stopped for the user. Read only while it waits on the user.
+    #[serde(default)]
+    pub halt: Option<LoopHalt>,
+    /// A pause or stop the user asked for, which takes effect once the current step ends.
+    #[serde(default)]
+    pub hold: Option<LoopHalt>,
+}
+
+/// Why a loop stopped for the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LoopHalt {
+    Flaky,
+    Failing,
+    Stalled,
+    OutOfIterations,
+    Paused,
+    Stopped,
+    /// The worker called `loop_blocked`.
+    Blocked,
+    /// An iteration's commit could not be merged back into the loop's worktree.
+    Conflict,
+}
+
+/// An agent's closed usage-limit gate.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentGateState {
+    pub agent_id: String,
+    /// RFC 3339.
+    pub resume_at: String,
+    /// The window the limit belongs to, `five_hour` or `seven_day...`, when the agent named it.
+    #[serde(default)]
+    pub window: Option<String>,
+    /// No reset time was known: the gate backs off and tries again at `resume_at`.
+    pub backoff: bool,
+}
+
+/// How a task runs once it is started: the stage pipeline, or a loop of fresh coder sessions that
+/// ends when its checks pass. See `docs/loops-plan.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum RunMode {
+    #[default]
+    Pipeline,
+    Loop,
+}
+
+/// A loop's budget and how its checks run, stored as JSON on the task. A field the stored JSON
+/// lacks takes its default, so adding one needs no migration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LoopConfig {
+    /// Iterations that count. One a usage limit cut off does not.
+    pub max_iterations: u32,
+    /// How long one iteration's Build session may run, in seconds. One still running then is
+    /// closed, and what it wrote is committed and checked as if it had ended.
+    pub max_build_secs: u32,
+    /// Iterations in a row that change nothing before the loop stops as stalled.
+    pub stall_limit: u32,
+    /// Per check. A check still running past it is killed and fails.
+    pub check_timeout_secs: u32,
+    /// Run before the checks, in the state they run in.
+    pub setup_command: Option<String>,
+    /// Relative paths kept out of the worker's worktree and written in only while checks run. A
+    /// trailing `/` names a directory.
+    pub sealed_paths: Vec<String>,
+}
+
+impl Default for LoopConfig {
+    fn default() -> Self {
+        LoopConfig {
+            max_iterations: 10,
+            max_build_secs: 2 * 60 * 60,
+            stall_limit: 3,
+            check_timeout_secs: 10 * 60,
+            setup_command: None,
+            sealed_paths: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LoopCheckKind {
+    /// A shell command; exit 0 passes.
+    Command,
+    /// A sentence a separate agent judges against the diff.
+    Judge,
+    /// The user ticks it.
+    Manual,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LoopCheckState {
+    Pending,
+    Pass,
+    Fail,
+    /// Failed, then passed on the same commit, or the reverse.
+    Flaky,
+}
+
+/// One item of a loop's done criteria.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LoopCheck {
+    pub id: i32,
+    pub position: i32,
+    pub kind: LoopCheckKind,
+    pub label: String,
+    /// What a `Command` check runs. `None` for the other kinds.
+    #[serde(default)]
+    pub command: Option<String>,
+    pub state: LoopCheckState,
+    /// The last output tail, or the judge's reason.
+    #[serde(default)]
+    pub detail: Option<String>,
+    /// Proposed by the worker rather than written by the user.
+    pub proposed: bool,
+    /// A proposal the user accepted. A proposal not accepted is waiting for an answer.
+    pub accepted: bool,
+    /// The commit a `Judge` check last passed on.
+    #[serde(default)]
+    pub passed_at_sha: Option<String>,
+    pub updated_at: String,
+}
+
+/// What the user writes of a check. The rest is the loop's.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LoopCheckSpec {
+    pub kind: LoopCheckKind,
+    pub label: String,
+    #[serde(default)]
+    pub command: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LoopIterationOutcome {
+    Running,
+    /// Ended and its checks ran.
+    Checked,
+    /// Cut off by a usage limit or the user; it runs again without counting.
+    Interrupted,
+    /// Ended with nothing to commit.
+    Empty,
+    /// The agent failed.
+    Failed,
+    /// The worker called `loop_blocked`: committed, and its checks did not run.
+    Blocked,
+}
+
+/// One attempt at one iteration. An interrupted iteration runs again as the next `attempt` of the
+/// same `n`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LoopIteration {
+    pub n: i32,
+    pub attempt: i32,
+    #[serde(default)]
+    pub acp_session_id: Option<String>,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    pub started_at: String,
+    #[serde(default)]
+    pub ended_at: Option<String>,
+    pub outcome: LoopIterationOutcome,
+    /// Whether it counts against `max_iterations`.
+    pub counted: bool,
+    #[serde(default)]
+    pub commit_sha: Option<String>,
+    pub files: i32,
+    pub added: i32,
+    pub removed: i32,
+    /// The agent's final message.
+    #[serde(default)]
+    pub summary: Option<String>,
+    /// The tail of the checks' output.
+    #[serde(default)]
+    pub check_output: Option<String>,
+    /// Tokens its session's turns used, from the usage record, while that still has them.
+    #[serde(default)]
+    pub tokens: Option<i64>,
+    /// Why the worker said it cannot go on, through `loop_blocked`.
+    #[serde(default)]
+    pub blocked: Option<String>,
+    /// What each check concluded after this iteration, passing ones included. Filled for the
+    /// newest attempt of its number, and only in `ListLoopIterations`: the engine never reads it.
+    #[serde(default)]
+    pub results: Vec<LoopCheckResult>,
+}
+
+/// One check's result after one iteration, as it was run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LoopCheckResult {
+    pub check_id: i32,
+    pub state: LoopCheckState,
+    /// The output tail, or the judge's reason.
+    #[serde(default)]
+    pub detail: Option<String>,
+    /// What a `Command` check ran.
+    #[serde(default)]
+    pub command: Option<String>,
+}
+
+/// A file only the checks see, stored by the daemon and never in the repository.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LoopHiddenFile {
+    /// Relative to the sealed folder, with `/`.
+    pub path: String,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1457,6 +1752,14 @@ pub struct TaskRef {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct RestartTaskRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    /// Planning or Queue.
+    pub status: TaskStatus,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct CreateTaskRequest {
     pub project_path: String,
     pub title: String,
@@ -1482,6 +1785,11 @@ pub struct CreateTaskRequest {
     pub workspace_branch: Option<String>,
     #[serde(default)]
     pub model_override: Option<String>,
+    #[serde(default)]
+    pub run_mode: RunMode,
+    /// A loop created without one gets `LoopConfig::default()`.
+    #[serde(default)]
+    pub loop_config: Option<LoopConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -1570,6 +1878,8 @@ pub struct TaskUpdate {
         skip_serializing_if = "Option::is_none"
     )]
     pub external_updated_at: Option<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loop_config: Option<LoopConfig>,
     #[serde(
         default,
         deserialize_with = "clearable",
@@ -1631,6 +1941,24 @@ pub enum TaskTransition {
     Discarded,
     Cancelled,
     PhaseFailed,
+    /// A loop's coder session is up and prompted: the iteration runs.
+    LoopIterationStarted,
+    /// An iteration was committed, or the user asked for the checks again: they run now.
+    LoopChecking,
+    /// The checks left work to do and budget to do it: the next iteration waits on the drain.
+    LoopIterate,
+    /// The loop stopped for the user: it stalled or spent its budget.
+    LoopHalted,
+    /// Every check passed: the loop goes to sign-off.
+    LoopChecksPassed,
+    /// Every command check passed and a `judge` check is left: the judge waits on the drain.
+    LoopJudging,
+    /// The user let a stopped loop, or one at sign-off, go on: the next iteration waits on the
+    /// drain. Its stall streak counts from here.
+    LoopResumed,
+    /// The agent refused the turn for a usage limit: the stage waits on its agent again, in the
+    /// same phase, and the drain starts it in a fresh session once the agent's gate opens.
+    UsageLimited,
 }
 
 /// What must hold, read under the store's lock, for a transition to apply. One per guarded
@@ -1782,6 +2110,14 @@ pub struct AutoModeSetting {
     pub enabled: bool,
 }
 
+/// How many loops may wait on the user before the drain starts no more of the project's queued
+/// loops. 0 is no cap.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LoopWaitCap {
+    pub project_path: String,
+    pub cap: u32,
+}
+
 /// Keep the scheduler off a task a user is working with, renewed by the client while the
 /// interaction lasts. A hold not renewed within `ttl_ms` (10 seconds when absent) lapses.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1790,6 +2126,11 @@ pub struct HoldTaskRequest {
     pub task_id: i32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ttl_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OpenAgentGateRequest {
+    pub agent_id: String,
 }
 
 /// Run one stage of a task: claim it, make or reuse its worktree, spawn the role's agent and send
@@ -1889,7 +2230,8 @@ pub struct AddTaskCommentRequest {
     pub comment: NewTaskComment,
 }
 
-/// A thread entry to write. A `proposal` or `plan` replaces the task's previous one of that kind.
+/// A thread entry to write. A `proposal`, `plan` or `digest` replaces the task's previous one of
+/// that kind.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct NewTaskComment {
     pub kind: String,
@@ -1958,6 +2300,73 @@ pub struct AddTaskInstructionRequest {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct TaskInstructionList {
     pub instructions: Vec<TaskInstruction>,
+}
+
+/// One check of the user's list. `id` names a check it keeps, which goes back to `Pending` when
+/// its spec changed; no `id` adds one. A check the list leaves out is deleted.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LoopCheckEntry {
+    #[serde(default)]
+    pub id: Option<i32>,
+    #[serde(flatten)]
+    pub spec: LoopCheckSpec,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SetLoopChecksRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub checks: Vec<LoopCheckEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AnswerLoopProposalRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub check_id: i32,
+    /// The check as the user accepts it, kind included. `None` rejects the proposal and deletes it.
+    #[serde(default)]
+    pub accept: Option<LoopCheckSpec>,
+    /// The paths accepting it seals, each on the base branch. Ignored on a rejection.
+    #[serde(default)]
+    pub seal: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TickLoopCheckRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub check_id: i32,
+    pub ticked: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SetLoopHiddenFilesRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub files: Vec<LoopHiddenFile>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct LoopCheckList {
+    pub checks: Vec<LoopCheck>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct LoopIterationList {
+    pub iterations: Vec<LoopIteration>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct LoopHiddenFileList {
+    pub files: Vec<LoopHiddenFile>,
+}
+
+/// `None` when the worker has written no notes yet.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct LoopNotes {
+    #[serde(default)]
+    pub content: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -2385,6 +2794,18 @@ pub enum ServerResponse {
     GetTaskReviewOk(OptionalTaskReview),
     SaveTaskReviewOk(SaveTaskReviewResponse),
     ClearTaskReviewOk,
+    ListLoopChecksOk(LoopCheckList),
+    SetLoopChecksOk(LoopCheckList),
+    AnswerLoopProposalOk(LoopCheckList),
+    TickLoopCheckOk(LoopCheckList),
+    ListLoopIterationsOk(LoopIterationList),
+    ListLoopHiddenFilesOk(LoopHiddenFileList),
+    SetLoopHiddenFilesOk(LoopHiddenFileList),
+    RerunLoopChecksOk,
+    PauseLoopOk,
+    StopLoopOk,
+    RestartTaskOk,
+    ReadLoopNotesOk(LoopNotes),
     ListPromptsOk(PromptList),
     GetPromptOk(OptionalPrompt),
     CreatePromptOk(Prompt),
@@ -2407,8 +2828,10 @@ pub enum ServerResponse {
     SetCapacityOk,
     AutoModeOk(AutoModeSetting),
     SetAutoModeOk,
+    LoopWaitCapOk(LoopWaitCap),
     HoldTaskOk,
     ReleaseTaskHoldOk,
+    OpenAgentGateOk,
     StartTaskOk(StartTaskResponse),
     /// Pushed to every window, which re-reads what it shows and drains its queue.
     PipelineSettingsChanged(PipelineSettingsChanged),
@@ -2534,6 +2957,18 @@ impl ServerResponse {
             | Self::GetTaskReviewOk(_)
             | Self::SaveTaskReviewOk(_)
             | Self::ClearTaskReviewOk
+            | Self::ListLoopChecksOk(_)
+            | Self::SetLoopChecksOk(_)
+            | Self::AnswerLoopProposalOk(_)
+            | Self::TickLoopCheckOk(_)
+            | Self::ListLoopIterationsOk(_)
+            | Self::ListLoopHiddenFilesOk(_)
+            | Self::SetLoopHiddenFilesOk(_)
+            | Self::RerunLoopChecksOk
+            | Self::PauseLoopOk
+            | Self::StopLoopOk
+            | Self::RestartTaskOk
+            | Self::ReadLoopNotesOk(_)
             | Self::ListPromptsOk(_)
             | Self::GetPromptOk(_)
             | Self::CreatePromptOk(_)
@@ -2547,8 +2982,10 @@ impl ServerResponse {
             | Self::SetCapacityOk
             | Self::AutoModeOk(_)
             | Self::SetAutoModeOk
+            | Self::LoopWaitCapOk(_)
             | Self::HoldTaskOk
             | Self::ReleaseTaskHoldOk
+            | Self::OpenAgentGateOk
             | Self::StartTaskOk(_) => true,
         }
     }
@@ -3462,6 +3899,11 @@ mod tests {
             import_source: Some("jira".to_string()),
             skills: vec!["rust".to_string()],
             model_override: None,
+            run_mode: RunMode::Pipeline,
+            loop_config: None,
+            loop_summary: None,
+            gate: None,
+            drafted_by: None,
             mcp_allowlist: Some(vec!["maestro".to_string()]),
             skills_override: None,
             labels: vec!["bug".to_string()],

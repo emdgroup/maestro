@@ -232,6 +232,41 @@ pub async fn set_auto_mode(
     .await
 }
 
+/// How many of the project's loops may wait on the user before the drain starts no more of its
+/// queued ones; 0 is no cap. The project's, kept by its daemon.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_loop_wait_cap(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+) -> Result<u32, String> {
+    query_project_store(
+        &app_state,
+        project_id,
+        |project_path| ServerRequest::GetLoopWaitCap(maestro_protocol::ProjectRef { project_path }),
+        reply!(ServerResponse::LoopWaitCapOk(setting) => setting.cap),
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_loop_wait_cap(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    cap: u32,
+) -> Result<(), String> {
+    query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::SetLoopWaitCap(maestro_protocol::LoopWaitCap { project_path, cap })
+        },
+        reply!(ServerResponse::LoopWaitCapOk(_) => ()),
+    )
+    .await
+}
+
 /// The levels the UI offers, quietest first.
 #[tauri::command]
 #[specta::specta]

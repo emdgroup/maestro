@@ -3,6 +3,7 @@ pub mod comments;
 pub mod crud;
 pub mod handlers;
 pub mod instructions;
+pub mod loops;
 pub mod models;
 pub mod ops;
 pub mod relationships;

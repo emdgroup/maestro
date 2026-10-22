@@ -117,6 +117,94 @@ pub async fn interrupt_task(
     project_id: i32,
     task_id: i32,
 ) -> Result<(), String> {
+    // A loop is never abandoned: what it built is kept, as `stop_task` keeps it.
+    let task = crate::task::crud::get_task_on_server(&app_state, project_id, task_id).await?;
+    if task.is_some_and(|t| t.run_mode == crate::task::models::RunMode::Loop) {
+        return stop_task(app_state, project_id, task_id).await;
+    }
+    tear_down_task_sessions(&app_state, project_id, task_id).await;
+
+    apply_transition_on_server(
+        &app_state,
+        project_id,
+        task_id,
+        TaskTransition::Stopped,
+        TransitionGuard::Always,
+    )
+    .await?;
+
+    crate::git::worktree_lifecycle::discard_task_workspace(&app_state, project_id, task_id).await?;
+
+    app_state.app_handle.emit("sessions-changed", ()).ok();
+    Ok(())
+}
+
+/// Stop the agent working on a task and leave everything it produced where it is: the task stays
+/// in its column and phase, failed and the user's, so it can be recovered, sent on or started over.
+/// A loop at work is halted where it is, keeping its iterations and worktree, and the daemon cuts
+/// its session. A loop being prepared is no iteration, so its preparer stops as any agent does.
+#[tauri::command]
+#[specta::specta]
+pub async fn stop_task(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    task_id: i32,
+) -> Result<(), String> {
+    let task = crate::task::crud::get_task_on_server(&app_state, project_id, task_id).await?;
+    if task.is_some_and(|t| {
+        t.run_mode == crate::task::models::RunMode::Loop
+            && t.phase != Some(crate::task::models::TaskPhase::Refining)
+    }) {
+        return crate::task::loops::stop_loop_on_server(&app_state, project_id, task_id).await;
+    }
+    tear_down_task_sessions(&app_state, project_id, task_id).await;
+    apply_transition_writing(
+        &app_state,
+        project_id,
+        task_id,
+        TaskTransition::PhaseFailed,
+        TransitionGuard::AgentRunning,
+        None,
+        Some(maestro_protocol::NewTaskComment {
+            kind: "note".to_string(),
+            author: "maestro".to_string(),
+            body: Some("Stopped, as you asked.".to_string()),
+            external_ref: None,
+            phase: None,
+        }),
+    )
+    .await?;
+    app_state.app_handle.emit("sessions-changed", ()).ok();
+    Ok(())
+}
+
+/// Start a task that is not running over from scratch, parked in Planning or Queue. See the
+/// daemon's `start_over`.
+#[tauri::command]
+#[specta::specta]
+pub async fn restart_task(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    task_id: i32,
+    status: crate::task::models::TaskStatus,
+) -> Result<(), String> {
+    query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::RestartTask(maestro_protocol::RestartTaskRequest {
+                project_path,
+                task_id,
+                status: status.into(),
+            })
+        },
+        reply!(ServerResponse::RestartTaskOk => ()),
+    )
+    .await
+}
+
+/// Close the ACP or PTY session working on a task, if there is one.
+async fn tear_down_task_sessions(app_state: &Arc<AppState>, project_id: i32, task_id: i32) {
     // Search ACP sessions by task — release lock immediately in scoped block. Task ids are per
     // project, so the project has to match too.
     let task = crate::acp::TaskKey {
@@ -144,7 +232,7 @@ pub async fn interrupt_task(
     // about. Its `Cancel` is also what closes the daemon's row, so the interrupted session is not
     // brought back against a worktree the `discard_task_workspace` below has already deleted.
     if let Some(session_id) = acp_session_id {
-        crate::acp::session_handlers::tear_down_session(&app_state, &session_id).await;
+        crate::acp::session_handlers::tear_down_session(app_state, &session_id).await;
     }
 
     // Tear down PTY session if found — replicates close_pty_session logic.
@@ -159,20 +247,6 @@ pub async fn interrupt_task(
         app_state.ssh.pty_sessions.lock().await.remove(&session_id);
         app_state.pty.session_meta.lock().await.remove(&session_id);
     }
-
-    apply_transition_on_server(
-        &app_state,
-        project_id,
-        task_id,
-        TaskTransition::Stopped,
-        TransitionGuard::Always,
-    )
-    .await?;
-
-    crate::git::worktree_lifecycle::discard_task_workspace(&app_state, project_id, task_id).await?;
-
-    app_state.app_handle.emit("sessions-changed", ()).ok();
-    Ok(())
 }
 
 /// Move a task on to review by hand, applying the same transition the agent's own completion

@@ -101,7 +101,7 @@ describe("TaskProfilesDialog", () => {
 
     const review = screen.getByRole("combobox", { name: "Review" });
     expect(review).toBeDisabled();
-    expect(review).toHaveTextContent("No profile (stage skipped)");
+    expect(review).toHaveTextContent("No profile, stage skipped");
   });
 
   /**

@@ -41,7 +41,7 @@ pub(crate) async fn git(dir: &str, args: &[&str]) -> Result<String, String> {
 }
 
 /// `git` in `dir` that never waits on a prompt: nobody may be there to answer one.
-fn git_command(dir: &str, args: &[&str]) -> tokio::process::Command {
+pub(crate) fn git_command(dir: &str, args: &[&str]) -> tokio::process::Command {
     let mut command = tokio::process::Command::new("git");
     command
         .current_dir(dir)
@@ -365,10 +365,170 @@ async fn verify(project_path: &str, reference: &str) -> bool {
     .is_ok_and(|out| !out.trim().is_empty())
 }
 
+/// Where a loop's sandbox goes: a second worktree of the task's, where its worker and its judge work
+/// without the sealed files. Not named `task-`, so the app's sweeps never take it for a task's.
+pub fn sandbox_relative_path(task_id: i32) -> String {
+    format!("{WORKTREE_DIR}/loop-{task_id}")
+}
+
+/// The loop's sandbox directory, whether or not it exists yet.
+pub(crate) fn sandbox_dir(project_path: &str, task_id: i32) -> String {
+    absolute(project_path, &sandbox_relative_path(task_id))
+}
+
+/// The agent's notes in a loop's sandbox, which every iteration reads first and updates.
+pub(crate) const LOOP_NOTES: &str = ".maestro/loop/PROGRESS.md";
+
+/// Where a loop's notes are kept while it has no sandbox: one is removed whenever its loop leaves
+/// In Progress, at sign-off or a send back included, and the notes are the loop's memory.
+pub(crate) fn kept_notes(project_path: &str, task_id: i32) -> String {
+    absolute(
+        project_path,
+        &format!(".maestro/loop-notes/task-{task_id}.md"),
+    )
+}
+
+async fn write_notes(path: &Path, notes: &[u8]) -> std::io::Result<()> {
+    if let Some(dir) = path.parent() {
+        tokio::fs::create_dir_all(dir).await?;
+    }
+    tokio::fs::write(path, notes).await
+}
+
+/// Bring the loop's sandbox to the context's HEAD, making it the first time, and return it.
+///
+/// Work the sandbox holds that the context lacks, an iteration whose merge back failed, is merged
+/// back first, so a reset never throws it away. A reset keeps what git ignores, so build output,
+/// installed dependencies and `.maestro/loop/PROGRESS.md` carry over from one iteration to the
+/// next; a sandbox made again gets the notes its removal kept. Detached: the sandbox's commits reach a branch only by being merged into the context.
+async fn sync_sandbox(
+    project_path: &str,
+    context: &str,
+    task: &maestro_protocol::Task,
+) -> Result<String, String> {
+    let sandbox = sandbox_dir(project_path, task.id);
+    if !is_checkout(&sandbox) {
+        let _adding = adding(project_path).await;
+        clear_leftover(project_path, &sandbox).await?;
+    }
+    if is_checkout(&sandbox) {
+        let held = git(&sandbox, &["rev-parse", "HEAD"]).await?;
+        merge_back(context, held.trim()).await?;
+        let head = git(context, &["rev-parse", "HEAD"]).await?;
+        git(&sandbox, &["reset", "-q", "--hard", head.trim()]).await?;
+    } else {
+        let head = git(context, &["rev-parse", "HEAD"]).await?;
+        let relative = sandbox_relative_path(task.id);
+        let _adding = adding(project_path).await;
+        git(
+            project_path,
+            &["worktree", "add", "-q", "--detach", &relative, head.trim()],
+        )
+        .await?;
+        if let Ok(notes) = tokio::fs::read(kept_notes(project_path, task.id)).await {
+            write_notes(&Path::new(&sandbox).join(LOOP_NOTES), &notes)
+                .await
+                .map_err(|e| format!("cannot restore the loop's notes: {e}"))?;
+        }
+    }
+    seal(&sandbox, task).await?;
+    Ok(sandbox)
+}
+
+/// Bring `sha`, a commit made in the loop's sandbox, into the context: a fast-forward when the
+/// context has not moved, else a merge. Nothing to do when the context has it already. A merge
+/// that fails is aborted, and git's reason returned.
+pub(crate) async fn merge_back(context: &str, sha: &str) -> Result<(), String> {
+    if git(context, &["merge-base", "--is-ancestor", sha, "HEAD"])
+        .await
+        .is_ok()
+    {
+        return Ok(());
+    }
+    if git(context, &["merge", "-q", "--ff-only", sha])
+        .await
+        .is_ok()
+    {
+        return Ok(());
+    }
+    match git(context, &["merge", "-q", "--no-edit", sha]).await {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            let _ = git(context, &["merge", "--abort"]).await;
+            Err(e)
+        }
+    }
+}
+
+/// Whether `dir` is a checkout git still knows: its `.git` link is there. `git worktree remove`
+/// unregisters the worktree and deletes that link before the rest, so a removal Windows cut short
+/// on a held file leaves a directory without one. git run inside it would reach the project's own
+/// checkout instead.
+fn is_checkout(dir: &str) -> bool {
+    Path::new(dir).join(".git").exists()
+}
+
+/// Delete what a removal cut short left of a sandbox, and forget it in git.
+async fn clear_leftover(project_path: &str, dir: &str) -> Result<(), String> {
+    if Path::new(dir).exists() {
+        tokio::fs::remove_dir_all(dir)
+            .await
+            .map_err(|e| format!("cannot remove what is left of {dir}: {e}"))?;
+    }
+    git(project_path, &["worktree", "prune"]).await.map(|_| ())
+}
+
+/// Remove a loop's sandbox, tolerating it being gone already, or half gone. The agent's notes are
+/// kept first, for the sandbox made next.
+pub(crate) async fn remove_sandbox(project_path: &str, task_id: i32) -> Result<(), String> {
+    let _adding = adding(project_path).await;
+    let dir = sandbox_dir(project_path, task_id);
+    if let Ok(notes) = tokio::fs::read(Path::new(&dir).join(LOOP_NOTES)).await {
+        write_notes(Path::new(&kept_notes(project_path, task_id)), &notes)
+            .await
+            .map_err(|e| format!("cannot keep the loop's notes: {e}"))?;
+    }
+    if is_checkout(&dir) {
+        let removed = git(
+            project_path,
+            &[
+                "worktree",
+                "remove",
+                "--force",
+                &sandbox_relative_path(task_id),
+            ],
+        )
+        .await;
+        if let Err(e) = removed {
+            if is_checkout(&dir) {
+                return Err(e);
+            }
+        }
+    }
+    clear_leftover(project_path, &dir).await
+}
+
+/// Leave a loop's sealed paths out of its sandbox, as its config lists them now. A non-cone
+/// sparse checkout: the files are gone from disk and git does not read their absence as a
+/// deletion, so nothing the worker commits removes them. Run before every iteration and again at
+/// its end, which also undoes a worker that turned the sparse checkout off.
+pub(crate) async fn seal(cwd: &str, task: &maestro_protocol::Task) -> Result<(), String> {
+    let excluded: Vec<String> = task
+        .loop_config
+        .iter()
+        .flat_map(|config| &config.sealed_paths)
+        .map(|path| format!("!/{path}"))
+        .collect();
+    let mut args = vec!["sparse-checkout", "set", "--no-cone", "/*"];
+    args.extend(excluded.iter().map(String::as_str));
+    git(cwd, &args).await.map(|_| ())
+}
+
 /// Find or make the workspace a task's session runs in, and anchor the task's start sha.
 ///
 /// As the app's `useExecuteTask` chooses: a refiner reads the repository and writes nothing, so it
-/// runs there whatever the task says; every other role follows `workspace_mode`. The repository and
+/// runs there whatever the task says, except a loop's, which prepares the loop in its worktree;
+/// every other role follows `workspace_mode`. A loop's worker and judge work in its sandbox. The repository and
 /// a pinned workspace create nothing on disk; a pinned one is claimed, so every "where does task N
 /// work" query finds it through `task_id`. A new worktree is reused when the task already owns one.
 ///
@@ -388,6 +548,9 @@ pub async fn prepare_task_workspace(
     };
 
     let project_path = task.project_path.as_str();
+    let looping = task.run_mode == maestro_protocol::RunMode::Loop;
+    // A pipeline task's refiner reads the repository as it is; a loop's preparer works in the
+    // loop's own worktree, where its tests belong.
     let mode = if role == AgentRole::Refiner {
         WorkspaceMode::RepositoryDirectory
     } else {
@@ -478,6 +641,13 @@ pub async fn prepare_task_workspace(
                 )
             }
         }
+    };
+
+    let cwd = match role {
+        AgentRole::Worker | AgentRole::Judge if looping => {
+            sync_sandbox(project_path, &cwd, task).await?
+        }
+        _ => cwd,
     };
 
     // Best effort, as in the app: a session starts even when HEAD cannot be read. A task that
@@ -578,6 +748,8 @@ mod tests {
             workspace_branch_mode: BranchMode::Create,
             workspace_branch: None,
             model_override: None,
+            run_mode: maestro_protocol::RunMode::Pipeline,
+            loop_config: None,
         };
         edit(&mut request);
         let task = crate::task_store::create(&mut conn, &request).expect("create a task");

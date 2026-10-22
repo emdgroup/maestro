@@ -1,17 +1,30 @@
 import { useState, useRef, useEffect, type SetStateAction } from "react";
-import { Ban, Trash2, X } from "lucide-react";
-import type {
-  BranchMode,
-  Task,
-  TaskStatus,
-  TaskPriority,
-  WorkspaceMode,
-  WorktreeWithStatus,
-} from "@/types/bindings";
+import {
+  Ban,
+  Bot,
+  BotMessageSquare,
+  Play,
+  Repeat,
+  RotateCcw,
+  ScanEye,
+  Square,
+  Trash2,
+  X,
+} from "lucide-react";
+import { toast } from "sonner";
+import { useBoardActionsContext, useTaskSession } from "@/contexts/BoardActionsContext";
+import { LoopActions } from "@/components/kanban/loop/LoopActions";
+import {
+  LoopDetailsSection,
+  type LoopDetailsHandle,
+} from "@/components/kanban/loop/LoopDetailsSection";
+import { useNavigate } from "@/store/navigationStore";
+import { useBoardActions } from "@/store/boardStore";
+import type { BranchMode, TaskPriority, WorkspaceMode, WorktreeWithStatus } from "@/types/bindings";
 import { MAESTRO_BRANCH_PREFIX, taskBranchName } from "@/lib/generateSessionName";
 import { Button } from "@/ui/button";
+import { cn } from "@/lib/utils";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Dialog, DialogContent, DialogTitle, DialogHeader } from "@/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/ui/tabs";
 import {
@@ -32,6 +45,7 @@ import {
   useDeleteTaskMutation,
   useAddTaskAttachmentMutation,
   useTaskCommentsQuery,
+  useStopTaskMutation,
 } from "@/services/task.service";
 import { useSelectedProject, useIsGitRepo } from "@/store/projectStore";
 import { useNavigationActions } from "@/store/navigationStore";
@@ -47,39 +61,8 @@ import { WorkspaceSelector } from "@/components/common/workspace-mode/WorkspaceS
 import { TaskMetadataPills } from "@/components/kanban/shared/TaskMetadataPills";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { OutcomeThread } from "./OutcomeThread";
-
-// Cancelled has no board column, but a cancelled task can still be opened from the archive, and a
-// picker showing nothing at all for it reads as a bug.
-const ALL_STATUSES: TaskStatus[] = [
-  "Planning",
-  "Queue",
-  "InProgress",
-  "Review",
-  "Done",
-  "Cancelled",
-];
-
-/**
- * Everywhere the user may send a task by hand.
- *
- * Only the two columns a task sits in before it runs. Everything past that point is reached by
- * an action rather than by re-filing: InProgress by Execute, Review by an agent finishing,
- * Done by Approve, Cancelled by its own button. Offering them here let the picker assert things
- * no action had made true — most visibly, re-selecting Review on a task already in Review
- * applies `ManualMove`, which parks it and strips the phase and ball off a live review.
- *
- * This does still let a cancelled task be re-filed to Planning, which is how restoring from the
- * archive works.
- */
-const SELECTABLE_STATUSES = new Set<TaskStatus>(["Planning", "Queue"]);
-
-/**
- * Done is terminal: view the outcome and archive it, nothing else. A task an agent is currently
- * working in is locked for the same reason the card cannot be dragged — re-filing applies
- * `ManualMove`, which parks the task and orphans the session still running against it.
- */
-const STATUS_IS_LOCKED = (task: Task) =>
-  task.status === "Done" || task.phase_status === "Running" || task.phase_status === "Blocked";
+import { TaskStatusChip } from "./TaskStatusChip";
+import { StartOverDialog, runControls } from "./StartOverDialog";
 
 interface TaskDraft {
   title: string;
@@ -94,7 +77,7 @@ interface TaskDraft {
   labels: string[];
 }
 
-type Tab = "details" | "outcome";
+type Tab = "loop" | "details" | "outcome";
 
 interface TaskDetailModalProps {
   taskId: number | null;
@@ -121,19 +104,38 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
   const { data: comments = [] } = useTaskCommentsQuery(projectId, taskId ?? undefined);
 
   const [tab, setTab] = useState<Tab>("details");
+  const isLoop = task?.run_mode === "Loop";
 
-  // A different task opens onto Details, whatever tab the last one was left on.
+  // A different task opens onto its first tab, whatever tab the last one was left on: a loop's is
+  // the loop itself.
+  // The loop draft is the opened task's, so its unsaved mark does not outlive it either.
+  const [loopDirty, setLoopDirty] = useState(false);
   useEffect(() => {
-    setTab("details");
+    setTab(isLoop ? "loop" : "details");
+    setLoopDirty(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
+
+  const loopDetails = useRef<LoopDetailsHandle>(null);
+  const navigate = useNavigate();
+  const { execute, canPrepare, executingTaskId } = useBoardActionsContext();
+  const { openReview } = useBoardActions();
+  const session = useTaskSession(taskId ?? -1);
+  const stopTask = useStopTaskMutation();
+  const join = () => {
+    setActiveTaskId(null);
+    if (task) navigate({ agentId: String(task.id) });
+  };
 
   const { setActiveTaskId } = useNavigationActions();
 
   const isEditable = useIsTaskEditable(taskId);
 
   // Held while the modal is open, so auto-mode cannot start the task the user is halfway through
-  // rewriting — the agent would be given a prompt the user had already moved on from.
-  useTaskHold(projectId, taskId, taskId !== null);
+  // rewriting — the agent would be given a prompt the user had already moved on from. Only before
+  // the task starts: once under way, holding it kept the next stage from starting while the user
+  // watched, and a loop sent back from here sat until the modal closed.
+  useTaskHold(projectId, taskId, taskId !== null && task?.phase == null);
 
   const [draft, setDraft] = useState<TaskDraft>({
     title: "",
@@ -193,10 +195,11 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [startOverOpen, setStartOverOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
 
   function handleRequestClose() {
-    if (isEditable && isDirty.current) {
+    if ((isEditable && isDirty.current) || loopDirty) {
       setDiscardOpen(true);
       return;
     }
@@ -213,28 +216,22 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
       if (task !== null && task.status !== "Done") setDeleteOpen(true);
     },
     "task-save": () => {
-      if (isEditable && task) handleSave();
+      if ((isEditable || loopDirty) && task) void handleSave();
     },
   });
 
-  function handleStatusChange(newStatus: string | null) {
-    if (!newStatus || !task) return;
-    // Re-picking the status a task is already in still applies `ManualMove`, which parks it —
-    // clearing phase, phase_status and ball. On anything with live pipeline state that silently
-    // throws it away, so a no-op selection has to stay a no-op.
-    if (newStatus === task.status) return;
-    // No agent check here any more. Which agent runs is decided per role by the project's profiles
-    // at spawn time, so a task carries none to check — and a guard reading `task.agent_id` would
-    // now refuse every move to Queue rather than the ones it was written for.
-    updateTask.mutate({
-      projectId: task.project_id,
-      taskId: task.id,
-      updates: { status: newStatus as TaskStatus },
-    });
-  }
-
-  function handleSave() {
+  async function handleSave() {
     if (!task || draft.title.trim().length < 3) return;
+    try {
+      await loopDetails.current?.save();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    if (!isEditable) {
+      setActiveTaskId(null);
+      return;
+    }
     updateTask.mutate(
       {
         projectId: task.project_id,
@@ -264,6 +261,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
   }
 
   const isPendingDeleteOrArchive = deleteTask.isPending || archiveTask.isPending;
+  const controls = task ? runControls(task) : { live: false, startOver: false };
 
   return (
     <Dialog
@@ -294,23 +292,14 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
               <DialogTitle className="text-xs font-semibold tracking-widest uppercase text-foreground">
                 {isEditable ? "EDIT TASK" : "TASK DETAIL"}
               </DialogTitle>
+              {isLoop && (
+                <span className="flex items-center gap-1 rounded bg-accent/12 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+                  <Repeat className="size-3" />
+                  Loop
+                </span>
+              )}
               <div className="flex-1" />
-              <Select
-                value={task.status}
-                onValueChange={handleStatusChange}
-                disabled={STATUS_IS_LOCKED(task)}
-              >
-                <SelectTrigger size="sm" className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ALL_STATUSES.filter((s) => isGitRepo || s !== "Review").map((s) => (
-                    <SelectItem key={s} value={s} disabled={!SELECTABLE_STATUSES.has(s)}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <TaskStatusChip task={task} />
               <ShortcutHint shortcutId="task-back">
                 <Button
                   variant="ghost"
@@ -325,128 +314,173 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
             </DialogHeader>
 
             {/* Body */}
-            <Tabs
-              value={tab}
-              onValueChange={(v) => setTab(v as Tab)}
-              className="flex-1 min-h-0 px-6 py-4 gap-4"
-            >
-              <TabsList variant="line" className="shrink-0">
-                <TabsTrigger value="details">Details</TabsTrigger>
-                <TabsTrigger value="outcome">
-                  Outcome{comments.length > 0 ? ` (${comments.length})` : ""}
-                </TabsTrigger>
-              </TabsList>
+            <div className="flex flex-1 min-h-0">
+              <Tabs
+                value={tab}
+                onValueChange={(v) => setTab(v as Tab)}
+                className="flex-1 min-w-0 min-h-0 px-6 py-4 gap-4"
+              >
+                <TabsList variant="line" className="shrink-0">
+                  {isLoop && <TabsTrigger value="loop">Loop</TabsTrigger>}
+                  <TabsTrigger value="details">Details</TabsTrigger>
+                  <TabsTrigger value="outcome">
+                    Outcome{comments.length > 0 ? ` (${comments.length})` : ""}
+                  </TabsTrigger>
+                </TabsList>
 
-              {/* `keepMounted`, on both panels, because the editors here commit on blur: an
-                  unmounted panel never blurs, so a tab click mid-edit would drop what was typed. */}
-              <TabsContent value="details" keepMounted className="flex flex-col min-h-0 gap-4">
-                <div className="shrink-0">
-                  <EditableField
-                    value={draft.title}
-                    onSave={(v) => markDirtySetDraft((d) => ({ ...d, title: v }))}
-                    isEditable={isEditable ?? false}
-                    placeholder="Add a title..."
-                    className="text-xl font-semibold"
-                  />
-                </div>
+                {/* An automation's agent drafted it: nothing runs until the user has read it. */}
+                {task.drafted_by && task.status === "Planning" && (
+                  <div className="flex shrink-0 items-start gap-3 rounded-md border border-border bg-muted/40 p-3 text-xs">
+                    <Bot className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                    <div className="flex-1 space-y-1">
+                      <div className="font-medium">
+                        Drafted by the automation “{task.drafted_by.automation}”
+                        {task.drafted_by.run != null && <> #{task.drafted_by.run}</>}
+                      </div>
+                      <div className="text-muted-foreground">
+                        Check the goal{isLoop ? ", the checks and the limits" : ""}, then queue it
+                        to run it. Nothing runs before that.
+                      </div>
+                    </div>
+                  </div>
+                )}
 
-                {/* Description + attachment */}
-                <DescriptionWithAttachments
-                  value={draft.description}
-                  onSave={(v) => markDirtySetDraft((d) => ({ ...d, description: v }))}
-                  isEditable={isEditable ?? false}
-                  isDragging={isDragging}
-                  placeholder="Add a description..."
-                />
+                {/* `keepMounted`, on the editing panels, because the editors here commit on blur:
+                  an unmounted panel never blurs, so a tab click mid-edit would drop what was
+                  typed. The loop's checks, hidden files and limits are saved with the rest of the
+                  task. */}
+                {isLoop && (
+                  <TabsContent value="loop" keepMounted className="min-h-0 overflow-y-auto pr-1">
+                    <LoopDetailsSection
+                      ref={loopDetails}
+                      task={task}
+                      onDirtyChange={setLoopDirty}
+                      onJoin={join}
+                      onPrepare={
+                        task.status === "Planning" && task.phase == null && canPrepare
+                          ? () => {
+                              setActiveTaskId(null);
+                              void execute(task, { role: "Preparer", canPickAgent: true });
+                            }
+                          : null
+                      }
+                    />
+                  </TabsContent>
+                )}
 
-                {/* Attachments */}
-                {projectId !== null && (
+                <TabsContent
+                  value="details"
+                  keepMounted
+                  className={cn("flex flex-col min-h-0 gap-4", isLoop && "overflow-y-auto pr-1")}
+                >
                   <div className="shrink-0">
-                    <AttachmentSection
-                      taskId={task.id}
-                      projectId={projectId}
+                    <EditableField
+                      value={draft.title}
+                      onSave={(v) => markDirtySetDraft((d) => ({ ...d, title: v }))}
                       isEditable={isEditable ?? false}
-                      onPickFiles={pickFiles}
-                      isDragging={isDragging}
+                      placeholder="Add a title..."
+                      className="text-xl font-semibold"
                     />
                   </div>
-                )}
 
-                {/* Labels */}
-                {draft.labels.length > 0 && (
-                  <div className="flex flex-wrap gap-1 shrink-0">
-                    {draft.labels.map((label) => (
-                      <IssueTypeChip
-                        key={label}
-                        type={label}
-                        onRemove={
-                          isEditable
-                            ? () =>
-                                markDirtySetDraft((d) => ({
-                                  ...d,
-                                  labels: d.labels.filter((l) => l !== label),
-                                }))
-                            : undefined
-                        }
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {/* Workspace */}
-                {isGitRepo && (
-                  <div className="shrink-0">
-                    <WorkspaceSelector
-                      mode={draft.workspaceMode}
-                      onModeChange={(m) => markDirtySetDraft((d) => ({ ...d, workspaceMode: m }))}
-                      baseBranch={draft.baseBranch}
-                      onBaseBranchChange={(b) =>
-                        markDirtySetDraft((d) => ({ ...d, baseBranch: b }))
-                      }
-                      branchMode={draft.branchMode}
-                      onBranchModeChange={(m) =>
-                        markDirtySetDraft((d) => ({ ...d, branchMode: m }))
-                      }
-                      branchSuffix={draft.branchSuffix}
-                      onBranchSuffixChange={(s) =>
-                        markDirtySetDraft((d) => ({ ...d, branchSuffix: s }))
-                      }
-                      generatedBranchSuffix={taskBranchName(task.id, task.title).replace(
-                        MAESTRO_BRANCH_PREFIX,
-                        "",
-                      )}
-                      worktrees={worktrees ?? []}
-                      repoPath={selectedProject?.path ?? ""}
-                      selectedWorktreeId={draft.workspaceWorktreeId}
-                      onSelectedWorktreeChange={(wt: WorktreeWithStatus | null) =>
-                        markDirtySetDraft((d) => ({ ...d, workspaceWorktreeId: wt?.id ?? null }))
-                      }
-                      claimsOwnership
-                      ownerTaskId={task.id}
-                      readOnly={!isEditable}
-                    />
-                  </div>
-                )}
-
-                {/* Metadata pills */}
-                <div className="shrink-0 space-y-3 pt-2 border-t border-border">
-                  <TaskMetadataPills
-                    priority={draft.priority}
-                    onPriorityChange={
-                      isEditable
-                        ? (p) => markDirtySetDraft((d) => ({ ...d, priority: p }))
-                        : undefined
-                    }
+                  {/* Description + attachment */}
+                  <DescriptionWithAttachments
+                    value={draft.description}
+                    onSave={(v) => markDirtySetDraft((d) => ({ ...d, description: v }))}
+                    isEditable={isEditable ?? false}
+                    isDragging={isDragging}
+                    placeholder="Add a description..."
                   />
-                </div>
-              </TabsContent>
 
-              {/* The only record a Done or archived task has: once the session closes, its
+                  {/* Attachments */}
+                  {projectId !== null && (
+                    <div className="shrink-0">
+                      <AttachmentSection
+                        taskId={task.id}
+                        projectId={projectId}
+                        isEditable={isEditable ?? false}
+                        onPickFiles={pickFiles}
+                        isDragging={isDragging}
+                      />
+                    </div>
+                  )}
+
+                  {/* Labels */}
+                  {draft.labels.length > 0 && (
+                    <div className="flex flex-wrap gap-1 shrink-0">
+                      {draft.labels.map((label) => (
+                        <IssueTypeChip
+                          key={label}
+                          type={label}
+                          onRemove={
+                            isEditable
+                              ? () =>
+                                  markDirtySetDraft((d) => ({
+                                    ...d,
+                                    labels: d.labels.filter((l) => l !== label),
+                                  }))
+                              : undefined
+                          }
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Workspace */}
+                  {isGitRepo && (
+                    <div className="shrink-0">
+                      <WorkspaceSelector
+                        mode={draft.workspaceMode}
+                        onModeChange={(m) => markDirtySetDraft((d) => ({ ...d, workspaceMode: m }))}
+                        baseBranch={draft.baseBranch}
+                        onBaseBranchChange={(b) =>
+                          markDirtySetDraft((d) => ({ ...d, baseBranch: b }))
+                        }
+                        branchMode={draft.branchMode}
+                        onBranchModeChange={(m) =>
+                          markDirtySetDraft((d) => ({ ...d, branchMode: m }))
+                        }
+                        branchSuffix={draft.branchSuffix}
+                        onBranchSuffixChange={(s) =>
+                          markDirtySetDraft((d) => ({ ...d, branchSuffix: s }))
+                        }
+                        generatedBranchSuffix={taskBranchName(task.id, task.title).replace(
+                          MAESTRO_BRANCH_PREFIX,
+                          "",
+                        )}
+                        worktrees={worktrees ?? []}
+                        repoPath={selectedProject?.path ?? ""}
+                        selectedWorktreeId={draft.workspaceWorktreeId}
+                        onSelectedWorktreeChange={(wt: WorktreeWithStatus | null) =>
+                          markDirtySetDraft((d) => ({ ...d, workspaceWorktreeId: wt?.id ?? null }))
+                        }
+                        claimsOwnership
+                        ownerTaskId={task.id}
+                        readOnly={!isEditable}
+                      />
+                    </div>
+                  )}
+
+                  {/* Metadata pills */}
+                  <div className="shrink-0 space-y-3 pt-2 border-t border-border">
+                    <TaskMetadataPills
+                      priority={draft.priority}
+                      onPriorityChange={
+                        isEditable
+                          ? (p) => markDirtySetDraft((d) => ({ ...d, priority: p }))
+                          : undefined
+                      }
+                    />
+                  </div>
+                </TabsContent>
+
+                {/* The only record a Done or archived task has: once the session closes, its
                   transcript is gone and this is what remains. */}
-              <TabsContent value="outcome" keepMounted className="flex flex-col min-h-0">
-                <OutcomeThread projectId={task.project_id} taskId={task.id} />
-              </TabsContent>
-            </Tabs>
+                <TabsContent value="outcome" keepMounted className="flex flex-col min-h-0">
+                  <OutcomeThread projectId={task.project_id} taskId={task.id} />
+                </TabsContent>
+              </Tabs>
+            </div>
 
             {/* Footer */}
             <div className="border-t border-border px-6 py-3 flex items-center gap-2 shrink-0">
@@ -538,6 +572,17 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                 </>
               )}
 
+              <StartOverDialog
+                task={task}
+                branch={
+                  worktrees?.find((w) => w.task_id === task.id)?.branch_name ??
+                  task.workspace_branch ??
+                  null
+                }
+                open={startOverOpen}
+                onOpenChange={setStartOverOpen}
+              />
+
               <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
                 <AlertDialogContent>
                   <AlertDialogHeader>
@@ -564,10 +609,68 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
               <div className="flex-1" />
 
-              {isEditable && (
+              {task.status === "Queue" && (
                 <Button
                   size="sm"
-                  onClick={handleSave}
+                  disabled={executingTaskId === task.id || task.phase === "Spawning"}
+                  onClick={() => void execute(task, { respectCapacity: true, canPickAgent: true })}
+                >
+                  <Play className="size-3 fill-current" />
+                  {executingTaskId === task.id || task.phase === "Spawning"
+                    ? "Starting…"
+                    : "Execute"}
+                </Button>
+              )}
+              {isLoop ? (
+                <LoopActions
+                  task={task}
+                  beforeResume={async () => {
+                    await loopDetails.current?.save();
+                  }}
+                />
+              ) : (
+                <>
+                  {controls.live && session && (
+                    <Button size="sm" variant="outline" onClick={join}>
+                      <BotMessageSquare className="size-3" />
+                      Join
+                    </Button>
+                  )}
+                  {controls.live && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={stopTask.isPending}
+                      onClick={() =>
+                        stopTask.mutate({ projectId: task.project_id, taskId: task.id })
+                      }
+                    >
+                      <Square className="size-3 fill-current" />
+                      Stop
+                    </Button>
+                  )}
+                </>
+              )}
+
+              {controls.startOver && (
+                <Button size="sm" variant="outline" onClick={() => setStartOverOpen(true)}>
+                  <RotateCcw className="size-3" />
+                  Start over
+                </Button>
+              )}
+
+              {/* A loop at sign-off waits on this review: it is the move to make. */}
+              {isLoop && task.phase === "Approval" && (
+                <Button size="sm" variant="accent" onClick={() => openReview(task.id)}>
+                  <ScanEye className="size-3" />
+                  Review
+                </Button>
+              )}
+
+              {(isEditable || loopDirty) && (
+                <Button
+                  size="sm"
+                  onClick={() => void handleSave()}
                   disabled={updateTask.isPending || draft.title.trim().length < 3}
                 >
                   {updateTask.isPending ? "Saving..." : "Save"}

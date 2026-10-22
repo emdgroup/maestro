@@ -42,6 +42,7 @@ describe("resolveAutomaticMode", () => {
 describe("isReadOnlyRole", () => {
   it("admits only the coder as a writer", () => {
     expect(isReadOnlyRole("Coder")).toBe(false);
+    expect(isReadOnlyRole("Worker")).toBe(false);
     expect(isReadOnlyRole("Refiner")).toBe(true);
     expect(isReadOnlyRole("Planner")).toBe(true);
     expect(isReadOnlyRole("Reviewer")).toBe(true);

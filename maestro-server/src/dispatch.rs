@@ -3,7 +3,7 @@ use std::sync::Arc;
 use maestro_protocol::{
     CheckToolsResponse, DiscoveredAgent, ErrorResponse, FileReadResponse, FileSearchResponse,
     InstallSkillsResponse, ListAgentsResponse, PreInitializeResponse, ServerRequest,
-    ServerResponse, SessionUpdate, SpawnResponse, AUTH_REQUIRED_ERROR,
+    ServerResponse, SpawnResponse, AUTH_REQUIRED_ERROR,
 };
 
 use crate::agent;
@@ -116,13 +116,14 @@ pub(crate) fn runs_under_key(sessions: &SessionMap, agent_id: &str, acp_session_
 
 /// Close a session already taken out of the map: through its command loop, so the agent keeps a
 /// transcript `session/load` can replay, and by aborting it when the loop cannot take the command.
+/// Returns the graceful close still running, for a caller that has to know when it is over.
 pub(crate) async fn close_session(
     session_id: &str,
     session: ActiveSession,
     agent_connections: &SharedAgentConnections,
     automation_store: Option<&crate::automation_runner::Store>,
     stdout: &crate::ClientOut,
-) {
+) -> Option<tokio::task::JoinHandle<()>> {
     let session_agent_id = session.agent_id.clone();
     // A run's workspace is settled once its session is closed, whoever closed it. The sweep only
     // closes sessions nobody is attached to, so with a window open this is the only close there is.
@@ -145,7 +146,7 @@ pub(crate) async fn close_session(
         let abort_handle = session.task.abort_handle();
         let cleanup = session.cleanup;
         let agent_connections_cancel = Arc::clone(agent_connections);
-        tokio::spawn(async move {
+        Some(tokio::spawn(async move {
             let timed_out = tokio::time::timeout(std::time::Duration::from_secs(5), session.task)
                 .await
                 .is_err();
@@ -168,7 +169,7 @@ pub(crate) async fn close_session(
             if let Some(settle) = settle {
                 settle.await;
             }
-        });
+        }))
     } else {
         // Channel full or closed: force abort and clean up manually.
         session.task.abort();
@@ -181,6 +182,7 @@ pub(crate) async fn close_session(
         if let Some(settle) = settle {
             tokio::spawn(settle);
         }
+        None
     }
 }
 
@@ -194,7 +196,7 @@ pub(crate) async fn cancel_session(
     project_store: Option<&crate::project_store::Store>,
     automation_store: Option<&crate::automation_runner::Store>,
     stdout: &crate::ClientOut,
-) {
+) -> Option<tokio::task::JoinHandle<()>> {
     crate::mcp_gateway::cancel_session(pending_host_tools, session_id);
     let session = sessions.remove(session_id);
     if let Some(store) = project_store {
@@ -211,15 +213,18 @@ pub(crate) async fn cancel_session(
             chrono::Utc::now(),
         ));
     }
-    if let Some(session) = session {
-        close_session(
-            session_id,
-            session,
-            agent_connections,
-            automation_store,
-            stdout,
-        )
-        .await;
+    match session {
+        Some(session) => {
+            close_session(
+                session_id,
+                session,
+                agent_connections,
+                automation_store,
+                stdout,
+            )
+            .await
+        }
+        None => None,
     }
 }
 
@@ -244,6 +249,13 @@ pub(crate) enum Settle {
         session_id: String,
         next: Option<(String, i32, maestro_protocol::AgentRole)>,
         stdout: crate::ClientOut,
+    },
+    /// A loop iteration's turn ended: close its session, and say so once it is closed, since the
+    /// sealed checks may only reach the disk after.
+    LoopSessionClose {
+        session_id: String,
+        stdout: crate::ClientOut,
+        closed: tokio::sync::oneshot::Sender<()>,
     },
 }
 
@@ -274,6 +286,30 @@ pub(crate) async fn settle(
                 pending_host_tools,
             )
             .await;
+            return;
+        }
+        Settle::LoopSessionClose {
+            session_id,
+            stdout,
+            closed,
+        } => {
+            let everyone = crate::client_sink::ClientSink::everyone(&stdout).await;
+            let closing = cancel_session(
+                &session_id,
+                sessions,
+                pending_host_tools,
+                agent_connections,
+                project_store,
+                automation_store,
+                &everyone,
+            )
+            .await;
+            tokio::spawn(async move {
+                if let Some(closing) = closing {
+                    let _ = closing.await;
+                }
+                let _ = closed.send(());
+            });
             return;
         }
         Settle::ArtifactTaken {
@@ -1053,24 +1089,7 @@ pub(crate) async fn dispatch_message(
 
         ServerRequest::Prompt(req) => {
             if let Some(session) = sessions.get(&req.session_id) {
-                let sent_at = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64;
-                send_or_return!(
-                    send_response(
-                        stdout,
-                        &ServerResponse::SessionUpdate(SessionUpdate {
-                            session_id: req.session_id.clone(),
-                            payload: serde_json::json!({
-                                "sessionUpdate": "user_message",
-                                "content": req.content,
-                                "sentAt": sent_at,
-                            }),
-                        }),
-                    )
-                    .await
-                );
+                // The command loop shows the prompt in the transcript, as it does every prompt.
                 let cmd = match req.content {
                     serde_json::Value::Array(blocks) => SessionCommand::PromptStructured(blocks),
                     other => SessionCommand::Prompt(other.as_str().unwrap_or("").to_string()),
@@ -1104,6 +1123,22 @@ pub(crate) async fn dispatch_message(
                     )
                     .await
                 );
+            }
+        }
+
+        // Boxed and out of line: this function's frame is already most of the main thread's stack.
+        request @ (ServerRequest::RerunLoopChecks(_)
+        | ServerRequest::ReadLoopNotes(_)
+        | ServerRequest::AnswerLoopProposal(_)
+        | ServerRequest::OpenAgentGate(_)
+        | ServerRequest::PauseLoop(_)
+        | ServerRequest::StopLoop(_)
+        | ServerRequest::RestartTask(_)) => {
+            let (reply, pushes) =
+                Box::pin(crate::loop_engine::answer(request, project_store, stdout)).await;
+            send_or_return!(send_response(stdout, &reply).await);
+            for push in pushes {
+                crate::helpers::broadcast(stdout, push).await;
             }
         }
 
@@ -1637,6 +1672,12 @@ pub(crate) async fn dispatch_message(
         | ServerRequest::GetTaskReview(_)
         | ServerRequest::SaveTaskReview(_)
         | ServerRequest::ClearTaskReview(_)
+        | ServerRequest::ListLoopChecks(_)
+        | ServerRequest::SetLoopChecks(_)
+        | ServerRequest::TickLoopCheck(_)
+        | ServerRequest::ListLoopIterations(_)
+        | ServerRequest::ListLoopHiddenFiles(_)
+        | ServerRequest::SetLoopHiddenFiles(_)
         | ServerRequest::ListPrompts(_)
         | ServerRequest::GetPrompt(_)
         | ServerRequest::CreatePrompt(_)
@@ -1712,7 +1753,9 @@ pub(crate) async fn dispatch_message(
         request @ (ServerRequest::GetCapacity
         | ServerRequest::SetCapacity(_)
         | ServerRequest::GetAutoMode(_)
-        | ServerRequest::SetAutoMode(_)) => {
+        | ServerRequest::SetAutoMode(_)
+        | ServerRequest::GetLoopWaitCap(_)
+        | ServerRequest::SetLoopWaitCap(_)) => {
             let answered = match project_store {
                 Some(store) => crate::pipeline_settings::answer(&*store.lock().await, request),
                 None => Err(crate::project_store::UNAVAILABLE.to_string()),
@@ -1766,16 +1809,18 @@ pub(crate) async fn dispatch_message(
                 crate::helpers::broadcast(stdout, push).await;
             }
             match begun {
-                Ok(crate::task_runner::Begun::Deferred) => send_or_return!(
-                    send_response(
-                        stdout,
-                        &ServerResponse::StartTaskOk(maestro_protocol::StartTaskResponse {
-                            session_id: None,
-                            skipped_attachments: vec![],
-                        },),
+                Ok(crate::task_runner::Begun::Deferred | crate::task_runner::Begun::Gated) => {
+                    send_or_return!(
+                        send_response(
+                            stdout,
+                            &ServerResponse::StartTaskOk(maestro_protocol::StartTaskResponse {
+                                session_id: None,
+                                skipped_attachments: vec![],
+                            },),
+                        )
+                        .await
                     )
-                    .await
-                ),
+                }
                 // Answered once the session is in the map, or once the start has failed.
                 Ok(crate::task_runner::Begun::Claimed(claimed)) => {
                     tokio::spawn(Box::pin(crate::task_runner::launch(

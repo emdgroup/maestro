@@ -4,6 +4,9 @@ import { useExecuteTask } from "@/hooks/useExecuteTask";
 import { useActiveSessionsQuery } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useAgentProfilesQuery, useProjectSettings } from "@/services/project.service";
+import { useTasksQuery } from "@/services/task.service";
+import { useAutoMode, useLoopWaitCap } from "@/services/settings.service";
+import { loopsWaiting } from "@/components/kanban/loop/loop-state";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
 import { MissingAttachmentsDialog } from "@/components/execution/MissingAttachmentsDialog";
 import { AgentPickerModal } from "@/components/execution/AgentPickerModal";
@@ -15,6 +18,8 @@ interface BoardActionsValue {
   executingTaskId: number | null;
   /** Whether any role on this project can run a refinement at all. Project-level, so asked once. */
   canRefine: boolean;
+  /** The same for preparing a loop. */
+  canPrepare: boolean;
   sessionByTaskId: Map<number, ActiveSessionInfo>;
   worktreeByTaskId: Map<number, WorktreeWithStatus>;
   /**
@@ -24,6 +29,11 @@ interface BoardActionsValue {
    * not at all.
    */
   worktreeById: Map<number, WorktreeWithStatus>;
+  /**
+   * How many loops wait on the user while the waiting cap keeps the queued ones from starting on
+   * their own, or `null` while it does not.
+   */
+  loopsHeldBack: number | null;
 }
 
 const BoardActionsContext = createContext<BoardActionsValue | null>(null);
@@ -70,6 +80,15 @@ export function BoardActionsProvider({ children }: { children: ReactNode }) {
   // to start.
   const canRefine =
     (profilesDocument?.profiles ?? []).some((p) => p.role === "Refiner") || !!defaultAgent;
+  // The same for a loop's Prepare loop, with a Preparation profile.
+  const canPrepare =
+    (profilesDocument?.profiles ?? []).some((p) => p.role === "Preparer") || !!defaultAgent;
+
+  const { data: tasks } = useTasksQuery(projectId);
+  const autoMode = useAutoMode(projectId).data ?? false;
+  const cap = useLoopWaitCap(projectId).data ?? 0;
+  const waiting = useMemo(() => loopsWaiting(tasks ?? []), [tasks]);
+  const loopsHeldBack = autoMode && cap > 0 && waiting >= cap ? waiting : null;
 
   const sessionByTaskId = useMemo(() => {
     const byTask = new Map<number, ActiveSessionInfo>();
@@ -102,11 +121,22 @@ export function BoardActionsProvider({ children }: { children: ReactNode }) {
       execute,
       executingTaskId,
       canRefine,
+      canPrepare,
       sessionByTaskId,
       worktreeByTaskId,
       worktreeById,
+      loopsHeldBack,
     }),
-    [execute, executingTaskId, canRefine, sessionByTaskId, worktreeByTaskId, worktreeById],
+    [
+      execute,
+      executingTaskId,
+      canRefine,
+      canPrepare,
+      sessionByTaskId,
+      worktreeByTaskId,
+      worktreeById,
+      loopsHeldBack,
+    ],
   );
 
   return (

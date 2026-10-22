@@ -11,8 +11,8 @@ use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use maestro_protocol::{
-    AutoModeSetting, CapacitySettings, CapacityStatus, ConcurrencyMode, PipelineSettingsChanged,
-    ServerRequest, ServerResponse,
+    AutoModeSetting, CapacitySettings, CapacityStatus, ConcurrencyMode, LoopWaitCap,
+    PipelineSettingsChanged, ServerRequest, ServerResponse,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -109,6 +109,31 @@ fn set_auto_mode(conn: &Connection, project_path: &str, enabled: bool) -> Result
     )
     .map(|_| ())
     .map_err(|e| format!("Failed to save auto mode: {e}"))
+}
+
+/// How many of the project's loops may wait on the user before the drain starts no more of its
+/// queued ones. 0 is no cap.
+pub fn loop_wait_cap(conn: &Connection, project_path: &str) -> Result<u32, String> {
+    conn.query_row(
+        "SELECT loop_wait_cap FROM project_settings WHERE project_path = ?1",
+        params![project_path],
+        |row| row.get(0),
+    )
+    .optional()
+    .map(|cap| cap.unwrap_or(DEFAULT_LOOP_WAIT_CAP))
+    .map_err(|e| format!("Failed to read the loop cap: {e}"))
+}
+
+const DEFAULT_LOOP_WAIT_CAP: u32 = 2;
+
+fn set_loop_wait_cap(conn: &Connection, project_path: &str, cap: u32) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO project_settings (project_path, loop_wait_cap) VALUES (?1, ?2)
+         ON CONFLICT(project_path) DO UPDATE SET loop_wait_cap = ?2",
+        params![project_path, cap],
+    )
+    .map(|_| ())
+    .map_err(|e| format!("Failed to save the loop cap: {e}"))
 }
 
 /// The number of agents `available_mb` of free memory supports. Floors at zero: a machine with
@@ -279,6 +304,21 @@ pub fn answer(
             let project_path = canonical_project_path(&r.project_path);
             set_auto_mode(conn, &project_path, r.enabled)?;
             Ok((ServerResponse::SetAutoModeOk, changed(Some(project_path))))
+        }
+        ServerRequest::GetLoopWaitCap(r) => {
+            let project_path = canonical_project_path(&r.project_path);
+            let cap = loop_wait_cap(conn, &project_path)?;
+            let reply = ServerResponse::LoopWaitCapOk(LoopWaitCap { project_path, cap });
+            Ok((reply, Vec::new()))
+        }
+        ServerRequest::SetLoopWaitCap(r) => {
+            let project_path = canonical_project_path(&r.project_path);
+            set_loop_wait_cap(conn, &project_path, r.cap)?;
+            let reply = ServerResponse::LoopWaitCapOk(LoopWaitCap {
+                project_path: project_path.clone(),
+                cap: r.cap,
+            });
+            Ok((reply, changed(Some(project_path))))
         }
         _ => Err("not a pipeline settings request".to_string()),
     }

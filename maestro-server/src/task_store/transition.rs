@@ -120,17 +120,21 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
             AgentRole::Coder if current.status == Review => {
                 TaskState::active(Review, AwaitingMerge, Running, Ball::Agent)
             }
-            AgentRole::Refiner => TaskState::active(Planning, Refining, Running, Ball::Agent),
+            AgentRole::Refiner | AgentRole::Preparer => {
+                TaskState::active(Planning, Refining, Running, Ball::Agent)
+            }
             AgentRole::Planner => TaskState::active(InProgress, Drafting, Running, Ball::Agent),
             AgentRole::Coder => TaskState::active(InProgress, Implementing, Running, Ball::Agent),
             AgentRole::Reviewer => TaskState::active(Review, SelfReview, Running, Ball::Agent),
+            AgentRole::Judge => TaskState::active(InProgress, Judging, Running, Ball::Agent),
+            AgentRole::Worker => TaskState::active(InProgress, Iterating, Running, Ball::Agent),
         },
 
         TaskTransition::SpawnAborted => current.unclaimed(TaskState::parked(current.status)),
 
         // A hand-off waits on its agent again, so the drain starts it as if nothing had happened.
         TaskTransition::SpawnInterrupted => match current.claimed_from {
-            Some(phase @ (SelfReview | Rework | AwaitingMerge))
+            Some(phase @ (SelfReview | Rework | AwaitingMerge | Iterating | Judging))
                 if current.phase == Some(Spawning) =>
             {
                 TaskState::active(current.status, phase, Waiting, Ball::Agent)
@@ -227,6 +231,37 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
             ball: Ball::User,
             ..current
         }),
+
+        TaskTransition::LoopIterationStarted => {
+            TaskState::active(InProgress, Iterating, Running, Ball::Agent)
+        }
+
+        // Nothing is live, but the daemon is at work on the agent's behalf.
+        TaskTransition::LoopChecking => {
+            TaskState::active(InProgress, Checking, Running, Ball::Agent)
+        }
+
+        TaskTransition::LoopIterate => {
+            TaskState::active(InProgress, Iterating, Waiting, Ball::Agent)
+        }
+
+        TaskTransition::LoopHalted => TaskState::active(InProgress, Iterating, Waiting, Ball::User),
+
+        TaskTransition::LoopChecksPassed => {
+            TaskState::active(Review, Approval, Waiting, Ball::User)
+        }
+
+        TaskTransition::LoopJudging => TaskState::active(InProgress, Judging, Waiting, Ball::Agent),
+
+        TaskTransition::LoopResumed => {
+            TaskState::active(InProgress, Iterating, Waiting, Ball::Agent)
+        }
+
+        TaskTransition::UsageLimited => TaskState {
+            phase_status: Some(Waiting),
+            ball: Ball::Agent,
+            ..current
+        },
     }
 }
 
@@ -267,11 +302,27 @@ fn admit(
             // A handoff: one role finished and the board asks for the next. It bypasses
             // `expected`, which lists the columns a user may press Execute from; the phase already
             // pins where the task is. `Approval` waits on a person, so it is not one.
+            // A loop waiting between iterations is one too, whether its next iteration waits on the
+            // drain or on the user starting it again after a stall.
+            // So is a stage a usage limit cut off, waiting on its agent in its own phase.
             let handoff = matches!(
                 (current.phase, current.phase_status),
                 (
-                    Some(TaskPhase::SelfReview | TaskPhase::Rework | TaskPhase::AwaitingMerge),
+                    Some(
+                        TaskPhase::SelfReview
+                            | TaskPhase::Rework
+                            | TaskPhase::AwaitingMerge
+                            | TaskPhase::Iterating
+                            | TaskPhase::Judging
+                    ),
                     Some(PhaseStatus::Waiting)
+                )
+            ) || matches!(
+                (current.phase, current.phase_status, current.ball),
+                (
+                    Some(TaskPhase::Implementing | TaskPhase::Drafting | TaskPhase::Refining),
+                    Some(PhaseStatus::Waiting),
+                    TaskBall::Agent
                 )
             );
             // A stage that failed, or a start put back in the phase it was claimed from, is the
@@ -284,6 +335,8 @@ fn admit(
                             | TaskPhase::SelfReview
                             | TaskPhase::Rework
                             | TaskPhase::AwaitingMerge
+                            | TaskPhase::Iterating
+                            | TaskPhase::Judging
                     ),
                     Some(PhaseStatus::Failed)
                 )
@@ -374,7 +427,21 @@ fn write(
     task_id: i32,
     event: TaskTransition,
 ) -> Result<Task, String> {
-    let next = resolve(event, read_state(conn, project_path, task_id)?);
+    let current = read_state(conn, project_path, task_id)?;
+    let next = resolve(event, current);
+    // The user letting a stopped loop go on, or sending it back from sign-off: its streaks count
+    // from here, so the stall it stopped on does not stop it again at once.
+    let resumed = event == TaskTransition::LoopResumed
+        || (event == TaskTransition::ExecutionStarted
+            && current.phase == Some(TaskPhase::Iterating)
+            && current.ball == TaskBall::User);
+    if resumed {
+        conn.execute(
+            "UPDATE tasks SET loop_resumed_at = ?3 WHERE project_path = ?1 AND id = ?2",
+            params![project_path, task_id, Utc::now().to_rfc3339()],
+        )
+        .map_err(|e| format!("Failed to resume task {task_id}: {e}"))?;
+    }
 
     // A deferral is a promise to a task the scheduler has not picked up yet, so it only survives
     // while the task is still a candidate: parked in Queue. Being claimed clears it, and so does
@@ -526,6 +593,150 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_loop_iterates_checks_and_stops_for_the_user() {
+        use PhaseStatus::*;
+        use TaskPhase::*;
+        let at =
+            |phase, status, ball| TaskState::active(TaskStatus::InProgress, phase, status, ball);
+        let iterating = resolve(
+            TaskTransition::LoopIterationStarted,
+            TaskState::parked(TaskStatus::Queue),
+        );
+        assert_eq!(iterating, at(Iterating, Running, TaskBall::Agent));
+        let checking = resolve(TaskTransition::LoopChecking, iterating);
+        assert_eq!(checking, at(Checking, Running, TaskBall::Agent));
+        assert_eq!(
+            resolve(TaskTransition::LoopIterate, checking),
+            at(Iterating, Waiting, TaskBall::Agent)
+        );
+        assert_eq!(
+            resolve(TaskTransition::LoopHalted, checking),
+            at(Iterating, Waiting, TaskBall::User)
+        );
+        // A flaky check pauses the loop where it is.
+        assert_eq!(
+            resolve(TaskTransition::PhaseFailed, checking),
+            at(Checking, Failed, TaskBall::User)
+        );
+        let passed = resolve(TaskTransition::LoopChecksPassed, checking);
+        assert_eq!(
+            (passed.status, passed.phase, passed.ball),
+            (TaskStatus::Review, Some(Approval), TaskBall::User)
+        );
+    }
+
+    #[test]
+    fn the_next_iteration_is_claimable_and_a_flaky_pause_is_not() {
+        use PhaseStatus::*;
+        use TaskPhase::*;
+        let claim = TransitionGuard::Claim(vec![TaskStatus::Queue]);
+        let at =
+            |phase, status, ball| TaskState::active(TaskStatus::InProgress, phase, status, ball);
+        for (state, claimable) in [
+            (at(Iterating, Waiting, TaskBall::Agent), true),
+            (at(Iterating, Waiting, TaskBall::User), true),
+            (at(Iterating, Failed, TaskBall::User), true),
+            (at(Checking, Failed, TaskBall::User), false),
+            (at(Checking, Running, TaskBall::Agent), false),
+            (at(Judging, Waiting, TaskBall::Agent), true),
+            (at(Judging, Failed, TaskBall::User), true),
+            (at(Judging, Running, TaskBall::Agent), false),
+        ] {
+            assert_eq!(
+                admit(&claim, TaskTransition::ExecutionStarted, state).is_some(),
+                claimable,
+                "{state:?}"
+            );
+        }
+        // A start of the next iteration that never came up waits on the drain again.
+        let claimed = resolve(
+            TaskTransition::ExecutionStarted,
+            at(Iterating, Waiting, TaskBall::Agent),
+        );
+        assert_eq!(
+            resolve(TaskTransition::SpawnInterrupted, claimed),
+            at(Iterating, Waiting, TaskBall::Agent)
+        );
+    }
+
+    #[test]
+    fn the_judge_comes_between_the_commands_and_sign_off_and_a_resume_goes_back_to_work() {
+        use PhaseStatus::*;
+        use TaskPhase::*;
+        let at =
+            |phase, status, ball| TaskState::active(TaskStatus::InProgress, phase, status, ball);
+        let checking = at(Checking, Running, TaskBall::Agent);
+        let waiting = resolve(TaskTransition::LoopJudging, checking);
+        assert_eq!(waiting, at(Judging, Waiting, TaskBall::Agent));
+        let claimed = resolve(TaskTransition::ExecutionStarted, waiting);
+        assert_eq!(
+            resolve(TaskTransition::SpawnInterrupted, claimed),
+            waiting,
+            "a judge that never came up waits on the drain again"
+        );
+        let judging = resolve(TaskTransition::SessionReady(AgentRole::Judge), claimed);
+        assert_eq!(judging, at(Judging, Running, TaskBall::Agent));
+        let signing = resolve(TaskTransition::LoopChecksPassed, judging);
+        assert_eq!(
+            resolve(TaskTransition::LoopResumed, signing),
+            at(Iterating, Waiting, TaskBall::Agent)
+        );
+    }
+
+    #[test]
+    fn letting_a_stopped_loop_go_on_marks_when() {
+        let mut conn = crate::project_store::open_in_memory();
+        let task = crate::task_store::create(
+            &mut conn,
+            &maestro_protocol::CreateTaskRequest {
+                project_path: "/repo".to_string(),
+                title: "Loop".to_string(),
+                description: None,
+                skills: vec![],
+                labels: vec![],
+                base_branch: "main".to_string(),
+                agent_id: None,
+                priority: None,
+                auto_approve: false,
+                workspace_mode: maestro_protocol::WorkspaceMode::NewWorktree,
+                workspace_worktree_id: None,
+                workspace_branch_mode: maestro_protocol::BranchMode::Create,
+                workspace_branch: None,
+                model_override: None,
+                run_mode: maestro_protocol::RunMode::Loop,
+                loop_config: None,
+            },
+        )
+        .unwrap()
+        .id;
+        let resumed =
+            |conn: &Connection| super::super::loops::resumed_at(conn, "/repo", task).unwrap();
+        let step = |conn: &mut Connection, event| {
+            apply_transition(
+                conn,
+                &ApplyTaskTransitionRequest {
+                    project_path: "/repo".to_string(),
+                    task_id: task,
+                    event,
+                    guard: TransitionGuard::Always,
+                    update: None,
+                    comment: None,
+                },
+            )
+            .unwrap();
+        };
+        step(&mut conn, TaskTransition::LoopIterate);
+        step(&mut conn, TaskTransition::ExecutionStarted);
+        assert!(resumed(&conn).is_none(), "the drain's start is no resume");
+        step(&mut conn, TaskTransition::LoopHalted);
+        step(&mut conn, TaskTransition::ExecutionStarted);
+        let first = resumed(&conn).expect("starting a stalled loop again is");
+        step(&mut conn, TaskTransition::LoopChecksPassed);
+        step(&mut conn, TaskTransition::LoopResumed);
+        assert!(resumed(&conn).unwrap() >= first, "so is sending it back");
+    }
+
     /// The claim must not move the card.
     #[test]
     fn a_claim_marks_the_task_spawning_without_moving_it() {
@@ -558,6 +769,7 @@ mod tests {
                 TaskStatus::Review,
                 TaskPhase::SelfReview,
             ),
+            (AgentRole::Judge, TaskStatus::InProgress, TaskPhase::Judging),
         ] {
             let next = resolve(
                 TaskTransition::SessionReady(role),
@@ -1108,6 +1320,37 @@ mod tests {
                     ..spawning(TaskStatus::InProgress)
                 }
             );
+        }
+
+        /// A stage a usage limit cut off waits on its agent in its own phase, and the drain claims
+        /// it as it does a hand-off. A refinement waiting on the user is not one.
+        #[test]
+        fn a_stage_a_usage_limit_cut_off_is_claimed_again_in_its_phase() {
+            for role in [AgentRole::Coder, AgentRole::Planner, AgentRole::Refiner] {
+                let (conn, task_id) = db_with_task();
+                claim(&conn, task_id, &USER_COLUMNS).expect("claim");
+                when_spawning(&conn, task_id, TaskTransition::SessionReady(role)).expect("ready");
+                let running = state(&conn, task_id);
+                always(&conn, task_id, TaskTransition::UsageLimited);
+                assert_eq!(
+                    state(&conn, task_id),
+                    TaskState {
+                        phase_status: Some(PhaseStatus::Waiting),
+                        ..running
+                    }
+                );
+                assert!(claim(&conn, task_id, &[]).is_some(), "{role:?}");
+            }
+            let (conn, task_id) = db_with_task();
+            claim(&conn, task_id, &USER_COLUMNS).expect("claim");
+            when_spawning(
+                &conn,
+                task_id,
+                TaskTransition::SessionReady(AgentRole::Refiner),
+            )
+            .expect("ready");
+            always(&conn, task_id, TaskTransition::ArtifactDelivered);
+            assert!(claim(&conn, task_id, &[]).is_none());
         }
 
         /// Every handoff is claimable from the column its role works in, which no caller lists.

@@ -89,12 +89,18 @@ fn role_key(role: AgentRole) -> &'static str {
         AgentRole::Planner => "Planner",
         AgentRole::Coder => "Coder",
         AgentRole::Reviewer => "Reviewer",
+        AgentRole::Judge => "Judge",
+        AgentRole::Preparer => "Preparer",
+        AgentRole::Worker => "Worker",
     }
 }
 
-/// Only the coder writes.
+/// Only the coder and a loop's worker write, and a loop's preparer, which commits the loop's tests.
 pub fn is_read_only(role: AgentRole) -> bool {
-    role != AgentRole::Coder
+    !matches!(
+        role,
+        AgentRole::Coder | AgentRole::Worker | AgentRole::Preparer
+    )
 }
 
 /// A missing or unreadable file is the default document, as `read_maestro_json` treats it.
@@ -276,23 +282,32 @@ pub fn resolve_automatic_mode(mode_ids: &[String], read_only: bool) -> Option<St
 }
 
 /// The agent to spawn for a stage, asked before capabilities are known. The task's own agent is
-/// the coder's only; then the role's profile; then the project's default agent.
+/// the coder's or the worker's only; then the role's profile; then the project's default agent, or
+/// for the judge the worker's.
 fn choose_agent(
     document: &ProfilesDocument,
     default_agent: Option<String>,
     task: &Task,
     role: AgentRole,
 ) -> Option<String> {
-    let task_agent = (role == AgentRole::Coder)
-        .then(|| task.agent_id.clone())
-        .flatten();
-    task_agent
-        .or_else(|| {
-            document
-                .resolve(role, profile_id_for(task, role).as_deref())
-                .map(|p| p.agent_id.clone())
-        })
-        .or(default_agent)
+    let task_agent = executes(role).then(|| task.agent_id.clone()).flatten();
+    let profiled = task_agent.or_else(|| {
+        document
+            .resolve(role, profile_id_for(task, role).as_deref())
+            .map(|p| p.agent_id.clone())
+    });
+    match role {
+        // With no judge profile, the judge is the worker's agent.
+        AgentRole::Judge => {
+            profiled.or_else(|| choose_agent(document, default_agent, task, AgentRole::Worker))
+        }
+        _ => profiled.or(default_agent),
+    }
+}
+
+/// The role that does the task itself, whose seat the task's own agent and overrides are for.
+fn executes(role: AgentRole) -> bool {
+    matches!(role, AgentRole::Coder | AgentRole::Worker)
 }
 
 pub fn agent_for(project_path: &str, task: &Task, role: AgentRole) -> Option<String> {
@@ -336,8 +351,8 @@ fn stage_settings(
         .map(|r| r.warnings.clone())
         .unwrap_or_default();
 
-    // Task overrides are the coder's alone, like the agent.
-    let coder = role == AgentRole::Coder;
+    // Task overrides are the coder's or the worker's alone, like the agent.
+    let coder = executes(role);
     let model = coder
         .then(|| task.model_override.clone())
         .flatten()
@@ -677,6 +692,8 @@ mod tests {
             Some("profile-reviewer")
         );
         assert_eq!(pick(AgentRole::Planner).as_deref(), Some("default"));
+        // No judge profile: the worker's agent judges, not the project's default.
+        assert_eq!(pick(AgentRole::Judge).as_deref(), Some("task-agent"));
     }
 
     #[test]

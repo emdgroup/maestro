@@ -311,6 +311,11 @@ fn task_from_row(row: &Row, project_path: &str) -> rusqlite::Result<Task> {
         pull_request_ci: variant(get(row, "pull_request_ci")?),
         profile_overrides: get(row, "profile_overrides")?,
         claimed_from: None,
+        run_mode: maestro_protocol::RunMode::Pipeline,
+        loop_config: None,
+        loop_summary: None,
+        gate: None,
+        drafted_by: None,
     })
 }
 

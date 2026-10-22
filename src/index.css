@@ -741,6 +741,20 @@
   animation: glow-ring-info 2.5s ease-in-out infinite;
 }
 
+@keyframes glow-ring-accent {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0px color-mix(in oklch, var(--accent) 35%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent) 30%, transparent);
+  }
+}
+
+@utility animate-glow-accent {
+  animation: glow-ring-accent 2.5s ease-in-out infinite;
+}
+
 @keyframes glow-ring-purple {
   0%,
   100% {

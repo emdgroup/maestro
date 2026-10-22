@@ -41,6 +41,15 @@ vi.mock("@/services/project.service", () => ({
   useProjectSettings: () => ({ data: { default_agent: defaultAgent.current } }),
 }));
 
+vi.mock("@/services/task.service", () => ({
+  useTasksQuery: () => ({ data: [] }),
+}));
+
+vi.mock("@/services/settings.service", () => ({
+  useAutoMode: () => ({ data: false }),
+  useLoopWaitCap: () => ({ data: 2 }),
+}));
+
 vi.mock("@/components/execution/DirtyWorktreeDialog", () => ({
   DirtyWorktreeDialog: () => null,
 }));

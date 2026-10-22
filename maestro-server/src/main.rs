@@ -12,6 +12,7 @@
 //! Architecture: Adapted from Zed's remote_server (GPL-3.0).
 
 mod agent;
+mod agent_gate;
 mod agent_restart;
 mod auth;
 mod automation_runner;
@@ -25,6 +26,7 @@ mod exec_channel;
 mod file_ops;
 mod helpers;
 mod home;
+mod loop_engine;
 mod mcp_config;
 mod mcp_gateway;
 mod mcp_stdio;
@@ -38,6 +40,7 @@ mod scheduler;
 mod session;
 mod sessions;
 mod skills;
+mod start_over;
 mod task_prompt;
 mod task_restart;
 mod task_runner;
@@ -76,7 +79,23 @@ use sessions::{
 pub(crate) use client_sink::ClientOut;
 pub(crate) use helpers::{send_diag, send_response, DIAG_TX};
 
+/// The stack every mode runs on. The server's loop is one large state machine, and in a Windows
+/// debug build it outgrew the main thread's 1 MB, which overflows with no hint of where.
+const STACK_BYTES: usize = 8 * 1024 * 1024;
+
 fn main() {
+    let ran = std::thread::Builder::new()
+        .name("maestro-server".to_string())
+        .stack_size(STACK_BYTES)
+        .spawn(run)
+        .expect("Failed to start the main thread")
+        .join();
+    if let Err(panic) = ran {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+fn run() {
     if std::env::args().any(|a| a == "--protocol-version") {
         println!("{}", PROTOCOL_VERSION);
         return;
@@ -728,6 +747,7 @@ async fn run_server(
                         reply_tx,
                         &sessions,
                         project_store.as_ref(),
+                        automation_store.as_ref(),
                         &mut pending_host_tools,
                         &stdout,
                     ))
@@ -823,16 +843,45 @@ async fn run_server(
                 };
                 // A task's session: resolve the turn and start the next stage, off the loop.
                 let ending = sessions.get(&ended.session_id);
+                // Any session's refusal closes its agent's gate; the task it worked waits for it.
+                let mut limited_until = None;
                 if let (Some(store), Some(session)) = (project_store.as_ref(), ending) {
+                    let conn = store.lock().await;
                     project_store::report(usage_store::record(
-                        &*store.lock().await,
+                        &conn,
                         &usage_store::Turn::of(&ended.session_id, session, &ended),
                         chrono::Utc::now(),
                     ));
+                    let task = task_turn::task_of(session);
+                    limited_until = agent_gate::turn_ended(
+                        &conn,
+                        &session.agent_id,
+                        task.as_ref().map(|(path, id)| (path.as_str(), *id)),
+                        &ended.facts,
+                        &ended.stop_reason,
+                        chrono::Utc::now(),
+                    );
                 }
                 let task_binding = ending.and_then(task_turn::task_of);
                 let role = ending.and_then(task_turn::role_of);
-                if let (Some(store), Some((project_path, task_id))) =
+                let loop_session = ending.and_then(loop_engine::session_of);
+                if let (Some(store), Some((project_path, task_id)), Some(session)) =
+                    (project_store.as_ref(), task_binding.clone(), loop_session)
+                {
+                    loop_engine::spawn(
+                        Arc::clone(store),
+                        Arc::clone(&stdout),
+                        loop_engine::LoopEnd {
+                            project_path,
+                            task_id,
+                            session,
+                            session_id: ended.session_id.clone(),
+                            stop_reason: ended.stop_reason.clone(),
+                            facts: ended.facts.clone(),
+                            limited_until,
+                        },
+                    );
+                } else if let (Some(store), Some((project_path, task_id))) =
                     (project_store.as_ref(), task_binding)
                 {
                     task_turn::spawn(
@@ -848,6 +897,10 @@ async fn run_server(
                         role,
                         ended.stop_reason.clone(),
                         ended.facts.clone(),
+                        limited_until.map(|until| agent_gate::Limited {
+                            session_id: ended.session_id.clone(),
+                            until,
+                        }),
                     );
                 }
                 if let Some(store) = automation_store.as_ref() {

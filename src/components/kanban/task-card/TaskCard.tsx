@@ -1,6 +1,7 @@
 import { memo, useRef, useEffect, useState } from "react";
 import { Task, TaskStatus, type JsonValue, type WorktreeWithStatus } from "@/types/bindings";
 import { useKanban } from "@/contexts/KanbanContext";
+import { relativeWorktreePath } from "@/components/execution/worktree-card/worktree-usage";
 import {
   useBoardActionsContext,
   useTaskSession,
@@ -51,6 +52,22 @@ import {
 } from "@/components/execution/shared/activityStatus";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { shortBranchName } from "@/lib/generateSessionName";
+import { Repeat } from "lucide-react";
+import {
+  CHECK_SEGMENT,
+  draftLine,
+  gateLine,
+  loopLine,
+  queuedLine,
+  showsCheckBar,
+  type StateLine,
+} from "@/components/kanban/loop/loop-state";
+import {
+  useOpenAgentGateMutation,
+  useRerunLoopChecksMutation,
+  useResumeLoopMutation,
+} from "@/services/loop.service";
+import { HaltLoopDialog } from "@/components/kanban/loop/HaltLoopDialog";
 
 interface TaskCardProps {
   task: Task;
@@ -200,6 +217,53 @@ function PhaseLine({ task }: { task: Task }) {
   );
 }
 
+const STATE_TONES: Record<StateLine["tone"], string> = {
+  brand: "text-accent",
+  warning: "text-warning",
+  muted: "text-muted-foreground",
+  success: "text-success",
+  destructive: "text-destructive",
+  amber: "text-amber-600",
+};
+
+/** A loop's own phase line, or the line of a task its agent's usage limit holds. */
+function StateLineView({ line }: { line: StateLine }) {
+  return (
+    <div className="flex items-center gap-1 mb-1.5 min-w-0 text-[10px]">
+      <span className={cn("font-bold shrink-0 uppercase tracking-wide", STATE_TONES[line.tone])}>
+        {line.label}
+      </span>
+      {line.detail && (
+        <>
+          <span className="text-muted-foreground/40 shrink-0">·</span>
+          <span className="text-muted-foreground truncate">{line.detail}</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** One segment per check, in list order, with how many pass. */
+function CheckBar({ task }: { task: Task }) {
+  const checks = task.loop_summary?.checks ?? [];
+  const passing = checks.filter((c) => c === "Pass").length;
+  return (
+    <div className="flex items-center gap-1.5 mb-1.5 text-[9.5px] text-muted-foreground">
+      <span
+        className="flex flex-1 gap-0.5"
+        aria-label={`${passing} of ${checks.length} checks pass`}
+      >
+        {checks.map((state, i) => (
+          <span key={i} className={cn("h-1 flex-1 rounded-full", CHECK_SEGMENT[state])} />
+        ))}
+      </span>
+      <span className="tabular-nums">
+        {passing}/{checks.length}
+      </span>
+    </div>
+  );
+}
+
 function ActivityLine({ activityInfo }: { activityInfo: SessionActivityInfo | undefined }) {
   if (!activityInfo) {
     return (
@@ -271,6 +335,7 @@ function PriorityOpt({ priority }: { priority: string }) {
  */
 function WorkspaceOpt({ task, worktree }: { task: Task; worktree: WorktreeWithStatus | null }) {
   const navigate = useNavigate();
+  const { projectPath } = useKanban();
   if (task.workspace_mode === "RepositoryDirectory") return null;
 
   // The branch name is kept in the database for branch operations even while detached, so showing
@@ -323,12 +388,14 @@ function WorkspaceOpt({ task, worktree }: { task: Task; worktree: WorktreeWithSt
   return (
     <Tooltip>
       <TooltipTrigger render={trigger} />
-      <TooltipContent>
+      <TooltipContent className="flex-col items-start gap-0.5 break-all">
         <div className="font-mono">{branch}</div>
         {worktree ? (
-          <div className="font-mono text-muted-foreground">{worktree.path}</div>
+          <div className="font-mono opacity-70">
+            {relativeWorktreePath(worktree.path, projectPath)}
+          </div>
         ) : (
-          <div className="text-muted-foreground">Not created yet</div>
+          <div className="opacity-70">Not created yet</div>
         )}
       </TooltipContent>
     </Tooltip>
@@ -349,11 +416,18 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
   const [dialog, setDialog] = useState<CardDialog>(null);
   const closeDialog = () => setDialog(null);
   const [proposalOpen, setProposalOpen] = useState(false);
+  const [haltOpen, setHaltOpen] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [profilesOpen, setProfilesOpen] = useState(false);
   // The board's, not the card's: one instance of `useExecuteTask` and one of each list query serve
   // every card, and the two dialogs `execute` drives are mounted once by the provider.
-  const { execute: handleExecute, executingTaskId, canRefine } = useBoardActionsContext();
+  const {
+    execute: handleExecute,
+    executingTaskId,
+    canRefine,
+    canPrepare,
+    loopsHeldBack,
+  } = useBoardActionsContext();
   const isExecuting = executingTaskId === task.id;
   const interruptTask = useInterruptTaskMutation();
   const sendToReview = useSendTaskToReviewMutation();
@@ -367,6 +441,15 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
   const taskWorkspace = useTaskWorkspace(task);
   const recoverSession = useRecoverTaskSessionMutation();
   const cancelSession = useCancelActiveSessionMutation();
+  const resumeLoop = useResumeLoopMutation();
+  const rerunChecks = useRerunLoopChecksMutation();
+  const openGate = useOpenAgentGateMutation();
+  // What the card says of a loop, of a task its agent's usage limit holds, of a queued loop the
+  // waiting cap holds back, or of an automation's draft, in place of the phase line, with the
+  // border that goes with it.
+  const queued = queuedLine(task, loopsHeldBack);
+  const stateLine = gateLine(task) ?? loopLine(task) ?? queued ?? draftLine(task);
+  const taskKey = { projectId: task.project_id, taskId: task.id };
   // Not gated on InProgress: a task keeps its session into Review, which is what the Join button
   // there is for — while this was gated that button could never render. Everything below that
   // should stay InProgress-only carries its own check.
@@ -433,7 +516,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
         className={cn(
           "rounded-lg border border-border bg-card shadow-xs p-2.5 mb-2 flex flex-col transition-all",
           "hover:shadow-md hover:border-foreground/40 hover:-translate-y-px",
-          task.phase_status && PHASE_STATUS_RING[task.phase_status],
+          stateLine?.ring ?? (task.phase_status && PHASE_STATUS_RING[task.phase_status]),
           isDragging && "opacity-30 border-dashed",
           isDraggable && !isDragging ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
         )}
@@ -454,6 +537,12 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
             {task.is_imported && task.external_url && (
               <ExternalIdLink externalId={task.external_id} url={task.external_url} />
             )}
+            {task.run_mode === "Loop" && (
+              <span className="flex items-center gap-0.5 rounded bg-accent/12 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-accent">
+                <Repeat className="size-2.5" />
+                Loop
+              </span>
+            )}
           </div>
           {task.agent_id && <AgentAvatar agentId={task.agent_id} />}
         </div>
@@ -464,7 +553,8 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
         </p>
 
         {/* Pipeline phase — persisted, so it renders with or without a live session */}
-        <PhaseLine task={task} />
+        {stateLine ? <StateLineView line={stateLine} /> : <PhaseLine task={task} />}
+        {showsCheckBar(task) && <CheckBar task={task} />}
 
         {/* Activity line — InProgress with active session only */}
         {task.status === "InProgress" && activeSession && (
@@ -501,7 +591,8 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
           task={task}
           hasActiveSession={!!activeSession}
           isExecuting={isExecuting}
-          canRefine={canRefine}
+          startAnyway={queued !== null}
+          canRefine={task.run_mode === "Loop" ? canPrepare : canRefine}
           isAuthRequired={!!authRequired}
           isRecovering={recoverSession.isPending}
           isSendingToReview={sendToReview.isPending}
@@ -512,9 +603,13 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
             // passed that gate.
             onExecute: () =>
               void handleExecute(task, { respectCapacity: true, canPickAgent: true }),
-            // Refinement runs in the project root and writes nothing, so it does not compete for a
-            // slot the way an implementation does and is not deferred against the limit.
-            onRefine: () => void handleExecute(task, { role: "Refiner", canPickAgent: true }),
+            // A refinement, or a loop's preparation, is a conversation the user is having, so it
+            // does not compete for a slot the way an implementation does and is not deferred.
+            onRefine: () =>
+              void handleExecute(task, {
+                role: task.run_mode === "Loop" ? "Preparer" : "Refiner",
+                canPickAgent: true,
+              }),
             onOpenProposal: () => setProposalOpen(true),
             onOpenPlan: () => setPlanOpen(true),
             onOpenProfiles: () => setProfilesOpen(true),
@@ -542,10 +637,19 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
             onRecover: () => recoverSession.mutate({ taskId: task.id, projectId }),
             onSendToReview: handleSendToReview,
             onRetry: (role) => void handleExecute(task, { role, canPickAgent: true }),
+            onTryNow: () =>
+              task.gate &&
+              openGate.mutate({ projectId: task.project_id, agentId: task.gate.agent_id }),
+            loop: {
+              onHalt: () => setHaltOpen(true),
+              onResume: () => resumeLoop.mutate({ ...taskKey, note: null }),
+              onRerunChecks: () => rerunChecks.mutate(taskKey),
+            },
           }}
         />
       </div>
       <ProposalGate task={task} open={proposalOpen} onOpenChange={setProposalOpen} />
+      <HaltLoopDialog task={task} open={haltOpen} onOpenChange={setHaltOpen} />
       <PlanGate
         task={task}
         open={planOpen}

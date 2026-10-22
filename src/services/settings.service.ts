@@ -28,6 +28,8 @@ const settingsQueryKeys = {
     [...settingsQueryKeys.base, "connectionCapacity", connectionKeyStr(connection)] as const,
   autoMode: (projectId: number | null) =>
     [...settingsQueryKeys.base, "autoMode", projectId] as const,
+  loopWaitCap: (projectId: number | null) =>
+    [...settingsQueryKeys.base, "loopWaitCap", projectId] as const,
 };
 
 /**
@@ -120,6 +122,36 @@ export function useAutoMode(projectId: number | null) {
     queryFn: () => api.getAutoMode(projectId!),
     enabled: projectId !== null,
     staleTime: Infinity,
+  });
+}
+
+/**
+ * How many loops may wait on the user before the project's queued loops stop starting on their own;
+ * 0 is no cap. The daemon's, re-read on `settings-changed` like auto mode.
+ */
+export function useLoopWaitCap(projectId: number | null) {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (projectId === null) return;
+    const unlisten = listen("settings-changed", () => {
+      void queryClient.invalidateQueries({ queryKey: settingsQueryKeys.loopWaitCap(projectId) });
+    });
+    return () => void unlisten.then((fn) => fn());
+  }, [projectId, queryClient]);
+
+  return useQuery({
+    queryKey: settingsQueryKeys.loopWaitCap(projectId),
+    queryFn: () => api.getLoopWaitCap(projectId!),
+    enabled: projectId !== null,
+    staleTime: Infinity,
+  });
+}
+
+export function useSetLoopWaitCap() {
+  return useMutation({
+    mutationFn: ({ projectId, cap }: { projectId: number; cap: number }) =>
+      api.setLoopWaitCap(projectId, cap),
+    onError: createErrorToastHandler("Failed to save the loop cap"),
   });
 }
 

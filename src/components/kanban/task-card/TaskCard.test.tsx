@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TaskCard } from "./TaskCard";
 import type { Task, TaskPhase, PhaseStatus, TaskBall } from "@/types/bindings";
@@ -29,6 +29,8 @@ const taskWorktree = vi.hoisted(() => ({
  * rather than recomputed per card.
  */
 const canRefine = vi.hoisted(() => ({ current: true }));
+/** Loops waiting on the user while the waiting cap holds the queued ones back, or `null`. */
+const loopsHeldBack = vi.hoisted(() => ({ current: null as number | null }));
 
 /**
  * The board's shared state. Everything here used to be mounted inside the card itself; the mocks
@@ -40,6 +42,7 @@ vi.mock("@/contexts/BoardActionsContext", () => ({
     execute,
     executingTaskId: null,
     canRefine: canRefine.current,
+    loopsHeldBack: loopsHeldBack.current,
   }),
   useTaskSession: (taskId: number | null) => (taskId === null ? null : activeSession.current),
   useTaskWorktree: (taskId: number | null) => (taskId === null ? null : taskWorktree.current),
@@ -77,6 +80,19 @@ vi.mock("@/services/task.service", () => ({
     isPending: false,
   }),
   useEndSelfReviewMutation: () => ({ mutate: endSelfReview, isPending: false }),
+}));
+
+/** A loop's controls. Halt asks whether to wait for the running step or cut it. */
+const pauseLoop = vi.hoisted(() => vi.fn());
+const stopLoop = vi.hoisted(() => vi.fn());
+const openGate = vi.hoisted(() => vi.fn());
+
+vi.mock("@/services/loop.service", () => ({
+  usePauseLoopMutation: () => ({ mutate: pauseLoop }),
+  useStopLoopMutation: () => ({ mutate: stopLoop }),
+  useResumeLoopMutation: () => ({ mutate: vi.fn() }),
+  useRerunLoopChecksMutation: () => ({ mutate: vi.fn() }),
+  useOpenAgentGateMutation: () => ({ mutate: openGate }),
 }));
 
 /** Ending the agent's review closes its session as well as opening the human gate. */
@@ -196,6 +212,7 @@ beforeEach(() => {
   activeSession.current = null;
   taskWorktree.current = null;
   canRefine.current = true;
+  loopsHeldBack.current = null;
   authRequired.current = null;
   clearAuthRequired.mockClear();
   comments.current = [];
@@ -1566,5 +1583,84 @@ describe("TaskCard when the agent needs credentials", () => {
 
     expect(clearAuthRequired).toHaveBeenCalledWith("7");
     expect(screen.queryByRole("button", { name: /finish auth/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("TaskCard as a loop", () => {
+  const loopTask: Partial<Task> = {
+    run_mode: "Loop",
+    phase: "Iterating",
+    phase_status: "Running",
+    ball: "Agent",
+    loop_config: {
+      max_iterations: 12,
+      max_build_secs: 7200,
+      stall_limit: 2,
+      check_timeout_secs: 600,
+      sealed_paths: [],
+    },
+    loop_summary: {
+      iteration: 6,
+      counted: 5,
+      agent_secs: 3000,
+      no_change: 0,
+      last_summary: "Moving relationships.rs",
+      checks: ["Pass", "Fail", "Pending"],
+      proposals: 0,
+    },
+  };
+
+  it("carries the badge, the iteration line and the check bar", () => {
+    renderCard(loopTask);
+    expect(screen.getByText("Loop")).toBeInTheDocument();
+    expect(screen.getByText("Iteration 6/12")).toBeInTheDocument();
+    expect(screen.getByText("Moving relationships.rs")).toBeInTheDocument();
+    expect(screen.getByLabelText("1 of 3 checks pass")).toBeInTheDocument();
+  });
+
+  it("halts a loop after its step, or now, never through the abandon confirmation", async () => {
+    renderCard(loopTask);
+    await userEvent.click(screen.getByRole("button", { name: /Halt/ }));
+    const dialog = screen.getByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Halt" }));
+    expect(pauseLoop).toHaveBeenCalledWith({ projectId: 1, taskId: 7 });
+
+    await userEvent.click(screen.getByRole("button", { name: /Halt/ }));
+    await userEvent.click(screen.getByRole("radio", { name: /^Now/ }));
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Halt" }),
+    );
+    expect(stopLoop).toHaveBeenCalledWith({ projectId: 1, taskId: 7 });
+    expect(interrupt.mutate).not.toHaveBeenCalled();
+  });
+
+  it("offers Try now while its agent's usage limit holds it", () => {
+    const card = renderCard({
+      ...loopTask,
+      phase_status: "Waiting",
+      gate: {
+        agent_id: "claude-code",
+        resume_at: new Date(Date.now() + 3_600_000).toISOString(),
+        window: "five_hour",
+        backoff: false,
+      },
+    });
+    expect(screen.getByText("5-hour limit")).toBeInTheDocument();
+    expect(card.className).toContain("border-dashed");
+    fireEvent.click(screen.getByRole("button", { name: /Try now/ }));
+    expect(openGate).toHaveBeenCalledWith({ projectId: 1, agentId: "claude-code" });
+  });
+
+  it("says why a queued loop waits while the cap holds it, and starts it anyway", () => {
+    loopsHeldBack.current = 2;
+    renderCard({ run_mode: "Loop", status: "Queue", phase: null, phase_status: null });
+    expect(screen.getByText("2 loops already wait on you")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Start anyway/ }));
+    expect(execute).toHaveBeenCalled();
+  });
+
+  it("names the automation run that drafted it", () => {
+    renderCard({ status: "Planning", drafted_by: { automation: "Nightly triage", run: 12 } });
+    expect(screen.getByText("from Nightly triage #12")).toBeInTheDocument();
   });
 });

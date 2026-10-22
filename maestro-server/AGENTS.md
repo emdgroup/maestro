@@ -299,12 +299,14 @@ asking to leave plan mode has the plan taken as its artifact and the session clo
 marks the task blocked and waits for a user; a window's answer, or any prompt it sends the session,
 clears the mark.
 
-**The main loop runs on the main thread's stack, 1 MB in a Windows debug build.** A future awaited
-inline in that loop is part of the loop's own state machine, so one large `async fn` there
-overflows the stack with no hint of where. That is why `dispatch_message` and `dispatch::settle` are
-`Box::pin`ned, why the turn end boxes each step, and why the slow half of a start (`launch`: the
-worktree and the agent) is spawned and hands back through `Settle::TaskStarted`. Box or spawn
-anything new and large that the loop awaits.
+**The main loop runs on a thread of its own with an 8 MB stack** (`STACK_BYTES` in `main.rs`),
+not on the main thread, whose 1 MB in a Windows debug build the loop outgrew: a debug build gives
+every branch of a large `async fn` its own stack space at once, and an overflow kills the process
+with no hint of where. A future awaited inline in that loop is still part of the loop's own state
+machine, which is why `dispatch_message` and `dispatch::settle` are `Box::pin`ned, why the turn end
+boxes each step, and why the slow half of a start (`launch`: the worktree and the agent) is spawned
+and hands back through `Settle::TaskStarted`. Box or spawn anything new and large that the loop
+awaits.
 
 **Nothing on the shared reader awaits a daemon reply**, as in the section above. A task session's
 permission request is settled on a task of its own, its blocked mark awaited there.

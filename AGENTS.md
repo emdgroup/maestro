@@ -20,6 +20,10 @@ See `.planning/PROJECT.md` for project goals, milestone progress, requirements.
 `maestro-server` it runs on. It is phased, and each phase records the decisions already locked, so
 read it before touching the daemon, session lifetime, or automation storage.
 
+`docs/loops-plan.md` is the working plan for the Loop run mode, in which a task iterates in fresh
+sessions until its checks pass. It covers loop engineering concept by concept, so read it before
+touching the task pipeline for loops.
+
 ## Development Commands
 
 ### Frontend Development

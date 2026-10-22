@@ -11,7 +11,7 @@ use maestro_protocol::{
     ConfigOptionUpdatedResponse, ErrorResponse, ModeInfo as ProtocolModeInfo,
     ModelInfo as ProtocolModelInfo, PromptCapabilitiesInfo, ServerResponse,
     SessionModeState as ProtocolSessionModeState, SessionModelState as ProtocolSessionModelState,
-    SetModeOkResponse, TurnEnded, TurnStarted, TurnUsage,
+    SessionUpdate, SetModeOkResponse, TurnEnded, TurnStarted, TurnUsage,
 };
 use tokio::sync::mpsc;
 
@@ -55,6 +55,9 @@ fn turn_ended(result: Result<PromptResponse, acp::Error>, session_id: String) ->
             let stop_reason = if e.code == acp::schema::v1::ErrorCode::AuthRequired {
                 "auth_required"
             } else {
+                if crate::agent_gate::is_limit(e.data.as_ref(), &e.message) {
+                    crate::turn::note_usage_limited(&session_id);
+                }
                 "error"
             };
             (stop_reason.to_string(), (None, None))
@@ -85,6 +88,24 @@ fn turn_usage(resp: &PromptResponse) -> (Option<TurnUsage>, Option<serde_json::V
         .and_then(|q| q.get("model_usage"))
         .cloned();
     (usage, model_usage)
+}
+
+/// The prompt itself, for the transcript. Sent here rather than where a client's prompt arrives,
+/// so the ones the daemon sends on its own, a task's or an automation's, are shown as well.
+async fn announce_prompt(stdout: &crate::ClientOut, session_id: &str, content: serde_json::Value) {
+    let sent_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let msg = ServerResponse::SessionUpdate(SessionUpdate {
+        session_id: session_id.to_string(),
+        payload: serde_json::json!({
+            "sessionUpdate": "user_message",
+            "content": content,
+            "sentAt": sent_at,
+        }),
+    });
+    let _ = send_response(stdout, &msg).await;
 }
 
 /// Sent ahead of the prompt, so it reaches the host before anything the agent says in answer.
@@ -263,6 +284,12 @@ pub(crate) async fn run_command_loop(
                 turn_active.store(true, Ordering::SeqCst);
                 let turn_flag = Arc::clone(&turn_active);
                 in_flight.start();
+                announce_prompt(
+                    &so,
+                    &maestro_sid,
+                    serde_json::Value::String(content.clone()),
+                )
+                .await;
                 announce_turn(&so, &maestro_sid).await;
                 let answered = Arc::clone(&in_flight);
                 let result = cx
@@ -308,6 +335,7 @@ pub(crate) async fn run_command_loop(
                 let so_err = Arc::clone(&so);
                 crate::turn::note_turn_started(&maestro_sid);
                 let sid = maestro_sid.clone();
+                announce_prompt(&so, &maestro_sid, serde_json::Value::Array(blocks.clone())).await;
                 let content_blocks: Vec<acp::schema::v1::ContentBlock> = blocks
                     .into_iter()
                     .filter_map(|b| serde_json::from_value(b).ok())

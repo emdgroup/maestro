@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import type { AgentRole, Task } from "@/types/bindings";
 import { Button } from "@/ui/button";
 import { cn } from "@/lib/utils";
+import { LoopFooter, type LoopFooterActions } from "@/components/kanban/loop/LoopFooter";
+import { gateLine } from "@/components/kanban/loop/loop-state";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -39,6 +41,10 @@ export interface FooterActions {
   onSendToReview: () => void;
   /** Start the stage a failed hand-off start was handing to, see `failedStartRole`. */
   onRetry: (role: AgentRole) => void;
+  /** Open the agent's usage-limit gate, for a task it holds. */
+  onTryNow: () => void;
+  /** A loop in progress has its own controls. */
+  loop: LoopFooterActions;
 }
 
 /**
@@ -87,12 +93,15 @@ interface FooterCTAsProps {
   isRecovering: boolean;
   isSendingToReview: boolean;
   isEndingSelfReview: boolean;
+  /** A queued loop the waiting cap holds back: Execute starts it regardless. */
+  startAnyway?: boolean;
 }
 
 export function FooterCTAs({
   task,
   hasActiveSession,
   isExecuting,
+  startAnyway = false,
   canRefine,
   isAuthRequired,
   isRecovering,
@@ -113,6 +122,8 @@ export function FooterCTAs({
     onRecover,
     onSendToReview,
     onRetry,
+    onTryNow,
+    loop,
   },
 }: FooterCTAsProps & { actions: FooterActions }) {
   /**
@@ -196,6 +207,36 @@ export function FooterCTAs({
     return () => clearTimeout(t);
   }, [isSessionLost]);
 
+  // A task its agent's usage limit holds waits on nothing the user can do but not wait.
+  if (gateLine(task)) {
+    return (
+      <div className="flex gap-1 mt-1.5">
+        <Button
+          onClick={(e) => {
+            e.stopPropagation();
+            onTryNow();
+          }}
+          variant="ghost"
+          className={cn(base, "h-auto")}
+        >
+          <Play className="w-2.5 h-2.5 fill-current" />
+          Try now
+        </Button>
+      </div>
+    );
+  }
+
+  if (task.run_mode === "Loop" && task.status === "InProgress") {
+    return (
+      <LoopFooter
+        task={task}
+        hasActiveSession={hasActiveSession}
+        className={base}
+        actions={{ ...loop, onJoin }}
+      />
+    );
+  }
+
   // Ahead of the Planning branch, which returns Execute unconditionally and so made every other
   // control on a Planning card unreachable — a refiner blocked on a question would have pulsed
   // amber with no way to answer it.
@@ -214,7 +255,7 @@ export function FooterCTAs({
             className={cn(base, "h-auto")}
           >
             <MessageSquare className="w-2.5 h-2.5" />
-            Read proposal
+            {task.run_mode === "Loop" ? "Read summary" : "Read proposal"}
           </Button>
           {hasActiveSession && (
             <Button
@@ -305,13 +346,15 @@ export function FooterCTAs({
               className={cn(base, "h-auto")}
             >
               <Sparkles className="w-2.5 h-2.5" />
-              Refine
+              {task.run_mode === "Loop" ? "Prepare loop" : "Refine"}
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            {canRefine
-              ? "Ask an agent to sharpen this task's description"
-              : "No agent can refine this task. Add a Refinement profile in Settings."}
+            {!canRefine
+              ? `No agent can do this. Add a ${task.run_mode === "Loop" ? "Preparation" : "Refinement"} profile in Settings.`
+              : task.run_mode === "Loop"
+                ? "Talk the loop through with an agent: it writes the tests in the loop's worktree and sets the checks"
+                : "Ask an agent to sharpen this task's description"}
           </TooltipContent>
         </Tooltip>
       </div>
@@ -330,7 +373,9 @@ export function FooterCTAs({
         ? "Try starting this task again"
         : task.execute_requested_at
           ? "Waiting for a free agent, press to try now"
-          : null;
+          : startAnyway
+            ? "Loops already wait on you, so this one does not start on its own"
+            : null;
 
     const executeButton = (
       <Button
@@ -347,7 +392,9 @@ export function FooterCTAs({
           ? "Starting…"
           : task.phase_status === "Failed"
             ? "Retry"
-            : "Execute"}
+            : startAnyway
+              ? "Start anyway"
+              : "Execute"}
       </Button>
     );
 

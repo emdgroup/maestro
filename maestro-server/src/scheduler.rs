@@ -75,10 +75,11 @@ enum Msg {
 static TX: OnceLock<mpsc::UnboundedSender<Msg>> = OnceLock::new();
 /// Taken while a drain counts and claims slots.
 static RESERVE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-/// Tasks refused for want of an agent (none, or one unknown here), as they stood when refused, so
-/// the tick does not file the same note every minute. One is tried again once it is written or
-/// leaves the queue, or a user releases a hold on it. Execute still starts it directly. Kept with
-/// when it was refused, so another project's entry lapses after [`REFUSAL_TTL`].
+/// Tasks refused for want of an agent (none, or one unknown here) or of a loop's checks, as they
+/// stood when refused, so the tick does not file the same note every minute. One is tried again
+/// once it is written or leaves the queue, or a user releases a hold on it. Execute still starts it
+/// directly. Kept with when it was refused, so another project's entry lapses after
+/// [`REFUSAL_TTL`].
 static REFUSED: LazyLock<Mutex<HashMap<(String, i32), Refusal>>> = LazyLock::new(Default::default);
 
 type Refusal = (Task, std::time::Instant);
@@ -225,6 +226,12 @@ async fn run(
         };
         let (path, step) = match msg {
             Msg::All => {
+                let store = Arc::clone(&deps.store);
+                tokio::spawn(async move { crate::loop_engine::sweep_sandboxes(&store).await });
+                let (store, stdout) = (Arc::clone(&deps.store), Arc::clone(&deps.stdout));
+                tokio::spawn(async move {
+                    crate::loop_engine::sweep_overdue_builds(&store, &stdout).await
+                });
                 let projects = projects_with_candidates(&*deps.store.lock().await);
                 for path in projects.unwrap_or_default() {
                     let _ = tx.send(Msg::Request(path));
@@ -296,7 +303,11 @@ fn candidates(conn: &Connection, project_path: &str) -> Result<Vec<i32>, String>
         project_path: project_path.to_string(),
         include_undeferred: crate::pipeline_settings::auto_mode(conn, project_path)?,
     };
-    let queued = crate::task_store::queue_candidates(conn, &request)?;
+    let queued = under_loop_cap(
+        conn,
+        project_path,
+        crate::task_store::queue_candidates(conn, &request)?,
+    )?;
     let mut refused = refused();
     // Any write changes the row, leaving the queue or a hand-off included, and a deleted task
     // drops its own. Only this project's are compared, since `conn` may not be the store another
@@ -321,19 +332,64 @@ fn candidates(conn: &Connection, project_path: &str) -> Result<Vec<i32>, String>
         .collect())
 }
 
+/// The waiting cap: while as many of the project's loops wait on the user as it allows, a queued
+/// loop starts only when the user asked for it, with Execute or Start anyway, never on its own.
+fn under_loop_cap(
+    conn: &Connection,
+    project_path: &str,
+    queued: Vec<i32>,
+) -> Result<Vec<i32>, String> {
+    let cap = crate::pipeline_settings::loop_wait_cap(conn, project_path)?;
+    let waiting: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM tasks
+             WHERE project_path = ?1 AND run_mode = 'Loop' AND ball = 'User'
+               AND status != 'Done' AND archived_at IS NULL",
+            [project_path],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Failed to count the loops waiting: {e}"))?;
+    if cap == 0 || waiting < cap {
+        return Ok(queued);
+    }
+    let mut statement = conn
+        .prepare(
+            "SELECT id FROM tasks
+             WHERE project_path = ?1 AND run_mode = 'Loop' AND execute_requested_at IS NULL",
+        )
+        .map_err(|e| format!("Failed to prepare query: {e}"))?;
+    let capped = statement
+        .query_map([project_path], |row| row.get(0))
+        .map_err(|e| format!("Failed to list queued loops: {e}"))?
+        .collect::<Result<HashSet<i32>, _>>()
+        .map_err(|e| format!("Failed to read queued loops: {e}"))?;
+    Ok(queued
+        .into_iter()
+        .filter(|id| !capped.contains(id))
+        .collect())
+}
+
 /// The hand-offs a drain may start: tasks waiting on an agent, neither held nor refused, with no
-/// session of their own mid-turn.
+/// session of their own mid-turn. The flag marks the ones whose last session is closed, which wait
+/// for a slot: a loop's next iteration or its judge, and a first stage a usage limit cut off.
 fn handoffs(
     conn: &Connection,
     project_path: &str,
     busy: &HashSet<(String, i32)>,
-) -> Result<Vec<(i32, AgentRole)>, String> {
+) -> Result<Vec<(i32, AgentRole, bool)>, String> {
     let tasks = crate::task_store::list(conn, project_path)?;
     let refused = refused();
     Ok(tasks
         .iter()
-        .filter_map(|task| Some((task.id, crate::task_turn::next_stage(task)?)))
-        .filter(|(id, _)| {
+        .filter_map(|task| {
+            use maestro_protocol::TaskPhase::*;
+            let iterating = matches!(
+                task.phase,
+                Some(Iterating | Judging | Implementing | Drafting | Refining)
+            );
+            Some((task.id, crate::task_turn::next_stage(task)?, iterating))
+        })
+        .filter(|(id, _, _)| {
             let key = (project_path.to_string(), *id);
             !busy.contains(&key)
                 && !refused.contains_key(&key)
@@ -342,9 +398,9 @@ fn handoffs(
         .collect())
 }
 
-/// A task refused for want of an agent is left alone until it is written to.
+/// A task refused for want of an agent, or of checks, is left alone until it is written to.
 fn refuse(conn: &Connection, path: &str, task_id: i32, e: &crate::task_runner::NotBegun) {
-    if let crate::task_runner::NotBegun::NoAgent(_) = e {
+    if let crate::task_runner::NotBegun::Unstartable(_) = e {
         if let Ok(Some(task)) = crate::task_store::get(conn, path, task_id) {
             refused().insert(
                 (path.to_string(), task_id),
@@ -397,8 +453,14 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
     let mut claimed = Vec::new();
     {
         let mut conn = deps.store.lock().await;
-        // Read again under the lock that claims them, now the busy sessions are known.
-        for (task_id, role) in handoffs(&conn, path, &busy).unwrap_or_default() {
+        // Read again under the lock that claims them, now the busy sessions are known. A pipeline
+        // hand-off ignores the limit, since the session it follows usually still holds the slot;
+        // a loop's closed its session before the checks, so its next iteration or judge waits for one.
+        let (iterations, stages): (Vec<_>, Vec<_>) = handoffs(&conn, path, &busy)
+            .unwrap_or_default()
+            .into_iter()
+            .partition(|(_, _, iterating)| *iterating);
+        for (task_id, role, _) in stages {
             let request = StartTaskRequest {
                 project_path: path.to_string(),
                 task_id,
@@ -410,7 +472,7 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
             };
             match crate::task_runner::begin(&mut conn, &request, used, &agents, &mut pushes) {
                 Ok(crate::task_runner::Begun::Claimed(task)) => claimed.push(task),
-                Ok(crate::task_runner::Begun::Deferred) => {}
+                Ok(crate::task_runner::Begun::Deferred | crate::task_runner::Begun::Gated) => {}
                 Err(e) => {
                     refuse(&conn, path, task_id, &e);
                     send_diag("info", format!("[queue] hand-off of task {task_id}: {e}"));
@@ -426,7 +488,16 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
                 0
             }
         };
-        for task_id in candidates {
+        // Before the queue: a loop under way goes on before a new task starts.
+        let next_iterations = iterations
+            .into_iter()
+            .map(|(task_id, role, _)| (task_id, role))
+            .chain(
+                candidates
+                    .into_iter()
+                    .map(|task_id| (task_id, AgentRole::Coder)),
+            );
+        for (task_id, role) in next_iterations {
             if free == 0 {
                 break;
             }
@@ -439,7 +510,7 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
             let request = StartTaskRequest {
                 project_path: path.to_string(),
                 task_id,
-                role: AgentRole::Coder,
+                role,
                 feedback: None,
                 unattended: true,
                 // Counted above, against every slot on the machine.
@@ -451,7 +522,7 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
                     free -= 1;
                     claimed.push(task);
                 }
-                Ok(crate::task_runner::Begun::Deferred) => {}
+                Ok(crate::task_runner::Begun::Deferred | crate::task_runner::Begun::Gated) => {}
                 Err(e) => {
                     refuse(&conn, path, task_id, &e);
                     send_diag("info", format!("[queue] task {task_id} not started: {e}"));
@@ -497,6 +568,8 @@ mod tests {
                 workspace_branch_mode: BranchMode::Create,
                 workspace_branch: None,
                 model_override: None,
+                run_mode: maestro_protocol::RunMode::Pipeline,
+                loop_config: None,
             },
         )
         .unwrap();
@@ -565,6 +638,62 @@ mod tests {
     }
 
     #[test]
+    fn a_queued_loop_waits_while_the_cap_is_reached_unless_asked_for() {
+        let project = canonical_project_path("/srv/loop-cap-test");
+        let mut conn = crate::project_store::open_in_memory();
+        crate::pipeline_settings::answer(
+            &conn,
+            ServerRequest::SetAutoMode(AutoModeSetting {
+                project_path: project.clone(),
+                enabled: true,
+            }),
+        )
+        .unwrap();
+        let as_loop = |conn: &Connection, id: i32, set: &str| {
+            conn.execute(
+                &format!(
+                    "UPDATE tasks SET run_mode = 'Loop', {set} WHERE project_path = ?1 AND id = ?2"
+                ),
+                rusqlite::params![project, id],
+            )
+            .unwrap();
+        };
+        for title in ["one", "two"] {
+            let id = queued(&mut conn, &project, title, false);
+            as_loop(&conn, id, "status = 'Review', ball = 'User'");
+        }
+        let plain = queued(&mut conn, &project, "pipeline", false);
+        let waits = queued(&mut conn, &project, "loop", false);
+        as_loop(&conn, waits, "ball = 'None'");
+        let asked = queued(&mut conn, &project, "asked for", true);
+        as_loop(&conn, asked, "ball = 'None'");
+
+        // Two loops wait on the user, the default cap.
+        assert_eq!(candidates(&conn, &project).unwrap(), vec![asked, plain]);
+
+        let set = |cap| {
+            crate::pipeline_settings::answer(
+                &conn,
+                ServerRequest::SetLoopWaitCap(maestro_protocol::LoopWaitCap {
+                    project_path: project.clone(),
+                    cap,
+                }),
+            )
+            .unwrap();
+        };
+        set(3);
+        assert_eq!(
+            candidates(&conn, &project).unwrap(),
+            vec![asked, plain, waits]
+        );
+        set(0);
+        assert_eq!(
+            candidates(&conn, &project).unwrap(),
+            vec![asked, plain, waits]
+        );
+    }
+
+    #[test]
     fn handoffs_skip_busy_held_and_refused_tasks() {
         let project = canonical_project_path("/srv/handoff-test");
         let mut conn = crate::project_store::open_in_memory();
@@ -578,7 +707,7 @@ mod tests {
         let none = HashSet::new();
         assert_eq!(
             handoffs(&conn, &project, &none).unwrap(),
-            vec![(id, AgentRole::Coder)]
+            vec![(id, AgentRole::Coder, false)]
         );
         assert_eq!(
             projects_with_candidates(&conn).unwrap(),

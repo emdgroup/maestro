@@ -27,6 +27,15 @@ const PLANNER_PROTOCOL: &str = "Investigate the repository and reply with an imp
 /// The verdict line is what `classify_verdict` reads.
 const REVIEWER_PROTOCOL: &str = "Review the changes on this branch against the task. Start your reply with a single line reading exactly `APPROVED` or `CHANGES REQUESTED`, then say why — for changes, be specific about what to fix and where, because your reply is what the coder is given. Do not modify any files.";
 
+/// A loop's worker: one iteration of many, judged by checks it cannot see.
+const LOOP_PROTOCOL: &str = "You are one iteration of a loop that runs until this task's checks pass. Each iteration is a fresh session, so nothing you say carries over, only what you leave on disk. Start by reading `.maestro/loop/PROGRESS.md` if it exists, and before you stop, update it with what you did, what you learned and what is left, for the next iteration. Make real progress toward the goal, then end your turn: your changes are committed and the checks run after you stop. The checks' sources are not available to you and their failures reach you as output only, so do not look for them or try to change them. Do not declare the task done; the checks decide. Maestro's `loop_status` tool says where the loop stands. If the goal needs a check the list lacks, propose it with `loop_propose_check`. If you cannot go on without the user, call `loop_blocked` with what you need from them, then end your turn.";
+
+/// A loop's preparer, in place of the refiner: sets the loop up with the user before it runs.
+const PREPARE_PROTOCOL: &str = "You are preparing this loop with the user before it runs. Once queued, the loop gives the goal above to a worker agent, in fresh sessions, until every check passes. The worker works in a copy of this branch without the sealed paths, so it never sees or changes the tests that judge it. You work in the loop's own worktree, where those tests belong. Talk it through with the user: what done means, and how a command can prove it. Write the tests or check scripts the loop needs and commit them here: a path has to be committed before it can be sealed. Then set the loop with Maestro's `update_task` tool: `checks` (Command, Judge or Manual, replacing the list), `sealed_paths` for what the worker must not see or change, `setup_command` if the checks need one, and the budgets. Do not implement the goal itself: that is the worker's job, and the checks should fail until it is done. End each turn with a short summary of the loop as it now stands.";
+
+/// A loop's judge: decides the `judge` checks against the loop's work, then writes the digest.
+const JUDGE_PROTOCOL: &str = "You are the judge of a loop: another agent has worked on this task in iterations, and its work is committed on this branch. Decide each check listed below against that work, reading the diff and the code it touches. Do not modify any files, and do not run the project's tests; they are checked separately. Answer every check on a line of its own, by its number, starting with PASS or FAIL and one line of reason, for example:\n\n1. PASS: unknown ids answer 404\n2. FAIL: nothing handles an empty list\n\nA FAIL's reason is all the next iteration is told, so make it specific. If every check passes, follow the verdicts with a line reading `## Digest` and a short review for the person who signs the work off, in three parts: `### What changed`, `### What the loop decided on its own` and `### Worth a look`.";
+
 /// Where a task's attachments are copied, relative to the project root.
 #[cfg(test)]
 const TASK_ATTACHMENTS_DIR: &str = ".maestro/attachments/tasks";
@@ -75,6 +84,9 @@ fn protocol(role: AgentRole) -> &'static str {
         AgentRole::Planner => PLANNER_PROTOCOL,
         AgentRole::Reviewer => REVIEWER_PROTOCOL,
         AgentRole::Coder => COMPLETION_PROTOCOL,
+        AgentRole::Preparer => PREPARE_PROTOCOL,
+        AgentRole::Judge => JUDGE_PROTOCOL,
+        AgentRole::Worker => LOOP_PROTOCOL,
     }
 }
 
@@ -122,6 +134,8 @@ pub fn compose(
         }
         _ => format!("# {}", task.title),
     };
+    let looping = role == AgentRole::Worker;
+    let preparing = role == AgentRole::Preparer;
     if inline {
         let role_prompt = match role_prompt {
             Some(p) if !p.is_empty() => format!("{p}\n\n---\n"),
@@ -154,7 +168,21 @@ pub fn compose(
         )));
     }
 
-    if role == AgentRole::Coder {
+    if looping {
+        blocks.push(text(loop_context(conn, project_path, task)?));
+        if phase == Some(TaskPhase::AwaitingMerge) {
+            if let Some(ci) = latest("ci")? {
+                blocks.push(text(format!(
+                    "## CI is failing on the open pull request\n\n{ci}\n\nReproduce the failure locally, fix it, and commit. Once the checks pass and the user signs off, your commits are pushed to the existing pull request."
+                )));
+            }
+        }
+    } else if preparing {
+        blocks.push(text(prepare_context(conn, project_path, task)?));
+    } else if role == AgentRole::Judge {
+        // The judge's `feedback` is the diff's stat, which the starter read from the worktree.
+        blocks.push(text(judge_context(conn, project_path, task, feedback)?));
+    } else if role == AgentRole::Coder {
         if let Some(plan) = latest("plan")? {
             blocks.push(text(format!("## The approved plan\n\n{plan}")));
         }
@@ -182,8 +210,9 @@ pub fn compose(
 
     let mut tail = Vec::new();
 
-    // Only the coder acts on a review's per-file comments.
-    if role == AgentRole::Coder {
+    // A review's comments are for whoever writes the code: the coder, or a loop sent back from its
+    // sign-off or by a merge conflict.
+    if looping || role == AgentRole::Coder {
         if let Some(review) = task_store::reviews::get_review(conn, project_path, task.id)?
             .filter(|r| r.decision == "RequestChanges")
         {
@@ -218,6 +247,192 @@ pub fn compose(
         attachments,
         tail,
     })
+}
+
+/// The loop as it is set up so far, for its preparer.
+fn prepare_context(conn: &Connection, project_path: &str, task: &Task) -> Result<String, String> {
+    let config = task.loop_config.clone().unwrap_or_default();
+    let checks = task_store::loops::list_checks(conn, project_path, task.id)?;
+    let mut out = String::from(
+        "## The loop as it stands
+
+",
+    );
+    if checks.is_empty() {
+        out.push_str("No checks yet.");
+    } else {
+        out.push_str("Checks:");
+        for check in &checks {
+            out.push_str(&format!(
+                "
+- {:?}: {}",
+                check.kind, check.label
+            ));
+            if let Some(command) = check.command.as_deref() {
+                out.push_str(&format!(" (`{command}`)"));
+            }
+        }
+    }
+    if config.sealed_paths.is_empty() {
+        out.push_str(
+            "
+
+Nothing is sealed yet.",
+        );
+    } else {
+        out.push_str(
+            "
+
+Sealed: ",
+        );
+        let paths: Vec<String> = config
+            .sealed_paths
+            .iter()
+            .map(|p| format!("`{p}`"))
+            .collect();
+        out.push_str(&paths.join(", "));
+    }
+    if let Some(setup) = config.setup_command.as_deref() {
+        out.push_str(&format!(
+            "
+
+Setup before the checks: `{setup}`"
+        ));
+    }
+    out.push_str(&format!(
+        "
+
+Budget: {} iterations, each Build closed after {} minutes, stopping after {} in a row with no progress. Each check may run for {} minutes.",
+        config.max_iterations,
+        config.max_build_secs / 60,
+        config.stall_limit,
+        config.check_timeout_secs / 60
+    ));
+    Ok(out)
+}
+
+/// Where the loop stands: the iteration and budget, every check, and what the failing ones said.
+fn loop_context(conn: &Connection, project_path: &str, task: &Task) -> Result<String, String> {
+    use maestro_protocol::{LoopCheckKind, LoopCheckState, LoopIterationOutcome};
+    use task_store::loops;
+
+    let config = task.loop_config.clone().unwrap_or_default();
+    let n = loops::next_iteration(conn, project_path, task.id)?;
+    let iterations = loops::list_iterations(conn, project_path, task.id)?;
+    let mut out = format!(
+        "## Iteration {n}\n\nThis is iteration {n} of at most {}.",
+        config.max_iterations
+    );
+
+    let checks: Vec<_> = loops::list_checks(conn, project_path, task.id)?
+        .into_iter()
+        .filter(|c| !c.proposed || c.accepted)
+        .collect();
+    if !checks.is_empty() {
+        out.push_str("\n\n## Checks\n");
+        for check in &checks {
+            let how = match (check.kind, check.state) {
+                (LoopCheckKind::Command, LoopCheckState::Pass) => "passing",
+                (LoopCheckKind::Command, LoopCheckState::Fail) => "failing",
+                (LoopCheckKind::Command, LoopCheckState::Flaky) => "flaky",
+                (LoopCheckKind::Command, LoopCheckState::Pending) => "not run yet",
+                (LoopCheckKind::Judge, LoopCheckState::Fail) => "the judge failed it",
+                (LoopCheckKind::Judge, _) => "judged against your diff once the others pass",
+                (LoopCheckKind::Manual, _) => "checked by the user at the end",
+            };
+            out.push_str(&format!("\n- {} ({how})", check.label));
+        }
+        for check in checks
+            .iter()
+            .filter(|c| matches!(c.state, LoopCheckState::Fail | LoopCheckState::Flaky))
+        {
+            let Some(detail) = check.detail.as_deref().filter(|d| !d.trim().is_empty()) else {
+                continue;
+            };
+            match check.kind {
+                LoopCheckKind::Command => out.push_str(&format!(
+                    "\n\n### Output of \"{}\"\n\n```\n{}\n```",
+                    check.label,
+                    detail.trim_end()
+                )),
+                LoopCheckKind::Judge => out.push_str(&format!(
+                    "\n\n### The judge on \"{}\"\n\n{}",
+                    check.label,
+                    detail.trim()
+                )),
+                LoopCheckKind::Manual => {}
+            }
+        }
+    }
+
+    let last = iterations
+        .iter()
+        .rev()
+        .find(|i| i.outcome != LoopIterationOutcome::Running);
+    // The previous iteration's commit, when a hook refused it.
+    if let Some(last) = last {
+        if let (LoopIterationOutcome::Failed, Some(output)) = (last.outcome, &last.check_output) {
+            out.push_str(&format!(
+                "\n\n## The last iteration ended with an error\n\n```\n{}\n```",
+                output.trim_end()
+            ));
+        }
+    }
+
+    // What the user's answer below is about.
+    if let Some(reason) = last
+        .filter(|last| last.outcome == LoopIterationOutcome::Blocked)
+        .and_then(|last| last.blocked.as_deref())
+    {
+        out.push_str(&format!(
+            "
+
+## The last iteration was blocked
+
+It asked the user:
+
+{}",
+            reason.trim()
+        ));
+    }
+
+    // What the user said since the previous iteration began.
+    let notes: Vec<String> = task_store::list_comments(conn, project_path, task.id)?
+        .into_iter()
+        .filter(|c| c.kind == "steer")
+        .filter(|c| last.is_none_or(|last| c.created_at > last.started_at))
+        .filter_map(|c| c.body)
+        .map(|body| body.trim().to_string())
+        .filter(|body| !body.is_empty())
+        .collect();
+    if !notes.is_empty() {
+        out.push_str("\n\n## Notes from the user\n\n");
+        out.push_str(&notes.join("\n\n"));
+    }
+    Ok(out)
+}
+
+/// What the judge decides: the loop's work against its base, and the checks to answer by number.
+fn judge_context(
+    conn: &Connection,
+    project_path: &str,
+    task: &Task,
+    stat: Option<&str>,
+) -> Result<String, String> {
+    let base = match task.base_branch.trim() {
+        "" => task.execution_start_sha.as_deref().unwrap_or("HEAD"),
+        base => base,
+    };
+    let mut out = format!("## The work\n\nThe loop's changes are `git diff {base}...HEAD`.");
+    if let Some(stat) = stat.map(str::trim_end).filter(|s| !s.trim().is_empty()) {
+        out.push_str(&format!("\n\n```\n{stat}\n```"));
+    }
+    out.push_str("\n\n## Checks to decide\n");
+    let (checks, _) = task_store::loops::to_judge(conn, project_path, task.id)?;
+    for (i, check) in checks.iter().enumerate() {
+        out.push_str(&format!("\n{}. {}", i + 1, check.label));
+    }
+    Ok(out)
 }
 
 /// A row's path as an absolute path on this machine: relative rows are measured from the project.
@@ -385,6 +600,8 @@ mod tests {
                 workspace_branch_mode: BranchMode::Create,
                 workspace_branch: None,
                 model_override: None,
+                run_mode: maestro_protocol::RunMode::Pipeline,
+                loop_config: None,
             },
         )
         .expect("create");
@@ -607,6 +824,45 @@ The button is dead."
             texts(&prompt)[1..],
             ["## CI is failing on the open pull request\n\nbuild failed: test_login\n\nReproduce the failure locally, fix it, and commit. Your commits are pushed to the existing pull request."]
         );
+    }
+
+    #[test]
+    fn a_loops_worker_gets_the_ci_report_and_a_merge_conflicts_feedback() {
+        let (mut conn, task) = setup(P, None);
+        note(&conn, &task, "ci", "build failed: test_login");
+        let phase = Some(TaskPhase::AwaitingMerge);
+        let prompt = compose(&conn, P, &task, phase, AgentRole::Worker, None, true, None)
+            .unwrap()
+            .embed();
+        assert!(
+            texts(&prompt).iter().any(|t| t.starts_with(
+                "## CI is failing on the open pull request\n\nbuild failed: test_login"
+            )),
+            "{:?}",
+            texts(&prompt)
+        );
+
+        task_store::reviews::save_review(
+            &mut conn,
+            &SaveTaskReviewRequest {
+                project_path: P.to_string(),
+                task_id: task.id,
+                decision: "RequestChanges".to_string(),
+                general_feedback: Some("Merge conflict in a.rs".to_string()),
+                comments: None,
+            },
+        )
+        .unwrap();
+        let rework = Some(TaskPhase::Rework);
+        let prompt = compose(&conn, P, &task, rework, AgentRole::Worker, None, true, None)
+            .unwrap()
+            .embed();
+        let t = texts(&prompt);
+        assert_eq!(
+            t.last(),
+            Some(&"## General feedback\nMerge conflict in a.rs\n")
+        );
+        assert!(!t.iter().any(|t| t.contains("CI is failing")), "{t:?}");
     }
 
     #[test]

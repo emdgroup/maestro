@@ -229,7 +229,8 @@ pub async fn list_worktrees_with_status(
 
     // Unfiltered on purpose: the main worktree at the repo root is included so it can be picked
     // in the spawn dialog.
-    let disk_worktrees = crate::git::list_worktrees(&git_conn).await?;
+    let mut disk_worktrees = crate::git::list_worktrees(&git_conn).await?;
+    disk_worktrees.retain(|wt| !crate::models::is_loop_sandbox(&wt.path));
 
     struct DbWorktreeRow {
         id: i32,

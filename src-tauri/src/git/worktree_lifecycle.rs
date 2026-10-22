@@ -1193,8 +1193,8 @@ mod tests {
         prunable_maestro_branches, sweep_leftover_worktree_dirs,
     };
     use crate::models::{
-        is_maestro_created_worktree, worktree_path_for_session, worktree_path_for_task,
-        WORKTREE_DIR,
+        is_loop_sandbox, is_maestro_created_worktree, worktree_path_for_session,
+        worktree_path_for_task, WORKTREE_DIR,
     };
 
     #[test]
@@ -1207,6 +1207,12 @@ mod tests {
         assert!(!is_maestro_created_worktree(
             ".maestro/worktrees/maestro/hardy-anchor"
         ));
+        // A loop's sandbox is the daemon's, never swept and never listed.
+        assert!(!is_maestro_created_worktree(".maestro/worktrees/loop-7"));
+        assert!(is_loop_sandbox("C:/repo/.maestro/worktrees/loop-7"));
+        assert!(is_loop_sandbox(r"C:\repo\.maestro\worktrees\loop-7"));
+        assert!(!is_loop_sandbox("/repo/.maestro/worktrees/task-7"));
+        assert!(!is_loop_sandbox("/repo/loop-7"));
     }
 
     #[test]

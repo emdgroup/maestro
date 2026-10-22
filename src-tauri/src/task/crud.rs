@@ -104,6 +104,10 @@ pub struct CreateTaskRequest {
     /// `None` leaves the branch name to be generated from the task at spawn time.
     pub workspace_branch: Option<String>,
     pub model_override: Option<String>,
+    /// `None` is the pipeline.
+    pub run_mode: Option<super::models::RunMode>,
+    /// A loop's budget; `None` takes the default.
+    pub loop_config: Option<super::models::LoopConfig>,
 }
 
 /// Create a new task with validation
@@ -138,6 +142,10 @@ pub async fn create_task(
                 workspace_branch_mode: request.workspace_branch_mode.into(),
                 workspace_branch: request.workspace_branch,
                 model_override: request.model_override,
+                run_mode: request
+                    .run_mode
+                    .map_or(maestro_protocol::RunMode::Pipeline, Into::into),
+                loop_config: request.loop_config.map(Into::into),
             })
         },
         reply!(ServerResponse::CreateTaskOk(task) => task),
@@ -168,6 +176,8 @@ pub struct UpdateTaskRequest {
     /// `Checkout` must not leave the name of a branch nobody is going to create.
     pub workspace_branch_mode: Option<BranchMode>,
     pub workspace_branch: Option<String>,
+    /// A started loop's sealed paths cannot change; its budgets can.
+    pub loop_config: Option<super::models::LoopConfig>,
 }
 
 /// Update a task's status or other fields. A status is a manual move, which un-archives the task
@@ -202,6 +212,7 @@ pub async fn update_task(
         workspace_worktree_id: updates.workspace_worktree_id,
         workspace_branch_mode: updates.workspace_branch_mode.map(Into::into),
         workspace_branch: updates.workspace_branch,
+        loop_config: updates.loop_config.map(Into::into),
         ..TaskUpdate::default()
     };
     update_task_on_server(&app_state, project_id, task_id, update).await

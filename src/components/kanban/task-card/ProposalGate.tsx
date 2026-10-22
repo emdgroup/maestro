@@ -42,6 +42,9 @@ export function ProposalGate({
 
   const proposal = [...(comments ?? [])].reverse().find((c) => c.kind === "proposal");
   const body = proposal?.body?.trim();
+  // A loop's refiner prepared the loop rather than proposing a description: what it set up is
+  // already on the task, and its message only says what.
+  const preparing = task.run_mode === "Loop";
 
   const settle = (accept: boolean) => {
     closeRefinement.mutate(
@@ -58,10 +61,12 @@ export function ProposalGate({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="size-4 text-accent" />
-            Proposed description
+            {preparing ? "Loop prepared" : "Proposed description"}
           </DialogTitle>
           <DialogDescription>
-            Nothing has changed yet. Accepting replaces the task's description with this.
+            {preparing
+              ? "What the agent set up is on the task already: its tests are committed in the loop's worktree, and its checks are on the Details tab. Join its session to keep going, or finish here."
+              : "Nothing has changed yet. Accepting replaces the task's description with this."}
           </DialogDescription>
         </DialogHeader>
 
@@ -73,26 +78,40 @@ export function ProposalGate({
             <MarkdownBlock text={body} projectId={projectId} />
           ) : (
             <p className="text-muted-foreground">
-              The refiner ended its turn without proposing anything.
+              {preparing
+                ? "The agent ended its turn without a summary."
+                : "The refiner ended its turn without proposing anything."}
             </p>
           )}
         </div>
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => settle(false)}
-            disabled={closeRefinement.isPending}
-          >
-            Discard
-          </Button>
-          <Button
-            className={buttonVariants({ variant: "accent" })}
-            onClick={() => settle(true)}
-            disabled={closeRefinement.isPending || !body}
-          >
-            Use this description
-          </Button>
+          {preparing ? (
+            <Button
+              className={buttonVariants({ variant: "accent" })}
+              onClick={() => settle(false)}
+              disabled={closeRefinement.isPending}
+            >
+              Done preparing
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => settle(false)}
+                disabled={closeRefinement.isPending}
+              >
+                Discard
+              </Button>
+              <Button
+                className={buttonVariants({ variant: "accent" })}
+                onClick={() => settle(true)}
+                disabled={closeRefinement.isPending || !body}
+              >
+                Use this description
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

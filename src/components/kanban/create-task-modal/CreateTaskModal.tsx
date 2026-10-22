@@ -4,7 +4,8 @@ import type { SubmitHandler } from "react-hook-form";
 import { Dialog, DialogContent, DialogTitle, DialogClose } from "@/ui/dialog";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
-import { X } from "lucide-react";
+import { Repeat, Workflow, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import {
@@ -28,6 +29,7 @@ import { findBranchConflict } from "@/components/common/workspace-mode/branch-co
 import type {
   BranchMode,
   RemoteIssue,
+  RunMode,
   Task,
   TaskPriority,
   WorkspaceMode,
@@ -85,6 +87,8 @@ export function CreateTaskModal({
   const { data: worktrees } = useWorktreesQuery(projectId, project?.path);
 
   const { mutate: createTask, isPending } = useCreateTaskMutation();
+  // A loop is created bare: its checks are set up from its card, with Prepare loop or by hand.
+  const [runMode, setRunMode] = useState<RunMode>("Pipeline");
   const addAttachment = useAddTaskAttachmentMutation();
   // Mirrored from an effect rather than assigned during render — read only by the
   // file-input callback below, which runs after commit.
@@ -156,6 +160,7 @@ export function CreateTaskModal({
     setOpenState(isOpen);
     setTitle(isOpen ? (initial?.title ?? "") : "");
     setDescription(isOpen ? (initial?.description ?? "") : "");
+    setRunMode("Pipeline");
     if (!isOpen) {
       setError(null);
       setSelectedIssue(null);
@@ -213,8 +218,13 @@ export function CreateTaskModal({
       setError("Title must be at least 3 characters");
       return;
     }
-    // A non-git project offers no workspace choice, so it can only be the project directory.
-    const mode: WorkspaceMode = isGitRepo ? data.workspaceMode : "RepositoryDirectory";
+    // A non-git project offers no workspace choice, so it can only be the project directory. A
+    // loop always gets a worktree of its own.
+    const mode: WorkspaceMode = !isGitRepo
+      ? "RepositoryDirectory"
+      : runMode === "Loop"
+        ? "NewWorktree"
+        : data.workspaceMode;
     // The field shows this inline too; repeated here because nothing else stops the submit.
     if (mode === "NewWorktree" && data.branchMode === "Create") {
       const invalid = validateBranchSuffix(data.branchSuffix.trim());
@@ -253,6 +263,8 @@ export function CreateTaskModal({
           ? `${MAESTRO_BRANCH_PREFIX}${data.branchSuffix.trim()}`
           : null,
         model_override: null,
+        run_mode: isGitRepo && runMode === "Loop" ? "Loop" : null,
+        loop_config: null,
       },
       {
         onSuccess: (newTask: Task) => {
@@ -329,7 +341,7 @@ export function CreateTaskModal({
           className="flex flex-col flex-1 min-h-0 overflow-hidden"
         >
           {/* Body */}
-          <div className="flex-1 flex flex-col min-h-0 px-6 py-4 gap-4">
+          <div className="flex-1 flex flex-col min-h-0 overflow-y-auto px-6 py-4 gap-4">
             {error && (
               <div className="shrink-0 bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded text-sm">
                 {error}
@@ -395,6 +407,53 @@ export function CreateTaskModal({
               </div>
             )}
 
+            {/* How it runs, first: it decides which workspaces there are to pick. Only in a git
+                project, since a loop needs a worktree of its own. */}
+            {isGitRepo && (
+              <div className="shrink-0 space-y-1.5">
+                <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
+                  How it runs
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      [
+                        "Pipeline",
+                        Workflow,
+                        "Plan, implement, self review, your approval. For work you will judge by reading it.",
+                      ],
+                      [
+                        "Loop",
+                        Repeat,
+                        "Fresh sessions until sealed checks pass. For work a command can verify.",
+                      ],
+                    ] as const
+                  ).map(([mode, Icon, blurb]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      aria-pressed={runMode === mode}
+                      onClick={() => {
+                        setRunMode(mode);
+                        if (mode === "Loop") setValue("workspaceMode", "NewWorktree");
+                      }}
+                      className={cn(
+                        "flex items-start gap-2 rounded-md border p-2.5 text-left text-xs",
+                        runMode === mode ? "border-accent bg-accent/10" : "border-border",
+                      )}
+                    >
+                      <Icon className="mt-0.5 size-4 shrink-0 text-accent" />
+                      <span>
+                        <span className="font-medium">{mode}</span>
+                        <br />
+                        <span className="text-[11px] text-muted-foreground">{blurb}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Workspace: where the agent will work, and whatever that choice needs */}
             {isGitRepo && (
               <div className="shrink-0">
@@ -433,6 +492,11 @@ export function CreateTaskModal({
                         setValue("workspaceWorktreeId", wt?.id ?? null)
                       }
                       claimsOwnership
+                      newWorktreeOnly={
+                        runMode === "Loop"
+                          ? "A loop always gets a worktree of its own, so its checks can be sealed from the agent"
+                          : null
+                      }
                     />
                   )}
                 />
@@ -461,7 +525,7 @@ export function CreateTaskModal({
             </label>
             <div className="flex-1" />
             <Button type="submit" size="sm" disabled={isPending}>
-              {isPending ? "Creating..." : "Create"}
+              {isPending ? "Saving..." : "Create"}
             </Button>
           </div>
         </form>

@@ -19,6 +19,7 @@ import { BackgroundServerSection } from "./BackgroundServerSection";
 import { WebhooksSection } from "./WebhooksSection";
 import { DiagnosticsSection } from "./DiagnosticsSection";
 import { AgentProfilesSection } from "./AgentProfilesSection";
+import { LoopWaitCapSection } from "./LoopWaitCapSection";
 import { IssueTrackingSection } from "./IssueTrackingSection";
 import { SettingsSidebar } from "./SettingsSidebar";
 import { resolveDeepLinkedPage, visiblePages } from "./settings-registry";
@@ -239,6 +240,8 @@ function ProjectScopePane({
             projectId={projectId}
             agents={discovery?.agents ?? []}
             connection={connection}
+            defaultAgent={settings?.default_agent ?? null}
+            loopSettings={<LoopWaitCapSection projectId={projectId} />}
           />
         </>
       )}

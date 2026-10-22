@@ -6,9 +6,11 @@ use crate::core::{get_project_with_git_conn, AppState};
 use crate::git::worktree_lifecycle::{delete_worktree_rows, task_worktree};
 use crate::models::{GitConnection, MergeResult, PullRequestCi, Task, TaskBall};
 use crate::task::crud::{get_task_on_server, update_task_on_server};
+use crate::task::models::RunMode;
 use crate::task::ops::{apply_transition_on_server, apply_transition_writing};
 use maestro_protocol::{
-    NewTaskComment, ProjectRef, SaveTaskReviewRequest, TaskTransition, TaskUpdate, TransitionGuard,
+    LoopCheck, LoopCheckKind, LoopCheckState, LoopIteration, NewTaskComment, ProjectRef,
+    SaveTaskReviewRequest, TaskRef, TaskTransition, TaskUpdate, TransitionGuard,
 };
 use std::sync::Arc;
 use tauri::State;
@@ -22,6 +24,143 @@ async fn require_task(
     get_task_on_server(app_state, project_id, task_id)
         .await?
         .ok_or_else(|| format!("Task {} not found", task_id))
+}
+
+async fn loop_checks(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    task_id: i32,
+) -> Result<Vec<LoopCheck>, String> {
+    query_project_store(
+        app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::ListLoopChecks(TaskRef {
+                project_path,
+                task_id,
+            })
+        },
+        reply!(ServerResponse::ListLoopChecksOk(list) => list.checks),
+    )
+    .await
+}
+
+async fn loop_iterations(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    task_id: i32,
+) -> Result<Vec<LoopIteration>, String> {
+    query_project_store(
+        app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::ListLoopIterations(TaskRef {
+                project_path,
+                task_id,
+            })
+        },
+        reply!(ServerResponse::ListLoopIterationsOk(list) => list.iterations),
+    )
+    .await
+}
+
+/// A loop is signed off only once every check on its list passes and no proposal waits for an
+/// answer. Read here, at the approval, because any commit after a manual tick clears it.
+async fn require_signed_off(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    task_id: i32,
+) -> Result<(), String> {
+    let open = unsigned(&loop_checks(app_state, project_id, task_id).await?);
+    match open.is_empty() {
+        true => Ok(()),
+        false => Err(format!(
+            "This loop cannot be signed off yet: {}.",
+            open.join("; ")
+        )),
+    }
+}
+
+/// What still stands between a loop and its sign-off, one phrase per check.
+fn unsigned(checks: &[LoopCheck]) -> Vec<String> {
+    if !checks.iter().any(|check| !check.proposed || check.accepted) {
+        return vec!["it has no checks to say it is done".to_string()];
+    }
+    checks
+        .iter()
+        .filter_map(|check| {
+            let why = if check.proposed && !check.accepted {
+                "is a proposal waiting for your answer"
+            } else if check.state == LoopCheckState::Pass {
+                return None;
+            } else if check.kind == LoopCheckKind::Manual {
+                "is not ticked"
+            } else {
+                "does not pass"
+            };
+            Some(format!("\"{}\" {why}", check.label))
+        })
+        .collect()
+}
+
+/// A loop's pull request body: the judge's digest, or with none the description and what the
+/// loop's record flags, then the checklist and how many iterations it took.
+async fn loop_pull_request_body(app_state: &Arc<AppState>, task: &Task) -> Result<String, String> {
+    let (project_id, task_id) = (task.project_id, task.id);
+    let comments = query_project_store(
+        app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::ListTaskComments(TaskRef {
+                project_path,
+                task_id,
+            })
+        },
+        reply!(ServerResponse::ListTaskCommentsOk(list) => list.comments),
+    )
+    .await?;
+    let checks = loop_checks(app_state, project_id, task_id).await?;
+    let iterations = loop_iterations(app_state, project_id, task_id).await?;
+    let digest = comments
+        .into_iter()
+        .rev()
+        .find(|c| c.kind == "digest")
+        .and_then(|c| c.body);
+    Ok(loop_body(
+        task.description.as_deref(),
+        digest.as_deref(),
+        &checks,
+        &iterations,
+    ))
+}
+
+fn loop_body(
+    description: Option<&str>,
+    digest: Option<&str>,
+    checks: &[LoopCheck],
+    iterations: &[LoopIteration],
+) -> String {
+    let mut body = match digest.map(str::trim).filter(|d| !d.is_empty()) {
+        Some(digest) => digest.to_string(),
+        None => description.unwrap_or_default().trim().to_string(),
+    };
+    if !checks.is_empty() {
+        body.push_str("\n\n### Checks\n");
+        for check in checks {
+            let ticked = if check.state == LoopCheckState::Pass {
+                "x"
+            } else {
+                " "
+            };
+            body.push_str(&format!("\n- [{ticked}] {}", check.label));
+        }
+    }
+    let count = iterations.iter().filter(|i| i.counted).count();
+    body.push_str(&format!(
+        "\n\nWritten by a Maestro loop in {count} iteration{}.",
+        if count == 1 { "" } else { "s" }
+    ));
+    body.trim_start().to_string()
 }
 
 /// Squash merge a task branch into main using native Rust subprocess calls.
@@ -252,6 +391,10 @@ pub async fn approve_task_and_merge(
     // A task running in the repository directory has no worktree; see the refusal below for why
     // that is caught there rather than here.
     let task = require_task(&app_state, project_id, task_id).await?;
+    // Before anything is committed: an approval refused here leaves the worktree as it was.
+    if task.run_mode == RunMode::Loop {
+        require_signed_off(app_state.inner(), project_id, task_id).await?;
+    }
     let worktree = task_worktree(&app_state, project_id, task_id)
         .await?
         .map(|worktree| (worktree.branch_name, worktree.path, worktree.id));
@@ -335,6 +478,43 @@ pub async fn approve_task_and_merge(
         )
         .await
         .map_err(|e| format!("Failed to commit changes: {}", e))?;
+    }
+
+    // A loop sent back by its pull request's CI is signed off onto that pull request, whatever
+    // strategy was picked: the fix is pushed and the forge is waited on again, as a coder's is.
+    if task.run_mode == RunMode::Loop && task.pull_request_number.is_some() {
+        let status = crate::integration::code_hosting_handlers::code_hosting_status(
+            app_state.inner(),
+            project_id,
+        )
+        .await?;
+        let Some(remote) = status.remote else {
+            return Err(
+                "This project has no git remote, so the fix cannot reach its pull request."
+                    .to_string(),
+            );
+        };
+        crate::git::push_branch(&git_conn, &full_worktree_path, &remote, &branch_name).await?;
+        // The verdict that asked for the fix must not outlive it.
+        apply_transition_writing(
+            app_state.inner(),
+            project_id,
+            task_id,
+            TaskTransition::CiFixPushed,
+            TransitionGuard::Always,
+            Some(TaskUpdate {
+                pull_request_ci: Some(None),
+                ..Default::default()
+            }),
+            None,
+        )
+        .await?;
+        return Ok(MergeResult {
+            success: true,
+            task_status: "Review".to_string(),
+            conflicts: vec![],
+            pull_request_url: task.pull_request_url.clone(),
+        });
     }
 
     // Push before landing, so a push that fails leaves the task in Review rather than reporting
@@ -497,6 +677,11 @@ async fn open_pull_request_for_task(
         ));
     }
 
+    let body = match task.run_mode {
+        RunMode::Loop => loop_pull_request_body(app_state, task).await?,
+        RunMode::Pipeline => task.description.clone().unwrap_or_default(),
+    };
+
     // The branch has to exist on the remote before the forge will accept a PR for it.
     crate::git::push_branch(git_conn, worktree_path, &remote, branch_name).await?;
 
@@ -509,7 +694,7 @@ async fn open_pull_request_for_task(
         branch_name,
         base_branch,
         &task.title,
-        task.description.as_deref().unwrap_or(""),
+        &body,
     )
     .await?;
 
@@ -1146,6 +1331,107 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(repo.join("shared.txt")).expect("read restored file"),
             "main change\n"
+        );
+    }
+}
+
+#[cfg(test)]
+mod loop_tests {
+    use super::*;
+
+    fn check(label: &str, kind: LoopCheckKind, state: LoopCheckState) -> LoopCheck {
+        LoopCheck {
+            id: 1,
+            position: 0,
+            kind,
+            label: label.to_string(),
+            command: None,
+            state,
+            detail: None,
+            proposed: false,
+            accepted: false,
+            passed_at_sha: None,
+            updated_at: String::new(),
+        }
+    }
+
+    fn iteration(n: i32) -> LoopIteration {
+        LoopIteration {
+            n,
+            attempt: 1,
+            acp_session_id: None,
+            agent_id: None,
+            started_at: String::new(),
+            ended_at: None,
+            outcome: maestro_protocol::LoopIterationOutcome::Checked,
+            counted: true,
+            commit_sha: None,
+            files: 0,
+            added: 0,
+            removed: 0,
+            summary: None,
+            check_output: None,
+            tokens: None,
+            blocked: None,
+            results: vec![],
+        }
+    }
+
+    #[test]
+    fn a_loop_signs_off_only_with_every_check_passing_and_every_proposal_answered() {
+        let mut proposal = check(
+            "Empty lists",
+            LoopCheckKind::Command,
+            LoopCheckState::Pending,
+        );
+        proposal.proposed = true;
+        let checks = [
+            check("Tests pass", LoopCheckKind::Command, LoopCheckState::Pass),
+            check(
+                "Scrolls smoothly",
+                LoopCheckKind::Manual,
+                LoopCheckState::Pending,
+            ),
+            proposal,
+        ];
+        assert_eq!(
+            unsigned(&checks),
+            [
+                "\"Scrolls smoothly\" is not ticked",
+                "\"Empty lists\" is a proposal waiting for your answer"
+            ]
+        );
+        assert!(unsigned(&checks[..1]).is_empty());
+        assert_eq!(
+            unsigned(&checks[2..]),
+            ["it has no checks to say it is done"],
+            "nothing but a proposal"
+        );
+        assert_eq!(unsigned(&[]), ["it has no checks to say it is done"]);
+    }
+
+    #[test]
+    fn a_loop_pull_request_leads_with_the_digest_or_else_the_description() {
+        let checks = [
+            check("Tests pass", LoopCheckKind::Command, LoopCheckState::Pass),
+            check("Reads well", LoopCheckKind::Judge, LoopCheckState::Pass),
+        ];
+        let iterations = [iteration(1), iteration(2)];
+        let with = loop_body(
+            Some("Make it fast"),
+            Some("### What changed\nThe cache."),
+            &checks,
+            &iterations,
+        );
+        assert_eq!(
+            with,
+            "### What changed\nThe cache.\n\n### Checks\n\n- [x] Tests pass\n- [x] Reads well\n\n\
+             Written by a Maestro loop in 2 iterations."
+        );
+        let without = loop_body(Some("Make it fast"), None, &checks, &iterations);
+        assert!(
+            without.starts_with("Make it fast\n\n### Checks"),
+            "{without}"
         );
     }
 }

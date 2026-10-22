@@ -64,6 +64,8 @@ pub(crate) fn hold_turn_end(ended: crate::helpers::TurnEnd) -> Option<crate::hel
 /// What the loop decided: the task waits for a slot, or it is claimed and ready to launch.
 pub(crate) enum Begun {
     Deferred,
+    /// Unattended, and its agent's usage-limit gate is closed: the drain starts it once it opens.
+    Gated,
     Claimed(Box<Claimed>),
 }
 
@@ -129,6 +131,9 @@ fn stage(role: AgentRole) -> &'static str {
         AgentRole::Planner => "Planning",
         AgentRole::Coder => "Implementation",
         AgentRole::Reviewer => "Review",
+        AgentRole::Judge => "Judging",
+        AgentRole::Preparer => "Preparation",
+        AgentRole::Worker => "Building",
     }
 }
 
@@ -217,9 +222,11 @@ pub(crate) fn begin(
         .ok_or_else(|| format!("No task {} in this project", request.task_id))?;
 
     // The planner runs first from a standing start when the project has one and the task has not
-    // turned it off. Not at the plan gate, where approving calls this with the coder.
+    // turned it off. Not at the plan gate, where approving calls this with the coder. Never for a
+    // loop, whose goal and checks are its spec.
     let planner_first = request.role == AgentRole::Coder
         && task.phase.is_none()
+        && task.run_mode == maestro_protocol::RunMode::Pipeline
         && !profiles::role_is_skipped(task.profile_overrides.as_deref(), AgentRole::Planner)
         && profiles::read_profiles(&project_path)
             .resolve(
@@ -227,11 +234,40 @@ pub(crate) fn begin(
                 profiles::profile_id_for(&task, AgentRole::Planner).as_deref(),
             )
             .is_some();
-    let role = if planner_first {
-        AgentRole::Planner
-    } else {
-        request.role
+    // A loop's coder is its worker: the app and the queue start every task as the coder.
+    let looping = task.run_mode == maestro_protocol::RunMode::Loop;
+    let role = match request.role {
+        _ if planner_first => AgentRole::Planner,
+        AgentRole::Coder if looping => AgentRole::Worker,
+        role => role,
     };
+    // Both work the Refining phase: a loop is prepared, a pipeline task refined.
+    if matches!(
+        (role, looping),
+        (AgentRole::Refiner, true) | (AgentRole::Preparer | AgentRole::Worker, false)
+    ) {
+        return Err(NotBegun::Other(format!(
+            "\"{}\" is {}, so it has no {} stage",
+            task.title,
+            if looping { "a loop" } else { "not a loop" },
+            stage(role)
+        )));
+    }
+    // A loop is done when its checks say so, and one with none would reach sign-off on nothing.
+    if role == AgentRole::Worker
+        && !crate::task_store::loops::list_checks(conn, &project_path, task.id)?
+            .iter()
+            .any(|c| !c.proposed || c.accepted)
+    {
+        let reason = format!(
+            "\"{}\" has no checks, so nothing would say when it is done. Add one, or prepare the loop.",
+            task.title
+        );
+        if request.unattended {
+            add_note(conn, &project_path, task.id, reason.clone(), pushes);
+        }
+        return Err(NotBegun::Unstartable(reason));
+    }
 
     // Only a fixed limit defers; Auto at its limit starts anyway, as the app's `Warn` does. A
     // limit that cannot be read starts too: the claim below is what decides.
@@ -276,8 +312,14 @@ pub(crate) fn begin(
         if request.unattended {
             add_note(conn, &project_path, task.id, reason.clone(), pushes);
         }
-        return Err(NotBegun::NoAgent(reason));
+        return Err(NotBegun::Unstartable(reason));
     };
+    // A user's own start goes ahead: it is the probe they asked for.
+    if request.unattended
+        && crate::agent_gate::closed_until(conn, &agent_id, chrono::Utc::now()).is_some()
+    {
+        return Ok(Begun::Gated);
+    }
 
     // A retry of a failed spawn is still the start of the phase the first claim took it from.
     let prior_phase = match task.phase {
@@ -292,7 +334,7 @@ pub(crate) fn begin(
         let retries = match task.phase {
             Some(TaskPhase::PlanReview) if role == AgentRole::Planner => Some(AgentRole::Planner),
             Some(TaskPhase::PlanReview) => Some(AgentRole::Coder),
-            phase => crate::task_restart::role(phase),
+            phase => crate::task_restart::role(phase, task.run_mode),
         };
         if retries.is_some_and(|expected| expected != role) {
             return Err(format!(
@@ -337,9 +379,9 @@ pub(crate) fn begin(
 /// Why `begin` claimed nothing.
 #[derive(Debug)]
 pub(crate) enum NotBegun {
-    /// The task has no agent for the stage, or one unknown on this machine: nothing short of a
-    /// change to the task or its profiles starts it.
-    NoAgent(String),
+    /// The task has no agent for the stage, one unknown on this machine, or is a loop with no
+    /// checks: nothing short of a change to the task or its profiles starts it.
+    Unstartable(String),
     Other(String),
 }
 
@@ -352,7 +394,7 @@ impl From<String> for NotBegun {
 impl std::fmt::Display for NotBegun {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NotBegun::NoAgent(message) | NotBegun::Other(message) => f.write_str(message),
+            NotBegun::Unstartable(message) | NotBegun::Other(message) => f.write_str(message),
         }
     }
 }
@@ -575,9 +617,10 @@ async fn run(
         &result.session,
         system_prompt.is_none(),
         feedback.as_deref(),
+        &workspace.cwd,
     )
     .await;
-    let (profile_id, skipped_attachments) = match prepared {
+    let (profile_id, skipped_attachments, loop_session) = match prepared {
         Ok(prepared) => prepared,
         Err(failure) => {
             forget_turn_ends(&session_id);
@@ -594,7 +637,46 @@ async fn run(
         }
     };
 
-    let role_json = serde_json::json!({ "role": role, "profile_id": profile_id }).to_string();
+    // A loop session carries what it was started for, which is how its turn end finds the loop
+    // engine and how a stale iteration's is told from the live one's.
+    if let Some(crate::loop_engine::LoopSession::Iteration(n)) = loop_session {
+        // The sandbox starts at the loop's worktree HEAD, which is where Start over goes back to.
+        let head = crate::worktree::git(&workspace.cwd, &["rev-parse", "HEAD"]).await;
+        let conn = launcher.store.lock().await;
+        let started = head
+            .and_then(|head| {
+                crate::task_store::loops::anchor_start(&conn, &project_path, task.id, head.trim())
+            })
+            .and_then(|()| {
+                crate::task_store::loops::start_iteration(
+                    &conn,
+                    &project_path,
+                    task.id,
+                    n,
+                    &result.acp_session_id,
+                    &agent_id,
+                )
+            });
+        drop(conn);
+        match started {
+            // The task's change went out with `LoopIterationStarted`, before this row: a board
+            // that read it then shows no iteration until told again.
+            Ok(()) => {
+                let changed = ServerResponse::TasksChanged(maestro_protocol::ProjectRef {
+                    project_path: project_path.clone(),
+                });
+                broadcast(everyone, changed).await;
+            }
+            Err(e) => send_diag("warn", format!("[loop] task {}: {e}", task.id)),
+        }
+    }
+    let role_json = match loop_session {
+        Some(session) => {
+            serde_json::json!({ "role": role, "profile_id": profile_id, "loop": session })
+        }
+        None => serde_json::json!({ "role": role, "profile_id": profile_id }),
+    }
+    .to_string();
     result.session.agent_id = agent_id.clone();
     result.session.cwd = workspace.cwd;
     result.session.project = Some(crate::sessions::ProjectBinding {
@@ -681,7 +763,8 @@ pub(crate) fn settings_commands(
 }
 
 /// Steps seven to ten on a session that is up: settings, prompt, review cleared, task moved on.
-/// Returns the profile the stage ran on and the attachments the prompt went without.
+/// Returns the profile the stage ran on, the attachments the prompt went without, and what a loop
+/// session was started for.
 #[allow(clippy::too_many_arguments)]
 async fn prepare(
     launcher: &Launcher,
@@ -695,24 +778,57 @@ async fn prepare(
     session: &ActiveSession,
     inline_instructions: bool,
     feedback: Option<&str>,
-) -> Result<(Option<String>, Vec<String>), Failure> {
+    cwd: &str,
+) -> Result<
+    (
+        Option<String>,
+        Vec<String>,
+        Option<crate::loop_engine::LoopSession>,
+    ),
+    Failure,
+> {
+    use crate::loop_engine::LoopSession;
+    use crate::task_store::loops;
     // A profile set to fail rather than degrade fails the start.
     let settings = profiles::resolve_stage(project_path, task, role, capabilities)?;
     for warning in &settings.warnings {
         send_diag("warn", format!("[task] task {}: {warning}", task.id));
     }
+    // The judge is shown what the loop changed, read before the store is locked.
+    let stat = match role {
+        AgentRole::Judge => crate::loop_engine::diff_stat(cwd, task).await,
+        _ => None,
+    };
+    let feedback = stat.as_deref().or(feedback);
 
     let mut pushes = Vec::new();
-    let draft = crate::task_prompt::compose(
-        &*launcher.store.lock().await,
-        project_path,
-        task,
-        prior_phase,
-        role,
-        settings.role_prompt.as_deref(),
-        inline_instructions,
-        feedback,
-    )?;
+    let (draft, loop_session) = {
+        let conn = launcher.store.lock().await;
+        let loop_session = match (task.run_mode, role) {
+            (maestro_protocol::RunMode::Loop, AgentRole::Worker) => Some(LoopSession::Iteration(
+                loops::next_iteration(&conn, project_path, task.id)?,
+            )),
+            (maestro_protocol::RunMode::Loop, AgentRole::Judge) => {
+                let (checks, sha) = loops::to_judge(&conn, project_path, task.id)?;
+                Some(LoopSession::Judge {
+                    checks: checks.iter().map(|c| c.id).collect(),
+                    sha: sha.unwrap_or_default(),
+                })
+            }
+            _ => None,
+        };
+        let draft = crate::task_prompt::compose(
+            &conn,
+            project_path,
+            task,
+            prior_phase,
+            role,
+            settings.role_prompt.as_deref(),
+            inline_instructions,
+            feedback,
+        )?;
+        (draft, loop_session)
+    };
     // Files read and images scaled with the store let go, and off the runtime.
     let composed = tokio::task::spawn_blocking(move || draft.embed())
         .await
@@ -746,7 +862,7 @@ async fn prepare(
     let ready = {
         let mut conn = launcher.store.lock().await;
         // After the prompt, so a review is only dropped once it reached the coder.
-        if role == AgentRole::Coder {
+        if matches!(role, AgentRole::Coder | AgentRole::Worker) {
             let clear = ServerRequest::ClearTaskReview(maestro_protocol::TaskRef {
                 project_path: project_path.to_string(),
                 task_id: task.id,
@@ -755,11 +871,15 @@ async fn prepare(
                 send_diag("warn", format!("[task] could not clear a review: {e}"));
             }
         }
+        let ready = match loop_session {
+            Some(LoopSession::Iteration(_)) => TaskTransition::LoopIterationStarted,
+            _ => TaskTransition::SessionReady(role),
+        };
         transition(
             &mut conn,
             project_path,
             task.id,
-            TaskTransition::SessionReady(role),
+            ready,
             TransitionGuard::Spawning,
             None,
             &mut pushes,
@@ -769,7 +889,11 @@ async fn prepare(
         broadcast(everyone, push).await;
     }
     match ready? {
-        Some(_) => Ok((settings.profile_id, composed.skipped_attachments)),
+        Some(_) => Ok((
+            settings.profile_id,
+            composed.skipped_attachments,
+            loop_session,
+        )),
         None => Err(Failure::Moved),
     }
 }
@@ -932,6 +1056,8 @@ mod tests {
                 workspace_branch_mode: BranchMode::Create,
                 workspace_branch: None,
                 model_override: None,
+                run_mode: maestro_protocol::RunMode::Pipeline,
+                loop_config: None,
             },
         )
         .unwrap();
@@ -1050,6 +1176,109 @@ mod tests {
         }
     }
 
+    /// A loop started as the coder is its worker's; a pipeline task has no worker.
+    #[test]
+    fn a_loop_started_as_the_coder_runs_its_worker() {
+        let agents = [agent("fake")];
+        let (_dir, project, mut conn, task) = setup(Some("fake"));
+        let worker = StartTaskRequest {
+            role: AgentRole::Worker,
+            ..request(&project, &task)
+        };
+        assert!(begin(&mut conn, &worker, 0, &agents, &mut Vec::new()).is_err());
+        conn.execute(
+            "UPDATE tasks SET run_mode = 'Loop' WHERE id = ?1",
+            [task.id],
+        )
+        .unwrap();
+        let refused = begin(
+            &mut conn,
+            &request(&project, &task),
+            0,
+            &agents,
+            &mut Vec::new(),
+        );
+        assert!(
+            matches!(&refused, Err(NotBegun::Unstartable(why)) if why.contains("no checks")),
+            "a loop with no checks has nothing to work toward: {:?}",
+            refused.err()
+        );
+        crate::task_store::loops::set_checks(
+            &mut conn,
+            &maestro_protocol::SetLoopChecksRequest {
+                project_path: task.project_path.clone(),
+                task_id: task.id,
+                checks: vec![maestro_protocol::LoopCheckEntry {
+                    id: None,
+                    spec: maestro_protocol::LoopCheckSpec {
+                        kind: maestro_protocol::LoopCheckKind::Manual,
+                        label: "Looks right".to_string(),
+                        command: None,
+                    },
+                }],
+            },
+        )
+        .unwrap();
+        match begin(
+            &mut conn,
+            &request(&project, &task),
+            0,
+            &agents,
+            &mut Vec::new(),
+        ) {
+            Ok(Begun::Claimed(claimed)) => assert_eq!(claimed.role, AgentRole::Worker),
+            other => panic!("{:?}", other.err()),
+        }
+    }
+
+    /// A loop whose approval hit a merge conflict, or whose pull request's CI failed, is retried by
+    /// its worker, as the app's start asks for the coder.
+    #[test]
+    fn a_loops_merge_conflict_and_ci_fix_are_its_workers() {
+        let agents = [agent("fake")];
+        for (phase, status, phase_status, ball) in [
+            ("Rework", "InProgress", "Failed", "User"),
+            ("AwaitingMerge", "Review", "Waiting", "Agent"),
+        ] {
+            let (_dir, project, mut conn, task) = setup(Some("fake"));
+            conn.execute(
+                "UPDATE tasks SET run_mode = 'Loop', status = ?2, phase = ?3, phase_status = ?4,
+                     ball = ?5
+                 WHERE id = ?1",
+                rusqlite::params![task.id, status, phase, phase_status, ball],
+            )
+            .unwrap();
+            crate::task_store::loops::set_checks(
+                &mut conn,
+                &maestro_protocol::SetLoopChecksRequest {
+                    project_path: task.project_path.clone(),
+                    task_id: task.id,
+                    checks: vec![maestro_protocol::LoopCheckEntry {
+                        id: None,
+                        spec: maestro_protocol::LoopCheckSpec {
+                            kind: maestro_protocol::LoopCheckKind::Manual,
+                            label: "Looks right".to_string(),
+                            command: None,
+                        },
+                    }],
+                },
+            )
+            .unwrap();
+            match begin(
+                &mut conn,
+                &request(&project, &task),
+                0,
+                &agents,
+                &mut Vec::new(),
+            ) {
+                Ok(Begun::Claimed(claimed)) => {
+                    assert_eq!(claimed.role, AgentRole::Worker, "{phase}")
+                }
+                other => panic!("{phase}: {:?}", other.err()),
+            }
+        }
+    }
+
     /// The window's pick runs this stage, whatever the profile says, and is not kept.
     #[test]
     fn an_agent_override_runs_the_stage_and_is_not_written() {
@@ -1068,6 +1297,25 @@ mod tests {
         };
         assert_eq!(claimed.agent_id, "other");
         assert_eq!(claimed.task.agent_id, None);
+    }
+
+    /// A closed gate holds the drain's starts on that agent; the user's own start goes ahead.
+    #[test]
+    fn a_closed_gate_holds_unattended_starts_only() {
+        let (_dir, project, mut conn, task) = setup(Some("fake"));
+        let refused = crate::turn::TurnFacts {
+            usage_limited: true,
+            ..Default::default()
+        };
+        crate::agent_gate::turn_ended(&conn, "fake", None, &refused, "error", chrono::Utc::now());
+        let mut start = request(&project, &task);
+        start.unattended = true;
+        let mut pushes = Vec::new();
+        let begun = begin(&mut conn, &start, 0, &[agent("fake")], &mut pushes).unwrap();
+        assert!(matches!(begun, Begun::Gated));
+        start.unattended = false;
+        let begun = begin(&mut conn, &start, 0, &[agent("fake")], &mut pushes).unwrap();
+        assert!(matches!(begun, Begun::Claimed(_)));
     }
 
     #[test]

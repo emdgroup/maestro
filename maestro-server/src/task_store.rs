@@ -8,6 +8,7 @@
 //! Every function that reads and then writes runs in one transaction. The app got that atomicity
 //! from its one `Mutex<Connection>`; here the guard travels with the request instead.
 
+pub mod loops;
 pub mod project_import;
 pub mod requests;
 pub mod reviews;
@@ -20,8 +21,8 @@ pub use threads::*;
 use chrono::Utc;
 use maestro_protocol::{
     BranchMode, CloseRefinementRequest, CreateTaskRequest, EndTaskTurnRequest, ImportTasksRequest,
-    ListQueueCandidatesRequest, RequestTaskExecutionRequest, Task, TaskPhase, TaskStatus,
-    TaskTransition, TaskUpdate, TransitionGuard, TurnEnding, WorkspaceMode,
+    ListQueueCandidatesRequest, LoopConfig, RequestTaskExecutionRequest, RunMode, Task, TaskPhase,
+    TaskStatus, TaskTransition, TaskUpdate, TransitionGuard, TurnEnding, WorkspaceMode,
 };
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{de::DeserializeOwned, Serialize};
@@ -222,7 +223,36 @@ fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         pull_request_ci: optional_text("pull_request_ci")?.and_then(|s| parse(&s)),
         profile_overrides: row.get("profile_overrides")?,
         claimed_from: optional_text("claimed_from")?.and_then(|s| parse(&s)),
+        run_mode: optional_text("run_mode")?
+            .and_then(|s| parse(&s))
+            .unwrap_or_default(),
+        loop_config: optional_text("loop_config")?.and_then(|s| serde_json::from_str(&s).ok()),
+        loop_summary: None,
+        gate: None,
+        drafted_by: optional_text("drafted_by")?.map(|automation| {
+            Box::new(maestro_protocol::TaskDraft {
+                automation,
+                run: row.get("drafted_run").ok().flatten(),
+            })
+        }),
     })
+}
+
+/// What a task's row does not hold: a loop's summary, and the gate holding a task that waits.
+fn filled(conn: &Connection, mut task: Task) -> Task {
+    if task.run_mode == RunMode::Loop {
+        match crate::loop_engine::summary(conn, &task) {
+            Ok(summary) => task.loop_summary = Some(Box::new(summary)),
+            Err(e) => crate::helpers::send_diag("warn", format!("[loop] task {}: {e}", task.id)),
+        }
+    }
+    if task.phase_status == Some(maestro_protocol::PhaseStatus::Waiting)
+        && task.ball == maestro_protocol::TaskBall::Agent
+    {
+        task.gate =
+            crate::agent_gate::of_task(conn, &task.project_path, task.id, Utc::now()).map(Box::new);
+    }
+    task
 }
 
 fn read(conn: &Connection, project_path: &str, task_id: i32) -> Result<Task, String> {
@@ -245,7 +275,7 @@ fn query(conn: &Connection, sql: &str, args: impl rusqlite::Params) -> Result<Ve
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
-    Ok(tasks)
+    Ok(tasks.into_iter().map(|task| filled(conn, task)).collect())
 }
 
 pub fn get(conn: &Connection, project_path: &str, task_id: i32) -> Result<Option<Task>, String> {
@@ -255,7 +285,23 @@ pub fn get(conn: &Connection, project_path: &str, task_id: i32) -> Result<Option
         from_row,
     )
     .optional()
+    .map(|task| task.map(|task| filled(conn, task)))
     .map_err(|e| format!("Failed to read task {task_id}: {e}"))
+}
+
+/// Record the automation run whose agent created the task. `project_path` is canonical.
+pub fn set_drafted_by(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+    draft: &maestro_protocol::TaskDraft,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE tasks SET drafted_by = ?3, drafted_run = ?4 WHERE project_path = ?1 AND id = ?2",
+        params![project_path, task_id, draft.automation, draft.run],
+    )
+    .map(|_| ())
+    .map_err(|e| format!("Failed to record where task {task_id} came from: {e}"))
 }
 
 /// The project's next task id. Counted from what the project ever minted, not from what is left.
@@ -280,6 +326,12 @@ pub fn create(conn: &mut Connection, request: &CreateTaskRequest) -> Result<Task
         .as_deref()
         .map(str::trim)
         .filter(|d| !d.is_empty());
+    loops::check_workspace(request.run_mode, request.workspace_mode)?;
+    let loop_config = match (request.run_mode, &request.loop_config) {
+        (_, Some(config)) => Some(loops::normalize_config(config)?),
+        (RunMode::Loop, None) => Some(LoopConfig::default()),
+        (RunMode::Pipeline, None) => None,
+    };
     let now = Utc::now().to_rfc3339();
 
     let tx = transaction(conn)?;
@@ -288,9 +340,9 @@ pub fn create(conn: &mut Connection, request: &CreateTaskRequest) -> Result<Task
         "INSERT INTO tasks (project_path, id, title, description, skills, status, base_branch,
                             agent_id, priority, auto_approve, workspace_mode, workspace_worktree_id,
                             workspace_branch_mode, workspace_branch, model_override, labels,
-                            created_at, updated_at)
+                            created_at, updated_at, run_mode, loop_config)
          VALUES (?1, ?2, ?3, ?4, ?5, 'Planning', ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                 ?16, ?16)",
+                 ?16, ?16, ?17, ?18)",
         params![
             request.project_path,
             id,
@@ -323,6 +375,8 @@ pub fn create(conn: &mut Connection, request: &CreateTaskRequest) -> Result<Task
             request.model_override,
             json(&request.labels)?,
             now,
+            text(request.run_mode),
+            loop_config.as_ref().map(json).transpose()?,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -421,6 +475,34 @@ fn write_update(
     if let Some(v) = &update.external_updated_at {
         sets.push(("external_updated_at", Box::new(v.clone())));
     }
+    // A started task has a worktree and sessions made for the mode it started in, and a started
+    // loop's worktree is sealed to its paths. Prepare loop's `Refining` comes before the start:
+    // the sandbox is sealed at the first Build.
+    let started = || -> Result<Option<(bool, Option<String>)>, String> {
+        conn.query_row(
+            "SELECT (phase IS NOT NULL AND phase != 'Refining') OR status NOT IN ('Planning', 'Queue'),
+                    loop_config
+             FROM tasks WHERE project_path = ?1 AND id = ?2",
+            params![project_path, task_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())
+    };
+    if let Some(config) = &update.loop_config {
+        let config = loops::normalize_config(config)?;
+        if let Some((true, Some(before))) = started()? {
+            let before: LoopConfig = serde_json::from_str(&before).unwrap_or_default();
+            if before.sealed_paths != config.sealed_paths {
+                return Err(
+                    "A loop's sealed paths can only change before it starts, or through \
+                            an accepted proposal"
+                        .to_string(),
+                );
+            }
+        }
+        sets.push(("loop_config", Box::new(json(&config)?)));
+    }
     let edits = sets.len();
     let edited = edits > 0 || update.status.is_some();
 
@@ -466,6 +548,19 @@ fn write_update(
         rusqlite::params_from_iter(values.iter().map(|v| v.as_ref())),
     )
     .map_err(|e| e.to_string())?;
+    if update.workspace_mode.is_some() {
+        let (mode, workspace): (String, String) = conn
+            .query_row(
+                "SELECT run_mode, workspace_mode FROM tasks WHERE project_path = ?1 AND id = ?2",
+                params![project_path, task_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|e| e.to_string())?;
+        loops::check_workspace(
+            parse(&mode).unwrap_or_default(),
+            parse(&workspace).unwrap_or(WorkspaceMode::NewWorktree),
+        )?;
+    }
 
     // Status is not part of the SET above: moving a task also resets its pipeline activity, and
     // that correlation belongs to the transition.
@@ -837,6 +932,8 @@ mod tests {
                 workspace_branch_mode: BranchMode::Create,
                 workspace_branch: None,
                 model_override: None,
+                run_mode: maestro_protocol::RunMode::Pipeline,
+                loop_config: None,
             },
         )
         .expect("create a task")
@@ -960,6 +1057,8 @@ mod tests {
             workspace_branch_mode: BranchMode::Create,
             workspace_branch: Some("topic".to_string()),
             model_override: None,
+            run_mode: maestro_protocol::RunMode::Pipeline,
+            loop_config: None,
         }
     }
 

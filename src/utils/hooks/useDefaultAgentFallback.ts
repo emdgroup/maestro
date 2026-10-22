@@ -1,6 +1,11 @@
 import { useEffect, useRef } from "react";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
-import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
+import {
+  useProjectSettings,
+  useSeedAgentProfilesMutation,
+  useUpdateProjectSettings,
+} from "@/services/project.service";
+import { starterProfiles } from "@/lib/default-profiles";
 import type { ConnectionKey, ProjectConfigResponse } from "@/types/bindings";
 
 interface FallbackInputs {
@@ -51,13 +56,20 @@ export function resolveDefaultAgentFallback({
  * Modelled on the accent auto-assignment in `ThemeProvider`, down to the once-per-project ref:
  * the settings query is invalidated by the write, so a guard that lived in the query data alone
  * would let a second render fire before the first write landed.
+ *
+ * The same open gives a project with no `profiles.json` one profile per role, on the default
+ * agent or else the first installed one, so every stage runs with its instructions from the start
+ * rather than only Implementation running on a bare agent. The command writes only when the file
+ * is absent, so a user who removed every profile keeps none.
  */
 export function useDefaultAgentFallback(projectId: number | null, connection: ConnectionKey) {
   const settingsQuery = useProjectSettings(projectId);
   const discoveryQuery = useAgentDiscoveryQuery(connection, projectId != null);
   const updateSettings = useUpdateProjectSettings();
+  const seedProfiles = useSeedAgentProfilesMutation();
 
   const appliedRef = useRef(new Set<number>());
+  const seededRef = useRef(new Set<number>());
 
   const settings = settingsQuery.data;
   const agentIds = discoveryQuery.data?.agents.map((agent) => agent.id) ?? [];
@@ -76,6 +88,22 @@ export function useDefaultAgentFallback(projectId: number | null, connection: Co
     updateSettings.mutate({ projectId, config: requestFrom(settings, agentId) });
     // `agentIds` is a fresh array every render; the query's own success flag and length are what
     // actually change, and depending on the array would re-run this on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    projectId,
+    settingsQuery.isSuccess,
+    discoveryQuery.isSuccess,
+    settings?.default_agent,
+    agentIds.length,
+  ]);
+
+  useEffect(() => {
+    if (projectId == null || !settingsQuery.isSuccess || !discoveryQuery.isSuccess) return;
+    const agentId = settings?.default_agent ?? agentIds[0];
+    if (agentId == null || seededRef.current.has(projectId)) return;
+
+    seededRef.current.add(projectId);
+    seedProfiles.mutate({ projectId, document: starterProfiles(agentId) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     projectId,

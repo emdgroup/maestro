@@ -350,6 +350,171 @@ async addTaskNote(projectId: number, taskId: number, body: string) : Promise<Res
 }
 },
 /**
+ * A loop's checks in list order, proposals included.
+ */
+async listLoopChecks(projectId: number, taskId: number) : Promise<Result<LoopCheck[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_loop_checks", { projectId, taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The user's whole list. A kept check whose spec changed is pending again; proposals waiting
+ * for an answer are left alone.
+ */
+async setLoopChecks(projectId: number, taskId: number, checks: LoopCheckEntry[]) : Promise<Result<LoopCheck[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_loop_checks", { projectId, taskId, checks }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Accept a proposed check as `accept`, sealing `seal`, or reject it with `None`.
+ */
+async answerLoopProposal(projectId: number, taskId: number, checkId: number, accept: LoopCheckSpec | null, seal: string[]) : Promise<Result<LoopCheck[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("answer_loop_proposal", { projectId, taskId, checkId, accept, seal }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Tick or untick a manual check.
+ */
+async tickLoopCheck(projectId: number, taskId: number, checkId: number, ticked: boolean) : Promise<Result<LoopCheck[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tick_loop_check", { projectId, taskId, checkId, ticked }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Oldest first.
+ */
+async listLoopIterations(projectId: number, taskId: number) : Promise<Result<LoopIteration[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_loop_iterations", { projectId, taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listLoopHiddenFiles(projectId: number, taskId: number) : Promise<Result<LoopHiddenFile[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_loop_hidden_files", { projectId, taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The whole set, replacing what was there.
+ */
+async setLoopHiddenFiles(projectId: number, taskId: number, files: LoopHiddenFile[]) : Promise<Result<LoopHiddenFile[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_loop_hidden_files", { projectId, taskId, files }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Take the sealed snapshot again and run the checks on the loop's commit. Not an iteration.
+ */
+async rerunLoopChecks(projectId: number, taskId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rerun_loop_checks", { projectId, taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The worker's `.maestro/loop/PROGRESS.md`, as it stands in the loop's worktree.
+ */
+async readLoopNotes(projectId: number, taskId: number) : Promise<Result<string | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("read_loop_notes", { projectId, taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Hold the loop for the user once the running iteration and its checks end.
+ */
+async pauseLoop(projectId: number, taskId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("pause_loop", { projectId, taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Halt the loop where it is. A running iteration is cut and its work kept, uncounted.
+ */
+async stopLoop(projectId: number, taskId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_loop", { projectId, taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * A note for the next iteration. The one running is not interrupted.
+ */
+async addLoopNote(projectId: number, taskId: number, body: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_loop_note", { projectId, taskId, body }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Let a stopped loop, or one at sign-off, go on, with an optional note for its next iteration.
+ * Its stall streak counts from here.
+ */
+async resumeLoop(projectId: number, taskId: number, note: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("resume_loop", { projectId, taskId, note }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Open an agent's usage-limit gate now, so its waiting tasks start ("Try now").
+ */
+async openAgentGate(projectId: number, agentId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_agent_gate", { projectId, agentId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Which of `candidates`, relative paths a check command names, exist on `base_branch`: the paths
+ * a loop can seal, since the checks take sealed files from there.
+ */
+async loopSealablePaths(projectId: number, baseBranch: string, candidates: string[]) : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("loop_sealable_paths", { projectId, baseBranch, candidates }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * List git branches and the current branch for a project
  * 
  * Returns a tuple of (branches, current_branch).
@@ -442,6 +607,26 @@ async getAutoMode(projectId: number) : Promise<Result<boolean, string>> {
 async setAutoMode(projectId: number, enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("set_auto_mode", { projectId, enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * How many of the project's loops may wait on the user before the drain starts no more of its
+ * queued ones; 0 is no cap. The project's, kept by its daemon.
+ */
+async getLoopWaitCap(projectId: number) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_loop_wait_cap", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setLoopWaitCap(projectId: number, cap: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_loop_wait_cap", { projectId, cap }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -944,6 +1129,21 @@ async listAgentProfiles(projectId: number) : Promise<Result<ProfilesDocument, st
 async saveAgentProfiles(projectId: number, document: ProfilesDocument) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("save_agent_profiles", { projectId, document }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Give a project its starting profiles, unless it already has a `profiles.json`.
+ * 
+ * Returns whether it wrote. An existing file is kept even when it lists no profiles, because
+ * that is a user who removed them, and a host that cannot say whether the file exists is an
+ * error rather than a "no", so a flaky connection never writes over the user's profiles.
+ */
+async seedAgentProfiles(projectId: number, document: ProfilesDocument) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seed_agent_profiles", { projectId, document }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2885,6 +3085,32 @@ async interruptTask(projectId: number, taskId: number) : Promise<Result<null, st
 }
 },
 /**
+ * Stop the agent working on a task and leave everything it produced where it is: the task stays
+ * in its column and phase, failed and the user's, so it can be recovered, sent on or started over.
+ * A loop at work is halted where it is, keeping its iterations and worktree, and the daemon cuts
+ * its session. A loop being prepared is no iteration, so its preparer stops as any agent does.
+ */
+async stopTask(projectId: number, taskId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_task", { projectId, taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Start a task that is not running over from scratch, parked in Planning or Queue. See the
+ * daemon's `start_over`.
+ */
+async restartTask(projectId: number, taskId: number, status: TaskStatus) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restart_task", { projectId, taskId, status }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Move a task on to review by hand, applying the same transition the agent's own completion
  * would.
  * 
@@ -3101,6 +3327,18 @@ export type AgentAuthInfo = { authMethods: AuthMethodDto[]; supportsLogout: bool
  * Works for both local (`connection_id = None`) and remote (`connection_id = Some(id)`).
  */
 export type AgentDiscoveryResult = { maestro_server_available: boolean; agents: DiscoveredAgent[]; error?: string | null }
+/**
+ * An agent's closed usage-limit gate, which a waiting task is held by.
+ */
+export type AgentGateState = { agent_id: string; resume_at: string; 
+/**
+ * `five_hour` or `seven_day...`, when the agent named it.
+ */
+window?: string | null; 
+/**
+ * No reset time was known: the gate tries again at `resume_at`.
+ */
+backoff: boolean }
 export type AgentProfile = { id: string; name: string; role: AgentRole; agent_id: string; model?: string | null; 
 /**
  * Not ACP-universal — agents that do not expose it drop it per `fallback_behaviour`.
@@ -3122,7 +3360,19 @@ role_prompt?: string | null; fallback_behaviour?: FallbackBehaviour }
  * Selecting by role is what lets a task say "plan with the planner" without naming a profile, and
  * what makes a project's default reviewer a project-level fact.
  */
-export type AgentRole = "Refiner" | "Planner" | "Coder" | "Reviewer"
+export type AgentRole = "Refiner" | "Planner" | "Coder" | "Reviewer" | 
+/**
+ * Decides a loop's `judge` checks and writes its review digest.
+ */
+"Judge" | 
+/**
+ * Prepares a loop with the user: writes its tests in the loop's worktree and sets its checks.
+ */
+"Preparer" | 
+/**
+ * Works a loop's iterations, each in a fresh session, as the coder works a pipeline task.
+ */
+"Worker"
 export type AgentStreamWidth = "full" | "compact"
 /**
  * Ahead/behind commit counts relative to the upstream tracking branch.
@@ -3568,7 +3818,15 @@ export type CreateTaskRequest = { project_id: number; title: string; description
 /**
  * `None` leaves the branch name to be generated from the task at spawn time.
  */
-workspace_branch: string | null; model_override: string | null }
+workspace_branch: string | null; model_override: string | null; 
+/**
+ * `None` is the pipeline.
+ */
+run_mode: RunMode | null; 
+/**
+ * A loop's budget; `None` takes the default.
+ */
+loop_config: LoopConfig | null }
 export type CredentialSource = "manual" | "gh_cli" | "glab_cli"
 export type DeliveryOutcome = "started" | "queued" | "busy" | "queue_full" | "rate_limited" | "unauthorized" | "duplicate" | "disabled" | "too_large" | "failed"
 /**
@@ -3750,6 +4008,87 @@ active_directory: string;
  * Directory that will be used at the next launch.
  */
 configured_directory: string }
+/**
+ * One item of a loop's done criteria.
+ */
+export type LoopCheck = { id: number; position: number; kind: LoopCheckKind; label: string; command?: string | null; state: LoopCheckState; 
+/**
+ * The last output tail, or the judge's reason.
+ */
+detail?: string | null; 
+/**
+ * Proposed by the agent. Waiting for the user while `accepted` is false.
+ */
+proposed: boolean; accepted: boolean; passed_at_sha?: string | null; updated_at: string }
+/**
+ * One check of the user's list: `id` keeps a check, none adds one.
+ */
+export type LoopCheckEntry = { id?: number | null; kind: LoopCheckKind; label: string; command?: string | null }
+export type LoopCheckKind = "Command" | "Judge" | "Manual"
+/**
+ * One check's result after one iteration, as it was run.
+ */
+export type LoopCheckResult = { check_id: number; state: LoopCheckState; 
+/**
+ * The output tail, or the judge's reason.
+ */
+detail?: string | null; 
+/**
+ * What a command check ran.
+ */
+command?: string | null }
+/**
+ * What the user writes of a check.
+ */
+export type LoopCheckSpec = { kind: LoopCheckKind; label: string; command?: string | null }
+export type LoopCheckState = "Pending" | "Pass" | "Fail" | "Flaky"
+/**
+ * A loop's budget and how its checks run. Mirrors `maestro_protocol::LoopConfig`, which holds the
+ * defaults.
+ */
+export type LoopConfig = { max_iterations: number; 
+/**
+ * How long one iteration's Build session may run, in seconds.
+ */
+max_build_secs: number; 
+/**
+ * Iterations in a row that change nothing before the loop stops as stalled.
+ */
+stall_limit: number; check_timeout_secs: number; setup_command?: string | null; 
+/**
+ * Relative paths kept out of the worker's worktree. A trailing `/` names a directory.
+ */
+sealed_paths: string[] }
+export type LoopHalt = "Flaky" | "Failing" | "Stalled" | "OutOfIterations" | "Paused" | "Stopped" | "Blocked" | "Conflict"
+/**
+ * An acceptance file that exists only in the loop's record, never in the repository.
+ */
+export type LoopHiddenFile = { path: string; content: string }
+/**
+ * One attempt at one iteration.
+ */
+export type LoopIteration = { n: number; attempt: number; acp_session_id?: string | null; agent_id?: string | null; started_at: string; ended_at?: string | null; outcome: LoopIterationOutcome; counted: boolean; commit_sha?: string | null; files: number; added: number; removed: number; summary?: string | null; check_output?: string | null; tokens?: number | null; 
+/**
+ * Why the worker said it cannot go on.
+ */
+blocked?: string | null; 
+/**
+ * What each check concluded after this iteration, on the newest attempt of its number.
+ */
+results: LoopCheckResult[] }
+export type LoopIterationOutcome = "Running" | "Checked" | "Interrupted" | "Empty" | "Failed" | "Blocked"
+/**
+ * A loop as its card and its detail's meters show it, read with the task.
+ */
+export type LoopSummary = { iteration: number; counted: number; agent_secs: number; no_change: number; last_summary?: string | null; checks: LoopCheckState[]; proposals: number; 
+/**
+ * Why it last stopped for the user. Read only while it waits on the user.
+ */
+halt?: LoopHalt | null; 
+/**
+ * A pause or stop asked for, taken once the running step ends.
+ */
+hold?: LoopHalt | null }
 export type McpCatalogEntry = { id: string; name: string; description: string; icon_url: string | null; stars: number | null; repo_url: string | null; 
 /**
  * What the editor opens prefilled with. Required values the user has to supply are left
@@ -4089,6 +4428,7 @@ warnings: string[] }
  * Typed response for save_task_review and request_changes IPC commands
  */
 export type ReviewResult = { success: boolean; review_id: number; task_status: string | null }
+export type RunMode = "Pipeline" | "Loop"
 /**
  * Which finished runs a project keeps, per automation. A run is deleted once it is past the newest
  * `keep_last` **and** older than `max_age_days`; a limit left unset does not apply, and both unset
@@ -4260,7 +4600,28 @@ profile_overrides?: string | null;
  * The phase the last claim took the task from. Equal to `phase` on a `Failed` task when the
  * stage that phase hands to failed to start, rather than failing at its work.
  */
-claimed_from?: TaskPhase | null }
+claimed_from?: TaskPhase | null; 
+/**
+ * The stage pipeline, or a loop that iterates until its checks pass. See
+ * `docs/loops-plan.md`.
+ */
+run_mode: RunMode; 
+/**
+ * Set on every loop task.
+ */
+loop_config?: LoopConfig | null; 
+/**
+ * What the board shows of a loop. Set on every loop task.
+ */
+loop_summary?: LoopSummary | null; 
+/**
+ * The usage-limit gate holding this task while it waits on its agent.
+ */
+gate?: AgentGateState | null; 
+/**
+ * The automation run that created this task, if one did.
+ */
+drafted_by?: TaskDraft | null }
 export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
 /**
  * Who the pipeline is blocked on — not who owns the ticket.
@@ -4299,6 +4660,10 @@ phase?: string | null; created_at: string }
  */
 export type TaskCompletion = "Merged" | "MergedViaPR" | "LocalOnly" | "NoChanges"
 export type TaskConfigRequest = { model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; permission_mode_override?: string | null }
+/**
+ * The automation run whose agent created a task.
+ */
+export type TaskDraft = { automation: string; run?: number | null }
 export type TaskInstruction = { id: number; task_id: number; content: string; source: string; created_at: string }
 /**
  * What the pipeline is doing to a task right now, independent of which column it sits in.
@@ -4310,7 +4675,19 @@ export type TaskInstruction = { id: number; task_id: number; content: string; so
  * A phase says nothing about which column the task is in. `Spawning` sits in Queue, which is what
  * lets a failed spawn be an ordinary active row rather than an exception to the phase invariant.
  */
-export type TaskPhase = "Spawning" | "Refining" | "Drafting" | "PlanReview" | "Implementing" | "Rework" | "SelfReview" | "Approval" | "AwaitingMerge"
+export type TaskPhase = "Spawning" | "Refining" | "Drafting" | "PlanReview" | "Implementing" | "Rework" | "SelfReview" | "Approval" | "AwaitingMerge" | 
+/**
+ * A loop's coder, one fresh session per iteration.
+ */
+"Iterating" | 
+/**
+ * A loop's checks running, with no session live.
+ */
+"Checking" | 
+/**
+ * A loop's judge deciding its `judge` checks, once every command check passes.
+ */
+"Judging"
 export type TaskPriority = "Urgent" | "High" | "Medium" | "Low" | "None"
 export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
 export type TaskStatus = "Planning" | "Queue" | "InProgress" | "Review" | "Done" | "Cancelled"
@@ -4337,7 +4714,11 @@ workspace_mode: WorkspaceMode | null; workspace_worktree_id: number | null;
  * Writing the branch mode also writes `workspace_branch`, for the same reason: switching to
  * `Checkout` must not leave the name of a branch nobody is going to create.
  */
-workspace_branch_mode: BranchMode | null; workspace_branch: string | null }
+workspace_branch_mode: BranchMode | null; workspace_branch: string | null; 
+/**
+ * A started loop's sealed paths cannot change; its budgets can.
+ */
+loop_config: LoopConfig | null }
 export type UsageBucket = "minute" | "hour" | "day" | "month"
 export type UsageCoverage = { connection_key: string; 
 /**

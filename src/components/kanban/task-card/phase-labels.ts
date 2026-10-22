@@ -10,6 +10,9 @@ export const PHASE_LABELS: Record<TaskPhase, string> = {
   SelfReview: "Self review",
   Approval: "Approval",
   AwaitingMerge: "Awaiting merge",
+  Iterating: "Iterating",
+  Checking: "Checking",
+  Judging: "Judging",
 };
 
 /**
