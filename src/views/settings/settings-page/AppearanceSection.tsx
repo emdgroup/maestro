@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/ui/switch";
 import { Kbd, KbdGroup } from "@/ui/kbd";
 import { ArrowBigUp, CornerDownLeft, Keyboard, Monitor, Moon, Sun, SunMoon } from "lucide-react";
-import { isMacOS } from "@/lib/platform";
+import { isMacOS } from "@/lib/platform-utils";
 import type { EnterKeyBehavior, NewProjectColor, TerminalColorMode } from "@/types/bindings";
 import { OptionTile } from "./OptionTile";
 

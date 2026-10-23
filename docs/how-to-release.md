@@ -19,6 +19,9 @@ Commit messages are the basis of the release strategy. They are automatically pa
 
 It is therefore important **to think carefully about commit messages** before pushing, so that users reading the changelog can understand the impact of each change.
 
+Pull requests are squash-merged, so the pull request title becomes the commit message on `main`.
+Write the title with the same care as a commit message: it is the line that reaches the changelog.
+
 ### Version bump rules
 
 | Commit type                                    | Version bump              | Example                                   |
