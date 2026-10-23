@@ -10,8 +10,7 @@
  * getFolderName('/') // returns '/'
  */
 export function getFolderName(path: string): string {
-  const parts = path.split("/").filter(Boolean);
-  return parts[parts.length - 1] || path;
+  return basename(path);
 }
 
 /**

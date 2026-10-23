@@ -1,5 +1,5 @@
 import { useSettings } from "@/services/settings.service";
-import { isMacOS } from "@/lib/platform";
+import { isMacOS } from "@/lib/platform-utils";
 
 /**
  * Whether Maestro draws its own title bar buttons and resize borders, rather than the OS.
