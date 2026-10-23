@@ -10,11 +10,12 @@ import { useTasksQuery } from "@/services/task.service";
  * stopped being the one the refiner was given.
  *
  * Gated on there being no pipeline activity at all rather than on the refiner specifically, because
- * a task claimed for execution is also mid-flight even though its column has not changed yet.
+ * a task claimed for execution is also mid-flight even though its column has not changed yet. A
+ * failed one is not: nothing is running, and the user edits it before trying again.
  */
 export function useIsTaskEditable(taskId: number | null): boolean {
   const project = useSelectedProject();
   const { data: tasks } = useTasksQuery(project?.id ?? null);
   const task = taskId != null ? (tasks ?? []).find((t) => t.id === taskId) : undefined;
-  return task?.status === "Planning" && task.phase == null;
+  return task?.status === "Planning" && (task.phase == null || task.phase_status === "Failed");
 }
