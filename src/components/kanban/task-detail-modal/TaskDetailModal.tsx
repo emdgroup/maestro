@@ -363,7 +363,9 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                       onDirtyChange={setLoopDirty}
                       onJoin={join}
                       onPrepare={
-                        task.status === "Planning" && task.phase == null && canPrepare
+                        task.status === "Planning" &&
+                        (task.phase == null || task.phase_status === "Failed") &&
+                        canPrepare
                           ? () => {
                               setActiveTaskId(null);
                               void execute(task, { role: "Preparer", canPickAgent: true });

@@ -42,6 +42,7 @@ vi.mock("@/contexts/BoardActionsContext", () => ({
     execute,
     executingTaskId: null,
     canRefine: canRefine.current,
+    canPrepare: canRefine.current,
     loopsHeldBack: loopsHeldBack.current,
   }),
   useTaskSession: (taskId: number | null) => (taskId === null ? null : activeSession.current),
@@ -1015,6 +1016,22 @@ describe("TaskCard refinement", () => {
 
     await userEvent.click(refine);
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A stopped preparer left the card failed with only Stop on it, which stops nothing, and no way
+   * to start the preparer again.
+   */
+  it("offers Prepare loop again once the preparer was stopped", async () => {
+    renderCard({ ...refining, run_mode: "Loop", phase_status: "Failed", ball: "User" });
+
+    expect(screen.queryByRole("button", { name: /stop/i })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /prepare loop/i }));
+
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 7 }),
+      expect.objectContaining({ role: "Preparer" }),
+    );
   });
 
   /**
