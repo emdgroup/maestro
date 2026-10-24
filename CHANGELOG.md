@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.39.1](https://github.com/emdgroup/maestro/compare/v0.39.0...v0.39.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **loops:** let a stopped loop preparation be started again ([23fb51c](https://github.com/emdgroup/maestro/commit/23fb51cbeffc7acdcb2743487f490ce158cd1579))
+* **utils:** show hours in elapsed times and GB in byte sizes ([dda7609](https://github.com/emdgroup/maestro/commit/dda76091f99fd21548d923fa253b3c6efc9d76bd))
+
 ## [0.39.0](https://github.com/emdgroup/maestro/compare/v0.38.0...v0.39.0) (2026-10-22)
 
 
