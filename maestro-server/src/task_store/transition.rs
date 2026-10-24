@@ -326,12 +326,14 @@ fn admit(
                 )
             );
             // A stage that failed, or a start put back in the phase it was claimed from, is the
-            // retry of the stage that phase hands to, wherever its card is.
+            // retry of the stage that phase hands to, wherever its card is. A refinement or a
+            // loop's preparation the user stopped is one too: nothing else takes it off Failed.
             let retry = matches!(
                 (current.phase, current.phase_status),
                 (
                     Some(
-                        TaskPhase::PlanReview
+                        TaskPhase::Refining
+                            | TaskPhase::PlanReview
                             | TaskPhase::SelfReview
                             | TaskPhase::Rework
                             | TaskPhase::AwaitingMerge
@@ -1489,6 +1491,35 @@ mod tests {
                 )
             );
             claim(&conn, task_id, &USER_COLUMNS).expect("and claimed again");
+        }
+
+        /// Stopping a refiner or a loop's preparer leaves it failed in `Refining`, which only a
+        /// claim takes it out of.
+        #[test]
+        fn a_stopped_refinement_can_be_claimed_again() {
+            for role in [AgentRole::Refiner, AgentRole::Preparer] {
+                let (conn, task_id) = db_with_task();
+                claim(&conn, task_id, &USER_COLUMNS).expect("claim");
+                when_spawning(&conn, task_id, TaskTransition::SessionReady(role)).expect("ready");
+                always(&conn, task_id, TaskTransition::PhaseFailed);
+                assert_eq!(
+                    state(&conn, task_id),
+                    TaskState::active(
+                        TaskStatus::Planning,
+                        TaskPhase::Refining,
+                        PhaseStatus::Failed,
+                        TaskBall::User
+                    )
+                );
+                assert!(claim(&conn, task_id, &USER_COLUMNS).is_some(), "{role:?}");
+                assert_eq!(
+                    state(&conn, task_id),
+                    TaskState {
+                        claimed_from: Some(TaskPhase::Refining),
+                        ..spawning(TaskStatus::Planning)
+                    }
+                );
+            }
         }
 
         #[test]

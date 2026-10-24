@@ -239,8 +239,9 @@ export function FooterCTAs({
 
   // Ahead of the Planning branch, which returns Execute unconditionally and so made every other
   // control on a Planning card unreachable — a refiner blocked on a question would have pulsed
-  // amber with no way to answer it.
-  if (task.phase === "Refining") {
+  // amber with no way to answer it. A failed one falls through to Planning's controls: Stop would
+  // stop nothing, and Refine or Prepare loop is the retry.
+  if (task.phase === "Refining" && task.phase_status !== "Failed") {
     // The proposal gate. Join is offered alongside because the proposal is a message in a session
     // the user can still talk to — "nearly right, but…" is a conversation, not a rejection.
     if (task.phase_status === "Waiting") {
