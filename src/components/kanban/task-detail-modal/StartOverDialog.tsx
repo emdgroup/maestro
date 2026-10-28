@@ -54,7 +54,7 @@ export function StartOverDialog({
   const fresh = startsFresh(task);
   const isLoop = task.run_mode === "Loop";
   const kept = isLoop
-    ? "The description, labels, profiles, checks, hidden files and limits stay."
+    ? "The description, labels, profiles, steps, checks, hidden files and limits stay."
     : "The description, labels and profiles stay.";
   const named = (fallback: string) => (branch ? `The branch ${branch}` : fallback);
 

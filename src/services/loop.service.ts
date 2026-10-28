@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { taskQueryKeys } from "@/services/task.service";
-import type { LoopCheckEntry, LoopCheckSpec, LoopHiddenFile } from "@/types/bindings";
+import type { LoopCheckEntry, LoopCheckSpec } from "@/types/bindings";
 
 /**
  * A loop's own rows, kept beside the task's. Every write to them pushes `tasks-changed`, which
@@ -13,14 +13,12 @@ export const loopQueryKeys = {
     [...taskQueryKeys.base, "loopChecks", projectId, taskId] as const,
   iterations: (projectId: number, taskId: number) =>
     [...taskQueryKeys.base, "loopIterations", projectId, taskId] as const,
-  hiddenFiles: (projectId: number, taskId: number) =>
-    [...taskQueryKeys.base, "loopHiddenFiles", projectId, taskId] as const,
   notes: (projectId: number, taskId: number) =>
     [...taskQueryKeys.base, "loopNotes", projectId, taskId] as const,
 };
 
 /** The query kinds `tasks-changed` refetches for the open loop. */
-export const LOOP_QUERY_KINDS = ["loopChecks", "loopIterations", "loopHiddenFiles", "loopNotes"];
+export const LOOP_QUERY_KINDS = ["loopChecks", "loopIterations", "loopNotes"];
 
 type TaskKey = { projectId: number; taskId: number };
 
@@ -36,14 +34,6 @@ export function useLoopIterationsQuery(projectId: number | null, taskId: number 
   return useQuery({
     queryKey: loopQueryKeys.iterations(projectId ?? -1, taskId ?? -1),
     queryFn: () => api.listLoopIterations(projectId!, taskId!),
-    enabled: projectId !== null && taskId !== null,
-  });
-}
-
-export function useLoopHiddenFilesQuery(projectId: number | null, taskId: number | null) {
-  return useQuery({
-    queryKey: loopQueryKeys.hiddenFiles(projectId ?? -1, taskId ?? -1),
-    queryFn: () => api.listLoopHiddenFiles(projectId!, taskId!),
     enabled: projectId !== null && taskId !== null,
   });
 }
@@ -104,14 +94,6 @@ export function useTickLoopCheckMutation() {
   );
 }
 
-export function useSetLoopHiddenFilesMutation() {
-  return useLoopMutation(
-    ({ projectId, taskId, files }: TaskKey & { files: LoopHiddenFile[] }) =>
-      api.setLoopHiddenFiles(projectId, taskId, files),
-    "Failed to save the hidden files",
-  );
-}
-
 export function useRerunLoopChecksMutation() {
   return useLoopMutation(
     ({ projectId, taskId }: TaskKey) => api.rerunLoopChecks(projectId, taskId),
@@ -168,20 +150,10 @@ export function useOpenAgentGateMutation() {
   });
 }
 
-/** Which of `candidates`, paths a check command names, are committed on `branch` and can be sealed. */
-export function sealablePaths(
-  projectId: number,
-  branch: string,
-  candidates: string[],
-): Promise<string[]> {
-  return api.loopSealablePaths(projectId, branch, candidates);
-}
-
-/** Which of a loop's sealed paths are committed on `branch`, where its checks will find them. */
-export function useSealablePathsQuery(projectId: number, branch: string, paths: string[]) {
+/** Every file committed on `branch`, the project's HEAD when blank: what the agent's copy holds. */
+export function useLoopBranchFilesQuery(projectId: number, branch: string) {
   return useQuery({
-    queryKey: [...taskQueryKeys.base, "loopSealable", projectId, branch, paths] as const,
-    queryFn: () => sealablePaths(projectId, branch, paths),
-    enabled: paths.length > 0 && branch !== "",
+    queryKey: [...taskQueryKeys.base, "loopBranchFiles", projectId, branch] as const,
+    queryFn: () => api.loopBranchFiles(projectId, branch || null),
   });
 }

@@ -229,6 +229,101 @@ describe("LoopIterations", () => {
     expect(onEditCheck).toHaveBeenCalled();
   });
 
+  const withSteps = [
+    check(10, "Setup", "Install dependencies", "bun install"),
+    check(11, "Setup", "Start the test database", "docker compose up -d"),
+    ...checks,
+  ].map((c, position) => ({ ...c, position }));
+
+  it("walks the running round through its steps, then its checks", () => {
+    const running = (results: LoopIteration["results"]) =>
+      iteration(6, { outcome: "Running", ended_at: null, results });
+    const live = (it: LoopIteration): CurrentState => ({
+      iteration: it,
+      head: { kind: "live", step: 1, activity: null },
+    });
+    const { rerender } = render(
+      <LoopIterations
+        task={task}
+        iterations={[running([])]}
+        checks={withSteps}
+        comments={[]}
+        current={live(running([]))}
+        actions={actions}
+      />,
+    );
+    expect(screen.getByText("step 1 of 2 · Install dependencies")).toBeTruthy();
+
+    const stepsDone = running([
+      { check_id: 10, state: "Pass", detail: "ok" },
+      { check_id: 11, state: "Pass", detail: "ok" },
+      { check_id: 1, state: "Pass", detail: "ok" },
+    ]);
+    rerender(
+      <LoopIterations
+        task={task}
+        iterations={[stepsDone]}
+        checks={withSteps}
+        comments={[]}
+        current={live(stepsDone)}
+        actions={actions}
+      />,
+    );
+    expect(screen.getByText("check 2 of 2 · Frontend tests pass")).toBeTruthy();
+    expect(screen.getByText("Before the checks")).toBeTruthy();
+    expect(screen.getByText("running")).toBeTruthy();
+  });
+
+  it("says the checks did not run when a step failed, with its output", async () => {
+    const broken = iteration(3, {
+      results: [
+        { check_id: 10, state: "Pass", detail: "ok", command: "bun install" },
+        {
+          check_id: 11,
+          state: "Fail",
+          detail: "Bind for 0.0.0.0:5432 failed: port is already allocated",
+          command: "docker compose up -d",
+        },
+        { check_id: 1, state: "Fail", detail: "Step 2 (Start the test database) failed." },
+        { check_id: 2, state: "Fail", detail: "Step 2 (Start the test database) failed." },
+      ],
+    });
+    render(
+      <LoopIterations
+        task={task}
+        iterations={[broken]}
+        checks={withSteps}
+        comments={[]}
+        current={{ iteration: broken, head: { kind: "halted", halt: "Paused" } }}
+        actions={actions}
+      />,
+    );
+    expect(screen.getByText("did not run: step 2 failed")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: /Checks/, pressed: false }));
+    expect(screen.getByText("Checks did not run: step 2 failed.")).toBeTruthy();
+    // The failed step opens on its own output; the checks it stopped are not listed.
+    expect(screen.getAllByText(/port is already allocated/).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Workspace compiles")).toBeNull();
+  });
+
+  it("names the failed step on an earlier row instead of its dots", () => {
+    const broken = iteration(3, {
+      results: [{ check_id: 10, state: "Fail", detail: "no network" }],
+    });
+    render(
+      <LoopIterations
+        task={task}
+        iterations={[broken]}
+        checks={withSteps}
+        comments={[]}
+        current={null}
+        actions={actions}
+      />,
+    );
+    expect(screen.getByText("Checks did not run: step 1 failed")).toBeTruthy();
+    expect(screen.queryByTitle(/Install dependencies/)).toBeNull();
+  });
+
   it("heads a finished loop with one line", () => {
     render(
       <LoopIterations

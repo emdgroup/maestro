@@ -21,6 +21,7 @@ import { useTaskCommentsQuery } from "@/services/task.service";
 import {
   useAddLoopNoteMutation,
   useAnswerLoopProposalMutation,
+  useLoopBranchFilesQuery,
   useLoopChecksQuery,
   useLoopIterationsQuery,
   useLoopNotesQuery,
@@ -37,15 +38,23 @@ import { useSessionActivity } from "@/store/sessionActivityStore";
 import {
   CHECK_KINDS,
   CheckEditor,
-  ChecksRunCard,
-  HiddenCard,
   KIND_HELP,
   LimitCards,
-  usePrefillHidden,
+  PICKED_KINDS,
+  SetupCard,
+  TimeLimit,
+  prefillHidden,
 } from "./LoopEditor";
+import { HiddenFilesCard } from "./HiddenFilesCard";
 import { LoopIterations, type CurrentState, type Head } from "./LoopIterations";
-import { blankCheck, doneWhenRows, type CheckDraft, type LoopDraft } from "./loop-draft";
-import { gateLine, loopHalt } from "./loop-state";
+import {
+  blankCheck,
+  doneWhenRows,
+  setupDrafts,
+  type CheckDraft,
+  type LoopDraft,
+} from "./loop-draft";
+import { gateLine, loopHalt, setupOutcomes } from "./loop-state";
 
 /** Accepting a proposal makes it a full check, of the kind the user picks, sealing what it names. */
 function AcceptForm({
@@ -69,7 +78,7 @@ function AcceptForm({
             <span className="truncate flex-1 text-left">{CHECK_KINDS[kind].name}</span>
           </SelectTrigger>
           <SelectContent>
-            {(Object.keys(CHECK_KINDS) as LoopCheckKind[]).map((k) => (
+            {PICKED_KINDS.map((k) => (
               <SelectItem key={k} value={k} className="text-xs">
                 {CHECK_KINDS[k].name}
               </SelectItem>
@@ -166,7 +175,12 @@ function ProposalRow({ task, check }: { task: Task; check: LoopCheck }) {
             answer.mutate({
               ...key,
               checkId: check.id,
-              accept: { kind, label, command: kind === "Command" ? command : null },
+              accept: {
+                kind,
+                label,
+                command: kind === "Command" ? command : null,
+                timeout_secs: null,
+              },
               seal,
             });
           }}
@@ -180,11 +194,15 @@ function ProposalRow({ task, check }: { task: Task; check: LoopCheck }) {
 function CheckRow({
   draft,
   readOnly,
+  defaultMinutes,
+  onTimeout,
   onEdit,
   onRemove,
 }: {
   draft: CheckDraft;
   readOnly: boolean;
+  defaultMinutes: number;
+  onTimeout: (timeoutMinutes: string) => void;
   onEdit: () => void;
   onRemove: () => void;
 }) {
@@ -206,6 +224,14 @@ function CheckRow({
           <KindIcon className="size-3" />
           {name}
         </span>
+        {draft.kind === "Command" && (
+          <TimeLimit
+            value={draft.timeoutMinutes}
+            defaultMinutes={defaultMinutes}
+            readOnly={readOnly}
+            onChange={onTimeout}
+          />
+        )}
         {!readOnly && (
           <span className="flex shrink-0 gap-0.5 text-muted-foreground opacity-50 group-hover:opacity-100">
             <button
@@ -241,10 +267,11 @@ type Editing = { key: string; before: CheckDraft | null };
 type View = "iterations" | "settings";
 
 /**
- * A loop on one tab. Before it starts, its settings: the checks it is done when, its limits, what
- * runs around the checks and what is hidden from the agent. Once started, the iterations come
+ * A loop on one tab. Before it starts, its settings: the steps before the checks, the checks it is
+ * done when, its limits and what is hidden from the agent. Once started, the iterations come
  * first, as a timeline headed by the one running, with the note for the next iteration above
- * them; Setup opens the settings in their place, and Close brings the timeline back. Edits go into the draft, saved with the rest of the task.
+ * them; Setup opens the settings in their place, and Close brings the timeline back. Edits go into
+ * the draft, saved with the rest of the task.
  */
 export function LoopTab({
   task,
@@ -322,13 +349,18 @@ export function LoopTab({
     else removeCheck(editing.key);
     setEditing(null);
   };
-  const prefill = usePrefillHidden(
-    draft,
-    onDraftChange,
-    task.project_id,
-    baseBranch,
-    sealedLocked || readOnly,
-  );
+  const { data: branchFiles } = useLoopBranchFilesQuery(task.project_id, baseBranch);
+  // The files a check or step names are hidden as it is written, while the loop can still be.
+  const prefill = (command: string) => {
+    if (sealedLocked || readOnly || !branchFiles) return;
+    const next = prefillHidden(draft, command, branchFiles);
+    if (next) onDraftChange(next);
+  };
+  const setupSteps = setupDrafts(draft);
+  const setSteps = (next: CheckDraft[]) =>
+    set({ checks: [...next, ...draft.checks.filter((c) => c.kind !== "Setup")] });
+  const defaultMinutes = Math.round(draft.checkTimeoutSecs / 60);
+  const lastRun = [...iterations].reverse().find((i) => i.results.length > 0);
 
   const config = task.loop_config ?? null;
   const summary = task.loop_summary ?? null;
@@ -342,7 +374,7 @@ export function LoopTab({
   const checksLocked = !readOnly && (live || task.phase === "Checking");
   const checksReadOnly = readOnly || checksLocked;
   const rows = doneWhenRows(draft.checks, checks);
-  const real = checks.filter((c) => !c.proposed || c.accepted);
+  const real = checks.filter((c) => (!c.proposed || c.accepted) && c.kind !== "Setup");
   const proposals = rows.filter((r) => r.kind === "proposal").length;
   // The digest describes the work that reached sign-off; while the loop works again it is stale.
   const reviewing = signoff || task.phase === "AwaitingMerge" || task.status === "Done";
@@ -514,6 +546,14 @@ export function LoopTab({
           </span>
         )}
       </div>
+      <SetupCard
+        steps={setupSteps}
+        last={lastRun ? { n: lastRun.n, outcomes: setupOutcomes(lastRun, checks) } : null}
+        defaultMinutes={defaultMinutes}
+        readOnly={checksReadOnly}
+        onChange={setSteps}
+        onCommandBlur={prefill}
+      />
       {rows.length > 0 ? (
         <>
           <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
@@ -524,6 +564,7 @@ export function LoopTab({
                 <li key={row.draft.key} className="bg-accent/8 px-3 py-3">
                   <CheckEditor
                     check={row.draft}
+                    defaultMinutes={defaultMinutes}
                     onChange={(patch) => setCheck(row.draft.key, patch)}
                     onCommandBlur={prefill}
                     onDone={() => setEditing(null)}
@@ -535,6 +576,8 @@ export function LoopTab({
                   key={row.draft.key}
                   draft={row.draft}
                   readOnly={checksReadOnly}
+                  defaultMinutes={defaultMinutes}
+                  onTimeout={(timeoutMinutes) => setCheck(row.draft.key, { timeoutMinutes })}
                   onEdit={() => editCheck(row.draft)}
                   onRemove={() => removeCheck(row.draft.key)}
                 />
@@ -607,17 +650,12 @@ export function LoopTab({
         summary={started ? summary : null}
         readOnly={readOnly}
       />
-      <div className="grid grid-cols-2 gap-4">
-        <ChecksRunCard value={draft} onChange={set} readOnly={readOnly} />
-        <HiddenCard
-          value={draft}
-          onChange={set}
-          projectId={task.project_id}
-          baseBranch={baseBranch}
-          locked={sealedLocked}
-          readOnly={readOnly}
-        />
-      </div>
+      <HiddenFilesCard
+        value={draft}
+        onChange={set}
+        files={branchFiles}
+        locked={sealedLocked || readOnly}
+      />
     </div>
   );
 

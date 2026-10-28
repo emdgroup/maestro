@@ -1,32 +1,34 @@
-import { describe, expect, it, vi } from "vitest";
-import { act, renderHook } from "@testing-library/react";
-import { usePrefillHidden } from "./LoopEditor";
-import { emptyLoopDraft, type LoopDraft } from "./loop-draft";
+import { describe, expect, it } from "vitest";
+import { namedPaths, prefillHidden } from "./LoopEditor";
+import { blankCheck, emptyLoopDraft, type LoopDraft } from "./loop-draft";
 
-let answer: (paths: string[]) => void = () => undefined;
-vi.mock("@/services/loop.service", () => ({
-  sealablePaths: () =>
-    new Promise<string[]>((resolve) => {
-      answer = resolve;
-    }),
-  useSealablePathsQuery: () => ({ data: undefined }),
-}));
+const files = [
+  "package.json",
+  "tests/hidden.test.ts",
+  "tests/other.test.ts",
+  "scripts/db/reset.sh",
+];
 
-describe("usePrefillHidden", () => {
-  it("adds the paths to the draft as it stands when the lookup answers", async () => {
-    const onChange = vi.fn();
-    const asked: LoopDraft = { ...emptyLoopDraft(), checks: [] };
-    const { result, rerender } = renderHook(
-      ({ value }) => usePrefillHidden(value, onChange, 1, "main", false),
-      { initialProps: { value: asked } },
+describe("prefillHidden", () => {
+  it("hides what a command names on the loop's branch, but not what the user took out", () => {
+    const draft: LoopDraft = {
+      ...emptyLoopDraft(),
+      sealedPaths: ["**/*.sql", "!tests/fixtures/"],
+      dismissed: ["tests/other.test.ts"],
+    };
+    const next = prefillHidden(
+      draft,
+      "bun test tests/hidden.test.ts tests/other.test.ts tests/missing.test.ts",
+      files,
     );
-    result.current("bun test tests/hidden.test.ts tests/other.test.ts");
+    // Stored order: rules, picked paths, exceptions.
+    expect(next?.sealedPaths).toEqual(["**/*.sql", "tests/hidden.test.ts", "!tests/fixtures/"]);
+    expect(prefillHidden(next!, "bun test tests/hidden.test.ts", files)).toBeNull();
+  });
 
-    // Edited, and one of the paths dismissed, while the lookup was out.
-    const edited = { ...asked, setupCommand: "bun install", dismissed: ["tests/other.test.ts"] };
-    rerender({ value: edited });
-    await act(async () => answer(["tests/hidden.test.ts", "tests/other.test.ts"]));
-
-    expect(onChange).toHaveBeenCalledWith({ ...edited, sealedPaths: ["tests/hidden.test.ts"] });
+  it("takes a folder the branch has files in, and the steps' commands too", () => {
+    const step = { ...blankCheck("Setup"), command: "sh scripts/db/ && sh scripts/nope/" };
+    const judge = { ...blankCheck("Judge"), command: "tests/hidden.test.ts" };
+    expect(namedPaths([step, judge], files)).toEqual(["scripts/db/"]);
   });
 });

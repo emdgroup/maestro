@@ -1,26 +1,40 @@
-import { useEffect, useRef, useState } from "react";
-import { Gavel, Lock, Terminal, User, X } from "lucide-react";
-import type { LoopCheckKind, LoopConfig, LoopHiddenFile, LoopSummary } from "@/types/bindings";
+import { useState } from "react";
+import { DragDropProvider } from "@dnd-kit/react";
+import { useSortable } from "@dnd-kit/react/sortable";
+import { move } from "@dnd-kit/helpers";
+import {
+  ChevronDown,
+  ChevronRight,
+  Gavel,
+  GripVertical,
+  ListOrdered,
+  Terminal,
+  User,
+  X,
+} from "lucide-react";
+import type { LoopCheckKind, LoopConfig, LoopSummary } from "@/types/bindings";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
-import { Textarea } from "@/ui/textarea";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { sealablePaths, useSealablePathsQuery } from "@/services/loop.service";
-import type { CheckDraft, LoopDraft } from "./loop-draft";
-import { pathsInCommand } from "./loop-state";
+import { blankCheck, type CheckDraft, type LoopDraft } from "./loop-draft";
+import { orderPatterns, pathsInCommand, type CheckOutcome } from "./loop-state";
 
 export const CHECK_KINDS: Record<LoopCheckKind, { icon: typeof Terminal; name: string }> = {
   Command: { icon: Terminal, name: "Command" },
   Judge: { icon: Gavel, name: "Judge" },
   Manual: { icon: User, name: "You" },
+  Setup: { icon: ListOrdered, name: "Step" },
 };
+
+/** The kinds a check is picked from. A step is added in Before the checks instead. */
+export const PICKED_KINDS: LoopCheckKind[] = ["Command", "Judge", "Manual"];
 
 /** What each kind of check means, said where the user picks or reads one. */
 export const KIND_HELP: Record<LoopCheckKind, string> = {
   Command: "Passes when the command exits with 0.",
   Judge: "The judge reads the changes against this sentence.",
   Manual: "You tick it before the loop is done.",
+  Setup: "Runs before the checks. If it fails, no check runs.",
 };
 
 /** A small inline number or duration field, the limit a sentence is about. */
@@ -168,12 +182,15 @@ export function LimitCards({
 /** One check opened for editing, in place of its row. */
 export function CheckEditor({
   check,
+  defaultMinutes,
   onChange,
   onCommandBlur,
   onDone,
   onCancel,
 }: {
   check: CheckDraft;
+  /** The loop's time limit, which a check without its own takes. */
+  defaultMinutes: number;
   onChange: (patch: Partial<CheckDraft>) => void;
   onCommandBlur: (command: string) => void;
   onDone: () => void;
@@ -183,7 +200,7 @@ export function CheckEditor({
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <div className="flex overflow-hidden rounded-md border border-border bg-card text-xs">
-          {(Object.keys(CHECK_KINDS) as LoopCheckKind[]).map((kind) => {
+          {PICKED_KINDS.map((kind) => {
             const { icon: Icon, name } = CHECK_KINDS[kind];
             return (
               <button
@@ -214,13 +231,21 @@ export function CheckEditor({
         className="h-8 text-sm"
       />
       {check.kind === "Command" && (
-        <Input
-          value={check.command}
-          placeholder="The command to run, for example bun run test"
-          onChange={(e) => onChange({ command: e.target.value })}
-          onBlur={(e) => onCommandBlur(e.target.value)}
-          className="h-8 font-mono text-xs"
-        />
+        <div className="flex items-center gap-2">
+          <Input
+            value={check.command}
+            placeholder="The command to run, for example bun run test"
+            onChange={(e) => onChange({ command: e.target.value })}
+            onBlur={(e) => onCommandBlur(e.target.value)}
+            className="h-8 flex-1 font-mono text-xs"
+          />
+          <TimeLimit
+            value={check.timeoutMinutes}
+            defaultMinutes={defaultMinutes}
+            readOnly={false}
+            onChange={(timeoutMinutes) => onChange({ timeoutMinutes })}
+          />
+        </div>
       )}
       <div className="flex justify-end gap-1.5">
         <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
@@ -234,318 +259,291 @@ export function CheckEditor({
   );
 }
 
-/**
- * Adds the files a command names to the hidden list, since they are what the agent must not see.
- * Only paths committed on the base branch can be: the checks take them from there.
- */
-export function usePrefillHidden(
-  value: LoopDraft,
-  onChange: (draft: LoopDraft) => void,
-  projectId: number,
-  baseBranch: string,
-  locked: boolean,
-) {
-  // The lookup is a round trip, and the user may edit the draft before it answers: the paths go
-  // into the draft as it is then, not as it was when asked.
-  const latest = useRef(value);
-  useEffect(() => {
-    latest.current = value;
-  });
-  return (command: string) => {
-    if (locked) return;
-    const candidates = pathsInCommand(command).filter(
-      (p) => !value.sealedPaths.includes(p) && !value.dismissed.includes(p),
-    );
-    if (candidates.length === 0) return;
-    void sealablePaths(projectId, baseBranch, candidates)
-      .then((found) => {
-        const draft = latest.current;
-        const added = found.filter(
-          (p) => !draft.sealedPaths.includes(p) && !draft.dismissed.includes(p),
-        );
-        if (added.length > 0) onChange({ ...draft, sealedPaths: [...draft.sealedPaths, ...added] });
-      })
-      .catch(() => undefined);
-  };
-}
-
-/** What runs around the checks: the command before them and how long each may take. */
-export function ChecksRunCard({
+/** A row's own time limit in minutes; blank takes the loop's, shown as the placeholder. */
+export function TimeLimit({
   value,
-  onChange,
+  defaultMinutes,
   readOnly,
+  onChange,
 }: {
-  value: LoopDraft;
-  onChange: (patch: Partial<LoopDraft>) => void;
+  value: string;
+  defaultMinutes: number;
   readOnly: boolean;
+  onChange: (value: string) => void;
 }) {
   return (
-    <section className="space-y-3 rounded-lg border border-border bg-card p-4">
-      <h3 className="flex items-center gap-1.5 text-sm font-medium">
-        <Terminal className="size-4 text-muted-foreground" />
-        Running the checks
-      </h3>
-      <label className="block space-y-1">
-        <span className="text-xs font-medium">Run first</span>
-        <Input
-          value={value.setupCommand}
-          disabled={readOnly}
-          placeholder="For example npm ci. Leave empty if the checks need nothing."
-          onChange={(e) => onChange({ setupCommand: e.target.value })}
-          className="h-8 font-mono text-xs"
-        />
-        <span className="block text-xs text-muted-foreground">
-          Runs before each round of checks, to install dependencies or build. If it fails, no check
-          runs and they all count as failed.
-        </span>
-      </label>
-      <div className="flex items-center gap-1.5 text-xs">
-        <span className="font-medium">A check fails after</span>
-        <LimitInput
-          label="Check timeout in minutes"
-          value={value.timeoutMinutes}
-          readOnly={readOnly}
-          onChange={(timeoutMinutes) => onChange({ timeoutMinutes })}
-        />
-        <span className="text-muted-foreground">minutes</span>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        A check that fails, then passes on the same commit, is flaky. The loop pauses so you can fix
-        or remove it.
-      </p>
-    </section>
-  );
-}
-
-/** A hidden path, or a file kept in Maestro you can open. */
-function PathChip({
-  path,
-  missing,
-  onOpen,
-  onRemove,
-}: {
-  path: string;
-  /** Why the path is a problem: it is not committed where the checks will look. */
-  missing?: string;
-  onOpen?: () => void;
-  onRemove?: () => void;
-}) {
-  const chip = (
-    <span
-      className={cn(
-        "flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 font-mono text-xs",
-        missing ? "border-amber-500/60 text-amber-600" : "border-border",
-      )}
-    >
-      {onOpen ? (
-        <button type="button" className="hover:underline" onClick={onOpen}>
-          {path}
-        </button>
-      ) : (
-        path
-      )}
-      {onRemove && (
-        <button
-          type="button"
-          aria-label={`Remove ${path}`}
-          className="text-muted-foreground hover:text-foreground"
-          onClick={onRemove}
-        >
-          <X className="size-3" />
-        </button>
-      )}
+    <span className="flex shrink-0 items-center gap-1 text-xs">
+      <Input
+        value={value}
+        disabled={readOnly}
+        aria-label="Time limit in minutes"
+        placeholder={String(defaultMinutes)}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-6 w-10 px-1 text-center text-xs tabular-nums"
+      />
+      <span className="text-muted-foreground">min</span>
     </span>
   );
-  if (!missing) return chip;
+}
+
+/** The paths the steps and command checks name that the loop's branch holds, files or folders. */
+export function namedPaths(drafts: CheckDraft[], files: string[]): string[] {
+  const onBranch = (path: string) => {
+    const bare = path.replace(/\/$/, "");
+    return files.some((f) => f === bare || f.startsWith(`${bare}/`));
+  };
+  const named = drafts
+    .filter((c) => c.kind === "Command" || c.kind === "Setup")
+    .flatMap((c) => pathsInCommand(c.command));
+  return [...new Set(named)].filter(onBranch);
+}
+
+/**
+ * The draft with the files `command` names hidden, since they are what the agent must not see:
+ * those on the loop's branch, not hidden yet and not taken out by the user. `null` when it adds
+ * none.
+ */
+export function prefillHidden(
+  draft: LoopDraft,
+  command: string,
+  files: string[],
+): LoopDraft | null {
+  const added = namedPaths([{ ...blankCheck(), command }], files).filter(
+    (p) => !draft.sealedPaths.includes(p) && !draft.dismissed.includes(p),
+  );
+  if (added.length === 0) return null;
+  return { ...draft, sealedPaths: orderPatterns([...draft.sealedPaths, ...added]) };
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/** One step: its command and reason edited in place, dragged by its handle. */
+function StepRow({
+  step,
+  index,
+  outcome,
+  defaultMinutes,
+  readOnly,
+  onChange,
+  onCommandBlur,
+  onRemove,
+}: {
+  step: CheckDraft;
+  index: number;
+  /** What it concluded after the last iteration; `undefined` before any ran. */
+  outcome: CheckOutcome | null | undefined;
+  defaultMinutes: number;
+  readOnly: boolean;
+  onChange: (patch: Partial<CheckDraft>) => void;
+  onCommandBlur: (command: string) => void;
+  onRemove: () => void;
+}) {
+  const { ref, handleRef } = useSortable({ id: step.key, index, disabled: readOnly });
+  const state = outcome?.result?.state;
   return (
-    <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex" />}>{chip}</TooltipTrigger>
-      <TooltipContent>{missing}</TooltipContent>
-    </Tooltip>
+    <li
+      ref={ref}
+      className={cn("flex items-start gap-2 px-2 py-1.5", state === "Fail" && "bg-destructive/5")}
+    >
+      {!readOnly && (
+        <button
+          ref={handleRef}
+          type="button"
+          aria-label={`Move step ${index + 1}`}
+          className="mt-1.5 shrink-0 cursor-grab text-muted-foreground hover:text-foreground"
+        >
+          <GripVertical className="size-3.5" />
+        </button>
+      )}
+      {outcome !== undefined && (
+        <span
+          aria-label={state ? state.toLowerCase() : "not run"}
+          className={cn(
+            "mt-2 size-2 shrink-0 rounded-full",
+            state === "Pass" && "bg-success",
+            state === "Fail" && "bg-destructive",
+            !state && "border border-muted-foreground/50",
+          )}
+        />
+      )}
+      <div className="min-w-0 flex-1 space-y-1">
+        {readOnly ? (
+          <>
+            <div className="truncate font-mono text-xs">{step.command}</div>
+            <div className="truncate text-xs text-muted-foreground">{step.label}</div>
+          </>
+        ) : (
+          <>
+            <Input
+              value={step.command}
+              aria-label={`Step ${index + 1} command`}
+              placeholder="The command, for example bun install"
+              onChange={(e) => onChange({ command: e.target.value })}
+              onBlur={(e) => onCommandBlur(e.target.value)}
+              className="h-7 font-mono text-xs"
+            />
+            <Input
+              value={step.label}
+              aria-label={`Step ${index + 1} reason`}
+              placeholder="Why it runs, for example Install dependencies"
+              onChange={(e) => onChange({ label: e.target.value })}
+              className="h-7 text-xs"
+            />
+          </>
+        )}
+        {state === "Fail" && outcome?.result?.detail?.trim() && (
+          <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-card p-1.5 font-mono text-[11px] leading-4">
+            {outcome.result.detail.trim()}
+          </pre>
+        )}
+      </div>
+      <TimeLimit
+        value={step.timeoutMinutes}
+        defaultMinutes={defaultMinutes}
+        readOnly={readOnly}
+        onChange={(timeoutMinutes) => onChange({ timeoutMinutes })}
+      />
+      {!readOnly && (
+        <button
+          type="button"
+          aria-label={`Remove step ${index + 1}`}
+          className="mt-1 shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          onClick={onRemove}
+        >
+          <X className="size-3.5" />
+        </button>
+      )}
+    </li>
   );
 }
 
-const addButton =
-  "rounded-md border border-dashed border-border px-2 py-1 text-xs text-accent hover:bg-accent/8";
-
 /**
- * The files kept out of the agent's sandbox: paths committed in the repository, and files that
- * exist only in Maestro. A started loop's paths are fixed, since its worktree is sealed to them;
- * an accepted proposal is what adds one then.
+ * The steps run before each round of checks, in order: an opt-in fold above the checks. The
+ * iteration loop runs them; once it has, each shows what it concluded after the last iteration.
  */
-export function HiddenCard({
-  value,
-  onChange,
-  projectId,
-  baseBranch,
-  locked,
+export function SetupCard({
+  steps,
+  last,
+  defaultMinutes,
   readOnly,
+  onChange,
+  onCommandBlur,
 }: {
-  value: LoopDraft;
-  onChange: (patch: Partial<LoopDraft>) => void;
-  projectId: number;
-  baseBranch: string;
-  locked: boolean;
+  steps: CheckDraft[];
+  /** The last iteration whose checks ran, with its steps' outcomes. */
+  last: { n: number; outcomes: CheckOutcome[] } | null;
+  defaultMinutes: number;
   readOnly: boolean;
+  onChange: (steps: CheckDraft[]) => void;
+  onCommandBlur: (command: string) => void;
 }) {
-  const [newPath, setNewPath] = useState<string | null>(null);
-  const [hiddenEdit, setHiddenEdit] = useState<{
-    index: number | null;
-    file: LoopHiddenFile;
-  } | null>(null);
-  // A hidden path has to be committed where the checks run, or they will not find it.
-  const { data: committed } = useSealablePathsQuery(projectId, baseBranch, value.sealedPaths);
-  const missing = (path: string) =>
-    committed && !committed.includes(path)
-      ? `Not committed on ${baseBranch}, where the checks will look for it. Commit it there, or write it as a file kept in Maestro.`
-      : undefined;
-
-  const addPath = () => {
-    const path = newPath?.trim().replace(/^\.\//, "");
-    if (path && !value.sealedPaths.includes(path)) {
-      onChange({
-        sealedPaths: [...value.sealedPaths, path],
-        dismissed: value.dismissed.filter((p) => p !== path),
-      });
-    }
-    setNewPath(null);
+  const [open, setOpen] = useState(true);
+  const add = () => {
+    onChange([...steps, blankCheck("Setup")]);
+    setOpen(true);
   };
-
-  const saveHidden = () => {
-    if (!hiddenEdit) return;
-    const file = { path: hiddenEdit.file.path.trim(), content: hiddenEdit.file.content };
-    if (!file.path) return;
-    const files = [...value.hiddenFiles];
-    if (hiddenEdit.index === null) files.push(file);
-    else files[hiddenEdit.index] = file;
-    onChange({ hiddenFiles: files });
-    setHiddenEdit(null);
-  };
-
-  const pathsFixed = locked || readOnly;
+  if (steps.length === 0) {
+    if (readOnly) return null;
+    return (
+      <button
+        type="button"
+        onClick={add}
+        className="flex w-full items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-accent hover:bg-accent/8"
+      >
+        + Add a step before the checks
+      </button>
+    );
+  }
+  const outcomeOf = (step: CheckDraft) =>
+    last ? (last.outcomes.find((o) => o.check.id === step.id) ?? null) : undefined;
+  const failed = last?.outcomes.findIndex((o) => o.result?.state === "Fail") ?? -1;
+  const passed = !!last?.outcomes.length && last.outcomes.every((o) => o.result?.state === "Pass");
+  const names = steps.map((s) => s.label.trim() || s.command.trim()).filter(Boolean);
   return (
-    <section className="space-y-3 rounded-lg border border-border bg-card p-4">
-      <div className="space-y-1">
-        <h3 className="flex items-center gap-1.5 text-sm font-medium">
-          <Lock className="size-4 text-muted-foreground" />
-          Hidden from the agent
-        </h3>
-        <p className="text-xs text-muted-foreground">
-          The agent works in a copy of the branch without these files, so it cannot read or change
-          the tests that judge it. The checks run with the files in place.
-        </p>
-      </div>
-
-      <div className="space-y-1.5">
-        <div className="text-xs font-medium">Files from the repository</div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {value.sealedPaths.map((path) => (
-            <PathChip
-              key={path}
-              path={path}
-              missing={missing(path)}
-              onRemove={
-                pathsFixed
-                  ? undefined
-                  : () =>
-                      onChange({
-                        sealedPaths: value.sealedPaths.filter((p) => p !== path),
-                        dismissed: [...value.dismissed, path],
-                      })
-              }
-            />
-          ))}
-          {!pathsFixed &&
-            (newPath === null ? (
-              <button type="button" className={addButton} onClick={() => setNewPath("")}>
-                + Add a file or folder
-              </button>
-            ) : (
-              <Input
-                autoFocus
-                value={newPath}
-                placeholder="tests/ or scripts/check.sh"
-                onChange={(e) => setNewPath(e.target.value)}
-                onBlur={addPath}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addPath();
-                  }
-                  if (e.key === "Escape") setNewPath(null);
-                }}
-                className="h-7 w-56 font-mono text-xs"
-              />
-            ))}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {locked
-            ? "Locked once the loop has started. Accepting a proposed check can still add one."
-            : `Each must be committed on ${baseBranch || "the branch the loop starts from"}. Files your check commands name are added for you.`}
-        </p>
-      </div>
-
-      <div className="space-y-1.5">
-        <div className="text-xs font-medium">Files kept in Maestro only</div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {value.hiddenFiles.map((file, index) => (
-            <PathChip
-              key={file.path}
-              path={file.path}
-              onOpen={readOnly ? undefined : () => setHiddenEdit({ index, file })}
-              onRemove={
-                readOnly
-                  ? undefined
-                  : () => onChange({ hiddenFiles: value.hiddenFiles.filter((_, i) => i !== index) })
-              }
-            />
-          ))}
-          {!readOnly && (
-            <button
-              type="button"
-              className={addButton}
-              onClick={() => setHiddenEdit({ index: null, file: { path: "", content: "" } })}
-            >
-              + Write a file
-            </button>
-          )}
-        </div>
-        {hiddenEdit && (
-          <div className="space-y-1.5 rounded-md border border-border bg-background p-2">
-            <Input
-              value={hiddenEdit.file.path}
-              placeholder="acceptance/round-trip.test.ts"
-              onChange={(e) =>
-                setHiddenEdit({ ...hiddenEdit, file: { ...hiddenEdit.file, path: e.target.value } })
-              }
-              className="h-7 font-mono text-xs"
-            />
-            <Textarea
-              value={hiddenEdit.file.content}
-              rows={6}
-              placeholder="The file's content. It exists only here, never in the repository."
-              onChange={(e) =>
-                setHiddenEdit({
-                  ...hiddenEdit,
-                  file: { ...hiddenEdit.file, content: e.target.value },
-                })
-              }
-              className="font-mono text-xs"
-            />
-            <div className="flex justify-end gap-1.5">
-              <Button type="button" variant="ghost" size="sm" onClick={() => setHiddenEdit(null)}>
-                Cancel
-              </Button>
-              <Button type="button" size="sm" onClick={saveHidden}>
-                Keep it
-              </Button>
-            </div>
-          </div>
+    <section
+      className={cn(
+        "rounded-lg border bg-card",
+        failed >= 0 ? "border-destructive/40" : "border-border",
+      )}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs"
+      >
+        {open ? (
+          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
         )}
-        <p className="text-xs text-muted-foreground">
-          Tests you write here. They are never committed to the repository.
-        </p>
-      </div>
+        <Terminal className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="shrink-0 text-sm font-medium">Before the checks</span>
+        {!open && (
+          <span className="min-w-0 truncate text-muted-foreground">
+            {plural(steps.length, "step")}
+            {names.length > 0 && ` · ${names.join(", ")}`}
+          </span>
+        )}
+        {last && (failed >= 0 || passed) && (
+          <span
+            className={cn(
+              "ml-auto flex shrink-0 items-center gap-1.5",
+              failed >= 0 ? "text-destructive" : "text-success",
+            )}
+          >
+            <span
+              className={cn("size-2 rounded-full", failed >= 0 ? "bg-destructive" : "bg-success")}
+            />
+            iteration {last.n}: {failed >= 0 ? `step ${failed + 1} failed` : "every step passed"}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="space-y-2 px-2 pb-2 text-xs">
+          <p className="px-2 text-muted-foreground">
+            Runs in order before each round of checks. If a step fails, no check runs and they all
+            count as failed.{last ? " Changes apply from the next round." : ""}
+          </p>
+          <div className="rounded-md border border-border bg-background">
+            <DragDropProvider
+              onDragEnd={(event) => {
+                if (event.canceled) return;
+                const order = move(
+                  steps.map((s) => s.key),
+                  event,
+                );
+                onChange(order.map((key) => steps.find((s) => s.key === key)!));
+              }}
+            >
+              <ul className="divide-y divide-border">
+                {steps.map((step, index) => (
+                  <StepRow
+                    key={step.key}
+                    step={step}
+                    index={index}
+                    outcome={outcomeOf(step)}
+                    defaultMinutes={defaultMinutes}
+                    readOnly={readOnly}
+                    onCommandBlur={onCommandBlur}
+                    onChange={(patch) =>
+                      onChange(steps.map((s) => (s.key === step.key ? { ...s, ...patch } : s)))
+                    }
+                    onRemove={() => onChange(steps.filter((s) => s.key !== step.key))}
+                  />
+                ))}
+              </ul>
+            </DragDropProvider>
+            {!readOnly && (
+              <div className="border-t border-border px-3 py-1.5">
+                <button type="button" className="text-accent hover:underline" onClick={add}>
+                  + Add a step
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

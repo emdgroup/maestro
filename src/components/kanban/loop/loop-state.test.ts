@@ -5,8 +5,12 @@ import {
   canSignOff,
   checkOutcomes,
   failedFirst,
+  failedStep,
   failingBefore,
+  hiddenMatcher,
   lastLine,
+  orderPatterns,
+  setupOutcomes,
   notesGiven,
   draftLine,
   gateLine,
@@ -234,6 +238,46 @@ describe("the waiting cap and drafts", () => {
   });
 });
 
+describe("hidden from the agent", () => {
+  // The same table as the daemon's `sealed_patterns_hide_and_show_as_the_table_says`.
+  it("reads the sealed patterns as the daemon does", () => {
+    const hidden = hiddenMatcher(["tests/", "**/*.test.ts", "docs/*.md", "!tests/helpers/"]);
+    const table: [string, boolean][] = [
+      ["tests/a.ts", true],
+      ["tests/deep/b.ts", true],
+      ["tests/helpers/h.ts", false],
+      ["src/x.test.ts", true],
+      ["x.test.ts", true],
+      ["src/x.ts", false],
+      ["docs/a.md", true],
+      ["docs/deep/a.md", false],
+      ["src/tests/a.ts", false],
+    ];
+    for (const [path, expected] of table)
+      expect([path, hidden(path).hidden]).toEqual([path, expected]);
+    expect(hidden("tests/a.ts").by).toBe("tests/");
+    expect(hidden("tests/helpers/h.ts").by).toBe("!tests/helpers/");
+    expect(hidden("src/x.ts").by).toBeNull();
+  });
+
+  it("lets a later entry win, the nearest level first, and a plain path take its folder", () => {
+    expect(hiddenMatcher(["!src/a.ts", "src/a.ts"])("src/a.ts").hidden).toBe(true);
+    expect(hiddenMatcher(["src/a.ts", "!src/a.ts"])("src/a.ts").hidden).toBe(false);
+    expect(hiddenMatcher(["src/", "!src/a.ts"])("src/a.ts").hidden).toBe(false);
+    expect(hiddenMatcher(["scripts"])("scripts/check.sh").hidden).toBe(true);
+    expect(hiddenMatcher(["a.ts"])("src/a.ts").hidden).toBe(false);
+  });
+
+  it("stores the rules, then the picked paths, then the exceptions", () => {
+    expect(orderPatterns(["!b/", "a.ts", "**/*.sql", "a.ts", "c/"])).toEqual([
+      "**/*.sql",
+      "a.ts",
+      "c/",
+      "!b/",
+    ]);
+  });
+});
+
 describe("an iteration's checks", () => {
   const check = (id: number, position: number, kind: LoopCheck["kind"] = "Command") =>
     ({ id, position, kind, label: `Check ${id}`, proposed: false, accepted: false }) as LoopCheck;
@@ -265,6 +309,22 @@ describe("an iteration's checks", () => {
     expect(canSignOff([...passing, pass(check(3, 2, "Manual"))])).toBe(true);
     expect(canSignOff([...passing, pass({ ...check(4, 3), proposed: true })])).toBe(false);
     expect(canSignOff([])).toBe(false);
+    // A step is not a check: it neither blocks the sign-off nor makes one.
+    expect(canSignOff([...passing, { ...check(5, 4, "Setup"), state: "Fail" }])).toBe(true);
+    expect(canSignOff([pass(check(5, 4, "Setup"))])).toBe(false);
+  });
+
+  it("keeps the steps apart from the checks and names the one that failed", () => {
+    const withSteps = [...checks, check(7, 5, "Setup"), check(6, 4, "Setup")];
+    const it5 = iteration(5, "2026-10-19T10:21:00Z", [
+      { check_id: 6, state: "Pass", detail: "ok" },
+      { check_id: 7, state: "Fail", detail: "port in use" },
+      { check_id: 1, state: "Fail", detail: "Step 2 (Check 7) failed, so no check ran." },
+    ]);
+    expect(checkOutcomes(it5, withSteps).map((o) => o.check.id)).toEqual([1, 2, 3]);
+    expect(setupOutcomes(it5, withSteps).map((o) => o.check.id)).toEqual([6, 7]);
+    expect(failedStep(it5, withSteps)).toMatchObject({ n: 2, outcome: { check: { id: 7 } } });
+    expect(failedStep(iteration(4, ""), withSteps)).toBeNull();
   });
 
   it("works on what the latest earlier round left failing, and the notes written since", () => {

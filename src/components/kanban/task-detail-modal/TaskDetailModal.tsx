@@ -347,7 +347,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
                 {/* `keepMounted`, on the editing panels, because the editors here commit on blur:
                   an unmounted panel never blurs, so a tab click mid-edit would drop what was
-                  typed. The loop's checks, hidden files and limits are saved with the rest of the
+                  typed. The loop's steps, checks, hidden files and limits are saved with the rest of the
                   task. */}
                 {isLoop && (
                   <TabsContent
