@@ -39,6 +39,17 @@ describe("isWorkingFile", () => {
     expect(isWorkingFile(".scratch/binary.exe")).toBe(false);
     expect(isWorkingFile(".scratch/no-extension")).toBe(false);
   });
+
+  // Regression: a task worktree lives under `<project>/.maestro/worktrees/`, so on the
+  // absolute path every source file the agent edited counted as an artifact.
+  it("ignores dot-directories above the session root", () => {
+    const root = "C:/Users/u/proj/.maestro/worktrees/session-1";
+    expect(isWorkingFile(`${root}/src/kanban/loop-draft.ts`, root)).toBe(false);
+    expect(isWorkingFile(`${root}/.planning/plan.md`, root)).toBe(true);
+    expect(
+      isWorkingFile("C:\\Users\\u\\proj\\.maestro\\worktrees\\session-1\\src\\a.ts", root),
+    ).toBe(false);
+  });
 });
 
 describe("useWorkingFileTracker", () => {

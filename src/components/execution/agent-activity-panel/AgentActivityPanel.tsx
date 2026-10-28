@@ -224,8 +224,6 @@ export function AgentActivityPanel({
     pendingSendRef,
     !!pendingPermission || !!pendingElicitation,
   );
-  const { workingFiles: localWorkingFiles } = useWorkingFileTracker(sessionId, liveState.items);
-
   const { data: activeSessions } = useActiveSessionsQuery(selectedProject?.id);
   const taskId = useMemo(() => {
     const info = activeSessions?.find((s) => s.session_id === sessionId);
@@ -241,6 +239,11 @@ export function AgentActivityPanel({
   // `handleOpenFile` so the relative paths handed over always match the tree's root.
   const { data: sessionMeta } = useAcpSessionMeta(sessionId);
   const workspacePath = sessionMeta?.cwd ?? selectedProject?.path ?? "";
+  const { workingFiles: localWorkingFiles } = useWorkingFileTracker(
+    sessionId,
+    liveState.items,
+    sessionMeta?.cwd,
+  );
   const { data: wslConnections } = useWslConnections();
   const wslDistroName =
     connection.type === "wsl"

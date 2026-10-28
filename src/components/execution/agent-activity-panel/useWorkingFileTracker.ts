@@ -42,17 +42,25 @@ export const WRITE_KINDS = new Set([
 
 export type WorkingFileEntry = { path: string; addedAt: number };
 
-export function isWorkingFile(path: string): boolean {
-  const inHiddenDir = /\/\.[^/]+\//.test(path) || /^\.[^/]+\//.test(path);
-  if (!inHiddenDir) return false;
-  const dot = path.lastIndexOf(".");
+/**
+ * `root` is the session's working directory, stripped before the dot-directory test: an
+ * isolated task runs in `<project>/.maestro/worktrees/<name>`, so on the absolute path every
+ * file the agent touched sat in a dot-directory and counted as an artifact.
+ */
+export function isWorkingFile(path: string, root?: string): boolean {
+  let rel = path.replace(/\\/g, "/");
+  const base = root?.replace(/\\/g, "/").replace(/\/+$/, "");
+  if (base && rel.startsWith(base + "/")) rel = rel.slice(base.length + 1);
+  if (!/(^|\/)\.[^/]+\//.test(rel)) return false;
+  const dot = rel.lastIndexOf(".");
   if (dot === -1) return false;
-  return WORKING_FILE_EXTENSIONS.has(path.slice(dot).toLowerCase());
+  return WORKING_FILE_EXTENSIONS.has(rel.slice(dot).toLowerCase());
 }
 
 export function useWorkingFileTracker(
   sessionId: string,
   items: ActivityItem[],
+  cwd?: string,
 ): { workingFiles: WorkingFileEntry[] } {
   const seenAt = useRef<Map<string, number>>(new Map());
   const lastSessionId = useRef<string | null>(null);
@@ -65,7 +73,7 @@ export function useWorkingFileTracker(
     const now = Date.now();
     const working = new Set<string>();
     const add = (path: string) => {
-      if (!isWorkingFile(path)) return;
+      if (!isWorkingFile(path, cwd)) return;
       working.add(path);
       if (!seenAt.current.has(path)) seenAt.current.set(path, now);
     };
@@ -92,5 +100,5 @@ export function useWorkingFileTracker(
       })),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, items]);
+  }, [sessionId, items, cwd]);
 }
