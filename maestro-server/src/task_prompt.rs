@@ -31,7 +31,7 @@ const REVIEWER_PROTOCOL: &str = "Review the changes on this branch against the t
 const LOOP_PROTOCOL: &str = "You are one iteration of a loop that runs until this task's checks pass. Each iteration is a fresh session, so nothing you say carries over, only what you leave on disk. Start by reading `.maestro/loop/PROGRESS.md` if it exists, and before you stop, update it with what you did, what you learned and what is left, for the next iteration. Make real progress toward the goal, then end your turn: your changes are committed and the checks run after you stop. The checks' sources are not available to you and their failures reach you as output only, so do not look for them or try to change them. Do not declare the task done; the checks decide. Maestro's `loop_status` tool says where the loop stands. If the goal needs a check the list lacks, propose it with `loop_propose_check`. If you cannot go on without the user, call `loop_blocked` with what you need from them, then end your turn.";
 
 /// A loop's preparer, in place of the refiner: sets the loop up with the user before it runs.
-const PREPARE_PROTOCOL: &str = "You are preparing this loop with the user before it runs. Once queued, the loop gives the goal above to a worker agent, in fresh sessions, until every check passes. The worker works in a copy of this branch without the sealed paths, so it never sees or changes the tests that judge it. You work in the loop's own worktree, where those tests belong. Talk it through with the user: what done means, and how a command can prove it. Write the tests or check scripts the loop needs and commit them here: a path has to be committed before it can be sealed. Then set the loop with Maestro's `update_task` tool: `checks` (Command, Judge or Manual, replacing the list), `sealed_paths` for what the worker must not see or change, `setup_command` if the checks need one, and the budgets. Do not implement the goal itself: that is the worker's job, and the checks should fail until it is done. End each turn with a short summary of the loop as it now stands.";
+const PREPARE_PROTOCOL: &str = "You are preparing this loop with the user before it runs. Once queued, the loop gives the goal above to a worker agent, in fresh sessions, until every check passes. The worker works in a copy of this branch without the sealed paths, so it never sees or changes the tests that judge it. You work in the loop's own worktree, where those tests belong. Talk it through with the user: what done means, and how a command can prove it. Write the tests or check scripts the loop needs and commit them here: a path has to be committed before it can be sealed. Then set the loop with Maestro's `update_task` tool: `checks` (Command, Judge or Manual, replacing the list, with a Setup step first for anything the checks need done before they run, such as installing dependencies), `sealed_paths` for what the worker must not see or change, including the files a check depends on such as the test config or the package.json that defines its script, and the budgets. Do not implement the goal itself: that is the worker's job, and the checks should fail until it is done. End each turn with a short summary of the loop as it now stands.";
 
 /// A loop's judge: decides the `judge` checks against the loop's work, then writes the digest.
 const JUDGE_PROTOCOL: &str = "You are the judge of a loop: another agent has worked on this task in iterations, and its work is committed on this branch. Decide each check listed below against that work, reading the diff and the code it touches. Do not modify any files, and do not run the project's tests; they are checked separately. Answer every check on a line of its own, by its number, starting with PASS or FAIL and one line of reason, for example:\n\n1. PASS: unknown ids answer 404\n2. FAIL: nothing handles an empty list\n\nA FAIL's reason is all the next iteration is told, so make it specific. If every check passes, follow the verdicts with a line reading `## Digest` and a short review for the person who signs the work off, in three parts: `### What changed`, `### What the loop decided on its own` and `### Worth a look`.";
@@ -271,6 +271,9 @@ fn prepare_context(conn: &Connection, project_path: &str, task: &Task) -> Result
             if let Some(command) = check.command.as_deref() {
                 out.push_str(&format!(" (`{command}`)"));
             }
+            if let Some(secs) = check.timeout_secs {
+                out.push_str(&format!(", time limit {} minutes", secs.div_ceil(60)));
+            }
         }
     }
     if config.sealed_paths.is_empty() {
@@ -292,17 +295,10 @@ Sealed: ",
             .collect();
         out.push_str(&paths.join(", "));
     }
-    if let Some(setup) = config.setup_command.as_deref() {
-        out.push_str(&format!(
-            "
-
-Setup before the checks: `{setup}`"
-        ));
-    }
     out.push_str(&format!(
         "
 
-Budget: {} iterations, each Build closed after {} minutes, stopping after {} in a row with no progress. Each check may run for {} minutes.",
+Budget: {} iterations, each Build closed after {} minutes, stopping after {} in a row with no progress. A step or check without its own limit may run for {} minutes.",
         config.max_iterations,
         config.max_build_secs / 60,
         config.stall_limit,
@@ -339,6 +335,10 @@ fn loop_context(conn: &Connection, project_path: &str, task: &Task) -> Result<St
                 (LoopCheckKind::Judge, LoopCheckState::Fail) => "the judge failed it",
                 (LoopCheckKind::Judge, _) => "judged against your diff once the others pass",
                 (LoopCheckKind::Manual, _) => "checked by the user at the end",
+                (LoopCheckKind::Setup, LoopCheckState::Fail) => {
+                    "a step run before the checks; it failed, so no check ran"
+                }
+                (LoopCheckKind::Setup, _) => "a step run before the checks",
             };
             out.push_str(&format!("\n- {} ({how})", check.label));
         }
@@ -350,7 +350,7 @@ fn loop_context(conn: &Connection, project_path: &str, task: &Task) -> Result<St
                 continue;
             };
             match check.kind {
-                LoopCheckKind::Command => out.push_str(&format!(
+                LoopCheckKind::Command | LoopCheckKind::Setup => out.push_str(&format!(
                     "\n\n### Output of \"{}\"\n\n```\n{}\n```",
                     check.label,
                     detail.trim_end()

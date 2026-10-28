@@ -508,20 +508,34 @@ pub(crate) async fn remove_sandbox(project_path: &str, task_id: i32) -> Result<(
     clear_leftover(project_path, &dir).await
 }
 
-/// Leave a loop's sealed paths out of its sandbox, as its config lists them now. A non-cone
-/// sparse checkout: the files are gone from disk and git does not read their absence as a
+/// Leave what a loop's sealed patterns match out of its sandbox, as its config lists them now. A
+/// non-cone sparse checkout: the files are gone from disk and git does not read their absence as a
 /// deletion, so nothing the worker commits removes them. Run before every iteration and again at
 /// its end, which also undoes a worker that turned the sparse checkout off.
 pub(crate) async fn seal(cwd: &str, task: &maestro_protocol::Task) -> Result<(), String> {
-    let excluded: Vec<String> = task
+    let sealed = task
         .loop_config
-        .iter()
-        .flat_map(|config| &config.sealed_paths)
-        .map(|path| format!("!/{path}"))
-        .collect();
-    let mut args = vec!["sparse-checkout", "set", "--no-cone", "/*"];
-    args.extend(excluded.iter().map(String::as_str));
+        .as_ref()
+        .map_or(&[][..], |config| &config.sealed_paths);
+    let lines = sparse_lines(sealed);
+    let mut args = vec!["sparse-checkout", "set", "--no-cone"];
+    args.extend(lines.iter().map(String::as_str));
     git(cwd, &args).await.map(|_| ())
+}
+
+/// The sparse checkout's patterns: everything, then each sealed pattern in its order, a hidden one
+/// excluded and an exception included again, anchored at the root unless it starts with `**/`.
+pub(crate) fn sparse_lines(sealed: &[String]) -> Vec<String> {
+    let anchored = |p: &str| match p.starts_with("**/") {
+        true => p.to_string(),
+        false => format!("/{p}"),
+    };
+    std::iter::once("/*".to_string())
+        .chain(sealed.iter().map(|p| match p.strip_prefix('!') {
+            Some(shown) => anchored(shown),
+            None => format!("!{}", anchored(p)),
+        }))
+        .collect()
 }
 
 /// Find or make the workspace a task's session runs in, and anchor the task's start sha.

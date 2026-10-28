@@ -1,11 +1,11 @@
-//! A loop task's checks, iterations, hidden files and controls, each one round trip to the daemon
+//! A loop task's checks and steps, iterations and controls, each one round trip to the daemon
 //! that runs the loop (`maestro-server/src/loop_engine.rs`). See `docs/loops-plan.md`.
 
 use std::sync::Arc;
 
 use maestro_protocol::{
-    AnswerLoopProposalRequest, NewTaskComment, OpenAgentGateRequest, SetLoopChecksRequest,
-    SetLoopHiddenFilesRequest, TaskRef, TaskTransition, TickLoopCheckRequest, TransitionGuard,
+    AnswerLoopProposalRequest, NewTaskComment, OpenAgentGateRequest, SetLoopChecksRequest, TaskRef,
+    TaskTransition, TickLoopCheckRequest, TransitionGuard,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use specta::Type;
@@ -21,6 +21,8 @@ pub enum LoopCheckKind {
     Command,
     Judge,
     Manual,
+    /// A command run before the checks, in list order.
+    Setup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -42,6 +44,9 @@ pub struct LoopCheck {
     pub label: String,
     #[specta(optional)]
     pub command: Option<String>,
+    /// Its own time limit, in seconds. None takes the loop's `check_timeout_secs`.
+    #[specta(optional)]
+    pub timeout_secs: Option<u32>,
     pub state: LoopCheckState,
     /// The last output tail, or the judge's reason.
     #[specta(optional)]
@@ -62,6 +67,8 @@ pub struct LoopCheckSpec {
     pub label: String,
     #[specta(optional)]
     pub command: Option<String>,
+    #[specta(optional)]
+    pub timeout_secs: Option<u32>,
 }
 
 /// One check of the user's list: `id` keeps a check, none adds one.
@@ -74,6 +81,8 @@ pub struct LoopCheckEntry {
     pub label: String,
     #[specta(optional)]
     pub command: Option<String>,
+    #[specta(optional)]
+    pub timeout_secs: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -132,14 +141,6 @@ pub struct LoopCheckResult {
     /// What a command check ran.
     #[specta(optional)]
     pub command: Option<String>,
-}
-
-/// An acceptance file that exists only in the loop's record, never in the repository.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct LoopHiddenFile {
-    pub path: String,
-    pub content: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -340,54 +341,6 @@ pub async fn list_loop_iterations(
     mirror_all(iterations)
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn list_loop_hidden_files(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    task_id: i32,
-) -> Result<Vec<LoopHiddenFile>, String> {
-    let files = query_project_store(
-        &app_state,
-        project_id,
-        |project_path| {
-            ServerRequest::ListLoopHiddenFiles(TaskRef {
-                project_path,
-                task_id,
-            })
-        },
-        reply!(ServerResponse::ListLoopHiddenFilesOk(list) => list.files),
-    )
-    .await?;
-    mirror_all(files)
-}
-
-/// The whole set, replacing what was there.
-#[tauri::command]
-#[specta::specta]
-pub async fn set_loop_hidden_files(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    task_id: i32,
-    files: Vec<LoopHiddenFile>,
-) -> Result<Vec<LoopHiddenFile>, String> {
-    let files = mirror_all(files)?;
-    let files = query_project_store(
-        &app_state,
-        project_id,
-        |project_path| {
-            ServerRequest::SetLoopHiddenFiles(SetLoopHiddenFilesRequest {
-                project_path,
-                task_id,
-                files,
-            })
-        },
-        reply!(ServerResponse::SetLoopHiddenFilesOk(list) => list.files),
-    )
-    .await?;
-    mirror_all(files)
-}
-
 /// Take the sealed snapshot again and run the checks on the loop's commit. Not an iteration.
 #[tauri::command]
 #[specta::specta]
@@ -556,33 +509,36 @@ pub async fn open_agent_gate(
     .await
 }
 
-/// Which of `candidates`, relative paths a check command names, exist on `base_branch`: the paths
-/// a loop can seal, since the checks take sealed files from there.
+// ponytail: a cap, so a huge repository cannot flood the tree; past it the tree and the rules'
+// match counts miss files. Page the listing if loops run on repositories that large.
+const MAX_BRANCH_FILES: usize = 20_000;
+
+/// Every file committed on `branch`, or the project's HEAD with none: what a loop's hidden-file
+/// tree shows, since the worker's sandbox is that branch less what the loop seals.
 #[tauri::command]
 #[specta::specta]
-pub async fn loop_sealable_paths(
+pub async fn loop_branch_files(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
-    base_branch: String,
-    candidates: Vec<String>,
+    branch: Option<String>,
 ) -> Result<Vec<String>, String> {
-    if candidates.is_empty() {
-        return Ok(Vec::new());
-    }
     let (project, git_conn) =
         crate::core::get_project_with_git_conn(&app_state, project_id).await?;
-    let base = match base_branch.trim() {
-        "" => "HEAD",
-        base => base,
+    let at = match branch.as_deref().map(str::trim) {
+        Some(branch) if !branch.is_empty() => branch,
+        _ => "HEAD",
     };
-    let mut args = vec!["ls-tree", "--name-only", base, "--"];
-    let trimmed: Vec<&str> = candidates.iter().map(|c| c.trim_end_matches('/')).collect();
-    args.extend(trimmed.iter().copied());
-    let listed = crate::git::run_git_in_dir_lossy(&git_conn, &project.path, &args).await?;
-    let found: Vec<&str> = listed.lines().map(str::trim).collect();
-    Ok(candidates
-        .into_iter()
-        .filter(|c| found.contains(&c.trim_end_matches('/')))
+    let listed = crate::git::run_git_in_dir(
+        &git_conn,
+        &project.path,
+        &["ls-tree", "-r", "--name-only", "-z", at],
+    )
+    .await?;
+    Ok(listed
+        .split('\0')
+        .filter(|p| !p.is_empty())
+        .take(MAX_BRANCH_FILES)
+        .map(str::to_owned)
         .collect())
 }
 
@@ -611,10 +567,12 @@ mod tests {
             kind: LoopCheckKind::Command,
             label: "Tests pass".to_string(),
             command: Some("bun run test".to_string()),
+            timeout_secs: Some(90),
         };
         let wire: maestro_protocol::LoopCheckEntry = mirror(entry).unwrap();
         assert_eq!(wire.id, Some(3));
         assert_eq!(wire.spec.command.as_deref(), Some("bun run test"));
+        assert_eq!(wire.spec.timeout_secs, Some(90));
 
         let summary = maestro_protocol::LoopSummary {
             iteration: 2,

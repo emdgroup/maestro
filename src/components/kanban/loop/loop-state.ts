@@ -256,16 +256,79 @@ export function pathsInCommand(command: string): string[] {
     .map((token) => token.replace(/^\.\//, ""));
 }
 
+/** A sealed pattern's glob as a regular expression over a whole relative path. */
+function globRegex(glob: string): RegExp {
+  let source = "";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*" && glob[i + 1] === "*") {
+      // `**/` is any number of folders, none included; a `**` elsewhere is anything.
+      source += glob[i + 2] === "/" ? "(?:.*/)?" : ".*";
+      i += glob[i + 2] === "/" ? 2 : 1;
+    } else if (c === "*") source += "[^/]*";
+    else if (c === "?") source += "[^/]";
+    else source += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${source}$`);
+}
+
+/** Whether a path is hidden from the agent, and the entry that decided it. */
+export interface Hidden {
+  hidden: boolean;
+  by: string | null;
+}
+
+/**
+ * The daemon's reading of a loop's sealed patterns, which gitignore's: anchored at the root unless
+ * it starts with `**` and a slash, `*` within one folder, a trailing `/` a folder and everything under it,
+ * `!` visible again, and a later entry over an earlier one. A path is decided by the nearest of
+ * itself and its folders that an entry matches.
+ */
+export function hiddenMatcher(patterns: string[]): (path: string) => Hidden {
+  const rules = patterns.map((pattern) => {
+    const shown = pattern.startsWith("!");
+    const body = shown ? pattern.slice(1) : pattern;
+    const folder = body.endsWith("/");
+    return { pattern, shown, folder, re: globRegex(folder ? body.slice(0, -1) : body) };
+  });
+  return (path) => {
+    const parts = path.split("/");
+    for (let end = parts.length; end > 0; end--) {
+      const candidate = parts.slice(0, end).join("/");
+      const isFolder = end < parts.length;
+      for (let i = rules.length - 1; i >= 0; i--) {
+        const rule = rules[i];
+        if ((!rule.folder || isFolder) && rule.re.test(candidate)) {
+          return { hidden: !rule.shown, by: rule.pattern };
+        }
+      }
+    }
+    return { hidden: false, by: null };
+  };
+}
+
+/** A pattern with a wildcard, which the card lists as a rule rather than a picked path. */
+export const isRule = (pattern: string) => !pattern.startsWith("!") && pattern.includes("*");
+
+/** Patterns as they are stored: the rules, then the picked paths, then the exceptions. */
+export function orderPatterns(patterns: string[]): string[] {
+  const unique = [...new Set(patterns)];
+  return [
+    ...unique.filter(isRule),
+    ...unique.filter((p) => !isRule(p) && !p.startsWith("!")),
+    ...unique.filter((p) => p.startsWith("!")),
+  ];
+}
+
 /** A check of the loop's list and what it concluded after one iteration, `null` where it did not run. */
 export interface CheckOutcome {
   check: LoopCheck;
   result: LoopCheckResult | null;
 }
 
-/** The loop's checks in list order, proposals still waiting left out, each with its result. */
-export function checkOutcomes(iteration: LoopIteration, checks: LoopCheck[]): CheckOutcome[] {
+function outcomes(iteration: LoopIteration, checks: LoopCheck[], steps: boolean) {
   return checks
-    .filter((c) => !c.proposed || c.accepted)
+    .filter((c) => (!c.proposed || c.accepted) && (c.kind === "Setup") === steps)
     .sort((a, b) => a.position - b.position)
     .map((check) => ({
       check,
@@ -273,14 +336,34 @@ export function checkOutcomes(iteration: LoopIteration, checks: LoopCheck[]): Ch
     }));
 }
 
+/** The loop's checks in list order, its steps and proposals still waiting left out, each with its result. */
+export function checkOutcomes(iteration: LoopIteration, checks: LoopCheck[]): CheckOutcome[] {
+  return outcomes(iteration, checks, false);
+}
+
+/** The steps run before the checks, in order, each with its result. */
+export function setupOutcomes(iteration: LoopIteration, checks: LoopCheck[]): CheckOutcome[] {
+  return outcomes(iteration, checks, true);
+}
+
+/** The step that failed after `iteration`, numbered from 1, so no check ran; `null` if none did. */
+export function failedStep(
+  iteration: LoopIteration,
+  checks: LoopCheck[],
+): { n: number; outcome: CheckOutcome } | null {
+  const steps = setupOutcomes(iteration, checks);
+  const at = steps.findIndex((o) => o.result?.state === "Fail");
+  return at < 0 ? null : { n: at + 1, outcome: steps[at] };
+}
+
 /**
  * Whether the loop may be signed off, as `require_signed_off` decides: it has checks, every one
- * passes (a manual one once the user ticks it), and no proposal waits for an answer.
+ * passes (a manual one once the user ticks it), and no proposal waits for an answer. Its steps
+ * only prepare the checks.
  */
 export function canSignOff(checks: LoopCheck[]): boolean {
-  return (
-    checks.length > 0 && checks.every((c) => (!c.proposed || c.accepted) && c.state === "Pass")
-  );
+  const real = checks.filter((c) => c.kind !== "Setup");
+  return real.length > 0 && real.every((c) => (!c.proposed || c.accepted) && c.state === "Pass");
 }
 
 /** Failed and flaky first, then passed, then those that did not run, each kept in list order. */

@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 16;
+pub const PROTOCOL_VERSION: u32 = 17;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 ///
@@ -283,9 +283,6 @@ pub enum ServerRequest {
     TickLoopCheck(TickLoopCheckRequest),
     /// Oldest first.
     ListLoopIterations(TaskRef),
-    ListLoopHiddenFiles(TaskRef),
-    /// The whole set, replacing what was there.
-    SetLoopHiddenFiles(SetLoopHiddenFilesRequest),
     /// Take the sealed snapshot again and run the checks on the loop's current commit. Not an
     /// iteration. Answered once the checks have started.
     RerunLoopChecks(TaskRef),
@@ -1503,12 +1500,13 @@ pub struct LoopConfig {
     pub max_build_secs: u32,
     /// Iterations in a row that change nothing before the loop stops as stalled.
     pub stall_limit: u32,
-    /// Per check. A check still running past it is killed and fails.
+    /// The time limit of a step or check without its own. A row still running past its limit is
+    /// killed and fails.
     pub check_timeout_secs: u32,
-    /// Run before the checks, in the state they run in.
-    pub setup_command: Option<String>,
-    /// Relative paths kept out of the worker's worktree and written in only while checks run. A
-    /// trailing `/` names a directory.
+    /// What the worker's worktree leaves out, as ordered patterns: anchored at the repository root
+    /// unless they start with `**/`, `*` within one folder, `**/` any number of folders, a
+    /// trailing `/` a folder and everything under it. `!pattern` makes matching files visible
+    /// again, and a later entry wins over an earlier one.
     pub sealed_paths: Vec<String>,
 }
 
@@ -1519,7 +1517,6 @@ impl Default for LoopConfig {
             max_build_secs: 2 * 60 * 60,
             stall_limit: 3,
             check_timeout_secs: 10 * 60,
-            setup_command: None,
             sealed_paths: Vec::new(),
         }
     }
@@ -1533,6 +1530,9 @@ pub enum LoopCheckKind {
     Judge,
     /// The user ticks it.
     Manual,
+    /// A shell command run before the checks, in list order. Not a check: a failing one stops the
+    /// steps after it, and no check runs.
+    Setup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1551,9 +1551,12 @@ pub struct LoopCheck {
     pub position: i32,
     pub kind: LoopCheckKind,
     pub label: String,
-    /// What a `Command` check runs. `None` for the other kinds.
+    /// What a `Command` check or a `Setup` step runs. `None` for the other kinds.
     #[serde(default)]
     pub command: Option<String>,
+    /// Its own time limit, in seconds. `None` takes the loop's `check_timeout_secs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<u32>,
     pub state: LoopCheckState,
     /// The last output tail, or the judge's reason.
     #[serde(default)]
@@ -1575,6 +1578,8 @@ pub struct LoopCheckSpec {
     pub label: String,
     #[serde(default)]
     pub command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1642,14 +1647,6 @@ pub struct LoopCheckResult {
     /// What a `Command` check ran.
     #[serde(default)]
     pub command: Option<String>,
-}
-
-/// A file only the checks see, stored by the daemon and never in the repository.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LoopHiddenFile {
-    /// Relative to the sealed folder, with `/`.
-    pub path: String,
-    pub content: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2341,13 +2338,6 @@ pub struct TickLoopCheckRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct SetLoopHiddenFilesRequest {
-    pub project_path: String,
-    pub task_id: i32,
-    pub files: Vec<LoopHiddenFile>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct LoopCheckList {
     pub checks: Vec<LoopCheck>,
 }
@@ -2355,11 +2345,6 @@ pub struct LoopCheckList {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct LoopIterationList {
     pub iterations: Vec<LoopIteration>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct LoopHiddenFileList {
-    pub files: Vec<LoopHiddenFile>,
 }
 
 /// `None` when the worker has written no notes yet.
@@ -2799,8 +2784,6 @@ pub enum ServerResponse {
     AnswerLoopProposalOk(LoopCheckList),
     TickLoopCheckOk(LoopCheckList),
     ListLoopIterationsOk(LoopIterationList),
-    ListLoopHiddenFilesOk(LoopHiddenFileList),
-    SetLoopHiddenFilesOk(LoopHiddenFileList),
     RerunLoopChecksOk,
     PauseLoopOk,
     StopLoopOk,
@@ -2962,8 +2945,6 @@ impl ServerResponse {
             | Self::AnswerLoopProposalOk(_)
             | Self::TickLoopCheckOk(_)
             | Self::ListLoopIterationsOk(_)
-            | Self::ListLoopHiddenFilesOk(_)
-            | Self::SetLoopHiddenFilesOk(_)
             | Self::RerunLoopChecksOk
             | Self::PauseLoopOk
             | Self::StopLoopOk

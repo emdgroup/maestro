@@ -1,12 +1,12 @@
-//! A loop task's rows: its checks, its iterations and its hidden files. See `docs/loops-plan.md`.
+//! A loop task's rows: its checks and steps, and its iterations. See `docs/loops-plan.md`.
 //!
 //! Only the rows live here. What runs an iteration and what fills its row is the engine's.
 
 use chrono::Utc;
 use maestro_protocol::{
     AnswerLoopProposalRequest, LoopCheck, LoopCheckKind, LoopCheckResult, LoopCheckSpec,
-    LoopCheckState, LoopConfig, LoopHalt, LoopHiddenFile, LoopIteration, LoopIterationOutcome,
-    RunMode, SetLoopChecksRequest, SetLoopHiddenFilesRequest, TickLoopCheckRequest, WorkspaceMode,
+    LoopCheckState, LoopConfig, LoopHalt, LoopIteration, LoopIterationOutcome, RunMode,
+    SetLoopChecksRequest, TickLoopCheckRequest, WorkspaceMode,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -14,7 +14,7 @@ use super::{commit, parse, text, transaction};
 
 /// Version 12 of `projects.db`: the Loop run mode, every table and column the whole feature uses.
 ///
-/// Not shipped yet, so it may still be rewritten. Frozen once a release carries it.
+/// Shipped, so frozen. Version 14 drops `loop_hidden_files` again.
 pub const V12_LOOPS: &str = "
 ALTER TABLE tasks ADD COLUMN run_mode TEXT NOT NULL DEFAULT 'Pipeline';
 ALTER TABLE tasks ADD COLUMN loop_config TEXT;
@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS agent_gates (
 /// Version 13 of `projects.db`: every check's result after each iteration, passing ones included,
 /// which the iteration's row in the Loop tab shows. `loop_checks` keeps only the latest.
 ///
-/// Not shipped yet, so it may still be rewritten. Frozen once a release carries it.
+/// Shipped, so frozen.
 pub const V13_LOOP_CHECK_RESULTS: &str = "
 CREATE TABLE IF NOT EXISTS loop_check_results (
     project_path TEXT NOT NULL,
@@ -110,8 +110,35 @@ CREATE TABLE IF NOT EXISTS loop_check_results (
 );
 ";
 
-/// A config as stored: every number at least 1, the setup command trimmed, and the sealed paths
-/// relative.
+/// Version 14 of `projects.db`: a time limit on each check, the setup command moved into a
+/// `Setup` step at the top of its loop's list, and the hidden files gone.
+pub const V14_LOOP_STEPS: &str = "
+ALTER TABLE loop_checks ADD COLUMN timeout_secs INTEGER;
+
+CREATE TEMP TABLE loop_setups AS
+SELECT project_path, id AS task_id, TRIM(json_extract(loop_config, '$.setup_command')) AS command
+FROM tasks
+WHERE loop_config IS NOT NULL AND json_valid(loop_config)
+  AND TRIM(COALESCE(json_extract(loop_config, '$.setup_command'), '')) <> '';
+
+UPDATE loop_checks SET position = position + 1
+WHERE EXISTS (SELECT 1 FROM loop_setups s
+              WHERE s.project_path = loop_checks.project_path AND s.task_id = loop_checks.task_id);
+
+INSERT INTO loop_checks (project_path, task_id, position, kind, label, command, updated_at)
+SELECT project_path, task_id, 0, 'Setup', 'Prepare the checks', command,
+       strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now')
+FROM loop_setups;
+
+DROP TABLE loop_setups;
+
+UPDATE tasks SET loop_config = json_remove(loop_config, '$.setup_command')
+WHERE loop_config IS NOT NULL AND json_valid(loop_config);
+
+DROP TABLE IF EXISTS loop_hidden_files;
+";
+
+/// A config as stored: every number at least 1, and the sealed patterns relative.
 pub fn normalize_config(config: &LoopConfig) -> Result<LoopConfig, String> {
     for (name, value) in [
         ("max_iterations", config.max_iterations),
@@ -124,16 +151,10 @@ pub fn normalize_config(config: &LoopConfig) -> Result<LoopConfig, String> {
         }
     }
     Ok(LoopConfig {
-        setup_command: config
-            .setup_command
-            .as_deref()
-            .map(str::trim)
-            .filter(|c| !c.is_empty())
-            .map(str::to_owned),
         sealed_paths: config
             .sealed_paths
             .iter()
-            .map(|p| relative_path(p, true))
+            .map(|p| relative_path(p))
             .collect::<Result<_, _>>()?,
         ..config.clone()
     })
@@ -152,17 +173,16 @@ pub(crate) fn check_workspace(mode: RunMode, workspace: WorkspaceMode) -> Result
     Ok(())
 }
 
-/// A path inside the worktree, with `/`. A sealed path may end in `/` to name a directory; a hidden
-/// file's may not. Nothing may climb out with `..`.
-pub(crate) fn relative_path(path: &str, directory: bool) -> Result<String, String> {
+/// A sealed pattern inside the worktree, with `/`. It may end in `/` to name a folder, and start
+/// with `!` to make what it matches visible again. Nothing may climb out with `..`.
+pub(crate) fn relative_path(path: &str) -> Result<String, String> {
     let path = path.trim().replace('\\', "/");
-    let body = match path.strip_suffix('/') {
-        Some(body) if directory => body,
-        _ => path.as_str(),
-    };
+    let body = path.strip_prefix('!').unwrap_or(&path);
+    let body = body.strip_suffix('/').unwrap_or(body);
     let fine = !body.is_empty()
         && !body.starts_with('/')
         && !body.contains(':')
+        && !body.contains('!')
         && body
             .split('/')
             .all(|part| !part.is_empty() && part != "." && part != "..");
@@ -181,20 +201,29 @@ pub(crate) fn spec(spec: &LoopCheckSpec) -> Result<LoopCheckSpec, String> {
         return Err("A check needs a label".to_string());
     }
     let command = match spec.kind {
-        LoopCheckKind::Command => Some(
+        LoopCheckKind::Command | LoopCheckKind::Setup => Some(
             spec.command
                 .as_deref()
                 .map(str::trim)
                 .filter(|c| !c.is_empty())
-                .ok_or_else(|| format!("The command check \"{label}\" has no command"))?
+                .ok_or_else(|| match spec.kind {
+                    LoopCheckKind::Setup => format!("The step \"{label}\" has no command"),
+                    _ => format!("The command check \"{label}\" has no command"),
+                })?
                 .to_owned(),
         ),
         LoopCheckKind::Judge | LoopCheckKind::Manual => None,
     };
+    if spec.timeout_secs == Some(0) {
+        return Err(format!(
+            "The time limit of \"{label}\" must be at least 1 second"
+        ));
+    }
     Ok(LoopCheckSpec {
         kind: spec.kind,
         label: label.to_owned(),
         command,
+        timeout_secs: spec.timeout_secs,
     })
 }
 
@@ -222,6 +251,7 @@ fn check_from_row(row: &rusqlite::Row) -> rusqlite::Result<LoopCheck> {
         kind: parse(&row.get::<_, String>("kind")?).unwrap_or(LoopCheckKind::Manual),
         label: row.get("label")?,
         command: row.get("command")?,
+        timeout_secs: row.get("timeout_secs")?,
         state: parse(&row.get::<_, String>("state")?).unwrap_or(LoopCheckState::Pending),
         detail: row.get("detail")?,
         proposed: row.get("proposed")?,
@@ -294,14 +324,15 @@ pub fn set_checks(
                     && check.command == spec.command =>
             {
                 tx.execute(
-                    "UPDATE loop_checks SET position = ?2 WHERE id = ?1",
-                    params![check.id, position as i32],
+                    "UPDATE loop_checks SET position = ?2, timeout_secs = ?3 WHERE id = ?1",
+                    params![check.id, position as i32, spec.timeout_secs],
                 )
             }
             // A changed check is a new question, so what it answered before no longer holds.
             Some(check) => tx.execute(
                 "UPDATE loop_checks SET position = ?2, kind = ?3, label = ?4, command = ?5,
-                        state = 'Pending', detail = NULL, passed_at_sha = NULL, updated_at = ?6
+                        timeout_secs = ?7, state = 'Pending', detail = NULL, passed_at_sha = NULL,
+                        updated_at = ?6
                  WHERE id = ?1",
                 params![
                     check.id,
@@ -309,13 +340,14 @@ pub fn set_checks(
                     text(spec.kind),
                     spec.label,
                     spec.command,
-                    now
+                    now,
+                    spec.timeout_secs
                 ],
             ),
             None => tx.execute(
                 "INSERT INTO loop_checks (project_path, task_id, position, kind, label, command,
-                                          updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                                          timeout_secs, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     project,
                     task_id,
@@ -323,6 +355,7 @@ pub fn set_checks(
                     text(spec.kind),
                     spec.label,
                     spec.command,
+                    spec.timeout_secs,
                     now
                 ],
             ),
@@ -384,14 +417,15 @@ pub fn answer_proposal(
             }
             tx.execute(
                 "UPDATE loop_checks SET kind = ?2, label = ?3, command = ?4, accepted = 1,
-                        state = 'Pending', detail = NULL, updated_at = ?5
+                        timeout_secs = ?6, state = 'Pending', detail = NULL, updated_at = ?5
                  WHERE id = ?1",
                 params![
                     check.id,
                     text(spec.kind),
                     spec.label,
                     spec.command,
-                    Utc::now().to_rfc3339()
+                    Utc::now().to_rfc3339(),
+                    spec.timeout_secs
                 ],
             )
         }
@@ -421,7 +455,7 @@ fn seal_more(
         .and_then(|json| serde_json::from_str(&json).ok())
         .unwrap_or_default();
     for path in paths {
-        let path = relative_path(path, true)?;
+        let path = relative_path(path)?;
         if !config.sealed_paths.contains(&path) {
             config.sealed_paths.push(path);
         }
@@ -541,64 +575,6 @@ pub fn list_iterations_with_results(
     Ok(iterations)
 }
 
-/// By path.
-pub fn list_hidden_files(
-    conn: &Connection,
-    project_path: &str,
-    task_id: i32,
-) -> Result<Vec<LoopHiddenFile>, String> {
-    let mut statement = conn
-        .prepare(
-            "SELECT path, content FROM loop_hidden_files WHERE project_path = ?1 AND task_id = ?2
-             ORDER BY path",
-        )
-        .map_err(|e| e.to_string())?;
-    let files = statement
-        .query_map(params![project_path, task_id], |row| {
-            Ok(LoopHiddenFile {
-                path: row.get(0)?,
-                content: row.get(1)?,
-            })
-        })
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-    Ok(files)
-}
-
-pub fn set_hidden_files(
-    conn: &mut Connection,
-    request: &SetLoopHiddenFilesRequest,
-) -> Result<Vec<LoopHiddenFile>, String> {
-    let (project, task_id) = (request.project_path.as_str(), request.task_id);
-    let mut paths = Vec::new();
-    for file in &request.files {
-        let path = relative_path(&file.path, false)?;
-        if paths.contains(&path) {
-            return Err(format!("\"{path}\" is listed twice"));
-        }
-        paths.push(path);
-    }
-    let tx = transaction(conn)?;
-    loop_task(&tx, project, task_id)?;
-    tx.execute(
-        "DELETE FROM loop_hidden_files WHERE project_path = ?1 AND task_id = ?2",
-        params![project, task_id],
-    )
-    .map_err(|e| e.to_string())?;
-    for (path, file) in paths.iter().zip(&request.files) {
-        tx.execute(
-            "INSERT INTO loop_hidden_files (project_path, task_id, path, content)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![project, task_id, path, file.content],
-        )
-        .map_err(|e| e.to_string())?;
-    }
-    let files = list_hidden_files(&tx, project, task_id)?;
-    commit(tx)?;
-    Ok(files)
-}
-
 /// The number the next iteration takes: one past every iteration that ended, so one a usage limit
 /// cut off runs again. A `Running` row is the live iteration's, or a start's that never came up,
 /// which the next start replaces.
@@ -617,8 +593,8 @@ pub(crate) fn next_iteration(
 }
 
 /// Everything a loop's run left behind: its iterations, its checks' results, the proposals still
-/// unanswered, its outcome thread, its halt, hold and resume mark. The checks themselves and the
-/// hidden files stay, as the loop's definition.
+/// unanswered, its outcome thread, its halt, hold and resume mark. The checks and steps themselves
+/// stay, as the loop's definition.
 pub(crate) fn clear_progress(
     conn: &mut Connection,
     project_path: &str,
@@ -930,9 +906,25 @@ pub(crate) fn record_results(
     commit(tx)
 }
 
+/// Forget the results kept against the newest iteration, before its checks run again.
+pub(crate) fn clear_results(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+) -> Result<(), String> {
+    conn.execute(
+        "DELETE FROM loop_check_results
+         WHERE project_path = ?1 AND task_id = ?2
+           AND n = (SELECT MAX(n) FROM loop_iterations WHERE project_path = ?1 AND task_id = ?2)",
+        params![project_path, task_id],
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
 /// A check's result, kept against the newest iteration: the one the checks ran after. Run again
 /// on the same iteration, the newer result replaces it.
-fn keep_result(
+pub(crate) fn keep_result(
     conn: &Connection,
     project_path: &str,
     task_id: i32,
@@ -1093,6 +1085,11 @@ pub(crate) fn is_runnable(check: &LoopCheck) -> bool {
     check.kind == LoopCheckKind::Command && !is_pending_proposal(check)
 }
 
+/// The steps the daemon runs before the checks, in list order.
+pub(crate) fn is_setup(check: &LoopCheck) -> bool {
+    check.kind == LoopCheckKind::Setup && !is_pending_proposal(check)
+}
+
 /// Move a loop that is not running into `Checking`, for Re-run checks: paused on a flaky check,
 /// stopped, failed, or at sign-off, once an iteration has ended. Not only one that committed: an
 /// iteration that changed nothing still has its checks run on what the loop holds.
@@ -1183,6 +1180,7 @@ mod tests {
                 kind,
                 label: label.to_string(),
                 command: command.map(str::to_string),
+                timeout_secs: None,
             },
         }
     }
@@ -1224,8 +1222,12 @@ mod tests {
     fn a_config_is_normalized_and_a_zero_refused() {
         let mut conn = crate::project_store::open_in_memory();
         let config = LoopConfig {
-            setup_command: Some("  ".to_string()),
-            sealed_paths: vec!["tests\\".to_string(), " scripts/check.sh ".to_string()],
+            sealed_paths: vec![
+                "tests\\".to_string(),
+                " scripts/check.sh ".to_string(),
+                "**/*.test.ts".to_string(),
+                "!tests/helpers/".to_string(),
+            ],
             ..LoopConfig::default()
         };
         let task = create(&mut conn, RunMode::Loop, Some(config));
@@ -1233,10 +1235,26 @@ mod tests {
             .unwrap()
             .loop_config
             .unwrap();
-        assert_eq!(stored.setup_command, None);
-        assert_eq!(stored.sealed_paths, ["tests/", "scripts/check.sh"]);
+        assert_eq!(
+            stored.sealed_paths,
+            [
+                "tests/",
+                "scripts/check.sh",
+                "**/*.test.ts",
+                "!tests/helpers/"
+            ]
+        );
 
-        for bad in ["../outside", "/etc/passwd", "C:/x", "a//b", "./a"] {
+        for bad in [
+            "../outside",
+            "/etc/passwd",
+            "C:/x",
+            "a//b",
+            "./a",
+            "!!a",
+            "a/!b",
+            "!",
+        ] {
             let config = LoopConfig {
                 sealed_paths: vec![bad.to_string()],
                 ..LoopConfig::default()
@@ -1562,6 +1580,7 @@ mod tests {
                 kind: LoopCheckKind::Command,
                 label: "Handles an empty list".to_string(),
                 command: Some("bun run test empty".to_string()),
+                timeout_secs: None,
             })),
         )
         .unwrap();
@@ -1681,37 +1700,56 @@ mod tests {
     }
 
     #[test]
-    fn hidden_files_replace_the_set_and_stay_inside() {
+    fn a_step_needs_a_command_and_every_row_keeps_its_time_limit() {
         let mut conn = crate::project_store::open_in_memory();
         let task = create(&mut conn, RunMode::Loop, None);
-        let write = |conn: &mut Connection, paths: &[&str]| {
-            set_hidden_files(
-                conn,
-                &SetLoopHiddenFilesRequest {
-                    project_path: PROJECT.to_string(),
-                    task_id: task,
-                    files: paths
-                        .iter()
-                        .map(|p| LoopHiddenFile {
-                            path: p.to_string(),
-                            content: format!("// {p}"),
-                        })
-                        .collect(),
-                },
-            )
-        };
-        write(&mut conn, &["tests/a.test.ts", "tests\\b.test.ts"]).unwrap();
-        let files = write(&mut conn, &["tests/b.test.ts"]).unwrap();
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].path, "tests/b.test.ts");
+        let err = set(
+            &mut conn,
+            task,
+            vec![entry(None, LoopCheckKind::Setup, "Install", None)],
+        )
+        .unwrap_err();
+        assert!(err.contains("has no command"), "got: {err}");
 
-        assert!(write(&mut conn, &["../escape.ts"]).is_err());
-        assert!(
-            write(&mut conn, &["tests/"]).is_err(),
-            "a file, not a directory"
+        let mut step = entry(None, LoopCheckKind::Setup, "Install", Some("bun install"));
+        step.spec.timeout_secs = Some(120);
+        let checks = set(
+            &mut conn,
+            task,
+            vec![
+                step,
+                entry(None, LoopCheckKind::Command, "Tests", Some("bun test")),
+            ],
+        )
+        .unwrap();
+        assert_eq!(checks[0].timeout_secs, Some(120));
+        assert_eq!(checks[1].timeout_secs, None);
+
+        // A new limit alone keeps what the check last answered.
+        conn.execute(
+            "UPDATE loop_checks SET state = 'Pass' WHERE id = ?1",
+            params![checks[1].id],
+        )
+        .unwrap();
+        let mut tests = entry(
+            Some(checks[1].id),
+            LoopCheckKind::Command,
+            "Tests",
+            Some("bun test"),
         );
-        assert!(write(&mut conn, &["a.ts", "a.ts"]).is_err());
-        assert_eq!(list_hidden_files(&conn, PROJECT, task).unwrap().len(), 1);
+        tests.spec.timeout_secs = Some(60);
+        let mut zero = entry(
+            Some(checks[0].id),
+            LoopCheckKind::Setup,
+            "Install",
+            Some("bun install"),
+        );
+        zero.spec.timeout_secs = Some(0);
+        assert!(set(&mut conn, task, vec![zero, tests.clone()]).is_err());
+        let checks = set(&mut conn, task, vec![tests]).unwrap();
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].timeout_secs, Some(60));
+        assert_eq!(checks[0].state, LoopCheckState::Pass);
     }
 
     #[test]

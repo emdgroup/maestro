@@ -1676,8 +1676,6 @@ pub(crate) async fn dispatch_message(
         | ServerRequest::SetLoopChecks(_)
         | ServerRequest::TickLoopCheck(_)
         | ServerRequest::ListLoopIterations(_)
-        | ServerRequest::ListLoopHiddenFiles(_)
-        | ServerRequest::SetLoopHiddenFiles(_)
         | ServerRequest::ListPrompts(_)
         | ServerRequest::GetPrompt(_)
         | ServerRequest::CreatePrompt(_)

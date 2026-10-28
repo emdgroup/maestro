@@ -37,10 +37,12 @@ import {
   checkOutcomes,
   clockTime,
   failedFirst,
+  failedStep,
   failingBefore,
   formatDuration,
   lastLine,
   notesGiven,
+  setupOutcomes,
   type CheckOutcome,
 } from "./loop-state";
 
@@ -330,6 +332,7 @@ function heldTiles(head: Held, iteration: LoopIteration, checks: LoopCheck[]): T
   const passed = commands.filter((o) => o.result?.state === "Pass").length;
   const flaky = commands.find((o) => o.result?.state === "Flaky");
   const ran = commands.some((o) => o.result);
+  const stepFailed = failedStep(iteration, checks);
   const tiles: Tile[] = [
     head.kind === "gated"
       ? {
@@ -358,12 +361,22 @@ function heldTiles(head: Held, iteration: LoopIteration, checks: LoopCheck[]): T
     tiles.push({
       label: "Checks",
       icon: flaky ? Dice5 : Terminal,
-      sub: flaky
-        ? `"${flaky.check.label}" is flaky`
-        : ran
-          ? `${passed} of ${plural(commands.length, "command")} pass`
-          : "did not run",
-      state: flaky ? "waiting" : !ran ? "todo" : passed === commands.length ? "done" : "failed",
+      sub: stepFailed
+        ? `did not run: step ${stepFailed.n} failed`
+        : flaky
+          ? `"${flaky.check.label}" is flaky`
+          : ran
+            ? `${passed} of ${plural(commands.length, "command")} pass`
+            : "did not run",
+      state: stepFailed
+        ? "failed"
+        : flaky
+          ? "waiting"
+          : !ran
+            ? "todo"
+            : passed === commands.length
+              ? "done"
+              : "failed",
     });
     if (judge) {
       const verdict = judge.result?.state;
@@ -475,7 +488,6 @@ function heldLook(
 
 /** Why a held loop waits, in one paragraph. It explains; the footer holds what to do about it. */
 function heldReason(task: Task, head: Held, iteration: LoopIteration): string {
-  const base = task.base_branch || "the base branch";
   if (head.kind === "gated") {
     return `The refused attempt is kept as a WIP commit and runs again at ${clockTime(head.resumeAt)}, without counting. The next session never sees the error.`;
   }
@@ -493,7 +505,7 @@ function heldReason(task: Task, head: Held, iteration: LoopIteration): string {
         ? `Its work so far is kept as a WIP commit. Resume runs #${iteration.n} again from there, and this attempt does not count.`
         : `Stopped, as you asked. Resume starts #${iteration.n + 1}, with any note you add.`;
     case "Flaky":
-      return `It failed, then passed when run again on the same commit, so the loop waits rather than spend iterations on it. Fix the test on ${base} or remove the check, then re-run the checks: that takes the hidden files from ${base} again and costs no iteration.`;
+      return `It failed, then passed when run again on the same commit, so the loop waits rather than spend iterations on it. Fix the test in the loop's worktree or remove the check, then re-run the checks: they run on the loop's worktree as it is, and cost no iteration.`;
     case "Conflict":
       return "The loop's worktree has changes in the way of this iteration's commit, which is kept. Commit or revert them there, then resume: the next iteration merges it first.";
     case "OutOfIterations":
@@ -692,10 +704,17 @@ function Question({
 function workingCard(
   task: Task,
   current: CurrentState & { head: { kind: "live" | "blocked" } },
+  checks: LoopCheck[],
   commands: number,
   judged: boolean,
 ) {
   const { iteration, head } = current;
+  // The round runs the steps, then the checks, in order: the first without a result is running.
+  const steps = setupOutcomes(iteration, checks);
+  const run = checkOutcomes(iteration, checks).filter((o) => o.check.kind === "Command");
+  const stepAt = steps.findIndex((o) => !o.result);
+  const checkAt = run.findIndex((o) => !o.result);
+  const stepFailed = failedStep(iteration, checks);
   const config = task.loop_config;
   const blocked = head.kind === "blocked";
   const step = head.kind === "live" ? head.step : 0;
@@ -740,9 +759,15 @@ function workingCard(
       sub:
         step > 1
           ? `${commands} of ${commands} commands pass`
-          : config?.setup_command
-            ? `Run first, then ${plural(commands, "command")}`
-            : plural(commands, "command"),
+          : step === 1 && stepFailed
+            ? `step ${stepFailed.n} failed`
+            : step === 1 && stepAt >= 0
+              ? `step ${stepAt + 1} of ${steps.length} · ${steps[stepAt].check.label}`
+              : step === 1 && checkAt >= 0
+                ? `check ${checkAt + 1} of ${run.length} · ${run[checkAt].check.label}`
+                : steps.length > 0
+                  ? `${plural(steps.length, "step")}, then ${plural(commands, "command")}`
+                  : plural(commands, "command"),
       state: step === 1 ? "live" : step > 1 ? "done" : "todo",
     },
   ];
@@ -799,6 +824,7 @@ function HeadIteration({
     ({ tone, word, ring, tiles, asking } = workingCard(
       task,
       { iteration, head },
+      checks,
       commands,
       judged,
     ));
@@ -853,8 +879,10 @@ function HeadIteration({
       break;
     case "Checks":
       body = (
-        <CheckList
+        <ChecksPanel
           key={panelKey}
+          iteration={iteration}
+          checks={checks}
           outcomes={outcomes.filter((o) => o.check.kind === "Command")}
           running={step === 1}
         />
@@ -1029,22 +1057,28 @@ function CheckCards({
   open,
   onToggle,
   running = false,
+  inOrder = false,
 }: {
   outcomes: CheckOutcome[];
   open: Set<number>;
   onToggle: (checkId: number) => void;
-  /** The checks are running now, so one without a result has not answered yet. */
+  /** They are running now, in order: the first without a result is the one running. */
   running?: boolean;
+  /** Kept in the order they run, as steps are, rather than failed first. */
+  inOrder?: boolean;
 }) {
+  const runningId = running ? outcomes.find((o) => !o.result)?.check.id : undefined;
   return (
     <ul className="divide-y divide-border overflow-hidden rounded-md border border-border bg-background">
-      {failedFirst(outcomes).map(({ check, result }) => {
+      {(inOrder ? outcomes : failedFirst(outcomes)).map(({ check, result }) => {
         const { icon: Mark, tone } = MARK[result?.state ?? "Pending"];
         const opened = open.has(check.id);
         const tail = result
           ? lastLine(result.detail)
           : running
-            ? "running"
+            ? check.id === runningId
+              ? "running"
+              : "waiting"
             : check.kind === "Judge"
               ? "runs once every command passes"
               : check.kind === "Manual"
@@ -1107,8 +1141,48 @@ function CheckCards({
   );
 }
 
+/** The steps before the checks, then the checks, as one round ran them. */
+function ChecksPanel({
+  iteration,
+  checks,
+  outcomes,
+  running = false,
+}: {
+  iteration: LoopIteration;
+  checks: LoopCheck[];
+  /** The checks to show after the steps. */
+  outcomes: CheckOutcome[];
+  running?: boolean;
+}) {
+  const steps = setupOutcomes(iteration, checks);
+  if (steps.length === 0) return <CheckList outcomes={outcomes} running={running} />;
+  const failed = failedStep(iteration, checks);
+  const stepping = running && steps.some((o) => !o.result);
+  const heading = "text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
+  return (
+    <div className="space-y-1.5">
+      <div className={heading}>Before the checks</div>
+      <CheckList outcomes={steps} running={stepping} inOrder />
+      <div className={cn(heading, "pt-1")}>Checks</div>
+      {failed ? (
+        <p className="text-xs text-destructive">Checks did not run: step {failed.n} failed.</p>
+      ) : (
+        <CheckList outcomes={outcomes} running={running && !stepping} />
+      )}
+    </div>
+  );
+}
+
 /** Check cards that open on their own on the first one that did not pass. */
-function CheckList({ outcomes, running }: { outcomes: CheckOutcome[]; running?: boolean }) {
+function CheckList({
+  outcomes,
+  running,
+  inOrder,
+}: {
+  outcomes: CheckOutcome[];
+  running?: boolean;
+  inOrder?: boolean;
+}) {
   const [open, setOpen] = useState<Set<number>>(() => {
     const failed = failedFirst(outcomes).find((o) => o.result && o.result.state !== "Pass");
     return new Set(failed ? [failed.check.id] : []);
@@ -1118,6 +1192,7 @@ function CheckList({ outcomes, running }: { outcomes: CheckOutcome[]; running?: 
       outcomes={outcomes}
       open={open}
       running={running}
+      inOrder={inOrder}
       onToggle={(id) => {
         const next = new Set(open);
         if (!next.delete(id)) next.add(id);
@@ -1304,7 +1379,7 @@ function IterationDetail({
           Checks after it
         </div>
         {ran ? (
-          <CheckList outcomes={outcomes} />
+          <ChecksPanel iteration={iteration} checks={checks} outcomes={outcomes} />
         ) : (
           <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
             {note ? `No checks ran: ${note}.` : "No results recorded for this iteration."}
@@ -1344,6 +1419,7 @@ function IterationRow({
   const [open, setOpen] = useState(false);
   const outcomes = checkOutcomes(iteration, checks);
   const ran = iteration.results.length > 0;
+  const stepFailed = failedStep(iteration, checks);
   const firstLine = iteration.blocked
     ? `Blocked: ${plainFirstLine(iteration.blocked)}`
     : plainFirstLine(iteration.summary);
@@ -1391,7 +1467,11 @@ function IterationRow({
                 <span className="shrink-0">{changed(iteration)}</span>
               )}
               <span className="flex-1" />
-              {ran ? (
+              {stepFailed ? (
+                <span className="shrink-0 text-destructive">
+                  Checks did not run: step {stepFailed.n} failed
+                </span>
+              ) : ran ? (
                 <span className="flex shrink-0 items-center gap-1">
                   {outcomes.map(({ check, result }) => (
                     <span
