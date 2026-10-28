@@ -15,6 +15,7 @@ import {
 import type { LoopCheckKind, LoopConfig, LoopSummary } from "@/types/bindings";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { blankCheck, type CheckDraft, type LoopDraft } from "./loop-draft";
 import { orderPatterns, pathsInCommand, type CheckOutcome } from "./loop-state";
@@ -272,17 +273,24 @@ export function TimeLimit({
   onChange: (value: string) => void;
 }) {
   return (
-    <span className="flex shrink-0 items-center gap-1 text-xs">
-      <Input
-        value={value}
-        disabled={readOnly}
-        aria-label="Time limit in minutes"
-        placeholder={String(defaultMinutes)}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-6 w-10 px-1 text-center text-xs tabular-nums"
-      />
-      <span className="text-muted-foreground">min</span>
-    </span>
+    <Tooltip>
+      <TooltipTrigger render={<span className="flex shrink-0 items-center gap-1 text-xs" />}>
+        <span className="text-muted-foreground">Stop after</span>
+        <Input
+          value={value}
+          disabled={readOnly}
+          aria-label="Time limit in minutes"
+          placeholder={String(defaultMinutes)}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-6 w-10 px-1 text-center text-xs tabular-nums"
+        />
+        <span className="text-muted-foreground">min</span>
+      </TooltipTrigger>
+      <TooltipContent>
+        Time limit: the command is stopped and fails after this many minutes. Empty uses the loop
+        default of {defaultMinutes} min.
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
