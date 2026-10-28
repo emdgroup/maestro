@@ -1,8 +1,6 @@
-use crate::connectivity::ssh::history::{append_to_history, SshPtyHandle};
+use crate::connectivity::ssh::history::{append_to_history, PtyOutput, SshPtyHandle};
 use crate::connectivity::ssh::session::RemoteSshSession;
 use russh::ChannelMsg;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
 
 /// Operation sent to the SSH PTY writer task
 pub enum SshWriteOp {
@@ -54,25 +52,8 @@ impl RemoteSshSession {
         // Create I/O channels
         let (write_tx, mut write_rx) = tokio::sync::mpsc::channel::<SshWriteOp>(32);
 
-        // History buffer: accumulates session output with ANSI clear-screen trimming and 512 KB cap.
-        // attach_terminal replays from pos=0 for live sessions and reads the DB for dead sessions.
-        let history: Arc<tokio::sync::Mutex<String>> =
-            Arc::new(tokio::sync::Mutex::new(String::new()));
-        let notify: Arc<tokio::sync::Notify> = Arc::new(tokio::sync::Notify::new());
-        let process_ended: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
-        // Cumulative front-drain counter: incremented only by the 512 KB cap path, never by
-        // clear-screen replacements. Readers use this to adjust their byte positions after a drain.
-        let total_drained: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
-        // Clear-screen replacement counter: incremented each time the history buffer is fully
-        // replaced due to a \x1b[2J sequence. Readers reset pos=0 when this counter advances,
-        // preventing partial escape sequences from being sent as literal printable characters.
-        let clear_screen_count: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
-
-        let history_writer = Arc::clone(&history);
-        let notify_writer = Arc::clone(&notify);
-        let ended_writer = Arc::clone(&process_ended);
-        let total_drained_writer = Arc::clone(&total_drained);
-        let clear_screen_count_writer = Arc::clone(&clear_screen_count);
+        let output = PtyOutput::default();
+        let output_writer = output.clone();
 
         // Writer task: owns write_half, processes data and resize ops sequentially.
         // make_writer() clones the internal sender, leaving write_half available for window_change.
@@ -94,35 +75,18 @@ impl RemoteSshSession {
         });
 
         // Reader task: appends output to history and notifies waiters.
-        // attach_terminal replays from pos=0 for live sessions; dead sessions recover from DB.
+        // attach_terminal replays from pos=0 for live sessions.
         tokio::spawn(async move {
             loop {
                 match read_half.wait().await {
-                    Some(ChannelMsg::Data { data }) => {
+                    Some(ChannelMsg::Data { data })
+                    | Some(ChannelMsg::ExtendedData { data, .. }) => {
                         let text = String::from_utf8_lossy(&data).to_string();
-                        let (drained, was_clear_screen) = {
-                            let mut hist = history_writer.lock().await;
+                        let result = {
+                            let mut hist = output_writer.history.lock().await;
                             append_to_history(&mut hist, &text)
                         };
-                        if was_clear_screen {
-                            clear_screen_count_writer.fetch_add(1, Ordering::Release);
-                        } else if drained > 0 {
-                            total_drained_writer.fetch_add(drained, Ordering::Release);
-                        }
-                        notify_writer.notify_one();
-                    }
-                    Some(ChannelMsg::ExtendedData { data, .. }) => {
-                        let text = String::from_utf8_lossy(&data).to_string();
-                        let (drained, was_clear_screen) = {
-                            let mut hist = history_writer.lock().await;
-                            append_to_history(&mut hist, &text)
-                        };
-                        if was_clear_screen {
-                            clear_screen_count_writer.fetch_add(1, Ordering::Release);
-                        } else if drained > 0 {
-                            total_drained_writer.fetch_add(drained, Ordering::Release);
-                        }
-                        notify_writer.notify_one();
+                        output_writer.appended(result);
                     }
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
                         let msg = if exit_status == 0 {
@@ -133,12 +97,11 @@ impl RemoteSshSession {
                                 exit_status
                             )
                         };
-                        {
-                            let mut hist = history_writer.lock().await;
-                            // Exit message is short — clear-screen/drain return values not needed here
-                            append_to_history(&mut hist, &msg);
-                        }
-                        notify_writer.notify_one();
+                        let result = {
+                            let mut hist = output_writer.history.lock().await;
+                            append_to_history(&mut hist, &msg)
+                        };
+                        output_writer.appended(result);
                         break;
                     }
                     Some(ChannelMsg::Eof) => {
@@ -155,18 +118,13 @@ impl RemoteSshSession {
                     }
                 }
             }
-            ended_writer.store(true, Ordering::Release);
-            notify_writer.notify_one();
+            output_writer.end();
         });
 
         Ok(SshPtyHandle {
             session_id: session_id.to_string(),
             write_tx,
-            history,
-            notify,
-            process_ended,
-            total_drained,
-            clear_screen_count,
+            output,
         })
     }
 }
