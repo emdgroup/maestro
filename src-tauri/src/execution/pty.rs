@@ -256,9 +256,9 @@ impl PtySession {
 mod tests {
     use super::*;
 
-    async fn wait_for(session: &PtySession, needle: &str) {
+    async fn wait_for(session: &PtySession, needle: &str, times: usize) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        while !session.output.history.lock().await.contains(needle) {
+        while session.output.history.lock().await.matches(needle).count() < times {
             assert!(
                 std::time::Instant::now() < deadline,
                 "history: {:?}",
@@ -282,7 +282,7 @@ mod tests {
         // is xterm's job when a view is attached.
         #[cfg(windows)]
         {
-            wait_for(&session, "\x1b[6n").await;
+            wait_for(&session, "\x1b[6n", 1).await;
             session.write_input(b"\x1b[1;1R").await.expect("answer");
         }
 
@@ -290,8 +290,8 @@ mod tests {
             .write_input(b"echo pty-history\r")
             .await
             .expect("write");
-        // The command's output line, not the shell's echo of what was typed.
-        wait_for(&session, "\r\npty-history").await;
+        // Once for the echo of what was typed, once for the command's output.
+        wait_for(&session, "pty-history", 2).await;
         session.write_input(b"exit\r").await.expect("exit");
     }
 }
