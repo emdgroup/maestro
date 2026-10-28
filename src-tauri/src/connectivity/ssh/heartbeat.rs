@@ -17,8 +17,7 @@ async fn cleanup_pty_sessions_for_connection(
         let sessions = app_state.ssh.pty_sessions.lock().await;
         for (session_id, handle) in sessions.iter() {
             session_ids_to_cleanup.push(session_id.clone());
-            handle.process_ended.store(true, Ordering::Release);
-            handle.notify.notify_one();
+            handle.output.end();
         }
     }
 

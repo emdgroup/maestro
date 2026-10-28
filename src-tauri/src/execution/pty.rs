@@ -1,3 +1,4 @@
+use crate::connectivity::ssh::history::{append_to_history, PtyOutput};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -66,6 +67,7 @@ pub struct PtySession {
     pub master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
     writer: Arc<Mutex<Box<dyn std::io::Write + Send>>>,
     pub child: Arc<Mutex<Box<dyn portable_pty::Child + Send>>>,
+    pub output: PtyOutput,
 }
 
 /// Spawn a user-controlled shell process in a pseudo-terminal (PTY).
@@ -168,11 +170,56 @@ pub async fn spawn_agent_cli_pty(
         .take_writer()
         .map_err(|e| format!("Failed to get PTY writer: {}", e))?;
 
+    let mut reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| format!("Failed to get PTY reader: {}", e))?;
+
+    let child: Arc<Mutex<Box<dyn portable_pty::Child + Send>>> = Arc::new(Mutex::new(child));
+    let output = PtyOutput::default();
+
+    // One reader for the session's whole life, so output produced while no terminal view is
+    // mounted lands in history for the next attach to replay. std::io::Read is blocking, hence
+    // a thread rather than a task.
+    std::thread::spawn({
+        let output = output.clone();
+        let child = Arc::clone(&child);
+        move || {
+            use std::io::Read;
+            let mut buf = [0u8; 4096];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        let text = String::from_utf8_lossy(&buf[..n]).to_string();
+                        let result = append_to_history(&mut output.history.blocking_lock(), &text);
+                        output.appended(result);
+                    }
+                }
+            }
+            let exit_code = child
+                .blocking_lock()
+                .try_wait()
+                .ok()
+                .flatten()
+                .map(|s| s.exit_code());
+            let exit_msg = match exit_code {
+                Some(0) => "\r\n\x1b[32m[Process exited]\x1b[0m\r\n".to_string(),
+                Some(code) => format!("\r\n\x1b[31m[Process exited with code {}]\x1b[0m\r\n", code),
+                None => "\r\n\x1b[33m[Process ended]\x1b[0m\r\n".to_string(),
+            };
+            let result = append_to_history(&mut output.history.blocking_lock(), &exit_msg);
+            output.appended(result);
+            output.end();
+        }
+    });
+
     Ok(PtySession {
         session_id: session_id.to_string(),
         master: Arc::new(Mutex::new(pair.master)),
         writer: Arc::new(Mutex::new(writer)),
-        child: Arc::new(Mutex::new(child)),
+        child,
+        output,
     })
 }
 
@@ -202,5 +249,49 @@ impl PtySession {
                 pixel_height: 0,
             })
             .map_err(|e| format!("Failed to resize PTY: {}", e))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn wait_for(session: &PtySession, needle: &str, times: usize) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while session.output.history.lock().await.matches(needle).count() < times {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "history: {:?}",
+                session.output.history.lock().await
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn output_is_kept_with_no_terminal_attached() {
+        #[cfg(windows)]
+        let shell = "cmd";
+        #[cfg(not(windows))]
+        let shell = "sh";
+        let session = spawn_agent_cli_pty("test", shell.to_string(), vec![], std::env::temp_dir())
+            .await
+            .expect("spawn");
+
+        // ConPTY asks for the cursor position and renders nothing until it is answered, which
+        // is xterm's job when a view is attached.
+        #[cfg(windows)]
+        {
+            wait_for(&session, "\x1b[6n", 1).await;
+            session.write_input(b"\x1b[1;1R").await.expect("answer");
+        }
+
+        session
+            .write_input(b"echo pty-history\r")
+            .await
+            .expect("write");
+        // Once for the echo of what was typed, once for the command's output.
+        wait_for(&session, "pty-history", 2).await;
+        session.write_input(b"exit\r").await.expect("exit");
     }
 }

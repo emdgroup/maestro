@@ -799,25 +799,19 @@ async getQueueCapacity(projectId: number) : Promise<Result<QueueCapacity, string
 /**
  * Attach to a PTY session and stream output to frontend
  * 
- * Opens a Tauri channel and begins streaming PTY output to the frontend.
- * Optionally prepends terminal history from the execution log (if available).
- * The streaming continues until the PTY process ends or the channel is closed.
+ * Replays the session's history, then streams live output, until the process ends or the
+ * channel is closed. Local and remote SSH sessions both keep their output in a `PtyOutput`
+ * for their whole life, so a terminal view mounted again after switching sessions gets the
+ * screen back rather than starting blank.
  * 
  * # Arguments
  * * `app_state` - Tauri app state with PTY sessions
  * * `session_id` - Session key to attach to
  * * `output_channel` - Tauri IPC channel for streaming output
- * * `include_history` - If true, prepend terminal_output from execution log to stream
+ * * `include_history` - Unused; history is always replayed
  * 
  * # Returns
- * `Result<(), String>` - Ok if streaming started, Err if task not found
- * 
- * # Behavior
- * When `include_history` is true:
- * 1. Fetches the terminal_output from the most recent execution log
- * 2. Sends entire history as initial message to establish context
- * 3. Then continues streaming live PTY output as normal
- * This ensures the frontend sees the full terminal context when attaching.
+ * `Result<(), String>` - Ok if streaming started, Err if session not found
  */
 async attachTerminal(sessionId: string, outputChannel: TAURI_CHANNEL<string>, includeHistory: boolean | null) : Promise<Result<null, string>> {
     try {

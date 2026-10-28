@@ -1,13 +1,13 @@
 use crate::connectivity::ssh::pty::SshWriteOp;
-use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-/// Handle to a remote interactive SSH PTY session.
+/// Output of a PTY session, kept for as long as the session lives so that a terminal view
+/// mounted again (after switching sessions) can replay it.
 ///
-/// `write_tx` sends input bytes or resize events to the remote PTY.
 /// `history` buffers session output as a trimmed String (ANSI clear-screen aware, 512 KB cap).
 /// `notify` fires whenever a new chunk is appended to `history`.
-/// `process_ended` is set true when the remote process exits or the channel closes.
+/// `process_ended` is set true when the process exits or the channel closes.
 /// `total_drained` is the cumulative bytes ever removed from the **front** of `history` by the
 /// 512 KB cap (not by clear-screen replacements). Readers subtract the delta from their byte
 /// position on each iteration to stay correctly positioned after a drain.
@@ -16,15 +16,40 @@ use std::sync::Arc;
 /// advances — the old position is meaningless in the newly-replaced buffer, and failing to
 /// reset causes partial escape sequences (e.g. `?2026l` without the leading `\x1b[`) to be
 /// sent to the frontend as literal printable characters.
-#[derive(Clone)]
-pub struct SshPtyHandle {
-    pub session_id: String,
-    pub write_tx: tokio::sync::mpsc::Sender<SshWriteOp>,
+#[derive(Clone, Default)]
+pub struct PtyOutput {
     pub history: Arc<tokio::sync::Mutex<String>>,
     pub notify: Arc<tokio::sync::Notify>,
     pub process_ended: Arc<AtomicBool>,
     pub total_drained: Arc<AtomicUsize>,
     pub clear_screen_count: Arc<AtomicUsize>,
+}
+
+impl PtyOutput {
+    /// Records the result of an `append_to_history` call and wakes the attached reader.
+    pub fn appended(&self, (drained, was_clear_screen): (usize, bool)) {
+        if was_clear_screen {
+            self.clear_screen_count.fetch_add(1, Ordering::Release);
+        } else if drained > 0 {
+            self.total_drained.fetch_add(drained, Ordering::Release);
+        }
+        self.notify.notify_one();
+    }
+
+    pub fn end(&self) {
+        self.process_ended.store(true, Ordering::Release);
+        self.notify.notify_one();
+    }
+}
+
+/// Handle to a remote interactive SSH PTY session.
+///
+/// `write_tx` sends input bytes or resize events to the remote PTY.
+#[derive(Clone)]
+pub struct SshPtyHandle {
+    pub session_id: String,
+    pub write_tx: tokio::sync::mpsc::Sender<SshWriteOp>,
+    pub output: PtyOutput,
 }
 
 /// Append a chunk to the SSH session history buffer with clear-screen trimming.
