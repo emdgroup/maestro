@@ -243,7 +243,7 @@ impl ConnectionHandlers {
             .router
             .get_session(&acp_sid)
             .await
-            .ok_or_else(|| acp::Error::new(-32603, format!("unknown session: {acp_sid}")))?;
+            .ok_or_else(|| acp::Error::session_not_found(acp_sid.clone()))?;
 
         // Not the tool call id: one tool call may request permission more than once (per-file
         // approval, say), and reusing the id would overwrite the first request's sender — which
@@ -314,7 +314,7 @@ impl ConnectionHandlers {
             .router
             .get_maestro_id(&acp_sid)
             .await
-            .ok_or_else(|| acp::Error::new(-32603, format!("unknown session: {acp_sid}")))?;
+            .ok_or_else(|| acp::Error::session_not_found(acp_sid.clone()))?;
 
         let payload = serde_json::to_value(&notification.update)
             .map_err(|e| acp::Error::new(-32603, e.to_string()))?;
@@ -341,7 +341,7 @@ impl ConnectionHandlers {
             .router
             .get_maestro_id(&acp_sid)
             .await
-            .ok_or_else(|| acp::Error::new(-32603, format!("unknown session: {acp_sid}")))?;
+            .ok_or_else(|| acp::Error::session_not_found(acp_sid.clone()))?;
 
         let resp = handle_create_terminal(
             request,
@@ -385,7 +385,7 @@ impl ConnectionHandlers {
             .router
             .get_session(&acp_sid)
             .await
-            .ok_or_else(|| acp::Error::new(-32603, format!("unknown session: {acp_sid}")))?;
+            .ok_or_else(|| acp::Error::session_not_found(acp_sid.clone()))?;
 
         let request_id = format!(
             "elicit-{}",
