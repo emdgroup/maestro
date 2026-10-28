@@ -254,10 +254,13 @@ pub(crate) fn begin(
         )));
     }
     // A loop is done when its checks say so, and one with none would reach sign-off on nothing.
+    // Its steps only prepare the checks.
     if role == AgentRole::Worker
         && !crate::task_store::loops::list_checks(conn, &project_path, task.id)?
             .iter()
-            .any(|c| !c.proposed || c.accepted)
+            .any(|c| {
+                (!c.proposed || c.accepted) && c.kind != maestro_protocol::LoopCheckKind::Setup
+            })
     {
         let reason = format!(
             "\"{}\" has no checks, so nothing would say when it is done. Add one, or prepare the loop.",
@@ -1214,6 +1217,7 @@ mod tests {
                         kind: maestro_protocol::LoopCheckKind::Manual,
                         label: "Looks right".to_string(),
                         command: None,
+                        timeout_secs: None,
                     },
                 }],
             },
@@ -1259,6 +1263,7 @@ mod tests {
                             kind: maestro_protocol::LoopCheckKind::Manual,
                             label: "Looks right".to_string(),
                             command: None,
+                            timeout_secs: None,
                         },
                     }],
                 },

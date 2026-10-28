@@ -510,7 +510,7 @@ fn make_room(tx: &Transaction, request: &ImportProjectRequest) -> Result<(), Str
             task_offset,
         ),
         (
-            "UPDATE loop_hidden_files SET task_id = task_id + ?2 WHERE project_path = ?1",
+            "UPDATE loop_check_results SET task_id = task_id + ?2 WHERE project_path = ?1",
             task_offset,
         ),
         (

@@ -405,25 +405,6 @@ async listLoopIterations(projectId: number, taskId: number) : Promise<Result<Loo
     else return { status: "error", error: e  as any };
 }
 },
-async listLoopHiddenFiles(projectId: number, taskId: number) : Promise<Result<LoopHiddenFile[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("list_loop_hidden_files", { projectId, taskId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * The whole set, replacing what was there.
- */
-async setLoopHiddenFiles(projectId: number, taskId: number, files: LoopHiddenFile[]) : Promise<Result<LoopHiddenFile[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("set_loop_hidden_files", { projectId, taskId, files }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 /**
  * Take the sealed snapshot again and run the checks on the loop's commit. Not an iteration.
  */
@@ -503,12 +484,12 @@ async openAgentGate(projectId: number, agentId: string) : Promise<Result<null, s
 }
 },
 /**
- * Which of `candidates`, relative paths a check command names, exist on `base_branch`: the paths
- * a loop can seal, since the checks take sealed files from there.
+ * Every file committed on `branch`, or the project's HEAD with none: what a loop's hidden-file
+ * tree shows, since the worker's sandbox is that branch less what the loop seals.
  */
-async loopSealablePaths(projectId: number, baseBranch: string, candidates: string[]) : Promise<Result<string[], string>> {
+async loopBranchFiles(projectId: number, branch: string | null) : Promise<Result<string[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("loop_sealable_paths", { projectId, baseBranch, candidates }) };
+    return { status: "ok", data: await TAURI_INVOKE("loop_branch_files", { projectId, branch }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -4020,7 +4001,11 @@ configured_directory: string }
 /**
  * One item of a loop's done criteria.
  */
-export type LoopCheck = { id: number; position: number; kind: LoopCheckKind; label: string; command?: string | null; state: LoopCheckState; 
+export type LoopCheck = { id: number; position: number; kind: LoopCheckKind; label: string; command?: string | null; 
+/**
+ * Its own time limit, in seconds. None takes the loop's `check_timeout_secs`.
+ */
+timeout_secs?: number | null; state: LoopCheckState; 
 /**
  * The last output tail, or the judge's reason.
  */
@@ -4032,8 +4017,12 @@ proposed: boolean; accepted: boolean; passed_at_sha?: string | null; updated_at:
 /**
  * One check of the user's list: `id` keeps a check, none adds one.
  */
-export type LoopCheckEntry = { id?: number | null; kind: LoopCheckKind; label: string; command?: string | null }
-export type LoopCheckKind = "Command" | "Judge" | "Manual"
+export type LoopCheckEntry = { id?: number | null; kind: LoopCheckKind; label: string; command?: string | null; timeout_secs?: number | null }
+export type LoopCheckKind = "Command" | "Judge" | "Manual" | 
+/**
+ * A command run before the checks, in list order.
+ */
+"Setup"
 /**
  * One check's result after one iteration, as it was run.
  */
@@ -4049,7 +4038,7 @@ command?: string | null }
 /**
  * What the user writes of a check.
  */
-export type LoopCheckSpec = { kind: LoopCheckKind; label: string; command?: string | null }
+export type LoopCheckSpec = { kind: LoopCheckKind; label: string; command?: string | null; timeout_secs?: number | null }
 export type LoopCheckState = "Pending" | "Pass" | "Fail" | "Flaky"
 /**
  * A loop's budget and how its checks run. Mirrors `maestro_protocol::LoopConfig`, which holds the
@@ -4063,16 +4052,17 @@ max_build_secs: number;
 /**
  * Iterations in a row that change nothing before the loop stops as stalled.
  */
-stall_limit: number; check_timeout_secs: number; setup_command?: string | null; 
+stall_limit: number; 
 /**
- * Relative paths kept out of the worker's worktree. A trailing `/` names a directory.
+ * The time limit of a step or check without its own.
+ */
+check_timeout_secs: number; 
+/**
+ * Ordered patterns for what the worker's worktree leaves out; `!` makes files visible again.
+ * See `maestro_protocol::LoopConfig`.
  */
 sealed_paths: string[] }
 export type LoopHalt = "Flaky" | "Failing" | "Stalled" | "OutOfIterations" | "Paused" | "Stopped" | "Blocked" | "Conflict"
-/**
- * An acceptance file that exists only in the loop's record, never in the repository.
- */
-export type LoopHiddenFile = { path: string; content: string }
 /**
  * One attempt at one iteration.
  */

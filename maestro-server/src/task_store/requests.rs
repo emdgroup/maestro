@@ -6,10 +6,10 @@
 //! a transition its guard refused, owes no push.
 
 use maestro_protocol::{
-    LoopCheckList, LoopHiddenFileList, LoopIterationList, OptionalTask, OptionalTaskReview,
-    OptionalWorktree, ProjectRef, RequestTaskExecutionResponse, SaveTaskReviewResponse,
-    ServerRequest, ServerResponse, TaskAttachmentList, TaskCommentList, TaskIdList,
-    TaskInstructionList, TaskList, TaskRef, TaskRelationshipList, WorktreeList,
+    LoopCheckList, LoopIterationList, OptionalTask, OptionalTaskReview, OptionalWorktree,
+    ProjectRef, RequestTaskExecutionResponse, SaveTaskReviewResponse, ServerRequest,
+    ServerResponse, TaskAttachmentList, TaskCommentList, TaskIdList, TaskInstructionList, TaskList,
+    TaskRef, TaskRelationshipList, WorktreeList,
 };
 use rusqlite::Connection;
 
@@ -359,18 +359,6 @@ pub fn answer(
             let iterations = loops::list_iterations_with_results(conn, &r.project_path, r.task_id)?;
             let reply = A::ListLoopIterationsOk(LoopIterationList { iterations });
             (r.project_path, reply, Changed::default())
-        }
-        Q::ListLoopHiddenFiles(mut r) => {
-            canonical(&mut r.project_path);
-            let files = loops::list_hidden_files(conn, &r.project_path, r.task_id)?;
-            let reply = A::ListLoopHiddenFilesOk(LoopHiddenFileList { files });
-            (r.project_path, reply, Changed::default())
-        }
-        Q::SetLoopHiddenFiles(mut r) => {
-            canonical(&mut r.project_path);
-            let files = loops::set_hidden_files(conn, &r)?;
-            let reply = A::SetLoopHiddenFilesOk(LoopHiddenFileList { files });
-            (r.project_path, reply, tasks)
         }
         _ => return Err("not a task, worktree or review request".to_string()),
     };

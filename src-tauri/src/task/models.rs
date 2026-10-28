@@ -134,10 +134,10 @@ pub struct LoopConfig {
     pub max_build_secs: u32,
     /// Iterations in a row that change nothing before the loop stops as stalled.
     pub stall_limit: u32,
+    /// The time limit of a step or check without its own.
     pub check_timeout_secs: u32,
-    #[specta(optional)]
-    pub setup_command: Option<String>,
-    /// Relative paths kept out of the worker's worktree. A trailing `/` names a directory.
+    /// Ordered patterns for what the worker's worktree leaves out; `!` makes files visible again.
+    /// See `maestro_protocol::LoopConfig`.
     pub sealed_paths: Vec<String>,
 }
 
@@ -148,7 +148,6 @@ impl From<LoopConfig> for wire::LoopConfig {
             max_build_secs: config.max_build_secs,
             stall_limit: config.stall_limit,
             check_timeout_secs: config.check_timeout_secs,
-            setup_command: config.setup_command,
             sealed_paths: config.sealed_paths,
         }
     }
@@ -161,7 +160,6 @@ impl From<wire::LoopConfig> for LoopConfig {
             max_build_secs: config.max_build_secs,
             stall_limit: config.stall_limit,
             check_timeout_secs: config.check_timeout_secs,
-            setup_command: config.setup_command,
             sealed_paths: config.sealed_paths,
         }
     }

@@ -128,21 +128,26 @@
           },
           "checks": {
             "type": "array",
-            "description": "A loop's done criteria, every one required. Command: a shell command run after every iteration, passing on exit 0. Judge: a statement another agent decides against the loop's diff. Manual: ticked by the user at the end. Replaces the whole list.",
+            "description": "A loop's done criteria, every one required, and the steps run before them. Setup: a shell command run before the checks, in list order, for example installing dependencies; a failing step stops the rest and no check runs. Command: a shell command run after every iteration, passing on exit 0. Judge: a statement another agent decides against the loop's diff. Manual: ticked by the user at the end. Replaces the whole list.",
             "items": {
               "type": "object",
               "required": ["kind", "label"],
               "properties": {
                 "kind": {
                   "type": "string",
-                  "enum": ["Command", "Judge", "Manual"]
+                  "enum": ["Setup", "Command", "Judge", "Manual"]
                 },
                 "label": {
                   "type": "string"
                 },
                 "command": {
                   "type": "string",
-                  "description": "What a Command check runs."
+                  "description": "What a Setup step or a Command check runs."
+                },
+                "timeout_minutes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Its own time limit. Without one it takes check_timeout_minutes."
                 }
               }
             }
@@ -165,18 +170,14 @@
           "check_timeout_minutes": {
             "type": "integer",
             "minimum": 1,
-            "description": "Per check. Default 10."
-          },
-          "setup_command": {
-            "type": "string",
-            "description": "Run before the checks, for example installing dependencies. Empty clears it."
+            "description": "The time limit of a step or check without its own. Default 10."
           },
           "sealed_paths": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "description": "Paths kept out of the agent's sandbox, such as the tests a check runs, so it cannot read or change them. The checks run in the loop's worktree, where they are. Each must be committed there, or on the base branch before the loop's worktree exists. A trailing / names a directory."
+            "description": "Patterns for what the agent's sandbox leaves out, such as the tests a check runs and the files it depends on, so the agent cannot read or change them. The checks run in the loop's worktree, where they are. A pattern is anchored at the repository root unless it starts with **/; * matches within one folder, **/ any number of folders, and a trailing / a folder and everything under it. A plain path must be committed there, or on the base branch before the loop's worktree exists. !pattern makes matching files visible again, and later entries win."
           }
         }
       }
@@ -230,21 +231,26 @@
           },
           "checks": {
             "type": "array",
-            "description": "A loop's done criteria, every one required. Command: a shell command run after every iteration, passing on exit 0. Judge: a statement another agent decides against the loop's diff. Manual: ticked by the user at the end. Replaces the whole list.",
+            "description": "A loop's done criteria, every one required, and the steps run before them. Setup: a shell command run before the checks, in list order, for example installing dependencies; a failing step stops the rest and no check runs. Command: a shell command run after every iteration, passing on exit 0. Judge: a statement another agent decides against the loop's diff. Manual: ticked by the user at the end. Replaces the whole list.",
             "items": {
               "type": "object",
               "required": ["kind", "label"],
               "properties": {
                 "kind": {
                   "type": "string",
-                  "enum": ["Command", "Judge", "Manual"]
+                  "enum": ["Setup", "Command", "Judge", "Manual"]
                 },
                 "label": {
                   "type": "string"
                 },
                 "command": {
                   "type": "string",
-                  "description": "What a Command check runs."
+                  "description": "What a Setup step or a Command check runs."
+                },
+                "timeout_minutes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Its own time limit. Without one it takes check_timeout_minutes."
                 }
               }
             }
@@ -267,18 +273,14 @@
           "check_timeout_minutes": {
             "type": "integer",
             "minimum": 1,
-            "description": "Per check. Default 10."
-          },
-          "setup_command": {
-            "type": "string",
-            "description": "Run before the checks, for example installing dependencies. Empty clears it."
+            "description": "The time limit of a step or check without its own. Default 10."
           },
           "sealed_paths": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "description": "Paths kept out of the agent's sandbox, such as the tests a check runs, so it cannot read or change them. The checks run in the loop's worktree, where they are. Each must be committed there, or on the base branch before the loop's worktree exists. A trailing / names a directory."
+            "description": "Patterns for what the agent's sandbox leaves out, such as the tests a check runs and the files it depends on, so the agent cannot read or change them. The checks run in the loop's worktree, where they are. A pattern is anchored at the repository root unless it starts with **/; * matches within one folder, **/ any number of folders, and a trailing / a folder and everything under it. A plain path must be committed there, or on the base branch before the loop's worktree exists. !pattern makes matching files visible again, and later entries win."
           }
         }
       }

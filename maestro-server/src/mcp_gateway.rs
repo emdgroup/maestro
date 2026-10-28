@@ -746,8 +746,18 @@ struct LoopFields {
     max_build_minutes: Option<u32>,
     stall_limit: Option<u32>,
     check_timeout_minutes: Option<u32>,
-    setup_command: Option<String>,
     sealed_paths: Option<Vec<String>>,
+}
+
+/// One item of `checks` as an agent writes it, its time limit in minutes.
+#[derive(serde::Deserialize)]
+struct CheckArgument {
+    kind: maestro_protocol::LoopCheckKind,
+    label: String,
+    #[serde(default)]
+    command: Option<String>,
+    #[serde(default)]
+    timeout_minutes: Option<u32>,
 }
 
 impl LoopFields {
@@ -766,16 +776,23 @@ impl LoopFields {
         let checks = match arguments.get("checks") {
             None | Some(Value::Null) => None,
             Some(value) => {
-                let specs: Vec<LoopCheckSpec> =
+                let items: Vec<CheckArgument> =
                     serde_json::from_value(value.clone()).map_err(|_| {
-                        "checks must be a list of {kind, label, command}, kind one of Command, \
-                         Judge or Manual"
+                        "checks must be a list of {kind, label, command, timeout_minutes}, kind \
+                         one of Setup, Command, Judge or Manual"
                             .to_string()
                     })?;
                 Some(
-                    specs
-                        .iter()
-                        .map(crate::task_store::loops::spec)
+                    items
+                        .into_iter()
+                        .map(|item| {
+                            crate::task_store::loops::spec(&LoopCheckSpec {
+                                kind: item.kind,
+                                label: item.label,
+                                command: item.command,
+                                timeout_secs: item.timeout_minutes.map(|m| m.saturating_mul(60)),
+                            })
+                        })
                         .collect::<Result<_, _>>()?,
                 )
             }
@@ -790,7 +807,6 @@ impl LoopFields {
             max_build_minutes: number("max_build_minutes")?,
             stall_limit: number("stall_limit")?,
             check_timeout_minutes: number("check_timeout_minutes")?,
-            setup_command: string_argument(arguments, "setup_command")?,
             sealed_paths: arguments
                 .get("sealed_paths")
                 .filter(|value| !value.is_null())
@@ -807,10 +823,7 @@ impl LoopFields {
 
     /// What a loop that has started no longer takes from an agent.
     fn shape(&self) -> bool {
-        self.run_mode.is_some()
-            || self.checks.is_some()
-            || self.setup_command.is_some()
-            || self.sealed_paths.is_some()
+        self.run_mode.is_some() || self.checks.is_some() || self.sealed_paths.is_some()
     }
 
     fn any(&self) -> bool {
@@ -819,10 +832,7 @@ impl LoopFields {
 
     /// Fields only a loop has.
     fn loop_only(&self) -> bool {
-        self.budgets()
-            || self.checks.is_some()
-            || self.setup_command.is_some()
-            || self.sealed_paths.is_some()
+        self.budgets() || self.checks.is_some() || self.sealed_paths.is_some()
     }
 
     /// `config` with these fields over it. The sealed paths are the ones `sealable` returned.
@@ -838,9 +848,6 @@ impl LoopFields {
         }
         if let Some(minutes) = self.check_timeout_minutes {
             config.check_timeout_secs = minutes.saturating_mul(60);
-        }
-        if let Some(setup) = &self.setup_command {
-            config.setup_command = Some(setup.clone());
         }
         if let Some(sealed) = sealed {
             config.sealed_paths = sealed;
@@ -1247,6 +1254,9 @@ fn loop_json(task: &maestro_protocol::Task, checks: &[LoopCheck], own: bool) -> 
             if let Some(command) = check.command.as_ref().filter(|_| !own) {
                 value["command"] = json!(command);
             }
+            if let Some(secs) = check.timeout_secs {
+                value["timeoutMinutes"] = json!(secs.div_ceil(60));
+            }
             value
         })
         .collect();
@@ -1262,7 +1272,6 @@ fn loop_json(task: &maestro_protocol::Task, checks: &[LoopCheck], own: bool) -> 
             .filter(|_| task.ball == maestro_protocol::TaskBall::User),
     });
     if !own {
-        value["setupCommand"] = json!(config.setup_command);
         value["sealedPaths"] = json!(config.sealed_paths);
     }
     value
@@ -1366,9 +1375,11 @@ fn loop_status(
         .map(|c| {
             let mut value = json!({ "label": c.label, "kind": c.kind, "state": c.state });
             match (c.kind, c.state, c.detail.as_deref()) {
-                (LoopCheckKind::Command, LoopCheckState::Fail | LoopCheckState::Flaky, Some(d)) => {
-                    value["output"] = json!(d)
-                }
+                (
+                    LoopCheckKind::Command | LoopCheckKind::Setup,
+                    LoopCheckState::Fail | LoopCheckState::Flaky,
+                    Some(d),
+                ) => value["output"] = json!(d),
                 (LoopCheckKind::Judge, _, Some(d)) => value["reason"] = json!(d),
                 _ => {}
             }

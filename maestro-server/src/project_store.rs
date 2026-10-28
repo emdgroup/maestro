@@ -85,6 +85,7 @@ const MIGRATIONS: &[&str] = &[
     crate::usage_store::V11_USAGE_META,
     crate::task_store::loops::V12_LOOPS,
     crate::task_store::loops::V13_LOOP_CHECK_RESULTS,
+    crate::task_store::loops::V14_LOOP_STEPS,
 ];
 
 /// Open, or create, the daemon's project database.
@@ -947,5 +948,72 @@ mod tests {
             )
             .expect("the marker survived");
         assert_eq!(marker, ("/p".to_string(), None, "rows".to_string()));
+    }
+
+    /// Version 14 turns a loop's setup command into a `Setup` step at the top of its list.
+    #[test]
+    fn a_version_thirteen_setup_command_becomes_the_first_step() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        {
+            let conn = Connection::open(directory.path().join("projects.db")).expect("open");
+            conn.execute_batch(&MIGRATIONS[..13].concat())
+                .expect("version 13 schema");
+            conn.pragma_update(None, "user_version", 13)
+                .expect("version");
+            conn.execute_batch(
+                r#"
+                INSERT INTO tasks (project_path, id, title, base_branch, created_at, updated_at,
+                                   run_mode, loop_config)
+                VALUES ('/p', 1, 'With setup', 'main', 'then', 'then', 'Loop',
+                        '{"max_iterations":5,"setup_command":" bun install ","sealed_paths":[]}'),
+                       ('/p', 2, 'Without', 'main', 'then', 'then', 'Loop',
+                        '{"max_iterations":5,"setup_command":"  "}');
+                INSERT INTO loop_checks (project_path, task_id, position, kind, label, command,
+                                         updated_at)
+                VALUES ('/p', 1, 0, 'Command', 'Tests', 'bun test', 'then'),
+                       ('/p', 2, 0, 'Command', 'Tests', 'bun test', 'then');
+                INSERT INTO loop_hidden_files (project_path, task_id, path, content)
+                VALUES ('/p', 1, 'a.ts', 'x');
+                "#,
+            )
+            .expect("loop rows");
+        }
+
+        let conn = open(directory.path()).expect("migrate");
+        let checks = |task: i32| {
+            crate::task_store::loops::list_checks(&conn, "/p", task)
+                .expect("checks")
+                .into_iter()
+                .map(|c| (c.position, c.kind, c.command.unwrap_or_default()))
+                .collect::<Vec<_>>()
+        };
+        use maestro_protocol::LoopCheckKind::{Command, Setup};
+        assert_eq!(
+            checks(1),
+            [
+                (0, Setup, "bun install".to_string()),
+                (1, Command, "bun test".to_string())
+            ]
+        );
+        assert_eq!(checks(2), [(0, Command, "bun test".to_string())]);
+        for task in [1, 2] {
+            let config: String = conn
+                .query_row(
+                    "SELECT loop_config FROM tasks WHERE id = ?1",
+                    [task],
+                    |row| row.get(0),
+                )
+                .expect("config");
+            assert!(!config.contains("setup_command"), "{config}");
+            assert!(config.contains("\"max_iterations\":5"), "{config}");
+        }
+        let hidden: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name = 'loop_hidden_files'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("schema");
+        assert_eq!(hidden, 0);
     }
 }

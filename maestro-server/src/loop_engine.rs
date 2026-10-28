@@ -12,10 +12,9 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use maestro_protocol::{
-    ApplyTaskTransitionRequest, LoopCheck, LoopCheckState, LoopConfig, LoopHalt, LoopHiddenFile,
-    LoopIteration, LoopIterationOutcome, LoopSummary, NewTaskComment, PhaseStatus, RunMode,
-    ServerRequest, ServerResponse, Task, TaskBall, TaskPhase, TaskRef, TaskTransition,
-    TransitionGuard,
+    ApplyTaskTransitionRequest, LoopCheck, LoopCheckState, LoopConfig, LoopHalt, LoopIteration,
+    LoopIterationOutcome, LoopSummary, NewTaskComment, PhaseStatus, RunMode, ServerRequest,
+    ServerResponse, Task, TaskBall, TaskPhase, TaskRef, TaskTransition, TransitionGuard,
 };
 
 use crate::command_ext::NoConsoleWindow;
@@ -25,8 +24,6 @@ use crate::task_store::loops::{self, Committed};
 use crate::turn::TurnFacts;
 use crate::worktree::git;
 
-/// Where the hidden files are written while the checks run, inside `.maestro/`, which git ignores.
-const SEALED_DIR: &str = ".maestro/loop/sealed";
 /// How much of a command's output is kept, from the end.
 const TAIL_LINES: usize = 200;
 const LINE_CHARS: usize = 2000;
@@ -858,7 +855,11 @@ pub(crate) async fn sealable(
     base_branch: &str,
     wanted: &str,
 ) -> Result<String, String> {
-    let wanted = loops::relative_path(wanted, true)?;
+    let wanted = loops::relative_path(wanted)?;
+    // A rule matches whatever the branch holds, or nothing; only a picked path has to exist.
+    if wanted.contains('*') || wanted.starts_with('!') {
+        return Ok(wanted);
+    }
     let context = match task_id {
         Some(task_id) => worktree_dir(store, path, task_id).await,
         None => None,
@@ -891,7 +892,7 @@ pub(crate) async fn sealable(
         };
         return Err(format!(
             "\"{wanted}\" is not committed on {place}, so it cannot be sealed: the checks run \
-             against that branch's files. Commit it there first, or add it as a hidden file."
+             against that branch's files. Commit it there first."
         ));
     }
     Ok(wanted)
@@ -921,12 +922,11 @@ async fn check(store: &Store, everyone: &crate::ClientOut, path: &str, task_id: 
                 return Ok(None);
             };
             let checks = loops::list_checks(&conn, path, task_id)?;
-            let hidden = loops::list_hidden_files(&conn, path, task_id)?;
             let last = loops::list_iterations(&conn, path, task_id)?.pop();
-            Ok(Some((task, checks, hidden, last)))
+            Ok(Some((task, checks, last)))
         })()
     };
-    let (task, checks, hidden, last) = match read {
+    let (task, checks, last) = match read {
         Ok(Some(found)) => found,
         Ok(None) => return,
         Err(e) => {
@@ -949,29 +949,54 @@ async fn check(store: &Store, everyone: &crate::ClientOut, path: &str, task_id: 
         .await;
         return;
     };
-    let run = match run_checks(&dir, &task, &checks, &hidden).await {
-        Ok(run) => run,
-        Err(e) => {
-            let note = format!("The checks could not run: {e}");
-            stop(store, everyone, path, task_id, TaskPhase::Checking, &note).await;
-            return;
+    // A run again on the same iteration starts with no result, so the Loop tab follows it afresh.
+    if let Err(e) = loops::clear_results(&*store.lock().await, path, task_id) {
+        send_diag("warn", format!("[loop] task {task_id}: {e}"));
+    }
+    let config = task.loop_config.clone().unwrap_or_default();
+    // Each result is kept as it comes, so the Loop tab follows the round live.
+    let live = |check: &LoopCheck, state: LoopCheckState, detail: Option<String>| {
+        let (id, command) = (check.id, check.command.clone());
+        async move {
+            let kept = loops::keep_result(
+                &*store.lock().await,
+                path,
+                task_id,
+                id,
+                state,
+                detail.as_deref(),
+                command.as_deref(),
+            );
+            match kept {
+                Ok(()) => {
+                    let changed = ServerResponse::TasksChanged(maestro_protocol::ProjectRef {
+                        project_path: path.to_string(),
+                    });
+                    broadcast(everyone, changed).await;
+                }
+                Err(e) => send_diag("warn", format!("[loop] task {task_id}: {e}")),
+            }
         }
     };
+    let run = run_commands(&dir, &config, &checks, live).await;
     {
         let mut conn = store.lock().await;
-        let recorded = loops::record_results(&mut conn, path, task_id, &checks, &run.results)
-            .and_then(|()| match &last {
-                Some(last) => loops::record_outcome(
-                    &conn,
-                    path,
-                    task_id,
-                    last,
-                    LoopIterationOutcome::Checked,
-                    Some(&run.output)
-                        .filter(|o| !o.is_empty())
-                        .map(String::as_str),
-                ),
-                None => Ok(()),
+        let results: Vec<_> = run.steps.iter().chain(&run.results).cloned().collect();
+        let recorded =
+            loops::record_results(&mut conn, path, task_id, &checks, &results).and_then(|()| {
+                match &last {
+                    Some(last) => loops::record_outcome(
+                        &conn,
+                        path,
+                        task_id,
+                        last,
+                        LoopIterationOutcome::Checked,
+                        Some(&run.output)
+                            .filter(|o| !o.is_empty())
+                            .map(String::as_str),
+                    ),
+                    None => Ok(()),
+                }
             });
         if let Err(e) = recorded {
             send_diag("warn", format!("[loop] task {task_id}: {e}"));
@@ -1162,6 +1187,9 @@ fn progress_note(n: i32, iterations: &[LoopIteration], step: &Step<'_>) -> Strin
         Step::Iteration => None,
     };
     match (run, last.map(|i| i.outcome)) {
+        (Some(run), _) if run.steps.iter().any(|(_, s, _)| *s == LoopCheckState::Fail) => {
+            format!("Iteration {n}: a step before the checks failed, so no check ran.")
+        }
         (Some(run), _) => {
             let passing = run
                 .results
@@ -1313,7 +1341,7 @@ pub(crate) fn summary(conn: &rusqlite::Connection, task: &Task) -> Result<LoopSu
         last_summary: iterations.iter().rev().find_map(|i| i.summary.clone()),
         checks: checks
             .iter()
-            .filter(|c| !waiting(c))
+            .filter(|c| !waiting(c) && !loops::is_setup(c))
             .map(|c| c.state)
             .collect(),
         proposals: checks.iter().filter(waiting).count() as i32,
@@ -1429,19 +1457,61 @@ async fn worktree_dir(store: &Store, path: &str, task_id: i32) -> Option<String>
         .map(|w| crate::worktree::absolute(path, &w.path))
 }
 
-/// Remove every sealed path and the hidden files' folder.
+/// The sealed patterns as one gitignore, each anchored at the root unless it starts with `**/`.
+pub(crate) fn sealed_matcher(dir: &str, sealed: &[String]) -> ignore::gitignore::Gitignore {
+    let mut builder = ignore::gitignore::GitignoreBuilder::new(dir);
+    for pattern in sealed {
+        let (bang, body) = match pattern.strip_prefix('!') {
+            Some(body) => ("!", body),
+            None => ("", pattern.as_str()),
+        };
+        let anchor = if body.starts_with("**/") { "" } else { "/" };
+        if let Err(e) = builder.add_line(None, &format!("{bang}{anchor}{body}")) {
+            send_diag("warn", format!("[loop] bad sealed pattern {pattern}: {e}"));
+        }
+    }
+    builder
+        .build()
+        .unwrap_or_else(|_| ignore::gitignore::Gitignore::empty())
+}
+
+/// Remove every file the sealed patterns match: the ones the sparse checkout leaves out, and any
+/// the worker made there.
 async fn remove_sealed(dir: &str, sealed: &[String]) {
-    let paths = sealed
-        .iter()
-        .map(|p| p.trim_end_matches('/'))
-        .chain(std::iter::once(SEALED_DIR));
-    for relative in paths {
+    if sealed.is_empty() {
+        return;
+    }
+    let listed = git(
+        dir,
+        &[
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ],
+    )
+    .await;
+    let listed = match listed {
+        Ok(listed) => listed,
+        Err(e) => {
+            send_diag("warn", format!("[loop] cannot list {dir}: {e}"));
+            return;
+        }
+    };
+    let matcher = sealed_matcher(dir, sealed);
+    let matched = listed
+        .split('\0')
+        .filter(|p| !p.is_empty())
+        .filter(|p| matcher.matched_path_or_any_parents(p, false).is_ignore());
+    for relative in matched {
         let target = Path::new(dir).join(relative);
         // Not followed: a link the worker made is removed, never what it points at.
         let Ok(meta) = tokio::fs::symlink_metadata(&target).await else {
             continue;
         };
         let removed = if meta.is_dir() {
+            // A nested repository git lists as one path.
             tokio::fs::remove_dir_all(&target).await
         } else {
             tokio::fs::remove_file(&target).await
@@ -1451,6 +1521,14 @@ async fn remove_sealed(dir: &str, sealed: &[String]) {
                 "warn",
                 format!("[loop] cannot remove {}: {e}", target.display()),
             );
+        }
+        // The folders it leaves empty go too; one still holding anything refuses.
+        let mut parent = target.parent();
+        while let Some(folder) = parent.filter(|p| *p != Path::new(dir)) {
+            if tokio::fs::remove_dir(folder).await.is_err() {
+                break;
+            }
+            parent = folder.parent();
         }
     }
 }
@@ -1545,6 +1623,8 @@ async fn never_checked(store: &Store, path: &str, task_id: i32) -> bool {
 /// What one run of the checks found.
 #[derive(Debug, Default)]
 struct CheckRun {
+    /// The steps that ran, by id, in order.
+    steps: Vec<(i32, LoopCheckState, Option<String>)>,
     /// Every command check, by id.
     results: Vec<(i32, LoopCheckState, Option<String>)>,
     flaky: Vec<String>,
@@ -1553,64 +1633,52 @@ struct CheckRun {
     output: String,
 }
 
-/// The setup and every command check run in the loop's worktree, where the sealed files simply are,
-/// with the hidden files written in for the run.
-async fn run_checks(
+/// The steps, then every command check, run in the loop's worktree, where the sealed files simply
+/// are, each within its own time limit or the loop's. A failing step stops the steps after it and
+/// fails every check unrun. `on_result` hears each result as soon as it exists.
+async fn run_commands<F, Fut>(
     dir: &str,
-    task: &Task,
+    config: &LoopConfig,
     checks: &[LoopCheck],
-    hidden: &[LoopHiddenFile],
-) -> Result<CheckRun, String> {
-    let config = task.loop_config.clone().unwrap_or_default();
-    remove_sealed(dir, &[]).await;
-    let ran = async {
-        write_hidden(dir, hidden).await?;
-        Ok::<_, String>(run_commands(dir, &config, checks).await)
-    }
-    .await;
-    remove_sealed(dir, &[]).await;
-    ran
-}
-
-async fn write_hidden(dir: &str, hidden: &[LoopHiddenFile]) -> Result<(), String> {
-    for file in hidden {
-        let target = Path::new(dir).join(SEALED_DIR).join(&file.path);
-        if let Some(parent) = target.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|e| format!("cannot write {}: {e}", target.display()))?;
-        }
-        tokio::fs::write(&target, &file.content)
-            .await
-            .map_err(|e| format!("cannot write {}: {e}", target.display()))?;
-    }
-    Ok(())
-}
-
-async fn run_commands(dir: &str, config: &LoopConfig, checks: &[LoopCheck]) -> CheckRun {
-    let limit = Duration::from_secs(config.check_timeout_secs.into());
+    mut on_result: F,
+) -> CheckRun
+where
+    F: FnMut(&LoopCheck, LoopCheckState, Option<String>) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    let default = config.check_timeout_secs;
+    let limit = |c: &LoopCheck| Duration::from_secs(c.timeout_secs.unwrap_or(default).into());
     let runnable: Vec<&LoopCheck> = checks.iter().filter(|c| loops::is_runnable(c)).collect();
     let mut run = CheckRun::default();
 
-    if let Some(setup) = config.setup_command.as_deref() {
-        let ran = run_shell(dir, setup, limit).await;
-        if !ran.passed {
-            let detail = format!(
-                "The setup command failed, so no check ran.\n{}",
-                ran.describe(limit)
-            );
-            run.results = runnable
-                .iter()
-                .map(|c| (c.id, LoopCheckState::Fail, Some(detail.clone())))
-                .collect();
-            run.output = tail_chars(&detail, OUTPUT_CHARS);
-            return run;
+    for (k, step) in checks.iter().filter(|c| loops::is_setup(c)).enumerate() {
+        let command = step.command.as_deref().unwrap_or_default();
+        let ran = run_shell(dir, command, limit(step)).await;
+        if ran.passed {
+            on_result(step, LoopCheckState::Pass, Some(ran.tail.clone())).await;
+            run.steps
+                .push((step.id, LoopCheckState::Pass, Some(ran.tail)));
+            continue;
         }
+        let output = ran.describe(limit(step));
+        on_result(step, LoopCheckState::Fail, Some(output.clone())).await;
+        run.steps
+            .push((step.id, LoopCheckState::Fail, Some(output.clone())));
+        let named = format!("Step {} ({})", k + 1, step.label);
+        let detail = format!("{named} failed, so no check ran.");
+        for check in &runnable {
+            on_result(check, LoopCheckState::Fail, Some(detail.clone())).await;
+            run.results
+                .push((check.id, LoopCheckState::Fail, Some(detail.clone())));
+        }
+        run.output = tail_chars(&format!("### {named}\n{output}"), OUTPUT_CHARS);
+        return run;
     }
 
     let mut failing = Vec::new();
     for check in &runnable {
         let command = check.command.as_deref().unwrap_or_default();
+        let limit = limit(check);
         let first = run_shell(dir, command, limit).await;
         let (state, detail) = if first.passed {
             (LoopCheckState::Pass, first.tail)
@@ -1632,6 +1700,7 @@ async fn run_commands(dir: &str, config: &LoopConfig, checks: &[LoopCheck]) -> C
         if state != LoopCheckState::Pass {
             failing.push(format!("### {}\n{detail}", check.label));
         }
+        on_result(check, state, Some(detail.clone())).await;
         run.results.push((check.id, state, Some(detail)));
     }
     run.all_pass = failing.is_empty();
@@ -1924,7 +1993,7 @@ mod tests {
     use super::*;
     use maestro_protocol::{
         BranchMode, CreateTaskRequest, LoopCheckEntry, LoopCheckKind, LoopCheckSpec, RunMode,
-        SetLoopChecksRequest, SetLoopHiddenFilesRequest, WorkspaceMode,
+        SetLoopChecksRequest, WorkspaceMode,
     };
 
     fn iteration(n: i32, outcome: LoopIterationOutcome, output: Option<&str>) -> LoopIteration {
@@ -2185,11 +2254,147 @@ mod tests {
             accepted: false,
             passed_at_sha: None,
             updated_at: String::new(),
+            timeout_secs: None,
         };
-        let run = run_commands(dir, &LoopConfig::default(), &[check]).await;
+        let run = run_commands(dir, &LoopConfig::default(), &[check], |_, _, _| async {}).await;
         assert_eq!(run.flaky, ["Sometimes"]);
         assert_eq!(run.results[0].1, LoopCheckState::Flaky);
         assert!(!run.all_pass);
+    }
+
+    fn row(id: i32, kind: LoopCheckKind, command: &str, timeout_secs: Option<u32>) -> LoopCheck {
+        LoopCheck {
+            id,
+            position: id,
+            kind,
+            label: format!("row {id}"),
+            command: Some(command.to_string()),
+            timeout_secs,
+            state: LoopCheckState::Pending,
+            detail: None,
+            proposed: false,
+            accepted: false,
+            passed_at_sha: None,
+            updated_at: String::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn steps_run_in_order_and_a_failing_one_runs_no_check() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = dir.path().to_str().unwrap();
+        let heard = Mutex::new(Vec::new());
+        let hear = |c: &LoopCheck, state: LoopCheckState, _: Option<String>| {
+            heard.lock().unwrap().push((c.id, state));
+            async {}
+        };
+        // The second step needs what the first wrote; the check comes after both.
+        let checks = [
+            row(3, LoopCheckKind::Command, "git hash-object flag", None),
+            row(1, LoopCheckKind::Setup, "echo x> flag", None),
+            row(2, LoopCheckKind::Setup, "git hash-object flag", None),
+        ];
+        let config = LoopConfig::default();
+        let run = run_commands(dir, &config, &checks, hear).await;
+        assert!(run.all_pass, "{run:?}");
+        assert_eq!(
+            heard.lock().unwrap().clone(),
+            [
+                (1, LoopCheckState::Pass),
+                (2, LoopCheckState::Pass),
+                (3, LoopCheckState::Pass)
+            ]
+        );
+
+        // A step past its own limit is killed, the step after it never runs, and every check
+        // fails naming it, though the loop's limit would have let it finish.
+        heard.lock().unwrap().clear();
+        let checks = [
+            row(1, LoopCheckKind::Setup, "echo ok", None),
+            row(2, LoopCheckKind::Setup, SLOW, Some(1)),
+            row(3, LoopCheckKind::Setup, "echo never", None),
+            row(4, LoopCheckKind::Command, "echo fine", None),
+            row(5, LoopCheckKind::Judge, "unused", None),
+        ];
+        let started = std::time::Instant::now();
+        let run = run_commands(dir, &config, &checks, hear).await;
+        assert!(started.elapsed() < Duration::from_secs(4));
+        assert!(!run.all_pass);
+        assert_eq!(
+            heard.lock().unwrap().clone(),
+            [
+                (1, LoopCheckState::Pass),
+                (2, LoopCheckState::Fail),
+                (4, LoopCheckState::Fail)
+            ]
+        );
+        assert!(run.steps[1].2.as_deref().unwrap().starts_with("Timed out"));
+        assert_eq!(
+            run.results,
+            [(
+                4,
+                LoopCheckState::Fail,
+                Some("Step 2 (row 2) failed, so no check ran.".to_string())
+            )]
+        );
+        assert!(run.output.contains("### Step 2 (row 2)"), "{}", run.output);
+    }
+
+    #[test]
+    fn sealed_patterns_hide_and_show_as_the_table_says() {
+        let sealed: Vec<String> = ["tests/", "**/*.test.ts", "docs/*.md", "!tests/helpers/"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            crate::worktree::sparse_lines(&sealed),
+            [
+                "/*",
+                "!/tests/",
+                "!**/*.test.ts",
+                "!/docs/*.md",
+                "/tests/helpers/"
+            ]
+        );
+        let matcher = sealed_matcher("/repo", &sealed);
+        for (path, hidden) in [
+            ("tests/a.ts", true),
+            ("tests/deep/b.ts", true),
+            ("tests/helpers/h.ts", false),
+            ("src/x.test.ts", true),
+            ("x.test.ts", true),
+            ("src/x.ts", false),
+            ("docs/a.md", true),
+            ("docs/deep/a.md", false),
+            ("src/tests/a.ts", false),
+        ] {
+            let matched = matcher.matched_path_or_any_parents(path, false).is_ignore();
+            assert_eq!(matched, hidden, "{path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn removing_the_sealed_files_takes_only_what_the_patterns_hide() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        let dir = repo.path().to_str().unwrap();
+        git_in(dir, &["init", "-q", "-b", "main"]).await;
+        for file in [
+            "tests/a.ts",
+            "tests/helpers/h.ts",
+            "src/x.test.ts",
+            "src/x.ts",
+        ] {
+            let path = repo.path().join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "x").unwrap();
+        }
+        git_in(dir, &["add", "tests/a.ts", "src"]).await;
+        let sealed: Vec<String> = ["tests/", "**/*.test.ts", "!tests/helpers/"]
+            .map(String::from)
+            .to_vec();
+        remove_sealed(dir, &sealed).await;
+        let exists = |f: &str| repo.path().join(f).exists();
+        assert!(!exists("tests/a.ts") && !exists("src/x.test.ts"));
+        assert!(exists("tests/helpers/h.ts") && exists("src/x.ts"));
     }
 
     async fn git_in(dir: &str, args: &[&str]) {
@@ -2248,19 +2453,8 @@ mod tests {
                         kind: LoopCheckKind::Command,
                         label: "Sees the sealed files".to_string(),
                         command: Some(check.to_string()),
+                        timeout_secs: None,
                     },
-                }],
-            },
-        )
-        .unwrap();
-        loops::set_hidden_files(
-            &mut conn,
-            &SetLoopHiddenFilesRequest {
-                project_path: project.clone(),
-                task_id: task.id,
-                files: vec![LoopHiddenFile {
-                    path: "h.txt".to_string(),
-                    content: "hidden".to_string(),
                 }],
             },
         )
@@ -2295,7 +2489,7 @@ mod tests {
         (workspace.cwd, task, iteration)
     }
 
-    const SEES_THEM: &str = "git hash-object tests/t.txt .maestro/loop/sealed/h.txt";
+    const SEES_THEM: &str = "git hash-object tests/t.txt";
 
     /// What a `git worktree remove` cut short on Windows leaves: the files, without the `.git`
     /// link or the registration.
@@ -2454,7 +2648,6 @@ mod tests {
             "the worker's write to a sealed path never reaches the loop's worktree"
         );
         assert!(!dir_path.join("tests").exists());
-        assert!(!Path::new(&context).join(SEALED_DIR).exists());
         for dir in [&dir, &context] {
             let status = git(dir, &["status", "--porcelain"]).await.unwrap();
             assert!(status.trim().is_empty(), "nothing left over: {status}");
@@ -2688,6 +2881,7 @@ Try the cache first."
                         kind,
                         label: label.to_string(),
                         command: command.map(str::to_string),
+                        timeout_secs: None,
                     },
                 })
                 .collect(),
@@ -3053,6 +3247,7 @@ Try the cache first."
                     kind: LoopCheckKind::Command,
                     label: "Empty lists".to_string(),
                     command: Some("git hash-object src/a.txt".to_string()),
+                    timeout_secs: None,
                 }),
                 seal: seal.iter().map(|s| s.to_string()).collect(),
             })

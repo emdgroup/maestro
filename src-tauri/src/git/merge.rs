@@ -83,11 +83,16 @@ async fn require_signed_off(
 
 /// What still stands between a loop and its sign-off, one phrase per check.
 fn unsigned(checks: &[LoopCheck]) -> Vec<String> {
+    // The steps only prepare the checks.
+    let checks: Vec<&LoopCheck> = checks
+        .iter()
+        .filter(|check| check.kind != LoopCheckKind::Setup)
+        .collect();
     if !checks.iter().any(|check| !check.proposed || check.accepted) {
         return vec!["it has no checks to say it is done".to_string()];
     }
     checks
-        .iter()
+        .into_iter()
         .filter_map(|check| {
             let why = if check.proposed && !check.accepted {
                 "is a proposal waiting for your answer"
@@ -1346,6 +1351,7 @@ mod loop_tests {
             kind,
             label: label.to_string(),
             command: None,
+            timeout_secs: None,
             state,
             detail: None,
             proposed: false,
@@ -1408,6 +1414,13 @@ mod loop_tests {
             "nothing but a proposal"
         );
         assert_eq!(unsigned(&[]), ["it has no checks to say it is done"]);
+        let failed_step = check("Install", LoopCheckKind::Setup, LoopCheckState::Fail);
+        assert!(unsigned(&[checks[0].clone(), failed_step.clone()]).is_empty());
+        assert_eq!(
+            unsigned(&[failed_step]),
+            ["it has no checks to say it is done"],
+            "a step is not a check"
+        );
     }
 
     #[test]
