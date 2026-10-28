@@ -142,7 +142,7 @@ fixtures.
 - The editor prefills it from the files the command checks name. `scripts/check.sh` in a command seals
   `scripts/check.sh`, and `bun run test` offers the test globs the user confirms.
 - The user can also write **hidden files**: acceptance tests that exist nowhere in the repository.
-  The daemon stores them in `loop_hidden_files`. The worker never has them.
+  The daemon stores them in `loop_hidden_files`. The worker never has them. _(Dropped in phase 5c: tests come from the branch.)_
 
 **2. The worker's worktree does not contain them.**
 
@@ -162,7 +162,7 @@ fixtures.
 4. The sealed paths are written into the worktree from the loop's **sealed snapshot**: their content at
    the base commit, plus the hidden files under `.maestro/loop/sealed/`, which `info/exclude` already
    keeps out of git.
-5. The setup command, if any, then the checks, run in that state.
+5. The setup command, if any, then the checks, run in that state. _(Phase 5c: the steps before the checks, then the checks.)_
 6. The sealed files are removed again before the next session starts.
 
 The snapshot is taken from the base branch when the loop starts. **Re-run checks** takes it again,
@@ -217,6 +217,7 @@ Gaps the survey found, which the phases below close:
 | 4     | The board: create, card, loop view                         | Done        |
 | 5     | MCP tools, drafts from automations, the waiting cap        | Done        |
 | 5b    | Context and sandbox worktrees, Prepare loop                | Done        |
+| 5c    | Steps before the checks, time limits, hidden rules         | Done        |
 | 6     | Docs                                                       | Not started |
 
 Phases 0 to 2 are the engine and can be exercised through MCP and tests before any UI exists. Phase 3
@@ -232,11 +233,13 @@ way V8 added `claimed_from`.
 
 **`tasks` columns:**
 
-| Column            | Type                       | Meaning                                                                                                                        |
-| ----------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `run_mode`        | TEXT, default `'Pipeline'` | `Pipeline` or `Loop`                                                                                                           |
-| `loop_config`     | TEXT, JSON                 | `max_iterations` (10), `max_build_secs` (7200), `stall_limit` (3), `check_timeout_secs` (600), `setup_command`, `sealed_paths` |
-| `loop_sealed_sha` | TEXT                       | The base commit the sealed snapshot was taken from                                                                             |
+| Column        | Type                       | Meaning                                                                                                                        |
+| ------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `run_mode`    | TEXT, default `'Pipeline'` | `Pipeline` or `Loop`                                                                                                           |
+| `loop_config` | TEXT, JSON                 | `max_iterations` (10), `max_build_secs` (7200), `stall_limit` (3), `check_timeout_secs` (600), `setup_command`, `sealed_paths` |
+
+_(Phase 5c: `setup_command` moved into `Setup` steps, and `loop_checks` gained `timeout_secs`.)_
+| `loop_sealed_sha` | TEXT | The base commit the sealed snapshot was taken from |
 
 **New tables**, keyed by `(project_path, task_id, …)` like every task table:
 
@@ -250,7 +253,7 @@ way V8 added `claimed_from`.
 - `loop_check_results`: `n`, `check_id`, `state`, `detail`, `command`. Every check's result after
   iteration `n`, passing ones and judge verdicts included, replaced when the checks run again on
   the same iteration. The Loop tab's iteration rows read it; the engine never does.
-- `loop_hidden_files`: `path` (relative, under the sealed folder), `content`.
+- `loop_hidden_files`: `path` (relative, under the sealed folder), `content`. _(Dropped in phase 5c.)_
 - `agent_gates` (daemon-wide, not per project): `agent_id`, `resume_at`, `reason`, `backoff_step`.
 
 **Protocol.**
@@ -262,7 +265,7 @@ way V8 added `claimed_from`.
   - `ListLoopChecks`, and `SetLoopChecks` (the user's whole list, from the editor)
   - `AnswerLoopProposal`, `TickLoopCheck`
   - `ListLoopIterations`
-  - `ListLoopHiddenFiles`, `SetLoopHiddenFiles`
+  - `ListLoopHiddenFiles`, `SetLoopHiddenFiles` _(Removed in phase 5c.)_
 - `PROTOCOL_VERSION` bumps once for the whole plan, in this phase. Requests added by later phases
   ride on that bump, since nothing releases in between.
 
@@ -286,7 +289,7 @@ No new Tauri commands and no UI until phase 4.
 - `SetLoopChecks` writes the user's checks and leaves pending proposals alone; a proposal leaves that
   state only through `AnswerLoopProposal`. A check whose kind, label or command changed goes back to
   `pending`; an unchanged one keeps its state.
-- Sealed paths and hidden file paths are relative, use `/`, and never contain `..`.
+- Sealed paths and hidden file paths are relative, use `/`, and never contain `..`. _(Phase 5c: sealed paths are patterns, still relative and never climbing out.)_
 
 **Phases** the later phases add to `TaskPhase`, listed here so the model is in one place:
 
@@ -332,9 +335,9 @@ first creation.
    empty diff makes the iteration `empty`.
 3. **Check.** The phase becomes `Checking`. The daemon:
    1. writes the sealed snapshot in,
-   2. runs `setup_command` if set,
+   2. runs `setup_command` if set, _(Superseded by phase 5c.)_
    3. runs every `command` check, one at a time in list order, each with `check_timeout_secs` and
-      killed past it, keeping its exit code and the last 200 lines of combined output,
+      killed past it, keeping its exit code and the last 200 lines of combined output, _(Phase 5c: each check may have its own limit.)_
    4. runs each failing check once more, and marks it `flaky` if the result changed,
    5. removes the sealed files.
 
@@ -466,7 +469,7 @@ since no session is live.
   spent budget is raised before a resume can run.
 - **Accepting a proposal names the paths to seal.** `AnswerLoopProposal` carries them; the editor
   prefills them in phase 4. A path that does not exist on the base branch is refused: the snapshot
-  comes from there, so the user commits the test to the base branch or adds it as a hidden file.
+  comes from there, so the user commits the test to the base branch or adds it as a hidden file. _(Phase 5c: a pattern is accepted without that check, and hidden files are gone.)_
 - **Judge time is not Build time.** The limit closes the worker's session only.
 - **Hidden-file writes are discarded, not reported.** Whatever the worker wrote at a sealed path is
   deleted before the checks run. Reporting it, and the `git` commands that named one, was dropped
@@ -581,8 +584,8 @@ Visuals are the canvas mock `loops-app`.
   Create another and Create. (Phase 5b drops that screen: a loop is created bare and set up from its
   card.) That screen shows:
   - Done when: rows of command, judge and manual checks.
-  - **Sealed from the agent:** the sealed paths, prefilled from the commands, and the hidden files.
-  - Setup command, check timeout (10 minutes), iterations, time per Build, stall limit, judge.
+  - **Sealed from the agent:** the sealed paths, prefilled from the commands, and the hidden files. _(Superseded by phase 5c.)_
+  - Setup command, check timeout (10 minutes), iterations, time per Build, stall limit, judge. _(Superseded by phase 5c.)_
   - A read-only line of the skills and MCP servers the agent gets.
 
   A Planning pipeline task's detail offers **Make it a loop**, which opens on the second screen.
@@ -619,7 +622,7 @@ Visuals are the canvas mock `loops-app`.
   in place, a failing check's output opens under it, and a bare loop shows Prepare loop there. The
   running iteration's row carries what its agent is doing and Join. Below sit "Running the checks"
   (the setup command, now "Run first", and the timeout) and "Hidden from the agent" (the sealed
-  paths and hidden files). The judge is picked only in the card's Agents dialog.
+  paths and hidden files). _(Superseded by phase 5c.)_ The judge is picked only in the card's Agents dialog.
 
 - **Action bar.** An All / Pipeline / Loops filter. Needs me already counts loops, since a loop
   waiting on the user has ball User.
@@ -642,7 +645,7 @@ Settled before phase 4 started:
   and leaves the loop In Progress with ball User, its iterations and checks intact. Dragging the
   card to Planning still parks it.
 - **Budgets change any time.** Iterations, time per Build, stall limit, check timeout and the setup
-  command may be edited after the start; the checks already could. Sealed paths change only before
+  command may be edited after the start; the checks already could. _(Phase 5c: the steps and per-row limits are edited with the checks.)_ Sealed paths change only before
   the start or through an accepted proposal.
 - **Make it a loop** is the mock's "Run as a loop instead" banner on a Planning pipeline task's
   Details tab. It opens Create Task in Loop mode, prefilled. No check is guessed for it.
@@ -672,7 +675,7 @@ Settled before phase 4 started:
   close.
 - Each iteration's tokens are summed from `usage_turns` by its ACP session id.
 - The sealed paths are prefilled from each command's tokens that look like paths and exist on the
-  base branch. That can include a file the agent must edit; the user removes its chip.
+  base branch. That can include a file the agent must edit; the user removes its chip. _(Phase 5c: checked against the loop's branch files, and unticked as one built-in rule.)_
 - The card's footer for a loop in progress is Halt and Join. Halt asks whether to pause once the
   running step ends or to interrupt it now, offering only what the step allows (checks cannot be
   cut, a loop between steps halts at once); the detail's footer has the same button. A halted loop offers Resume,
@@ -740,7 +743,7 @@ Settled before phase 5 started:
   left, the last failing output (cut as the prompt's is), and each judge check's last reason.
 - **The MCP task tools carry** `run_mode`, the checks, the budgets, the setup command and the sealed
   paths, each sealed path checked against the base branch. The judge and the hidden files stay in
-  the app. On a started loop `update_task` changes the budgets only, as in the app.
+  the app. _(Phase 5c: steps are checks of kind `Setup`, each check takes `timeout_minutes`, and `setup_command` is gone.)_ On a started loop `update_task` changes the budgets only, as in the app.
 - **The waiting cap** is a number on the project's Agents settings page, default 2, 0 for no cap.
   It counts loop tasks with ball User; a gated loop has ball Agent and does not count. Only the
   drain obeys it: Start anyway on the queued card starts that loop now.
@@ -823,7 +826,7 @@ they differ, and "Sealed checks" is rewritten to match once it is built.
 
 - The normal way is to prepare the tests on a branch first, then create the loop from it, as its
   base branch or by checking it out. The checks run against that branch's files.
-- Sealed paths that do not exist on the chosen branch are flagged in the loop editor.
+- Sealed paths that do not exist on the chosen branch are flagged in the loop editor. _(Phase 5c: the tree lists only the branch's files, and a rule that matches nothing says so.)_
 
 **Prepare loop replaces Refine on a Planning loop.**
 
@@ -846,9 +849,10 @@ the card):
 - `merge_back` tries a fast-forward, then a merge, and aborts a merge that fails. The iteration that
   hits one is recorded `Failed` with git's reason, and the loop halts as `Conflict`.
 - The checks run in the context with the hidden files written under `.maestro/loop/sealed/` for the
-  run. `loop_sealed_sha` and its column are gone; Re-run checks reads the context as it is.
+  run. _(Phase 5c: no hidden files any more.)_ `loop_sealed_sha` and its column are gone; Re-run checks reads the
+  context as it is.
 - A sealed path, from the app, MCP or an accepted proposal, has to be committed in the context, or
-  on the base branch before the context exists. The editor flags one that is not.
+  on the base branch before the context exists. The editor flags one that is not. _(Phase 5c: only a plain path; a pattern is taken as written.)_
 - The scheduler's one-minute tick removes every sandbox whose loop is not In Progress, which covers
   a loop that passed, was moved, or was deleted.
 - Prepare loop is its own role, `Preparer`, with its own profiles in Settings (Preparation) and its
@@ -872,6 +876,59 @@ the card):
   shown as a plain field with the reason rather than a dropdown with one choice. The loop is created
   with the default budgets and no checks, and is set up from its card, with Prepare loop or by hand
   in its details.
+
+## Phase 5c: steps before the checks, time limits, hidden rules
+
+Decided on 2026-10-28, from canvas mocks of the Loop tab (`loop-tab-full`, `loop-hidden-files`).
+The "Running the checks" card (one setup command, one timeout, a flaky note) and the "Hidden from
+the agent" card (free-text paths, plus a separate editor of files kept in Maestro) were hard to
+use. This phase replaces both, and supersedes the lines marked above.
+
+### Decisions (locked)
+
+- **Steps are checks of a new kind, `Setup`.** They live in `loop_checks` with the rest, so they
+  are ordered, edited and kept the same way. `LoopConfig.setup_command` is gone; migration V14
+  turns a stored one into a `Setup` row at position 0, labelled "Prepare the checks". A step needs
+  a command, as a `Command` check does.
+- **Steps run first, in list order, with no flaky re-run.** The first failure stops them: that step
+  is `Fail` with its output, the steps after it get no result, and every command check is `Fail`
+  with "Step N (label) failed, so no check ran." A failed step never lets the round pass, even with
+  no command check. Steps are left out of the card's bar, the counts, the progress note and the
+  sign-off, and a loop needs at least one check that is not a step to start.
+- **No run buttons.** The iteration loop runs the steps; the editor only edits them. The
+  timeline's Checks tile reads "step k of N · reason", then "check k of M", the first row without a
+  result being the one running, and a failed step reads "Checks did not run: step k failed" with
+  its output, in the head card and the iteration row.
+- **Every step and check may have its own time limit**, `timeout_secs` on the row. `None` takes
+  `LoopConfig.check_timeout_secs`, which stays as that default and as the iteration commit's
+  limit. MCP takes it as `timeout_minutes` on each item of `checks`.
+- **Results are kept as each row finishes**, with a `TasksChanged` push, so the Loop tab follows a
+  round live. A run starts by clearing the newest iteration's results, so a re-run on the same
+  iteration starts empty. `record_results` still writes the whole round at its end.
+- **`sealed_paths` is an ordered list of gitignore-style patterns.** Anchored at the repository root
+  unless it starts with `**/`; `*` within one folder, `**/` any number of folders, a trailing `/` a
+  folder and everything under it, a plain path that file or that folder. `!pattern` makes matching
+  files visible again, and a later entry wins at the same level, the nearest level first. The UI
+  stores the rules (entries with `*`), then the picked paths, then the exceptions.
+- **One rule set, implemented twice and tested with the same table:** the daemon's `seal()`
+  translates each pattern into a non-cone sparse-checkout line, and `remove_sealed` lists
+  `git ls-files --cached --others --exclude-standard` and deletes what an
+  `ignore::gitignore::Gitignore` of the patterns matches, then the folders that leaves empty; the
+  app's `hiddenMatcher` reads them the same way for the tree.
+- **Only a plain path is checked against the branch.** A rule or an exception is accepted as
+  written; the editor shows each rule's match count and "matches nothing".
+- **Files kept in Maestro only are dropped.** Tests come from the branch, and the Preparer commits
+  them there. `loop_hidden_files` and its requests are gone.
+- **The hidden-files card is one model**: rules, paths picked in a tree of the loop's branch
+  (`loop_branch_files`, `git ls-tree -r` capped at 20 000 files), and exceptions. A lock shows only
+  on hidden rows, on hover elsewhere. The built-in rule "Files the checks and steps name" is not a
+  stored kind: it is the literal paths the commands name, added on blur as before, and unticking
+  it removes them and marks them dismissed. A visible file a check depends on is flagged:
+  `package.json` for `npm|pnpm|yarn|bun run`, `vitest.config.*` for `vitest`, `jest.config.*` for
+  `jest`. The card is read-only once the loop has started.
+- **The Preparer adds steps and hides dependencies.** `PREPARE_PROTOCOL` tells it to put a `Setup`
+  step first for anything the checks need, and to seal the files a check depends on.
+- `PROTOCOL_VERSION` is 17.
 
 ## Phase 6: docs
 
