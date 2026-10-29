@@ -177,6 +177,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::list_directories,
         crate::ipc::list_contents,
         crate::ipc::list_workspace_files,
+        crate::ipc::list_artifact_files,
         crate::ipc::read_file,
         crate::ipc::read_file_binary,
         crate::ipc::write_file,

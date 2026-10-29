@@ -18,7 +18,7 @@ import { useState } from "react";
 import type { TabKind } from "./useSidePanelTabs";
 import type { ConnectionKey } from "@/types/bindings";
 import type { PlanEntry, ToolCallItem } from "@/components/execution/activity/types";
-import type { WorkingFileEntry } from "@/components/execution/agent-activity-panel/useWorkingFileTracker";
+import type { ArtifactFile } from "@/types/bindings";
 import { useTaskAttachmentsQuery } from "@/services/task.service";
 import type { SessionShipState } from "./useSessionShipState";
 import type { SessionDiffScope } from "./useSessionDiffStats";
@@ -34,7 +34,7 @@ interface OverviewPanelProps {
   planEntries?: PlanEntry[] | null;
   planTitle?: string | null;
   planReviewState?: "waiting" | "accepted" | "rejected" | null;
-  workingFiles?: WorkingFileEntry[];
+  workingFiles?: ArtifactFile[];
   taskId: number | null;
   onNavigate: (kind: TabKind, filePath?: string) => void;
   diffStats?: { insertions: number; deletions: number } | null;
@@ -385,7 +385,7 @@ export function OverviewPanel({
                     </p>
                   )}
                   <div className="flex flex-col gap-1">
-                    {visibleAgentFiles.map(({ path, addedAt }) => {
+                    {visibleAgentFiles.map(({ path, modified_ms }) => {
                       const parts = path.split("/");
                       const name = parts[parts.length - 1] ?? path;
                       return (
@@ -404,7 +404,7 @@ export function OverviewPanel({
                             <TooltipContent>{path}</TooltipContent>
                           </Tooltip>
                           <span className="text-[9px] text-muted-foreground/40 shrink-0 tabular-nums">
-                            {formatTimeAgoCompact(addedAt)}
+                            {formatTimeAgoCompact(modified_ms)}
                           </span>
                           <Tooltip>
                             <TooltipTrigger

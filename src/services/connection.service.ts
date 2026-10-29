@@ -134,6 +134,24 @@ export function useListWorkspaceFiles(
   });
 }
 
+/**
+ * Files in the session's artifact folders changed since it started. Polled rather than read off
+ * the tool calls: an agent that writes through a script reports no file at all.
+ */
+export function useArtifactFiles(
+  connection: ConnectionKey,
+  cwd: string | null | undefined,
+  sinceMs: number | null,
+  poll: boolean,
+) {
+  return useQuery({
+    queryKey: [...connectionQueryKeys.fileBrowser(), "artifacts", connection, cwd, sinceMs],
+    queryFn: () => api.listArtifactFiles(connection, cwd!, sinceMs!),
+    enabled: !!cwd && sinceMs != null,
+    refetchInterval: poll ? 10_000 : false,
+  });
+}
+
 type RefetchInterval =
   | number
   | false

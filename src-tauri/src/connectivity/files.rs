@@ -6,10 +6,13 @@
 //! unquoted. There is one implementation each now, with a single local branch where the host has
 //! no POSIX shell to run the remote form.
 
+use serde::Serialize;
+use specta::Type;
 use std::sync::Arc;
 use tauri::State;
 
 use crate::acp::ConnectionKey;
+use crate::connectivity::docker_handlers::run_blocking;
 use crate::connectivity::exec_channel::{run_on, run_with_stdin, ExecTarget};
 use crate::connectivity::filesystem_handlers::{self, FileEntry};
 use crate::core::AppState;
@@ -225,6 +228,128 @@ pub async fn workspace_files(
         .map(|line| line.trim().to_string())
         .filter(|line| !line.is_empty())
         .collect())
+}
+
+/// Where a session's artifacts are written, relative to its working directory. Scanned rather than
+/// read off the agent's tool calls: an agent that writes through a script reports no file at all,
+/// and a fixed list keeps every ordinary source edit out.
+const ARTIFACT_DIRS: [&str; 3] = [".maestro/artifacts", ".planning", ".claude/plans"];
+
+/// A file under one of [`ARTIFACT_DIRS`], and when it last changed.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+pub struct ArtifactFile {
+    /// The root joined to the path under it with `/`, so a caller can strip the root back off.
+    pub path: String,
+    /// Milliseconds since the epoch, by the host's clock.
+    pub modified_ms: f64,
+}
+
+/// Files under [`ARTIFACT_DIRS`] in `root` changed since `since_ms`, oldest first: the Overview
+/// card shows the tail of the list, so the newest must be last.
+pub async fn artifact_files(
+    conn: &GitConnection,
+    root: &str,
+    since_ms: f64,
+) -> Result<Vec<ArtifactFile>, String> {
+    let root = root.trim_end_matches(['/', '\\']).to_string();
+    let mut files = if is_local(conn) {
+        run_blocking(move || Ok(local_artifact_files(&root, since_ms))).await?
+    } else {
+        remote_artifact_files(conn, &root, since_ms).await?
+    };
+    files.sort_by(|a, b| {
+        a.modified_ms
+            .total_cmp(&b.modified_ms)
+            .then_with(|| a.path.cmp(&b.path))
+    });
+    Ok(files)
+}
+
+fn local_artifact_files(root: &str, since_ms: f64) -> Vec<ArtifactFile> {
+    let mut files = Vec::new();
+    let mut pending: Vec<(std::path::PathBuf, String)> = ARTIFACT_DIRS
+        .iter()
+        .map(|dir| (std::path::Path::new(root).join(dir), dir.to_string()))
+        .collect();
+    while let Some((dir, relative)) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(name) = entry.file_name().into_string() else {
+                continue;
+            };
+            // `DirEntry::metadata` does not follow symlinks, so a link cannot loop the walk.
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            let relative = format!("{relative}/{name}");
+            if meta.is_dir() {
+                pending.push((entry.path(), relative));
+                continue;
+            }
+            let modified_ms = meta
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|age| age.as_millis() as f64);
+            if let Some(modified_ms) = modified_ms.filter(|ms| *ms >= since_ms) {
+                files.push(ArtifactFile {
+                    path: format!("{root}/{relative}"),
+                    modified_ms,
+                });
+                if files.len() >= MAX_WORKSPACE_FILES {
+                    return files;
+                }
+            }
+        }
+    }
+    files
+}
+
+async fn remote_artifact_files(
+    conn: &GitConnection,
+    root: &str,
+    since_ms: f64,
+) -> Result<Vec<ArtifactFile>, String> {
+    // `-mmin` reads the age on the host's own clock, so it never has to agree with this one. It
+    // rounds up to the minute, so a file written just before the session started can slip in.
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|now| now.as_millis() as f64)
+        .unwrap_or(since_ms);
+    let minutes = ((now_ms - since_ms) / 60_000.0).ceil().max(1.0) as u64;
+    let dirs: Vec<String> = ARTIFACT_DIRS.iter().map(|dir| shell_quote(dir)).collect();
+    // ponytail: `stat -c` is GNU and busybox only, so a macOS host lists no artifacts; switch to
+    // `stat -f` there if one ever shows up.
+    let listing = script(
+        conn,
+        &format!(
+            "cd {} && find {} -type f -mmin -{minutes} -exec stat -c '%Y %n' {{}} + 2>/dev/null \
+             | head -{MAX_WORKSPACE_FILES}",
+            shell_quote(root),
+            dirs.join(" ")
+        ),
+        "list artifacts",
+    )
+    .await?;
+    Ok(parse_artifact_listing(
+        root,
+        &String::from_utf8_lossy(&listing),
+    ))
+}
+
+/// Parse `stat -c '%Y %n'` lines, seconds then the path relative to `root`.
+fn parse_artifact_listing(root: &str, text: &str) -> Vec<ArtifactFile> {
+    text.lines()
+        .filter_map(|line| {
+            let (secs, relative) = line.trim().split_once(' ')?;
+            Some(ArtifactFile {
+                path: format!("{root}/{relative}"),
+                modified_ms: secs.parse::<f64>().ok()? * 1000.0,
+            })
+        })
+        .collect()
 }
 
 /// A file's text content. Binary files and anything over [`TEXT_LIMIT`] are refused.
@@ -488,6 +613,22 @@ pub async fn list_workspace_files(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn list_artifact_files(
+    app_state: State<'_, Arc<AppState>>,
+    connection: ConnectionKey,
+    path: String,
+    since_ms: f64,
+) -> Result<Vec<ArtifactFile>, String> {
+    artifact_files(
+        &connect(&app_state, connection, path.clone()).await?,
+        &path,
+        since_ms,
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn read_file(
     app_state: State<'_, Arc<AppState>>,
     connection: ConnectionKey,
@@ -576,7 +717,53 @@ pub async fn delete_file(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_listing, remote_write_script, temp_sibling};
+    use super::{
+        local_artifact_files, parse_artifact_listing, parse_listing, remote_write_script,
+        temp_sibling, ArtifactFile,
+    };
+
+    /// Only the artifact folders are walked, nested folders included, and only files changed since
+    /// the session started count.
+    #[test]
+    fn artifacts_come_from_the_artifact_folders_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_string_lossy().to_string();
+        for file in [
+            ".planning/plan.md",
+            ".maestro/artifacts/out/report.html",
+            ".maestro/state.json",
+            "src/loop-draft.ts",
+        ] {
+            let path = dir.path().join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "x").unwrap();
+        }
+
+        let mut paths: Vec<String> = local_artifact_files(&root, 0.0)
+            .into_iter()
+            .map(|file| file.path)
+            .collect();
+        paths.sort();
+        assert_eq!(
+            paths,
+            vec![
+                format!("{root}/.maestro/artifacts/out/report.html"),
+                format!("{root}/.planning/plan.md"),
+            ]
+        );
+        assert!(local_artifact_files(&root, f64::MAX).is_empty());
+    }
+
+    #[test]
+    fn artifact_listing_keeps_spaces_in_names() {
+        assert_eq!(
+            parse_artifact_listing("/w", "1700000000 .planning/my plan.md\n\nnot-a-line\n"),
+            vec![ArtifactFile {
+                path: "/w/.planning/my plan.md".to_string(),
+                modified_ms: 1_700_000_000_000.0,
+            }]
+        );
+    }
 
     /// `ls -1aF` is the whole reason one listing can answer both "which are directories" and
     /// "what is in here": the markers it appends are the only type information in the output, and

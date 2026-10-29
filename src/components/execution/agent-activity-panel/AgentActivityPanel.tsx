@@ -41,12 +41,12 @@ import { cn } from "@/lib/utils";
 import { fileUriToPath, toPosixPath } from "@/lib/path-utils";
 import { openFileWithConnection } from "@/lib/file-opener";
 import { opensExternally } from "../activity/fileTypeUtils";
-import { useWslConnections } from "@/services/connection.service";
+import { useArtifactFiles, useWslConnections } from "@/services/connection.service";
 import { useSessionActivity, useSessionActivityActions } from "@/store/sessionActivityStore";
 import { useActiveTab } from "@/store/navigationStore";
 import { useBoardActions, useBoardStore } from "@/store/boardStore";
 import { commands } from "@/types/bindings";
-import type { JsonValue, ConnectionKey } from "@/types/bindings";
+import type { ArtifactFile, JsonValue, ConnectionKey } from "@/types/bindings";
 import { ExecutionSidePanel } from "@/components/execution/side-panel/ExecutionSidePanel";
 import { useSidePanelTabs } from "@/components/execution/side-panel/useSidePanelTabs";
 import { useCanvasImport } from "@/components/execution/side-panel/useCanvasImport";
@@ -65,7 +65,6 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/ui/resiz
 
 import { useActivityStatusManager } from "./useActivityStatusManager";
 import { useSidePanelState } from "./useSidePanelState";
-import { useWorkingFileTracker } from "./useWorkingFileTracker";
 import { useAcpSessionMeta, useActiveSessionsQuery } from "@/services/execution.service";
 import { usePermissionHandlers } from "./usePermissionHandlers";
 import { useMessageSender } from "./useMessageSender";
@@ -156,6 +155,9 @@ interface AgentActivityPanelProps {
   onSpawnShell?: () => Promise<string | null>;
 }
 
+/** One array for "none yet", so the side panel does not see a new list every render. */
+const NO_ARTIFACTS: ArtifactFile[] = [];
+
 export function AgentActivityPanel({
   sessionId,
   agentId,
@@ -224,13 +226,10 @@ export function AgentActivityPanel({
     pendingSendRef,
     !!pendingPermission || !!pendingElicitation,
   );
-  const { workingFiles: localWorkingFiles } = useWorkingFileTracker(sessionId, liveState.items);
-
   const { data: activeSessions } = useActiveSessionsQuery(selectedProject?.id);
-  const taskId = useMemo(() => {
-    const info = activeSessions?.find((s) => s.session_id === sessionId);
-    return info?.task_id ?? null;
-  }, [activeSessions, sessionId]);
+  const sessionInfo = activeSessions?.find((s) => s.session_id === sessionId);
+  const taskId = sessionInfo?.task_id ?? null;
+  const startedAtMs = sessionInfo ? Date.parse(sessionInfo.started_at) : NaN;
 
   const isSessionActive = isSelected && activeTab === "agents";
 
@@ -241,6 +240,12 @@ export function AgentActivityPanel({
   // `handleOpenFile` so the relative paths handed over always match the tree's root.
   const { data: sessionMeta } = useAcpSessionMeta(sessionId);
   const workspacePath = sessionMeta?.cwd ?? selectedProject?.path ?? "";
+  const { data: artifactFiles = NO_ARTIFACTS } = useArtifactFiles(
+    connection,
+    sessionMeta?.cwd,
+    Number.isNaN(startedAtMs) ? null : startedAtMs,
+    isSessionActive,
+  );
   const { data: wslConnections } = useWslConnections();
   const wslDistroName =
     connection.type === "wsl"
@@ -335,7 +340,7 @@ export function AgentActivityPanel({
   } = useSidePanelTabs({
     hasPlan: !!sidePanelPlan,
     canvasMap: liveState.canvasMap,
-    hasArtifacts: localWorkingFiles.length > 0,
+    hasArtifacts: artifactFiles.length > 0,
     changedFilesCount,
   });
 
@@ -967,7 +972,7 @@ export function AgentActivityPanel({
               onAddTab={addDynamicTab}
               onOpenTabKind={openTabKind}
               onOpenFile={handleOpenFile}
-              workingFiles={localWorkingFiles}
+              workingFiles={artifactFiles}
               taskId={taskId}
               workspacePath={workspacePath}
               connection={connection}
