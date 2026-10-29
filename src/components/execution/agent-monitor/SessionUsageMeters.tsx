@@ -43,7 +43,8 @@ const OVERAGE_REASON: Record<string, string> = {
   out_of_credits: "out of credits",
   overage_not_provisioned: "not set up on this plan",
 };
-const CARD = "flex w-64 flex-col gap-3 p-3.5 text-[11px]";
+// Clearer than the popover default: these sit over the session header and read best as tinted glass.
+const CARD = "flex w-64 flex-col gap-3 bg-card/25 p-3.5 text-[11px] backdrop-blur-[24px]";
 
 type TokenKind = "cacheRead" | "cacheWrite" | "input" | "thought" | "output";
 const TOKEN_KINDS: { kind: TokenKind; label: string; color: string; field: keyof UsageTurn }[] = [
