@@ -245,7 +245,7 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
             path, a code span) grows it past the max-width above and, being right-
             aligned, it overflows off the left edge of the stream. */}
         <div
-          className="bg-muted rounded-4xl rounded-tr-none px-3.5 py-2.5 text-sm leading-relaxed text-foreground wrap-break-word max-w-full"
+          className="rounded-[18px] rounded-tr-md border border-foreground/7 bg-background/50 px-3.5 py-2.5 text-sm leading-relaxed text-foreground wrap-break-word max-w-full"
           onClick={handleClick}
         >
           {hasAttachments ? (

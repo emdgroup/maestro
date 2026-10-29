@@ -1285,9 +1285,13 @@
    page's background, see-through enough for the tint and bubbles to show, blurred so the text
    on it stays readable. Plain CSS so it outranks the panel's own `bg-*` utility. */
 .inner-glass {
-  background: color-mix(in oklab, var(--background) 60%, transparent);
+  background: color-mix(in oklab, var(--background) 40%, transparent);
   -webkit-backdrop-filter: blur(20px) saturate(150%);
   backdrop-filter: blur(20px) saturate(150%);
+}
+/* A light background over the tint reads as a flat wash, so dark mode alone takes the denser glass. */
+.dark .inner-glass {
+  background: color-mix(in oklab, var(--background) 60%, transparent);
 }
 /* A pane that holds a chart: the `home-pane` look without its hover lift. */
 .usage-pane {
