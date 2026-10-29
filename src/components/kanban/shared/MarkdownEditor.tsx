@@ -203,7 +203,8 @@ export function MarkdownEditor({
         onFocus={() => isEditable && enterEdit()}
         className={cn(
           "rounded px-1 py-0.5 min-h-[1.5em] text-sm leading-relaxed",
-          fill && "h-full overflow-y-auto border-border! px-2 py-2",
+          fill &&
+            "h-full overflow-y-auto rounded-xl border-foreground/12! bg-background/55 px-3 py-2.5",
           isEditable && "border border-transparent hover:border-border cursor-text",
           !isEditable && "cursor-default",
           !value && "text-muted-foreground",
@@ -223,10 +224,13 @@ export function MarkdownEditor({
   // --- Edit mode ---
   return (
     <div
-      className={cn("flex flex-col rounded border border-ring overflow-hidden", fill && "h-full")}
+      className={cn(
+        "flex flex-col rounded-xl border border-accent/70 bg-background/55 overflow-hidden",
+        fill && "h-full",
+      )}
     >
       {/* Header: tabs + toolbar */}
-      <div className="flex items-stretch bg-muted/30 border-b border-border">
+      <div className="flex items-stretch border-b border-foreground/8">
         <button
           type="button"
           tabIndex={-1}

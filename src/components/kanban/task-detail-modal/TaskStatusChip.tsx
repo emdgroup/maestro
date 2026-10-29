@@ -44,7 +44,7 @@ export function TaskStatusChip({ task }: { task: Task }) {
   const live = task.phase_status === "Running";
   return (
     <span
-      className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs"
+      className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-foreground/7 bg-background/50 px-2.5 py-1 text-xs"
       style={{ "--status-color": colors[task.status] } as CSSProperties}
     >
       <span

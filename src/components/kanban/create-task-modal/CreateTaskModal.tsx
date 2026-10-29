@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogTitle, DialogClose } from "@/ui/dialog";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
 import { Repeat, Workflow, X } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import {
@@ -307,15 +306,15 @@ export function CreateTaskModal({
         className="sm:w-fit sm:min-w-160 sm:max-w-[90vw] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden"
       >
         {/* Header */}
-        <div className="relative flex items-center gap-3 px-6 pt-3 shrink-0">
+        <div className="relative flex items-center gap-3 px-6 pt-4 shrink-0">
           {/* The issue popup's anchor: the header's width less its padding, which is the
               body's content box, so the popup lines up with the fields and stays in the dialog. */}
           <span
             ref={issuePopupAnchor}
             className="pointer-events-none absolute inset-x-6 bottom-0"
           />
-          <DialogTitle className="text-xs font-semibold tracking-widest uppercase text-foreground">
-            CREATE TASK
+          <DialogTitle className="text-[11px] font-normal tracking-[0.14em] uppercase text-muted-foreground">
+            Create task
           </DialogTitle>
           {hasProvider && issueConfig && (
             <IssueSearchCombobox
@@ -328,7 +327,9 @@ export function CreateTaskModal({
             />
           )}
           <div className="flex-1" />
-          <DialogClose render={<Button variant="ghost" size="icon" className="shrink-0" />}>
+          <DialogClose
+            render={<Button variant="ghost" size="icon" className="shrink-0 size-7 rounded-full" />}
+          >
             <X className="size-4" />
             <span className="sr-only">Close</span>
           </DialogClose>
@@ -341,7 +342,7 @@ export function CreateTaskModal({
           className="flex flex-col flex-1 min-h-0 overflow-hidden"
         >
           {/* Body */}
-          <div className="flex-1 flex flex-col min-h-0 overflow-y-auto px-6 py-4 gap-4">
+          <div className="flex-1 flex flex-col min-h-0 overflow-y-auto px-6 pt-1 pb-4 gap-4">
             {error && (
               <div className="shrink-0 bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded text-sm">
                 {error}
@@ -355,7 +356,7 @@ export function CreateTaskModal({
                 onSave={setTitle}
                 isEditable={true}
                 placeholder="Task title"
-                className="text-xl font-semibold"
+                className="text-2xl font-semibold tracking-[-0.025em]"
               />
             </div>
 
@@ -375,7 +376,7 @@ export function CreateTaskModal({
                 {pendingFiles.map((f) => (
                   <li
                     key={f.filePath}
-                    className="h-9 flex items-center gap-2 rounded-md border border-border bg-card px-3 text-sm"
+                    className="home-field h-9 flex items-center gap-2 rounded-xl px-3 text-sm"
                   >
                     <span className="flex-1 truncate text-foreground">{f.filename}</span>
                     <Button
@@ -411,9 +412,7 @@ export function CreateTaskModal({
                 project, since a loop needs a worktree of its own. */}
             {isGitRepo && (
               <div className="shrink-0 space-y-1.5">
-                <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
-                  How it runs
-                </span>
+                <span className="text-[11px] text-muted-foreground">How it runs</span>
                 <div className="grid grid-cols-2 gap-2">
                   {(
                     [
@@ -437,10 +436,8 @@ export function CreateTaskModal({
                         setRunMode(mode);
                         if (mode === "Loop") setValue("workspaceMode", "NewWorktree");
                       }}
-                      className={cn(
-                        "flex items-start gap-2 rounded-md border p-2.5 text-left text-xs",
-                        runMode === mode ? "border-accent bg-accent/10" : "border-border",
-                      )}
+                      className="home-pane flex items-start gap-2 rounded-xl p-2.5 text-left text-xs"
+                      data-selected={runMode === mode}
                     >
                       <Icon className="mt-0.5 size-4 shrink-0 text-accent" />
                       <span>
@@ -515,7 +512,7 @@ export function CreateTaskModal({
           </div>
 
           {/* Footer */}
-          <div className="border-t border-border px-6 py-3 flex items-center gap-2 shrink-0">
+          <div className="border-t border-foreground/7 px-6 py-3 flex items-center gap-2 shrink-0 [&_[data-slot=button]]:h-9 [&_[data-slot=button]]:rounded-xl [&_[data-slot=button]]:px-4 [&_[data-slot=button]]:text-xs">
             <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
               <Switch
                 size="sm"

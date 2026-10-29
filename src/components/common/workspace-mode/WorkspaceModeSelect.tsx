@@ -79,7 +79,7 @@ export function WorkspaceModeSelect({
   if (newWorktreeOnly) {
     const only = MODES[0];
     return (
-      <div id={id} className="flex items-center gap-2 rounded-md border border-border py-2 px-3">
+      <div id={id} className="home-field flex items-center gap-2 rounded-xl py-2 px-3">
         <only.icon className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1">
           <span className="block text-sm truncate">{only.label}</span>
@@ -96,7 +96,7 @@ export function WorkspaceModeSelect({
           two-line content overflowing a 36px box. */}
       <SelectTrigger
         id={id}
-        className="w-full data-[size=default]:h-auto py-2 px-3 border-border bg-transparent shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted"
+        className="w-full data-[size=default]:h-auto py-2 px-3 home-field rounded-xl shadow-none"
       >
         <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
           <SelectedIcon className="size-3.5 shrink-0 text-muted-foreground" />

@@ -160,10 +160,13 @@ export const KanbanView: React.FC = () => {
               "Priority"
             )}
           </PopoverTrigger>
-          <PopoverContent className="w-48 p-2" align="start">
-            <div className="flex flex-col gap-1">
+          <PopoverContent className="w-48 p-1.5 gap-0" align="start">
+            <div className="flex flex-col">
               {PRIORITIES.map((p) => (
-                <label key={p} className="flex items-center gap-2 cursor-pointer py-0.5">
+                <label
+                  key={p}
+                  className="flex items-center gap-2.5 cursor-pointer rounded-[10px] px-2.5 py-1.5 hover:bg-foreground/7"
+                >
                   <Checkbox
                     checked={selectedPriorities.includes(p)}
                     onCheckedChange={(checked) => {
@@ -172,13 +175,13 @@ export const KanbanView: React.FC = () => {
                       );
                     }}
                   />
-                  <span className="text-sm">{p}</span>
+                  <span className="text-[13px]">{p}</span>
                 </label>
               ))}
               {selectedPriorities.length > 0 && (
                 <Button
                   variant="ghost"
-                  className="text-xs text-muted-foreground hover:text-foreground mt-1 h-auto p-0 w-full justify-start"
+                  className="text-xs text-muted-foreground hover:text-foreground mt-1 h-auto rounded-none border-t border-foreground/8 px-2.5 pt-2 pb-1 w-full justify-start hover:bg-transparent"
                   onClick={() => setSelectedPriorities([])}
                 >
                   Clear
@@ -197,13 +200,16 @@ export const KanbanView: React.FC = () => {
               "Label"
             )}
           </PopoverTrigger>
-          <PopoverContent className="w-48 p-2" align="start">
-            <div className="flex flex-col gap-1">
+          <PopoverContent className="w-48 p-1.5 gap-0" align="start">
+            <div className="flex flex-col">
               {availableLabels.length === 0 && (
-                <span className="text-xs text-muted-foreground">No labels</span>
+                <span className="px-2.5 py-1.5 text-xs text-muted-foreground">No labels</span>
               )}
               {availableLabels.map((label) => (
-                <label key={label} className="flex items-center gap-2 cursor-pointer py-0.5">
+                <label
+                  key={label}
+                  className="flex items-center gap-2.5 cursor-pointer rounded-[10px] px-2.5 py-1.5 hover:bg-foreground/7"
+                >
                   <Checkbox
                     checked={selectedLabels.includes(label)}
                     onCheckedChange={(checked) => {
@@ -212,13 +218,13 @@ export const KanbanView: React.FC = () => {
                       );
                     }}
                   />
-                  <span className="text-sm">{label}</span>
+                  <span className="text-[13px]">{label}</span>
                 </label>
               ))}
               {selectedLabels.length > 0 && (
                 <Button
                   variant="ghost"
-                  className="text-xs text-muted-foreground hover:text-foreground mt-1 h-auto p-0 w-full justify-start"
+                  className="text-xs text-muted-foreground hover:text-foreground mt-1 h-auto rounded-none border-t border-foreground/8 px-2.5 pt-2 pb-1 w-full justify-start hover:bg-transparent"
                   onClick={() => setSelectedLabels([])}
                 >
                   Clear

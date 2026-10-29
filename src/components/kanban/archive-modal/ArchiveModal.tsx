@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/ui/dialog";
 import { Input } from "@/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
+import { SEGMENT_LIST, SEGMENT_TRIGGER } from "@/components/kanban/shared/pill-styles";
 import { Button } from "@/ui/button";
 import { useTasksQuery } from "@/services/task.service";
 import { useNavigationActions } from "@/store/navigationStore";
@@ -76,23 +77,34 @@ export function ArchiveModal({ isOpen, onClose, projectId }: ArchiveModalProps) 
       }}
     >
       <DialogContent className="sm:max-w-2xl flex flex-col max-h-[80vh]">
-        <DialogTitle>Archive</DialogTitle>
-        <DialogDescription className="sr-only">
-          Browse archived and cancelled tasks
-        </DialogDescription>
+        {/* Home's sheet header: the eyebrow over a 2xl title. */}
+        <div>
+          <DialogDescription className="text-[11px] tracking-[0.14em] uppercase text-muted-foreground">
+            Archived and cancelled
+          </DialogDescription>
+          <DialogTitle className="mt-0.5 text-2xl font-semibold tracking-[-0.025em]">
+            Archive
+          </DialogTitle>
+        </div>
 
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search archived tasks..."
-          className="h-8"
+          className="home-field h-9 rounded-xl"
         />
 
         <Tabs value={filter} onValueChange={(v) => setFilter(v as ArchiveFilter)}>
-          <TabsList>
-            <TabsTrigger value="all">All</TabsTrigger>
-            <TabsTrigger value="Done">Done</TabsTrigger>
-            <TabsTrigger value="Cancelled">Cancelled</TabsTrigger>
+          <TabsList className={SEGMENT_LIST}>
+            <TabsTrigger value="all" className={SEGMENT_TRIGGER}>
+              All
+            </TabsTrigger>
+            <TabsTrigger value="Done" className={SEGMENT_TRIGGER}>
+              Done
+            </TabsTrigger>
+            <TabsTrigger value="Cancelled" className={SEGMENT_TRIGGER}>
+              Cancelled
+            </TabsTrigger>
           </TabsList>
         </Tabs>
 
@@ -104,12 +116,12 @@ export function ArchiveModal({ isOpen, onClose, projectId }: ArchiveModalProps) 
               <p className="text-sm text-muted-foreground">No archived tasks</p>
             </div>
           ) : (
-            <div className="flex flex-col gap-1 p-1">
+            <div className="flex flex-col gap-2 p-1">
               {archiveTasks.map((task) => (
                 <Button
                   key={task.id}
                   variant="ghost"
-                  className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3 h-auto text-left w-full justify-start hover:bg-accent/5"
+                  className="home-pane flex items-center gap-3 rounded-xl px-4 py-3 h-auto text-left w-full justify-start"
                   onClick={() => handleTaskClick(task)}
                 >
                   <div className="flex-1 min-w-0">

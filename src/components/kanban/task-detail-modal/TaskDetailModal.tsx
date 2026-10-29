@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import { Dialog, DialogContent, DialogTitle, DialogHeader } from "@/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/ui/tabs";
+import { SEGMENT_LIST, SEGMENT_TRIGGER } from "@/components/kanban/shared/pill-styles";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -288,9 +289,10 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
         ) : (
           <>
             {/* Header */}
-            <DialogHeader className="flex-row items-center gap-3 px-6 pt-3 shrink-0">
-              <DialogTitle className="text-xs font-semibold tracking-widest uppercase text-foreground">
-                {isEditable ? "EDIT TASK" : "TASK DETAIL"}
+            <DialogHeader className="flex-row items-center gap-3 px-6 pt-4 shrink-0">
+              <DialogTitle className="text-[11px] font-normal tracking-[0.14em] uppercase text-muted-foreground">
+                {isEditable ? "Edit task" : "Task detail"} ·{" "}
+                {task.is_imported ? task.external_id : `task-${task.id}`}
               </DialogTitle>
               {isLoop && (
                 <span className="flex items-center gap-1 rounded bg-accent/12 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
@@ -304,7 +306,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="shrink-0"
+                  className="shrink-0 size-7 rounded-full"
                   onClick={handleRequestClose}
                 >
                   <X className="size-4" />
@@ -320,17 +322,23 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                 onValueChange={(v) => setTab(v as Tab)}
                 className="flex-1 min-w-0 min-h-0 px-6 py-4 gap-4"
               >
-                <TabsList variant="line" className="shrink-0">
-                  {isLoop && <TabsTrigger value="loop">Loop</TabsTrigger>}
-                  <TabsTrigger value="details">Details</TabsTrigger>
-                  <TabsTrigger value="outcome">
+                <TabsList className={cn("shrink-0", SEGMENT_LIST)}>
+                  {isLoop && (
+                    <TabsTrigger value="loop" className={SEGMENT_TRIGGER}>
+                      Loop
+                    </TabsTrigger>
+                  )}
+                  <TabsTrigger value="details" className={SEGMENT_TRIGGER}>
+                    Details
+                  </TabsTrigger>
+                  <TabsTrigger value="outcome" className={SEGMENT_TRIGGER}>
                     Outcome{comments.length > 0 ? ` (${comments.length})` : ""}
                   </TabsTrigger>
                 </TabsList>
 
                 {/* An automation's agent drafted it: nothing runs until the user has read it. */}
                 {task.drafted_by && task.status === "Planning" && (
-                  <div className="flex shrink-0 items-start gap-3 rounded-md border border-border bg-muted/40 p-3 text-xs">
+                  <div className="flex shrink-0 items-start gap-3 rounded-xl border border-foreground/7 bg-background/50 p-3 text-xs">
                     <Bot className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                     <div className="flex-1 space-y-1">
                       <div className="font-medium">
@@ -387,7 +395,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                       onSave={(v) => markDirtySetDraft((d) => ({ ...d, title: v }))}
                       isEditable={isEditable ?? false}
                       placeholder="Add a title..."
-                      className="text-xl font-semibold"
+                      className="text-2xl font-semibold tracking-[-0.025em]"
                     />
                   </div>
 
@@ -472,7 +480,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                   )}
 
                   {/* Metadata pills */}
-                  <div className="shrink-0 space-y-3 pt-2 border-t border-border">
+                  <div className="shrink-0 space-y-3 pt-2 border-t border-foreground/7">
                     <TaskMetadataPills
                       priority={draft.priority}
                       onPriorityChange={
@@ -493,7 +501,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
             </div>
 
             {/* Footer */}
-            <div className="border-t border-border px-6 py-3 flex items-center gap-2 shrink-0">
+            <div className="border-t border-foreground/7 px-6 py-3 flex items-center gap-2 shrink-0 [&_[data-slot=button]]:h-9 [&_[data-slot=button]]:rounded-xl [&_[data-slot=button]]:px-4 [&_[data-slot=button]]:text-xs">
               {/* Left: delete */}
               {task.status !== "Done" && (
                 <>
@@ -517,7 +525,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                           Keep Task
                         </AlertDialogCancel>
                         <AlertDialogAction
-                          variant="destructive"
+                          className="bg-rose-600 text-white hover:bg-rose-600/90"
                           onClick={() => {
                             setDeleteOpen(false);
                             deleteTask.mutate(

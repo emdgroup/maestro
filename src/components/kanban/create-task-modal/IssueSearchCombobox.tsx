@@ -78,7 +78,7 @@ export function IssueSearchCombobox({
     >
       <div className="inline-flex">
         {selectedIssue ? (
-          <div className="inline-flex h-7 items-center gap-0.5 rounded-md border border-border bg-muted/40 pr-0.5 text-xs">
+          <div className="home-field inline-flex h-7 items-center gap-0.5 rounded-lg pr-0.5 text-xs">
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -192,7 +192,7 @@ export function IssueSearchCombobox({
               </ComboboxPrimitive.Item>
             ))}
           </ComboboxList>
-          <div className="flex min-h-40 flex-col gap-2 rounded-md bg-muted/40 p-3">
+          <div className="flex min-h-40 flex-col gap-2 rounded-xl bg-foreground/5 p-3">
             {previewed ? (
               <>
                 <div className="flex items-center gap-2">

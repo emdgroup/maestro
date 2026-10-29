@@ -22,7 +22,7 @@ export function AgentPicker({ agentId, agents, onChange }: AgentPickerProps) {
 
   if (!onChange) {
     return (
-      <span className={cn(PILL, "border-border text-muted-foreground cursor-default max-w-44")}>
+      <span className={cn(PILL, "text-muted-foreground cursor-default max-w-44")}>
         {selected ? <AgentIcon agent={selected} /> : <BotOff className="size-3 shrink-0" />}
         <span className="truncate">{label}</span>
       </span>
@@ -31,12 +31,7 @@ export function AgentPicker({ agentId, agents, onChange }: AgentPickerProps) {
 
   return (
     <Popover>
-      <PopoverTrigger
-        className={cn(
-          PILL,
-          "border-border bg-transparent text-muted-foreground hover:bg-muted max-w-44",
-        )}
-      >
+      <PopoverTrigger className={cn(PILL, "text-muted-foreground max-w-44")}>
         {selected ? <AgentIcon agent={selected} /> : <BotOff className="size-3 shrink-0" />}
         <span className="truncate">{label}</span>
       </PopoverTrigger>

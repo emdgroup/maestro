@@ -156,6 +156,11 @@
 
 /* Map shadcn variables to Tailwind 4 color utilities */
 @theme inline {
+  /* Home's glass popups (`home-pop`, `home-pop-strong`) as shadow utilities, for the shared popup
+     primitives in src/components/ui, which carry the rest of the recipe as plain utilities so a
+     caller's own classes still win. */
+  --shadow-pop: inset 0 1px 0 rgb(255 255 255 / 0.2), 0 20px 50px -18px rgb(0 0 0 / 0.35);
+  --shadow-pop-strong: inset 0 1px 0 rgb(255 255 255 / 0.2), 0 20px 50px -18px rgb(0 0 0 / 0.45);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
