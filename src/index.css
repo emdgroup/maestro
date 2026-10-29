@@ -1281,6 +1281,8 @@
 .inner-glass,
 .inner-glass-scroll {
   --inner-glass-bg: color-mix(in oklab, var(--background) 40%, transparent);
+  /* Edged in the accent rather than the grey hairline, wherever a panel draws its border. */
+  border-color: color-mix(in oklab, var(--accent) 22%, transparent);
 }
 /* A light background over the tint reads as a flat wash, so dark mode alone takes the denser glass. */
 .dark .inner-glass,

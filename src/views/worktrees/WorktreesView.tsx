@@ -451,7 +451,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
                 island. Beside the pull request column it meets that column instead. */}
             <div
               className={cn(
-                "ml-[7px] flex flex-1 min-h-0 flex-col overflow-hidden rounded-t-xl border-x border-t border-border inner-glass",
+                "ml-[7px] flex flex-1 min-h-0 flex-col overflow-hidden rounded-t-xl border-x border-t inner-glass",
                 !showPullRequests && "mr-[7px]",
               )}
             >

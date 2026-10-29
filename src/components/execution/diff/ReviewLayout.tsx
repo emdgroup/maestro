@@ -82,7 +82,7 @@ export function ReviewLayout({ panel, files, renderPanel, children }: ReviewLayo
     <div className={cn("flex flex-col flex-1 min-h-0", inset && "pt-2")}>
       <div
         className={cn(
-          "flex flex-col flex-1 min-h-0 border-border overflow-hidden",
+          "flex flex-col flex-1 min-h-0 overflow-hidden",
           // A glass well beside the file list, as the tabs' inner panels; on its own it is the
           // host's glass already, with no line between it and the action bar.
           inset && "inner-glass rounded-tl-[18px] border-t border-l",
