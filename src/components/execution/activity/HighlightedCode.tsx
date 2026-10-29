@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, memo } from "react";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, CopyCheck } from "lucide-react";
 import { highlightToHtml } from "@/lib/diff-highlighter";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/providers/ThemeProvider";
@@ -20,6 +20,15 @@ export function useCopyToClipboard(text: string) {
     timerRef.current = setTimeout(() => setCopied(false), 2000);
   }, [text]);
   return { copied, copy };
+}
+
+/** The icon for a copy control: Copy, then CopyCheck animating in while `copied` holds. */
+export function CopyStateIcon({ copied, className }: { copied: boolean; className?: string }) {
+  return copied ? (
+    <CopyCheck className={cn("text-success animate-copy-check", className)} />
+  ) : (
+    <Copy className={className} />
+  );
 }
 
 export const HighlightedCode = memo(function HighlightedCode({

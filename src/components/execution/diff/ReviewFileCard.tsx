@@ -1,9 +1,9 @@
-import { Check, CheckCheck, ChevronRight, Copy, MessageSquare } from "lucide-react";
+import { CheckCheck, ChevronRight, MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { computeFileStats } from "@/lib/diff-utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { useCopyToClipboard } from "@/components/execution/activity/HighlightedCode";
+import { CopyStateIcon, useCopyToClipboard } from "@/components/execution/activity/HighlightedCode";
 import { ReviewFileComment, type FileCommentApi } from "./ReviewFileComment";
 import type { DiffFileWithName } from "@/types/review";
 
@@ -32,7 +32,7 @@ function CopyPathButton({ path }: { path: string }) {
         }}
         className="p-1 rounded transition-colors shrink-0 text-muted-foreground/70 hover:text-foreground hover:bg-muted/30"
       >
-        {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+        <CopyStateIcon copied={copied} className="size-3" />
       </TooltipTrigger>
       <TooltipContent>{copied ? "Copied" : "Copy path"}</TooltipContent>
     </Tooltip>
@@ -144,10 +144,10 @@ export function ReviewFileCard({
               expanded && "rotate-90",
             )}
           />
-          {onOpenFile ? (
-            // The wrapper takes the free space so the stats stay right-aligned; the button itself
-            // only spans the file name, so clicking the empty rest of the row still toggles.
-            <div className="flex-1 min-w-0 flex">
+          {/* The wrapper takes the free space so the stats stay right-aligned; the name and its copy
+              button only span themselves, so clicking the empty rest of the row still toggles. */}
+          <div className="flex-1 min-w-0 flex items-center gap-1">
+            {onOpenFile ? (
               <Tooltip>
                 <TooltipTrigger
                   type="button"
@@ -161,10 +161,11 @@ export function ReviewFileCard({
                 </TooltipTrigger>
                 <TooltipContent>Open in a Files tab</TooltipContent>
               </Tooltip>
-            </div>
-          ) : (
-            <span className="text-xs font-mono truncate text-foreground/80 flex-1">{path}</span>
-          )}
+            ) : (
+              <span className="text-xs font-mono truncate text-foreground/80">{path}</span>
+            )}
+            <CopyPathButton path={path} />
+          </div>
           {renamedFrom && (
             <Tooltip>
               <TooltipTrigger
@@ -177,7 +178,6 @@ export function ReviewFileCard({
             </Tooltip>
           )}
           {stats ?? <DiffStats hunks={hunks} />}
-          <CopyPathButton path={path} />
           {fileComment && (
             <Tooltip>
               <TooltipTrigger

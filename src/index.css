@@ -713,6 +713,38 @@
   }
 }
 
+/* Lucide's CopyCheck is Copy with a tick drawn first, so the icon pops and the tick draws itself
+   in. The dash length 9 covers the tick's ~8.5 user units. */
+@keyframes copy-pop {
+  0% {
+    transform: scale(0.7);
+  }
+  60% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes copy-tick {
+  from {
+    stroke-dashoffset: 9;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@utility animate-copy-check {
+  animation: copy-pop 240ms ease-out;
+
+  & > path:first-child {
+    stroke-dasharray: 9;
+    animation: copy-tick 260ms ease-out 80ms both;
+  }
+}
+
 @keyframes glow-ring {
   0%,
   100% {
