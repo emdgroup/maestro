@@ -23,10 +23,12 @@ export function SvgBlock({ code }: { code: string }) {
       className="my-2 overflow-x-auto"
       ariaLabel="SVG graphic"
       lightboxContent={
+        // An svg with only a viewBox sizes to its container, and the lightbox's centring wrapper
+        // shrinks to its content, so without a width it collapses to 0x0. Fit-to-view rescales it.
         // biome-ignore lint/security/noDangerouslySetInnerHtml: user-provided SVG sanitized via DOM allowlist
         <div
           dangerouslySetInnerHTML={{ __html: sanitized }}
-          className="[&_svg]:max-w-none [&_svg]:h-auto"
+          className="[&_svg]:max-w-none [&_svg]:h-auto [&_svg:not([width])]:w-[80vw]"
         />
       }
     >
