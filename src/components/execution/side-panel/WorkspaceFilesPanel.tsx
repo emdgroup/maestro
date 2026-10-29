@@ -64,6 +64,7 @@ import { ReviewLayout } from "@/components/execution/diff/ReviewLayout";
 import { useReviewPanelLayout } from "@/components/execution/diff/useReviewPanelLayout";
 import { openFileWithConnection, downloadFileToFolder, opensViaHostCopy } from "@/lib/file-opener";
 import { isAbsolutePath } from "@/lib/path-utils";
+import { CopyStateIcon, useCopyToClipboard } from "@/components/execution/activity/HighlightedCode";
 import { TransferIcon } from "./TransferIcon";
 import { transferTooltip, useFileTransfer } from "./useFileTransfer";
 
@@ -170,6 +171,7 @@ export function WorkspaceFilesPanel({
       : `${workspacePath}/${selected}`
     : null;
   const fileDir = fullPath ? fullPath.replace(/\/[^/]+$/, "") : undefined;
+  const { copied, copy: copyPath } = useCopyToClipboard(fullPath ?? "");
   const binaryMime = selected ? binaryMimeForExtension(selected) : undefined;
 
   // Above the read query, which reads `mode` from its poll interval.
@@ -514,11 +516,27 @@ export function WorkspaceFilesPanel({
         <div className="flex-1 flex items-center justify-center gap-1.5 min-w-0 overflow-hidden">
           {basename ? (
             <>
+              {/* Clicking the name copies the absolute path; the icon shows on hover so the bar
+                  still reads as a title. */}
               <Tooltip trackCursorAxis="x">
                 <TooltipTrigger
-                  render={<span className="text-xs font-mono text-muted-foreground truncate" />}
+                  render={
+                    <button
+                      type="button"
+                      onClick={copyPath}
+                      className="group/name flex items-center gap-1 min-w-0 text-xs font-mono text-muted-foreground hover:text-foreground transition-colors"
+                    />
+                  }
                 >
-                  {basename}
+                  <span className="truncate">{basename}</span>
+                  <CopyStateIcon
+                    copied={copied}
+                    className={cn(
+                      "size-3 shrink-0",
+                      !copied &&
+                        "opacity-0 group-hover/name:opacity-100 group-focus-visible/name:opacity-100 transition-opacity",
+                    )}
+                  />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-md break-all">{selected}</TooltipContent>
               </Tooltip>

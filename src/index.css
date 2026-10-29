@@ -713,6 +713,45 @@
   }
 }
 
+/* A copy control's icon (`CopyStateIcon`): Copy shrinks away and the tick draws itself in, short
+   stroke first. Lucide's Check path starts at the long stroke's tip, so the dash is revealed from
+   the path's end with a negative offset; 24 covers its ~22.6 user units. Transitions rather than
+   keyframes, so the swap back after the copy runs too. */
+.copy-state > svg {
+  grid-area: 1 / 1;
+}
+
+.copy-state > svg:first-child {
+  transition:
+    opacity 150ms ease-out,
+    transform 150ms ease-out;
+}
+
+.copy-state > svg:last-child {
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+
+.copy-state > svg:last-child path {
+  stroke-dasharray: 24;
+  stroke-dashoffset: -24;
+  transition: stroke-dashoffset 300ms ease-out;
+}
+
+.copy-state[data-copied="true"] > svg:first-child {
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+.copy-state[data-copied="true"] > svg:last-child {
+  opacity: 1;
+}
+
+.copy-state[data-copied="true"] > svg:last-child path {
+  stroke-dashoffset: 0;
+  transition-delay: 100ms;
+}
+
 @keyframes glow-ring {
   0%,
   100% {

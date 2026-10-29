@@ -789,3 +789,12 @@ describe("WorkspaceFilesPanel unsaved-work guards", () => {
     expect(screen.queryByText(/Discard unsaved changes/i)).toBeNull();
   });
 });
+
+describe("WorkspaceFilesPanel header", () => {
+  it("copies the absolute path when the file name is clicked", async () => {
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: "main.ts" }));
+    expect(writeText).toHaveBeenCalledWith("/work/repo/src/main.ts");
+  });
+});

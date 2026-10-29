@@ -22,6 +22,20 @@ export function useCopyToClipboard(text: string) {
   return { copied, copy };
 }
 
+/**
+ * The icon for a copy control: Copy, then a Check drawing itself in while `copied` holds. Both are
+ * always mounted so the swap animates each way; `.copy-state` in `index.css` drives it, and
+ * `className` sizes the box.
+ */
+export function CopyStateIcon({ copied, className }: { copied: boolean; className?: string }) {
+  return (
+    <span data-copied={copied} className={cn("copy-state grid shrink-0", className)}>
+      <Copy className="size-full" />
+      <Check className="size-full text-success" />
+    </span>
+  );
+}
+
 export const HighlightedCode = memo(function HighlightedCode({
   code,
   lang,
@@ -105,7 +119,7 @@ export const CodeBlockWrapper = memo(function CodeBlockWrapper({
           className="opacity-0 group-hover/code:opacity-100 transition-opacity p-0.5 rounded text-muted-foreground hover:text-foreground"
           aria-label={copied ? "Copied" : "Copy"}
         >
-          {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+          <CopyStateIcon copied={copied} className="size-3" />
         </button>
       </div>
       <HighlightedCode code={code} lang={lang} stripContainerStyle={stripContainerStyle} />
