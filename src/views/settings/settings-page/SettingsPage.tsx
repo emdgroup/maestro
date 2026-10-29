@@ -116,7 +116,7 @@ export function SettingsPage({
           {/* An opaque well inset behind a rounded corner, so the settings read on a solid surface
               while the header and sidebar keep the dialog's glass. The section cards inside are
               `bg-card`, so they have a surface to sit on. */}
-          <div className="min-h-0 flex-1 overflow-y-auto rounded-tl-[18px] border-t border-l border-foreground/9 bg-background">
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-tl-[18px] border-t border-l border-border bg-background">
             <div className="mx-auto max-w-2xl p-6">
               <div className="mb-6">
                 <h1 className="text-2xl font-semibold tracking-[-0.025em] text-foreground">
