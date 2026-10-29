@@ -9,7 +9,7 @@ import { Progress, ProgressTrack, ProgressIndicator } from "@/ui/progress";
 import { useUpdater } from "@/hooks/useUpdater";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import { cn } from "@/lib/utils";
-import { formatLastChecked } from "./UpdateCard";
+import { formatLastChecked, VersionLink } from "./UpdateCard";
 import appIconUrl from "../../../src-tauri/icons/32x32.png?url";
 
 /**
@@ -52,7 +52,6 @@ export function UpdateStrip({ padEnd = false }: { padEnd?: boolean }) {
     });
   }
 
-  const newVersion = status.phase === "available" ? status.version : null;
   const isChecking = status.phase === "checking";
 
   return (
@@ -71,11 +70,25 @@ export function UpdateStrip({ padEnd = false }: { padEnd?: boolean }) {
         <span className="truncate text-xs text-muted-foreground">
           {status.phase === "available" ? (
             <>
-              v{appVersion} <span aria-hidden>→</span>{" "}
-              <span className="font-medium text-accent">v{newVersion}</span>
+              <VersionLink
+                version={appVersion}
+                label={`View v${appVersion} changelog on GitHub`}
+                icon={false}
+                className="hover:text-foreground"
+              />{" "}
+              <span aria-hidden>→</span>{" "}
+              <VersionLink
+                version={status.version}
+                label={`What's new in v${status.version}`}
+                className="font-medium text-accent"
+              />
             </>
           ) : (
-            <>v{appVersion}</>
+            <VersionLink
+              version={appVersion}
+              label={`View v${appVersion} changelog on GitHub`}
+              className="hover:text-foreground"
+            />
           )}
         </span>
       </div>
