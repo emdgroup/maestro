@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.42.0](https://github.com/emdgroup/maestro/compare/v0.41.0...v0.42.0) (2026-10-29)
+
+
+### Features
+
+* bring the project tabs, dialogs and popups onto Home's glass style ([eacc130](https://github.com/emdgroup/maestro/commit/eacc13057ed2f8656518210a1148bb7226fd1b38))
+
+
+### Bug Fixes
+
+* centre dialogs on whole pixels ([eacc130](https://github.com/emdgroup/maestro/commit/eacc13057ed2f8656518210a1148bb7226fd1b38))
+* point the question sheet's chevron the way it moves ([eacc130](https://github.com/emdgroup/maestro/commit/eacc13057ed2f8656518210a1148bb7226fd1b38))
+* show viewBox-only SVGs in the lightbox ([eacc130](https://github.com/emdgroup/maestro/commit/eacc13057ed2f8656518210a1148bb7226fd1b38))
+
 ## [0.41.0](https://github.com/emdgroup/maestro/compare/v0.40.0...v0.41.0) (2026-10-29)
 
 
