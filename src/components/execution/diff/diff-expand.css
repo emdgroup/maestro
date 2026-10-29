@@ -41,16 +41,34 @@
 }
 
 /**
- * A stuck file header squares its top corners. Rounded, its corners left the card scrolling
- * beneath showing through the curve, and the well behind is glass, so nothing can be painted
- * there instead. Where scroll-state queries are unsupported (WebKit), the corners stay round.
+ * The stack's scroller masks out what a stuck file header cannot cover. A header sticks 12px
+ * below the top, so that strip goes; and its rounded top corners leave two small curves beside
+ * it where the card scrolling beneath would show, so those go too. When the well was opaque a
+ * strip of its colour did this; the well is glass now, and nothing painted can match glass, but
+ * a mask shows it through. Layers top-first: the two quarter circles inside the header's corners
+ * are added back over the two corner boxes cut out of the base, which drops the top strip. The
+ * cards sit 12px in from each side; on the right the scrollbar, measured into `--diff-sb` by
+ * `DiffFileStack`, comes first, since a mask box counts it in.
  */
-.diff-card-sticky {
-  container-type: scroll-state;
-}
-@container scroll-state(stuck: top) {
-  .diff-card-header {
-    border-top-left-radius: 0;
-    border-top-right-radius: 0;
-  }
+.diff-stack-scroller {
+  --r: calc(var(--radius) * 1.4);
+  mask-image:
+    radial-gradient(circle at 100% 100%, #000 calc(var(--r) - 0.5px), transparent var(--r)),
+    radial-gradient(circle at 0 100%, #000 calc(var(--r) - 0.5px), transparent var(--r)),
+    linear-gradient(#000, #000), linear-gradient(#000, #000),
+    linear-gradient(to bottom, transparent 12px, #000 12px);
+  mask-size:
+    var(--r) var(--r),
+    var(--r) var(--r),
+    var(--r) var(--r),
+    var(--r) var(--r),
+    100% 100%;
+  mask-position:
+    12px 12px,
+    calc(100% - 12px - var(--diff-sb, 0px)) 12px,
+    12px 12px,
+    calc(100% - 12px - var(--diff-sb, 0px)) 12px,
+    0 0;
+  mask-repeat: no-repeat;
+  mask-composite: add, add, exclude, exclude, add;
 }

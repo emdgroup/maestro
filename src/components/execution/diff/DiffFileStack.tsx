@@ -450,13 +450,25 @@ export function DiffFileStack({
     [comments, onSubmitComment, onRemoveComment, onSendComment, sendDisabled, commentNav],
   );
 
+  // The scrollbar's width, for the mask in diff-expand.css: a mask box sits in the border box,
+  // scrollbar included, so it has to be told where the cards' right edge is. Zero where scrollbars
+  // overlay the content.
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const update = () => el.style.setProperty("--diff-sb", `${el.offsetWidth - el.clientWidth}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <div
       ref={scrollContainerRef}
       data-slot="diff-stack-scroller"
-      // The top 12px is masked out, so a stuck card header keeps the gap above it clear of the
-      // diff scrolling past, on a well that is glass and so cannot be painted over.
-      className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 flex flex-col [mask-image:linear-gradient(to_bottom,transparent_12px,black_12px)]"
+      // Masked where a stuck card header leaves the diff beneath showing: see diff-expand.css.
+      className="diff-stack-scroller flex-1 min-h-0 overflow-y-auto px-3 pb-3 flex flex-col"
     >
       {loading && (
         <div className="text-xs text-muted-foreground py-8 text-center animate-pulse">
