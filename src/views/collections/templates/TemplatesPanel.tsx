@@ -94,7 +94,7 @@ function Card({
   const trigger = triggerType(card.body);
 
   return (
-    <div className="group relative flex flex-col gap-2 rounded-xl border border-border bg-card p-4 transition-colors hover:border-accent/60 hover:bg-muted/30">
+    <div className="home-pane group relative flex flex-col gap-2 rounded-[14px] p-4">
       {/* The whole card is the button, laid over it, so the menu can sit inside without nesting
           one control in another. */}
       <button

@@ -327,7 +327,7 @@ function AutomationRow({
 
       {expanded && history.length > 0 && (
         <div className="-mt-1 pb-3 pl-10 pr-4">
-          <div className="divide-y divide-border/60 overflow-hidden rounded-md border border-border bg-background">
+          <div className="divide-y divide-foreground/7 overflow-hidden rounded-[10px] border border-foreground/7 bg-background/40">
             {shown.map((item) =>
               item.kind === "run" ? (
                 <RunCard
@@ -472,7 +472,7 @@ export function AutomationsPanel({
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-border rounded-lg border border-border bg-card">
+            <div className="usage-pane divide-y divide-foreground/7 rounded-[14px]">
               {(automations ?? []).map((automation) => (
                 <AutomationRow
                   key={automation.id}

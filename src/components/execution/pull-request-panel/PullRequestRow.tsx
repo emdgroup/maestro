@@ -148,7 +148,7 @@ export function PullRequestRow({ entry, projectId, now, poll, onAct }: PullReque
   ].filter((metric) => metric != null);
 
   return (
-    <div className="rounded-lg border bg-background p-2.5 transition-colors hover:border-ring/50">
+    <div className="home-pane rounded-[14px] p-2.5">
       <div className="flex items-center gap-2">
         <Tooltip>
           <TooltipTrigger

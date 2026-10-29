@@ -100,8 +100,8 @@ function PromptCard({
     <div
       ref={ref}
       className={cn(
-        "group relative flex flex-col gap-2 rounded-xl border border-border bg-card p-4 transition-colors hover:border-accent/60 hover:bg-muted/30",
-        isDragging && "border-dashed opacity-30",
+        "home-pane group relative flex flex-col gap-2 rounded-[14px] p-4",
+        isDragging && "border-dashed! opacity-30",
       )}
     >
       {/* The whole card copies, laid over it so the star and the menu can sit inside without
@@ -212,8 +212,8 @@ function PromptColumn({
       ref={ref}
       aria-label={title}
       className={cn(
-        "flex min-h-64 flex-col overflow-hidden rounded-lg border border-border bg-background transition-colors sm:min-h-0",
-        isDropTarget && "border-accent ring-2 ring-accent/40",
+        "usage-pane flex min-h-64 flex-col overflow-hidden rounded-[18px] transition-colors sm:min-h-0",
+        isDropTarget && "border-accent/70! bg-accent/10!",
       )}
     >
       <header className="flex items-start gap-2 border-b border-border bg-muted/30 px-4 py-3">

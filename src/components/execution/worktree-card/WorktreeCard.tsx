@@ -93,8 +93,8 @@ export function WorktreeCard({
       aria-busy={deleting || undefined}
       aria-disabled={deleting || undefined}
       className={cn(
-        "relative group rounded-lg border bg-card w-72 shrink-0 overflow-hidden transition-colors",
-        deleting ? "opacity-60 pointer-events-none" : "cursor-pointer hover:border-ring/50",
+        "home-pane relative group rounded-[14px] w-72 shrink-0 overflow-hidden",
+        deleting ? "opacity-60 pointer-events-none" : "cursor-pointer",
       )}
     >
       <div className="p-3" onClick={() => onSelect(worktree.path)}>
@@ -170,7 +170,7 @@ export function WorktreeCard({
       </div>
 
       {!deleting && (inUse || canStart) && (
-        <div className="flex items-center border-t bg-muted/40">
+        <div className="flex items-center border-t border-foreground/7 bg-foreground/3">
           {inUse && (
             <Popover>
               <PopoverTrigger
