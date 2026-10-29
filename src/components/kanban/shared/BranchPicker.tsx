@@ -122,13 +122,13 @@ export function BranchPicker({
           share one bordered box, so the seam that used to be a divider is now a real edge. */}
       <div
         className={cn(
-          "flex flex-1 items-stretch overflow-hidden rounded-md border bg-transparent h-9 text-sm",
-          error ? "border-destructive" : "border-border",
+          "home-field flex flex-1 items-stretch overflow-hidden rounded-xl h-9 text-sm",
+          error && "border-destructive!",
         )}
       >
         {prefixControl ??
           (prefix && (
-            <span className="flex items-center shrink-0 border-r border-border px-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="flex items-center shrink-0 border-r border-foreground/12 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               {prefix}
             </span>
           ))}
@@ -137,14 +137,14 @@ export function BranchPicker({
             if (!open) setSearch("");
           }}
         >
-          <PopoverTrigger className="flex flex-1 items-center gap-2 px-3 min-w-0 hover:bg-muted transition-colors">
+          <PopoverTrigger className="flex flex-1 items-center gap-2 px-3 min-w-0 hover:bg-foreground/5 transition-colors">
             <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="flex-1 text-left truncate">{value || placeholder}</span>
             <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
           </PopoverTrigger>
           <PopoverContent className="w-(--anchor-width) p-1 gap-0" align="start">
-            <div className="pb-2 border-b border-border">
-              <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/50">
+            <div className="pb-2 border-b border-foreground/8">
+              <div className="home-field flex items-center gap-2 px-2.5 py-1.5 rounded-[10px]">
                 <Search className="size-3.5 text-muted-foreground shrink-0" />
                 <input
                   className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
@@ -161,7 +161,7 @@ export function BranchPicker({
               <button
                 type="button"
                 onClick={() => onChange("")}
-                className="mt-1 flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted"
+                className="mt-1 flex w-full items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-foreground/7"
               >
                 <Sparkles className="size-3 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate">
@@ -175,16 +175,16 @@ export function BranchPicker({
             )}
 
             <div className="py-1">
-              <div className="flex rounded-md bg-muted p-0.5 gap-0.5">
+              <div className="flex rounded-xl border border-foreground/10 bg-background/45 p-[3px] gap-1">
                 {(["local", "remote"] as const).map((t) => (
                   <button
                     key={t}
                     type="button"
                     onClick={() => setTab(t)}
                     className={cn(
-                      "flex-1 rounded-[5px] px-2 py-1 text-xs font-medium transition-colors capitalize",
+                      "flex-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors capitalize",
                       tab === t
-                        ? "bg-background text-foreground shadow-sm"
+                        ? "bg-card/90 text-foreground shadow-sm"
                         : "text-muted-foreground hover:text-foreground/80",
                     )}
                   >

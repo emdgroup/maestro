@@ -176,7 +176,7 @@ export function RunsPanel({
   return (
     // No border and no top edge: the column runs out from under the action bar as one surface,
     // which is what the rounded corner beside it is for. Same treatment as the pull request panel.
-    <div className="flex h-full w-72 shrink-0 flex-col bg-card">
+    <div className="flex h-full w-72 shrink-0 flex-col">
       <div className="flex items-center gap-1 px-2 py-2">
         <History className="size-3.5 text-muted-foreground" />
         <span className="text-[11px] font-medium">Recent runs</span>

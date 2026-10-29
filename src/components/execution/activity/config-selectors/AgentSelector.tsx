@@ -140,7 +140,7 @@ export function AgentSelector({ option, value, onChange, disabled }: SelectorPro
           ))}
         </div>
         {hoveredOpt?.description && (
-          <div className="pointer-events-none absolute left-full top-1/2 z-50 ml-1.5 w-56 -translate-y-1/2 rounded-md border border-border/30 bg-muted/70 p-3 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] backdrop-blur-md">
+          <div className="pointer-events-none absolute left-full top-1/2 z-50 ml-1.5 w-56 -translate-y-1/2 rounded-md p-3 bg-card/75 dark:bg-card/25 backdrop-blur-[24px] backdrop-saturate-150 border border-foreground/9 shadow-pop">
             <p className="text-xs font-medium">{hoveredOpt.name}</p>
             <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
               {hoveredOpt.description}

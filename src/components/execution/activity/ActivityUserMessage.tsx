@@ -245,7 +245,7 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
             path, a code span) grows it past the max-width above and, being right-
             aligned, it overflows off the left edge of the stream. */}
         <div
-          className="bg-muted rounded-4xl rounded-tr-none px-3.5 py-2.5 text-sm leading-relaxed text-foreground wrap-break-word max-w-full"
+          className="rounded-[18px] rounded-tr-md border border-accent/20 bg-linear-[160deg] from-accent/22 to-accent/6 shadow-[inset_0_1px_0_rgb(255_255_255/0.35),0_8px_22px_-14px_color-mix(in_oklab,var(--accent)_35%,transparent)] backdrop-blur-md backdrop-saturate-150 dark:border-accent/20 dark:from-accent/20 dark:to-accent/5 dark:shadow-[inset_0_1px_0_rgb(255_255_255/0.06),0_10px_28px_-14px_rgb(0_0_0/0.6)] px-3.5 py-2.5 text-sm leading-relaxed text-foreground wrap-break-word max-w-full"
           onClick={handleClick}
         >
           {hasAttachments ? (

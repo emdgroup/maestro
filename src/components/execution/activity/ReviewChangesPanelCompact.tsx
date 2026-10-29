@@ -162,22 +162,20 @@ export function ReviewChangesPanelCompact({
   );
 
   return (
-    <div className="absolute inset-0 flex flex-col bg-card">
+    <div className="absolute inset-0 flex flex-col">
       {/* Compact header: [Files] | [‹ name ›] | [unified/split]. Takes the same gap above it that
           the diff's inset leaves below, so its contents stay on the band's centre line. */}
-      <div
-        className={cn("flex items-center h-10 px-2 bg-card shrink-0 gap-1", panel.inset && "mt-2")}
-      >
+      <div className={cn("flex items-center h-10 px-2 shrink-0 gap-1", panel.inset && "mt-2")}>
         <Tooltip>
           <TooltipTrigger
             type="button"
             aria-label={panel.panelOpen ? "Hide file list" : "Show file list"}
             onClick={() => panel.setPanelOpen(!panel.panelOpen)}
             className={cn(
-              "p-1.5 rounded-md transition-colors shrink-0",
+              "p-1.5 rounded-lg transition-colors shrink-0",
               panel.panelOpen
-                ? "text-foreground bg-muted/60"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                ? "text-foreground bg-foreground/7"
+                : "text-muted-foreground hover:text-foreground hover:bg-foreground/7",
             )}
           >
             <PanelLeft className="w-4 h-4" />
@@ -198,7 +196,7 @@ export function ReviewChangesPanelCompact({
             type="button"
             onClick={() => navigateCompact(prevIndex)}
             disabled={prevIndex < 0}
-            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-30 disabled:pointer-events-none shrink-0"
+            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/7 transition-colors disabled:opacity-30 disabled:pointer-events-none shrink-0"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
@@ -210,7 +208,7 @@ export function ReviewChangesPanelCompact({
             type="button"
             onClick={() => navigateCompact(nextIndex)}
             disabled={nextIndex > allDisplayItems.length - 1}
-            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-30 disabled:pointer-events-none shrink-0"
+            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/7 transition-colors disabled:opacity-30 disabled:pointer-events-none shrink-0"
           >
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
@@ -222,16 +220,16 @@ export function ReviewChangesPanelCompact({
           sendDisabled={annotationSendDisabled}
         />
         <div className="w-px h-4 bg-border shrink-0 mx-1" />
-        <div className="flex items-center gap-0.5 shrink-0">
+        <div className="flex items-center gap-0.5 shrink-0 rounded-xl border border-foreground/10 bg-background/45 p-[3px]">
           <Tooltip>
             <TooltipTrigger
               type="button"
               onClick={() => setDiffViewMode(DiffModeEnum.Unified)}
               className={cn(
-                "p-1.5 rounded transition-colors",
+                "p-1 rounded-lg transition-colors",
                 diffViewMode === DiffModeEnum.Unified
-                  ? "text-foreground bg-muted/60"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                  ? "text-foreground bg-card/90 shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               <AlignJustify className="w-3.5 h-3.5" />
@@ -243,10 +241,10 @@ export function ReviewChangesPanelCompact({
               type="button"
               onClick={() => setDiffViewMode(DiffModeEnum.SplitGitHub)}
               className={cn(
-                "p-1.5 rounded transition-colors",
+                "p-1 rounded-lg transition-colors",
                 diffViewMode !== DiffModeEnum.Unified
-                  ? "text-foreground bg-muted/60"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                  ? "text-foreground bg-card/90 shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               <Columns2 className="w-3.5 h-3.5" />
@@ -257,7 +255,7 @@ export function ReviewChangesPanelCompact({
       </div>
 
       {truncationInfo && (
-        <div className="flex items-start gap-2 px-3 py-2 border-b border-border bg-amber-500/5 text-amber-400 shrink-0">
+        <div className="flex items-start gap-2 px-3 py-2 border-b border-accent/10 bg-amber-500/5 text-amber-400 shrink-0">
           <TriangleAlert className="w-3.5 h-3.5 mt-0.5 shrink-0" />
           <div className="flex flex-col gap-0.5 text-xs">
             <span className="font-medium">Diff too large, partial view</span>

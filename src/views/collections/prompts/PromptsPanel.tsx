@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -100,8 +101,8 @@ function PromptCard({
     <div
       ref={ref}
       className={cn(
-        "group relative flex flex-col gap-2 rounded-xl border border-border bg-card p-4 transition-colors hover:border-accent/60 hover:bg-muted/30",
-        isDragging && "border-dashed opacity-30",
+        "glass-tile group relative flex flex-col gap-2 rounded-[14px] p-4",
+        isDragging && "border-dashed! opacity-30",
       )}
     >
       {/* The whole card copies, laid over it so the star and the menu can sit inside without
@@ -212,15 +213,18 @@ function PromptColumn({
       ref={ref}
       aria-label={title}
       className={cn(
-        "flex min-h-64 flex-col overflow-hidden rounded-lg border border-border bg-background transition-colors sm:min-h-0",
-        isDropTarget && "border-accent ring-2 ring-accent/40",
+        // A faint lane on the panel's glass, lighting up whole under a drag. Not a glass pane of
+        // its own: that came out as dense as the prompt tiles in it, which then had nothing to
+        // stand out against.
+        "border border-foreground/7 bg-foreground/[0.025] flex min-h-64 flex-col overflow-hidden rounded-[18px] transition-colors sm:min-h-0",
+        isDropTarget && "border-accent/70! bg-accent/10",
       )}
     >
-      <header className="flex items-start gap-2 border-b border-border bg-muted/30 px-4 py-3">
+      <header className="flex items-start gap-2 px-4 pt-3.5 pb-2.5">
         <div className="min-w-0 flex-1">
-          <h3 className="flex items-center gap-2 text-sm font-semibold">
+          <h3 className="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.025em]">
             {title}
-            <span className="rounded-full bg-muted px-1.5 text-[10px] font-medium text-muted-foreground">
+            <span className="text-[15px] font-semibold tabular-nums text-muted-foreground/50">
               {query.data?.length ?? 0}
             </span>
           </h3>
@@ -239,7 +243,7 @@ function PromptColumn({
           variant="ghost"
           size="icon-sm"
           aria-label={`New prompt in ${title.toLowerCase()}`}
-          className="-my-1 text-muted-foreground"
+          className="-my-1 rounded-full text-muted-foreground"
           onClick={onNew}
         >
           <Plus className="size-4" />
@@ -247,10 +251,7 @@ function PromptColumn({
       </header>
       <div
         data-testid={`prompts-${collection}`}
-        className={cn(
-          "flex-1 overflow-y-auto p-3 transition-colors",
-          isDropTarget && "bg-accent/10",
-        )}
+        className={cn("flex-1 overflow-y-auto px-2.5 pt-0.5 pb-2.5")}
       >
         {query.isError ? (
           <div className="flex flex-col items-center gap-2 p-5 text-center">
@@ -265,7 +266,7 @@ function PromptColumn({
             </Button>
           </div>
         ) : query.isPending ? null : prompts.length === 0 ? (
-          <div className="flex flex-col items-center gap-1 rounded-lg border border-dashed border-border p-5 text-center text-xs text-muted-foreground">
+          <div className="flex flex-col items-center gap-1 rounded-[14px] border-[1.5px] border-dashed border-foreground/18 p-5 text-center text-xs text-muted-foreground">
             {filtered && query.data.length > 0 ? (
               <p>No prompt matches.</p>
             ) : (
@@ -349,7 +350,7 @@ export function PromptsPanel({
   );
 
   return (
-    <div className="mr-[7px] flex h-full min-w-0 flex-1 flex-col gap-3 overflow-y-auto rounded-t-xl border-x border-t border-border bg-background p-4 sm:overflow-hidden">
+    <div className="mr-[7px] flex h-full min-w-0 flex-1 flex-col gap-3 overflow-y-auto rounded-t-xl border-x border-t inner-glass-scroll p-4 sm:overflow-hidden">
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -358,7 +359,7 @@ export function PromptsPanel({
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search prompts…"
             aria-label="Search prompts"
-            className="h-8 pl-8 text-xs"
+            className="home-field h-8 rounded-xl pl-8 text-xs"
           />
         </div>
         <ToggleGroup
@@ -368,14 +369,15 @@ export function PromptsPanel({
             if (next) setFilter(next as PromptFilter);
           }}
           aria-label="Show"
+          spacing={1}
+          className={SEGMENT_GROUP}
         >
           {FILTERS.map((option) => (
             <ToggleGroupItem
               key={option.value}
               value={option.value}
               size="sm"
-              variant="outline"
-              className="text-xs"
+              className={SEGMENT_ITEM}
             >
               {option.label}
             </ToggleGroupItem>

@@ -49,6 +49,12 @@ function DiffStats({ hunks }: { hunks: string[] }) {
   );
 }
 
+/** A file header's surface. */
+const FILE_HEADER_BG =
+  "bg-[color-mix(in_oklab,var(--accent)_8%,color-mix(in_oklab,var(--card)_70%,var(--background)))]";
+
+const CARD_SHADOW = "shadow-[0_10px_24px_-14px_rgb(0_0_0/0.25)]";
+
 interface ReviewFileCardProps {
   /** Repo-relative path — the card's identity, its label, and what Copy path yields. */
   path: string;
@@ -122,17 +128,25 @@ export function ReviewFileCard({
   // too. The header controls all stop the event, which keeps them from moving the selection — being
   // told a file is viewed is not the same as being told to look at it.
   return (
-    <div ref={ref} data-file-card={path} className="shrink-0" onClick={onSelect}>
-      <div className="sticky top-0 z-10 pt-3 bg-background">
+    <div ref={ref} data-file-card={path} className="shrink-0 pt-3" onClick={onSelect}>
+      {/* Stuck a gap below the top, as the card sits when unscrolled. The scroller masks that gap
+          out (see `DiffFileStack`) rather than this box painting a strip over it: a strip would
+          have to be opaque, and the well behind it is glass. */}
+      <div className="sticky top-3 z-10">
         <div
           onClick={onToggleExpanded}
           className={cn(
-            "border bg-card flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors",
-            expanded ? "rounded-t-lg" : "rounded-lg",
+            "border dark:shadow-[inset_0_1px_0_rgb(255_255_255/0.06)] flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors",
+            FILE_HEADER_BG,
+            // The card's drop shadow falls from whichever box is its bottom edge. Light mode only:
+            // there the card and the pale well behind it are too close to tell apart.
+            expanded ? "rounded-t-xl" : `rounded-xl ${CARD_SHADOW}`,
             // The card outlined in the accent, rather than a tint on the header. The tint was
             // competing with the hover state on the same element and lost — this reads at a
             // glance, and from the body as well as the header.
-            focused ? "border-accent" : "border-border hover:bg-muted/20",
+            focused
+              ? "border-accent"
+              : "border-foreground/9 hover:bg-[color-mix(in_oklab,var(--accent)_14%,color-mix(in_oklab,var(--card)_70%,var(--background)))]",
             // Except where the header meets the body, which is a divider inside the card rather
             // than part of its outline: in the accent it draws a line straight across the middle.
             focused && expanded && "border-b-border",
@@ -221,8 +235,9 @@ export function ReviewFileCard({
       {expanded && (
         <div
           className={cn(
-            "border border-t-0 rounded-b-lg overflow-auto transition-colors",
-            focused ? "border-accent" : "border-border",
+            "border border-t-0 rounded-b-xl overflow-auto transition-colors dark:shadow-none",
+            CARD_SHADOW,
+            focused ? "border-accent" : "border-foreground/9",
           )}
         >
           {fileComment && (

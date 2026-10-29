@@ -43,11 +43,7 @@ const OVERAGE_REASON: Record<string, string> = {
   out_of_credits: "out of credits",
   overage_not_provisioned: "not set up on this plan",
 };
-const CARD = cn(
-  "flex w-64 flex-col gap-3 rounded-md p-3.5 text-[11px]",
-  "backdrop-blur-[4px] bg-popover/60 border-border/30",
-  "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)]",
-);
+const CARD = "flex w-64 flex-col gap-3 p-3.5 text-[11px]";
 
 type TokenKind = "cacheRead" | "cacheWrite" | "input" | "thought" | "output";
 const TOKEN_KINDS: { kind: TokenKind; label: string; color: string; field: keyof UsageTurn }[] = [

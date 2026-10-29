@@ -24,7 +24,7 @@ const label = (priority: TaskPriority) => (priority === "None" ? "No priority" :
 export function PriorityPicker({ value, onChange }: PriorityPickerProps) {
   if (!onChange) {
     return (
-      <span className={cn(PILL, "border-border text-muted-foreground cursor-default")}>
+      <span className={cn(PILL, "text-muted-foreground cursor-default")}>
         <PriorityIcon priority={value} />
         {label(value)}
       </span>
@@ -33,9 +33,7 @@ export function PriorityPicker({ value, onChange }: PriorityPickerProps) {
 
   return (
     <Popover>
-      <PopoverTrigger
-        className={cn(PILL, "border-border bg-transparent text-muted-foreground hover:bg-muted")}
-      >
+      <PopoverTrigger className={cn(PILL, "text-muted-foreground")}>
         <PriorityIcon priority={value} />
         {label(value)}
       </PopoverTrigger>

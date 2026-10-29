@@ -331,13 +331,13 @@ export function WorkspaceFilesPanel({
   const body = showsEditorSurface ? (
     <div ref={editAreaRef} data-slot="markdown-edit-area" className="flex-1 flex flex-col min-h-0">
       {mode === "edit" && isProcessing && (
-        <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-muted-foreground bg-muted/40 border-b border-border shrink-0">
+        <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-muted-foreground bg-muted/40 border-b border-accent/10 shrink-0">
           <TriangleAlert className="w-3 h-3 shrink-0" />
           The agent is running and may write to this file. Your save will check first.
         </div>
       )}
       {mode === "edit" && saveError && (
-        <div className="flex items-center px-3 py-1.5 text-[11px] text-destructive bg-destructive/10 border-b border-border shrink-0">
+        <div className="flex items-center px-3 py-1.5 text-[11px] text-destructive bg-destructive/10 border-b border-accent/10 shrink-0">
           {saveError}
         </div>
       )}
@@ -393,7 +393,7 @@ export function WorkspaceFilesPanel({
   const splitTooltip = "The panel is too narrow for a split view — widen or maximize it";
 
   return (
-    <div className="absolute inset-0 flex flex-col bg-card">
+    <div className="absolute inset-0 flex flex-col">
       {/* No bottom border and the same surface as the file panel below it, so the two read as one
           thing rather than a header stacked on a second header. It takes the gap above it that the
           inset layout leaves below, which is what keeps its contents on the band's centre line.
@@ -402,7 +402,7 @@ export function WorkspaceFilesPanel({
           panel's width, which is nothing the viewport knows. */}
       <div
         className={cn(
-          "@container flex items-center h-10 px-2 bg-card shrink-0 gap-1",
+          "@container flex items-center h-10 px-2 shrink-0 gap-1",
           panel.inset && "mt-2",
         )}
       >

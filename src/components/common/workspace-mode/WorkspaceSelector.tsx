@@ -94,12 +94,10 @@ export function WorkspaceSelector({
     const branchName = newBranchName && `${MAESTRO_BRANCH_PREFIX}${newBranchName}`;
     return (
       <div className="flex flex-col gap-1">
-        <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
-          WORKSPACE
-        </span>
+        <span className="text-[11px] text-muted-foreground">Workspace</span>
         {mode === "NewWorktree" ? (
-          <span className="flex items-stretch h-7 w-fit max-w-full rounded-md border border-border overflow-hidden text-xs cursor-default">
-            <span className="flex items-center gap-1.5 shrink-0 px-2.5 bg-muted/60 border-r border-border">
+          <span className="home-field flex items-stretch h-7 w-fit max-w-full rounded-lg overflow-hidden text-xs cursor-default">
+            <span className="flex items-center gap-1.5 shrink-0 px-2.5 bg-foreground/5 border-r border-foreground/12">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {CHIP_LABEL[branchMode]}
               </span>
@@ -124,7 +122,7 @@ export function WorkspaceSelector({
             )}
           </span>
         ) : (
-          <span className="flex items-center gap-1.5 h-7 w-fit max-w-full rounded-md border border-border px-2.5 text-xs cursor-default">
+          <span className="home-field flex items-center gap-1.5 h-7 w-fit max-w-full rounded-lg px-2.5 text-xs cursor-default">
             <Folder className="size-3 shrink-0 text-muted-foreground" />
             <span className={cn("truncate", selected?.branch_name && "font-mono")}>
               {mode === "RepositoryDirectory"
@@ -139,9 +137,7 @@ export function WorkspaceSelector({
 
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
-        WORKSPACE
-      </span>
+      <span className="text-[11px] text-muted-foreground">Workspace</span>
 
       <WorkspaceModeSelect
         value={mode}
@@ -209,7 +205,7 @@ export function WorkspaceSelector({
             {/* See `WorkspaceModeSelect` on why the height override carries the size variant. */}
             <SelectTrigger
               aria-label="Workspace"
-              className="w-full data-[size=default]:h-auto py-2 px-3 gap-2 border-border bg-transparent shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted"
+              className="w-full data-[size=default]:h-auto py-2 px-3 gap-2 home-field rounded-xl shadow-none"
             >
               <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
                 <Folder className="size-3.5 shrink-0 text-muted-foreground" />

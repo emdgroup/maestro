@@ -164,12 +164,7 @@ export function ScopeSelector({
         if (!next) clearDraft();
       }}
     >
-      <PopoverTrigger
-        className={cn(
-          "flex items-center gap-2 h-8 px-2.5 rounded-md text-xs min-w-0 max-w-72",
-          "border border-border bg-muted/50 hover:bg-muted transition-colors",
-        )}
-      >
+      <PopoverTrigger className="home-pane flex items-center gap-2 h-8 px-3 rounded-xl text-xs min-w-0 max-w-72">
         <ScopeIcon scope={selectedScope.type} className="text-muted-foreground" />
         <span className="truncate font-medium">{isLoading ? "Loading…" : label.title}</span>
         <span className="text-muted-foreground shrink-0">{isLoading ? "" : label.detail}</span>

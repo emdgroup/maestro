@@ -514,10 +514,9 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
       <div
         ref={ref}
         className={cn(
-          "rounded-lg border border-border bg-card shadow-xs p-2.5 mb-2 flex flex-col transition-all",
-          "hover:shadow-md hover:border-foreground/40 hover:-translate-y-px",
+          "home-pane rounded-[14px] px-3 py-[11px] mb-2 flex flex-col",
           stateLine?.ring ?? (task.phase_status && PHASE_STATUS_RING[task.phase_status]),
-          isDragging && "opacity-30 border-dashed",
+          isDragging && "opacity-30 border-dashed!",
           isDraggable && !isDragging ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
         )}
         onClick={() => {
@@ -531,7 +530,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
         {/* Header: title + agent avatar right */}
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-1">
-            <span className="text-[9.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <span className="font-mono text-[10.5px] text-muted-foreground">
               {task.is_imported ? task.external_id : `task-${task.id}`}
             </span>
             {task.is_imported && task.external_url && (
@@ -548,7 +547,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
         </div>
 
         {/* Title */}
-        <p className="text-[12px] font-semibold text-card-foreground line-clamp-2 mb-1.5">
+        <p className="text-[13.5px] leading-[1.3] font-semibold tracking-[-0.015em] text-foreground line-clamp-2 mb-1.5">
           {task.title}
         </p>
 
@@ -567,7 +566,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
             {task.labels.slice(0, 3).map((l) => (
               <span
                 key={l}
-                className="text-[9.5px] px-1.5 py-px rounded bg-muted/60 text-muted-foreground"
+                className="text-[10px] px-2 py-px rounded-full bg-foreground/6 text-muted-foreground"
               >
                 {l}
               </span>
@@ -580,7 +579,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
 
         {/* Options: priority / workspace */}
         {hasOptions && (
-          <div className="flex items-center gap-3 flex-wrap pt-1 border-t border-border/50 mb-1.5">
+          <div className="flex items-center gap-3 flex-wrap pt-1 border-t border-foreground/7 mb-1.5">
             <PriorityOpt priority={task.priority} />
             <WorkspaceOpt task={task} worktree={taskWorkspace} />
           </div>

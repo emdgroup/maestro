@@ -23,10 +23,10 @@ export function FilePanelToggle({ open, onToggle }: { open: boolean; onToggle: (
       <TooltipTrigger
         render={
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             aria-label={label}
-            className="size-8 p-0"
+            className="home-pane size-8 rounded-xl p-0"
             onClick={onToggle}
           />
         }
@@ -82,8 +82,10 @@ export function ReviewLayout({ panel, files, renderPanel, children }: ReviewLayo
     <div className={cn("flex flex-col flex-1 min-h-0", inset && "pt-2")}>
       <div
         className={cn(
-          "flex flex-col flex-1 min-h-0 border-t border-border bg-background overflow-hidden",
-          inset && "rounded-tl-xl border-l",
+          "flex flex-col flex-1 min-h-0 overflow-hidden",
+          // A glass well beside the file list, as the tabs' inner panels; on its own it is the
+          // host's glass already, with no line between it and the action bar.
+          inset && "inner-glass rounded-tl-[18px] border-t border-l",
         )}
       >
         {children}
@@ -92,7 +94,7 @@ export function ReviewLayout({ panel, files, renderPanel, children }: ReviewLayo
   );
 
   return (
-    <div ref={containerRef} className="relative flex flex-1 min-h-0 bg-card">
+    <div ref={containerRef} className="relative flex flex-1 min-h-0">
       {inset ? (
         <ResizablePanelGroup
           orientation="horizontal"
@@ -123,7 +125,11 @@ export function ReviewLayout({ panel, files, renderPanel, children }: ReviewLayo
         </ResizablePanelGroup>
       ) : (
         <>
-          <div className="flex-1 flex flex-col min-w-0">{diffSurface}</div>
+          {/* Hidden, not unmounted, under the floating panel: the panel is see-through, and the
+              diff keeps its scroll position for when the panel closes. */}
+          <div className={cn("flex-1 flex flex-col min-w-0", panelOpen && "invisible")}>
+            {diffSurface}
+          </div>
           {panelOpen &&
             (renderPanel ? (
               <ReviewPanelOverlayShell onDismiss={() => setPanelOpen(false)}>

@@ -24,7 +24,7 @@ export const DESC_CLASS =
   "text-[11px] text-muted-foreground leading-snug group-data-highlighted:text-accent-foreground/70";
 
 export const GLASS_CONTENT_CLASS =
-  "backdrop-blur-[4px] bg-muted/60 border border-border/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] ring-0";
+  "bg-card/75 dark:bg-card/25 backdrop-blur-[24px] backdrop-saturate-150 border border-foreground/9 shadow-pop ring-0";
 
 interface BaseDropdownSelectorProps {
   option: ConfigOption;

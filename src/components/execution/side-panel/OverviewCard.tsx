@@ -39,7 +39,7 @@ export function Card({
         tabIndex={0}
         onClick={onClick}
         onKeyDown={(e) => e.key === "Enter" && onClick()}
-        className="rounded-lg border border-border/50 bg-card overflow-hidden cursor-pointer hover:bg-muted/50 hover:border-border transition-colors"
+        className="glass-tile rounded-[14px] overflow-hidden cursor-pointer"
       >
         <div className="flex items-center gap-2.5 px-3 py-2.5">
           <div
@@ -67,7 +67,7 @@ export function Card({
           <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/40 flex-shrink-0" />
         </div>
         {children && (
-          <div className="px-3 pb-3 pt-0 border-t border-border/30">
+          <div className="px-3 pb-3 pt-0 border-t border-foreground/7">
             <div className="pt-2">{children}</div>
           </div>
         )}

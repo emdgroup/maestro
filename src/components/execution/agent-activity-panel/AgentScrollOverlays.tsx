@@ -99,7 +99,7 @@ function PinnedUserMessage({
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.15 }}
           onClick={scrollToPinnedMsg}
-          className="absolute top-2 left-2 right-2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-xl backdrop-blur-xs bg-input/60 border border-border/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_4px_12px_rgba(0,0,0,0.3)] cursor-pointer hover:bg-input/70 transition-colors"
+          className="absolute top-2 left-2 right-2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-card/25 backdrop-blur-[24px] backdrop-saturate-150 border border-foreground/10 shadow-pop cursor-pointer hover:bg-card/40 transition-colors"
           aria-label="Scroll to last message"
         >
           <div className="w-5 h-5 rounded-full bg-gradient-to-br from-accent/60 to-accent/15 flex items-center justify-center shrink-0">
@@ -232,7 +232,7 @@ export function AgentScrollOverlays({
             transition={{ duration: 0.15 }}
             onClick={() => scrollToBottom()}
             style={lift > 0 ? { bottom: lift + 8 } : undefined}
-            className={`absolute bottom-4 right-4 z-20 w-8 h-8 rounded-full border backdrop-blur-xs shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] flex items-center justify-center transition-colors ${hasUnread ? "bg-accent/15 border-accent/50 hover:bg-accent/25" : "bg-card/60 border-border/30 hover:bg-muted/60"}`}
+            className={`absolute bottom-4 right-4 z-20 w-8 h-8 rounded-full border backdrop-blur-[24px] backdrop-saturate-150 shadow-pop flex items-center justify-center transition-colors ${hasUnread ? "bg-accent/15 border-accent/50 hover:bg-accent/25" : "bg-card/25 border-foreground/10 hover:bg-card/40"}`}
             aria-label="Scroll to bottom"
           >
             <ChevronDown

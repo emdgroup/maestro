@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import { LayoutDashboard, Bot, FolderGit2, Library, Settings } from "lucide-react";
 import { ThemeToggle } from "@/components/common/theme-toggle/ThemeToggle";
 import { AccentColorPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
-import { AccentBubbles } from "@/components/common/accent-bubbles/AccentBubbles";
 import type { Project } from "@/types/bindings";
 import type { ViewType } from "@/store/navigationStore";
 import { WindowControls } from "@/components/layout/window-chrome/WindowControls";
@@ -54,17 +53,13 @@ export function AppHeader({
       data-tauri-drag-region
       className="relative isolate grid grid-cols-[1fr_auto_1fr] h-[52px] shrink-0 items-center px-4 pb-1 gap-4"
     >
-      {/* Project-colour dressing: bubbles behind the accent gradient, both absolutely
-          positioned and -z-10, so the grid layout and the content above are untouched. */}
-      <AccentBubbles variant="header" className="-z-10" />
-      <span aria-hidden className="header-gradient -z-10" />
       {/* Left section: Home / connection / project */}
       <ProjectPath project={currentProject} />
 
       {/* Center section: Tab Navigation */}
       <nav data-tauri-drag-region className="flex items-center flex-1 justify-center">
         <LayoutGroup id="tab-nav">
-          <div className="grid grid-cols-4 rounded-lg bg-muted/60 p-1 gap-1">
+          <div className="grid grid-cols-4 rounded-xl border border-foreground/10 bg-background/45 p-1 gap-1">
             {VIEWS.map((view) => {
               const Icon = view.icon;
               const isActive = activeView === view.id;
@@ -85,14 +80,14 @@ export function AppHeader({
                     variant="ghost"
                     onClick={() => onViewChange(view.id)}
                     className={cn(
-                      "relative flex w-full items-center justify-center rounded-md px-3 py-1.5 h-auto text-xs font-medium",
+                      "relative flex w-full items-center justify-center rounded-lg px-3 py-1.5 h-auto text-xs font-medium",
                       isActive ? "hover:bg-transparent" : "hover:bg-background/50",
                     )}
                   >
                     {isActive && (
                       <motion.span
                         layoutId="active-tab-pill"
-                        className="absolute inset-0 rounded-md bg-background shadow-sm"
+                        className="absolute inset-0 rounded-lg bg-card/90 shadow-sm"
                         transition={{ type: "spring", stiffness: 400, damping: 35 }}
                       />
                     )}

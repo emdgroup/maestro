@@ -18,9 +18,9 @@ export interface StateLine {
   ring?: string;
 }
 
-/** The pulse the board keeps for "stopped dead, waiting on you". */
-export const NEEDS_YOU_RING = "animate-glow-warning border-warning";
-export const GATED_RING = "border-dashed border-amber-500/60";
+/** The amber tint the board keeps for "stopped dead, waiting on you". */
+export const NEEDS_YOU_RING = "needs-you";
+export const GATED_RING = "border-dashed! border-amber-500/60!";
 
 const HALTS: Record<LoopHalt, { label: string; urgent: boolean }> = {
   Flaky: { label: "Flaky check, needs you", urgent: true },

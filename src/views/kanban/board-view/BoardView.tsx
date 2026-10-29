@@ -161,7 +161,7 @@ export function BoardView({ tasks }: BoardViewProps) {
         }}
       >
         <div
-          className={`grid p-4 bg-card flex-1 min-h-0 overflow-hidden`}
+          className="grid gap-3.5 p-4 flex-1 min-h-0 overflow-hidden"
           style={{ gridTemplateColumns: `repeat(${statuses.length}, minmax(0, 1fr))` }}
         >
           {statuses.map((status) => (

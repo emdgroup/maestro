@@ -47,9 +47,9 @@ export function ReviewFilePanel({
   );
 
   return (
-    <div className={cn("flex flex-col min-h-0 bg-card", className)}>
+    <div className={cn("flex flex-col min-h-0", className)}>
       <div className="px-2 py-2 shrink-0">
-        <div className="flex items-center gap-1.5 h-7 px-2 rounded-md border border-border bg-background focus-within:border-ring transition-colors">
+        <div className="home-field flex items-center gap-1.5 h-7 px-2.5 rounded-lg">
           <Search className="size-3 shrink-0 text-muted-foreground" />
           <input
             value={search}
@@ -94,6 +94,9 @@ export function ReviewFilePanel({
  * before a `window` listener can see it, so in task review and the worktree view the dialog is
  * what Escape reaches. That is why it is not the only way out.
  *
+ * No background of its own: the layout hides the diff beneath it, so the host's glass shows
+ * through and the panel reads as one surface with the action bar above.
+ *
  * Taken apart from `ReviewFilePanelOverlay` so the Files tab's own tree can float in exactly this
  * shell rather than growing a second, slightly different answer to the same question.
  */
@@ -112,11 +115,7 @@ export function ReviewPanelOverlayShell({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onDismiss]);
 
-  return (
-    <div className="absolute inset-0 z-30 flex flex-col min-h-0 border-r border-border bg-card">
-      {children}
-    </div>
-  );
+  return <div className="absolute inset-0 z-30 flex flex-col min-h-0">{children}</div>;
 }
 
 /** The review's file panel in that shell, dismissing itself once a file has been picked. */

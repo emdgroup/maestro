@@ -179,7 +179,7 @@ export function ExecutionSidePanel({
   return (
     <div
       className={cn(
-        "flex flex-col bg-card overflow-hidden",
+        "flex flex-col overflow-hidden",
         fill
           ? "h-full w-full"
           : collapsed
@@ -211,7 +211,7 @@ export function ExecutionSidePanel({
             tabTitles={tabFiles}
           />
           <div className="flex-1 min-h-0 flex flex-col pl-[10px]">
-            <div className="flex-1 relative min-h-0 rounded-tl-xl border-t border-l border-border bg-background overflow-hidden">
+            <div className="flex-1 relative min-h-0 rounded-tl-xl border-t border-l inner-glass overflow-hidden">
               <SidePanelContent
                 tabs={tabs}
                 activeTabId={activeTabId}

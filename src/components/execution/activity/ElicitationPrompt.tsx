@@ -296,8 +296,9 @@ export function ElicitationPrompt({
           aria-label={collapsed ? "Expand the questions" : "Collapse the questions"}
           className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
         >
+          {/* A bottom sheet: open, it points down to where collapsing sends it; closed, up. */}
           <ChevronDown
-            className={cn("size-3.5 transition-transform duration-200", !collapsed && "rotate-180")}
+            className={cn("size-3.5 transition-transform duration-200", collapsed && "rotate-180")}
           />
         </button>
       </div>

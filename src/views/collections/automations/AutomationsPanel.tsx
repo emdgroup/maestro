@@ -327,7 +327,7 @@ function AutomationRow({
 
       {expanded && history.length > 0 && (
         <div className="-mt-1 pb-3 pl-10 pr-4">
-          <div className="divide-y divide-border/60 overflow-hidden rounded-md border border-border bg-background">
+          <div className="divide-y divide-foreground/7 overflow-hidden rounded-[10px] border border-foreground/7 bg-background/40">
             {shown.map((item) =>
               item.kind === "run" ? (
                 <RunCard
@@ -435,11 +435,11 @@ export function AutomationsPanel({
     <div className="flex h-full min-w-0 flex-1">
       {/* Its own top edge, rounding away from Recent runs on its right and the sidebar on its left.
           Recent runs stays beside both tabs, so switching moves nothing but this pane's body. */}
-      <div className="flex h-full min-w-0 flex-1 flex-col rounded-t-xl border-x border-t border-border bg-background">
+      <div className="flex h-full min-w-0 flex-1 flex-col rounded-t-xl border-x border-t inner-glass">
         <Tabs
           value={tab}
           onValueChange={(value) => onTabChange(value as AutomationsTab)}
-          className="shrink-0 border-b border-border px-4 pt-2"
+          className="shrink-0 border-b border-accent/10 px-4 pt-2"
         >
           <TabsList variant="line">
             <TabsTrigger value="dashboard" className="text-xs">
@@ -472,7 +472,7 @@ export function AutomationsPanel({
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-border rounded-lg border border-border bg-card">
+            <div className="usage-pane divide-y divide-foreground/7 rounded-[14px]">
               {(automations ?? []).map((automation) => (
                 <AutomationRow
                   key={automation.id}

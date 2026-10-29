@@ -118,8 +118,8 @@ export function SkillEditorDialog({
         showCloseButton={false}
         className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
       >
-        <div className="flex items-center gap-2 border-b border-border px-5 py-2.5">
-          <DialogTitle className="text-[11px] font-medium text-muted-foreground">
+        <div className="flex items-center gap-2 px-6 pt-4">
+          <DialogTitle className="text-[11px] font-normal tracking-[0.14em] uppercase text-muted-foreground">
             {editing ? "Edit skill" : "New skill"}
           </DialogTitle>
           <Segmented
@@ -135,9 +135,9 @@ export function SkillEditorDialog({
           />
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             aria-label="Close"
-            className="text-muted-foreground"
+            className="size-7 rounded-full"
             onClick={() => onOpenChange(false)}
           >
             <X className="size-4" />
@@ -145,7 +145,7 @@ export function SkillEditorDialog({
         </div>
 
         {raw ? (
-          <div className="flex min-h-0 flex-1 flex-col px-6 py-5">
+          <div className="flex min-h-0 flex-1 flex-col px-6 pt-3 pb-4">
             <Textarea
               autoFocus
               aria-label="SKILL.md"
@@ -157,7 +157,7 @@ export function SkillEditorDialog({
             />
           </div>
         ) : (
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 pt-3 pb-4">
             <Field label="Name">
               <Input
                 autoFocus={!editing}
@@ -235,7 +235,7 @@ export function SkillEditorDialog({
           </div>
         )}
 
-        <div className="flex items-center gap-2 border-t border-border bg-muted/30 px-5 py-3">
+        <div className="flex items-center gap-2 px-6 pt-1 pb-4 [&_[data-slot=button]]:h-9 [&_[data-slot=button]]:rounded-xl [&_[data-slot=button]]:px-4 [&_[data-slot=button]]:text-xs">
           <span
             className={cn(
               "min-w-0 truncate text-[11px] text-muted-foreground",

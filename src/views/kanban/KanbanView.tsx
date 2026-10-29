@@ -15,7 +15,7 @@ import { Badge } from "@/ui/badge";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { Checkbox } from "@/ui/checkbox";
-import { Button, buttonVariants } from "@/ui/button";
+import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import type { RunMode, Task, TaskPriority } from "@/types/bindings";
@@ -25,6 +25,7 @@ import { ArchiveModal } from "@/components/kanban/archive-modal/ArchiveModal";
 import { usePullRequestPoll } from "@/hooks/usePullRequestPoll";
 import { QueueCapacityBadge } from "@/components/kanban/QueueCapacityBadge";
 import { AutoModeToggle } from "@/components/kanban/AutoModeToggle";
+import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
 
 const EMPTY_TASKS: Task[] = [];
 
@@ -127,10 +128,12 @@ export const KanbanView: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      <div className="h-12 bg-card flex items-center px-4 gap-2 shrink-0">
+      {/* No surface of its own: the toolbar sits on the window's accent tint, as Home's panels do,
+          and its buttons are Home's connection buttons. */}
+      <div className="h-12 flex items-center px-4 gap-2 shrink-0">
         {/* Search */}
         <ShortcutHint shortcutId="focus-search">
-          <InputGroup className="w-48 bg-muted!">
+          <InputGroup className="home-field w-48 rounded-xl">
             <InputGroupInput
               ref={searchInputRef}
               type="text"
@@ -147,17 +150,20 @@ export const KanbanView: React.FC = () => {
 
         {/* Priority filter */}
         <Popover>
-          <PopoverTrigger className={buttonVariants({ variant: "outline", size: "sm" })}>
+          <PopoverTrigger className="home-pane h-8 gap-2 rounded-xl px-3.5 text-xs font-medium flex cursor-pointer items-center">
             {selectedPriorities.length > 0 ? (
               <Badge variant="secondary">Priority · {selectedPriorities.length}</Badge>
             ) : (
               "Priority"
             )}
           </PopoverTrigger>
-          <PopoverContent className="w-48 p-2" align="start">
-            <div className="flex flex-col gap-1">
+          <PopoverContent className="w-48 p-1.5 gap-0" align="start">
+            <div className="flex flex-col">
               {PRIORITIES.map((p) => (
-                <label key={p} className="flex items-center gap-2 cursor-pointer py-0.5">
+                <label
+                  key={p}
+                  className="flex items-center gap-2.5 cursor-pointer rounded-[10px] px-2.5 py-1.5 hover:bg-foreground/7"
+                >
                   <Checkbox
                     checked={selectedPriorities.includes(p)}
                     onCheckedChange={(checked) => {
@@ -166,13 +172,13 @@ export const KanbanView: React.FC = () => {
                       );
                     }}
                   />
-                  <span className="text-sm">{p}</span>
+                  <span className="text-[13px]">{p}</span>
                 </label>
               ))}
               {selectedPriorities.length > 0 && (
                 <Button
                   variant="ghost"
-                  className="text-xs text-muted-foreground hover:text-foreground mt-1 h-auto p-0 w-full justify-start"
+                  className="text-xs text-muted-foreground hover:text-foreground mt-1 h-auto rounded-none border-t border-foreground/8 px-2.5 pt-2 pb-1 w-full justify-start hover:bg-transparent"
                   onClick={() => setSelectedPriorities([])}
                 >
                   Clear
@@ -184,20 +190,23 @@ export const KanbanView: React.FC = () => {
 
         {/* Label filter */}
         <Popover>
-          <PopoverTrigger className={buttonVariants({ variant: "outline", size: "sm" })}>
+          <PopoverTrigger className="home-pane h-8 gap-2 rounded-xl px-3.5 text-xs font-medium flex cursor-pointer items-center">
             {selectedLabels.length > 0 ? (
               <Badge variant="secondary">Label · {selectedLabels.length}</Badge>
             ) : (
               "Label"
             )}
           </PopoverTrigger>
-          <PopoverContent className="w-48 p-2" align="start">
-            <div className="flex flex-col gap-1">
+          <PopoverContent className="w-48 p-1.5 gap-0" align="start">
+            <div className="flex flex-col">
               {availableLabels.length === 0 && (
-                <span className="text-xs text-muted-foreground">No labels</span>
+                <span className="px-2.5 py-1.5 text-xs text-muted-foreground">No labels</span>
               )}
               {availableLabels.map((label) => (
-                <label key={label} className="flex items-center gap-2 cursor-pointer py-0.5">
+                <label
+                  key={label}
+                  className="flex items-center gap-2.5 cursor-pointer rounded-[10px] px-2.5 py-1.5 hover:bg-foreground/7"
+                >
                   <Checkbox
                     checked={selectedLabels.includes(label)}
                     onCheckedChange={(checked) => {
@@ -206,13 +215,13 @@ export const KanbanView: React.FC = () => {
                       );
                     }}
                   />
-                  <span className="text-sm">{label}</span>
+                  <span className="text-[13px]">{label}</span>
                 </label>
               ))}
               {selectedLabels.length > 0 && (
                 <Button
                   variant="ghost"
-                  className="text-xs text-muted-foreground hover:text-foreground mt-1 h-auto p-0 w-full justify-start"
+                  className="text-xs text-muted-foreground hover:text-foreground mt-1 h-auto rounded-none border-t border-foreground/8 px-2.5 pt-2 pb-1 w-full justify-start hover:bg-transparent"
                   onClick={() => setSelectedLabels([])}
                 >
                   Clear
@@ -225,24 +234,21 @@ export const KanbanView: React.FC = () => {
         {/* How each task runs. One choice, so the group always has exactly one pressed. */}
         <ToggleGroup
           aria-label="How tasks run"
+          spacing={1}
+          className={SEGMENT_GROUP}
           value={[runMode ?? "All"]}
           onValueChange={(values) => {
             const picked = values.find((v) => v !== (runMode ?? "All"));
             if (picked) setRunMode(picked === "All" ? null : (picked as RunMode));
           }}
         >
-          <ToggleGroupItem value="All" size="sm" variant="outline" className="h-8 px-2.5 text-xs">
+          <ToggleGroupItem value="All" size="sm" className={SEGMENT_ITEM}>
             All
           </ToggleGroupItem>
-          <ToggleGroupItem
-            value="Pipeline"
-            size="sm"
-            variant="outline"
-            className="h-8 px-2.5 text-xs"
-          >
+          <ToggleGroupItem value="Pipeline" size="sm" className={SEGMENT_ITEM}>
             Pipeline
           </ToggleGroupItem>
-          <ToggleGroupItem value="Loop" size="sm" variant="outline" className="h-8 px-2.5 text-xs">
+          <ToggleGroupItem value="Loop" size="sm" className={SEGMENT_ITEM}>
             <Repeat className="size-3" />
             Loops
           </ToggleGroupItem>
@@ -257,20 +263,30 @@ export const KanbanView: React.FC = () => {
             render={
               <Button
                 size="sm"
-                variant={needsMeOnly ? "accent" : "outline"}
+                variant="ghost"
                 onClick={() => setNeedsMeOnly((v) => !v)}
                 disabled={needsMeCount === 0 && !needsMeOnly}
+                data-selected={needsMeOnly}
+                data-attention={needsMeCount > 0 && !needsMeOnly}
+                className="home-pane h-8 gap-2 rounded-xl px-3.5 text-xs font-medium data-[attention=true]:text-amber-600 dark:data-[attention=true]:text-amber-400"
               />
             }
           >
             <BellDot className="size-4" />
             Needs me
-            {needsMeCount > 0 && <Badge variant="secondary">{needsMeCount}</Badge>}
+            {needsMeCount > 0 && (
+              <span className="text-[13px] font-semibold tabular-nums">{needsMeCount}</span>
+            )}
           </TooltipTrigger>
           <TooltipContent>Show only tasks the pipeline is waiting on you for</TooltipContent>
         </Tooltip>
 
-        <Button size="sm" variant="outline" onClick={() => setIsArchiveModalOpen(true)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="home-pane h-8 gap-2 rounded-xl px-3.5 text-xs font-medium"
+          onClick={() => setIsArchiveModalOpen(true)}
+        >
           <Archive className="size-4" />
           Archive
         </Button>
@@ -280,7 +296,7 @@ export const KanbanView: React.FC = () => {
             <Button
               variant="accent"
               size="sm"
-              className="h-8 text-xs bg-clip-border"
+              className="h-8 rounded-xl px-4 text-xs bg-clip-border"
               onClick={() => setIsCreateModalOpen(true)}
             >
               <Plus className="size-3.5 mr-1" />

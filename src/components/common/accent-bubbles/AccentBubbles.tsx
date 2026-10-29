@@ -123,41 +123,6 @@ function buildField(spec: FieldSpec, lanes: number): React.CSSProperties[] {
   return bubbles;
 }
 
-// Ghost giants looming behind the field, placed at percentages so they follow the width.
-// They travel far enough to fully clear the top edge before their fade.
-const HEADER_GIANTS = [
-  {
-    "--bx": "8%",
-    "--bs": "64px",
-    "--bt": "-72px",
-    "--bu": "13s",
-    "--be": "-2s",
-    "--bo": "0.12",
-    "--bv": "-140px",
-    "--bw": "6px",
-  },
-  {
-    "--bx": "45%",
-    "--bs": "84px",
-    "--bt": "-94px",
-    "--bu": "16s",
-    "--be": "-8s",
-    "--bo": "0.09",
-    "--bv": "-158px",
-    "--bw": "-7px",
-  },
-  {
-    "--bx": "74%",
-    "--bs": "92px",
-    "--bt": "-102px",
-    "--bu": "18s",
-    "--be": "-13s",
-    "--bo": "0.07",
-    "--bv": "-168px",
-    "--bw": "8px",
-  },
-].map((style) => style as React.CSSProperties);
-
 const SCREEN_GIANTS = [
   {
     "--bx": "8%",
@@ -192,20 +157,8 @@ const SCREEN_GIANTS = [
 ].map((style) => style as React.CSSProperties);
 
 const SPECS = {
-  header: {
-    bubbles: {
-      perLane: 3,
-      minSize: 3,
-      sizeRange: 11,
-      minDuration: 5,
-      durationRange: 4,
-      minSway: 3,
-      swayRange: 3,
-    },
-    giants: HEADER_GIANTS,
-  },
-  // More per lane than the bar, but each lane is a window tall rather than 48px, so the field
-  // is far sparser per unit of area — and every bubble is a composited layer, so it stays low.
+  // Each lane is a window tall, so the field is sparse per unit of area — and every bubble is a
+  // composited layer, so it stays low.
   screen: {
     bubbles: {
       perLane: 6,
@@ -223,7 +176,7 @@ const SPECS = {
 } satisfies Record<string, { bubbles: FieldSpec; giants: React.CSSProperties[] }>;
 
 interface AccentBubblesProps {
-  /** `header` fills the 48px bar, `screen` a whole view. */
+  /** `screen` fills a whole view, the only field there is. */
   variant: keyof typeof SPECS;
   /** Stacking is the caller's problem: a parent painting its own background needs `z-0`
       plus a raised content layer, one that does not can use `-z-10`. */

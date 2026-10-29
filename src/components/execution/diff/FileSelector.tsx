@@ -149,7 +149,7 @@ export function FileSelector({
                 className={cn(
                   "w-full flex items-center gap-2 px-2 py-2 text-left border-l-2 transition-colors",
                   isSelected
-                    ? "border-ring selected-file-item"
+                    ? "border-transparent selected-file-item"
                     : "border-transparent hover:bg-muted/10",
                 )}
               >

@@ -296,11 +296,12 @@ export function ZoomableContent({
           >
             <Button
               variant="ghost"
-              size="icon-sm"
+              size="icon"
+              className="size-7 rounded-full"
               onClick={() => handleOpenChange(false)}
               aria-label="Close"
             >
-              <X />
+              <X className="size-4" />
             </Button>
           </div>
 

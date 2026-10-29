@@ -349,7 +349,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
       style={{ "--sidebar-width": "288px", "--sidebar-width-icon": "52px" } as React.CSSProperties}
     >
       {/* Action bar */}
-      <div className="h-12 bg-card flex items-center justify-between pl-2.5 pr-4 gap-2 shrink-0">
+      <div className="h-12 flex items-center justify-between pl-2.5 pr-4 gap-2 shrink-0">
         <div className="flex items-center gap-2">
           <Tooltip>
             <TooltipTrigger
@@ -371,10 +371,10 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           <ShortcutHint shortcutId="focus-search">
             <InputGroup
               className={cn(
-                "overflow-hidden transition-[width] duration-200",
+                "overflow-hidden rounded-xl transition-[width] duration-200",
                 !sidebarOpen
-                  ? "w-8 hover:w-48 focus-within:w-48 hover:bg-muted! focus-within:bg-muted!"
-                  : "w-48 bg-muted!",
+                  ? "w-8 hover:w-48 focus-within:w-48 hover:bg-background/55! focus-within:bg-background/55!"
+                  : "home-field w-48",
               )}
             >
               <InputGroupInput
@@ -398,7 +398,8 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
                     <Button
                       variant="ghost"
                       size="sm"
-                      className={cn("h-8 text-xs", showHistory && "bg-muted text-foreground")}
+                      className="home-pane h-8 gap-2 rounded-xl px-3.5 text-xs font-medium"
+                      data-selected={showHistory}
                       onClick={() => setShowHistory((v) => !v)}
                     />
                   }
@@ -473,7 +474,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
             <Button
               variant="accent"
               size="sm"
-              className="h-8 text-xs bg-clip-border"
+              className="h-8 rounded-xl px-4 text-xs bg-clip-border"
               onClick={() => setShowSpawnDialog(true)}
             >
               <Plus className="size-3.5 mr-1" />

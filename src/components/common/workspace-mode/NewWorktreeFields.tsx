@@ -118,7 +118,7 @@ export function NewWorktreeFields({
             ? "Creating a new branch from the branch below. Activate to check out an existing branch instead."
             : "Checking out the branch below. Activate to create a new branch instead."
         }
-        className="flex items-center gap-1.5 shrink-0 border-r border-border px-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer focus-visible:outline-none focus-visible:bg-muted data-popup-open:bg-muted data-popup-open:text-foreground"
+        className="flex items-center gap-1.5 shrink-0 border-r border-foreground/12 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer focus-visible:outline-none focus-visible:bg-muted data-popup-open:bg-muted data-popup-open:text-foreground"
       >
         {CHIP_LABEL[branchMode]}
         <Repeat className="size-3 opacity-60" />

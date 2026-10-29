@@ -80,8 +80,8 @@ export function PromptEditorDialog({
         showCloseButton={false}
         className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
       >
-        <div className="flex items-center gap-2 border-b border-border px-5 py-2.5">
-          <DialogTitle className="text-[11px] font-medium text-muted-foreground">
+        <div className="flex items-center gap-2 px-6 pt-4">
+          <DialogTitle className="text-[11px] font-normal tracking-[0.14em] uppercase text-muted-foreground">
             {editing ? "Edit prompt" : "New prompt"}
           </DialogTitle>
           <div className="ml-auto flex items-center gap-1.5">
@@ -91,9 +91,6 @@ export function PromptEditorDialog({
               label="Favorite"
               hint="Listed first"
               icon={<Star className={cn("size-3.5", favorite && "fill-current text-amber-500")} />}
-              className={
-                favorite ? "border-amber-500/60 bg-amber-500/15 text-foreground" : undefined
-              }
             />
             {/* Which collection a new prompt goes to. Saving never moves one; copying does. */}
             {!editing && (
@@ -103,14 +100,13 @@ export function PromptEditorDialog({
                 label="Shared"
                 hint="Shared with all projects"
                 icon={<Users className={cn("size-3.5", shared && "text-accent")} />}
-                className={shared ? "border-accent/60 bg-accent/15 text-foreground" : undefined}
               />
             )}
             <Button
               variant="ghost"
-              size="icon-sm"
+              size="icon"
               aria-label="Close"
-              className="ml-1 text-muted-foreground"
+              className="ml-1 size-7 rounded-full"
               onClick={() => onOpenChange(false)}
             >
               <X className="size-4" />
@@ -118,14 +114,14 @@ export function PromptEditorDialog({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-5 pt-5">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-4 pt-3">
           <input
             autoFocus
             aria-label="Title"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             placeholder="Untitled prompt"
-            className="w-full bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground/50"
+            className="w-full bg-transparent text-2xl font-semibold tracking-[-0.025em] outline-none placeholder:text-muted-foreground/50"
           />
           <div className="h-72">
             <MarkdownEditor
@@ -142,7 +138,7 @@ export function PromptEditorDialog({
             {tags.map((tag) => (
               <span
                 key={tag}
-                className="flex items-center gap-1 rounded-md bg-muted py-0.5 pl-2 pr-1 text-[11px]"
+                className="flex items-center gap-1 rounded-lg bg-foreground/7 py-0.5 pl-2 pr-1 text-[11px]"
               >
                 {tag}
                 <button
@@ -173,7 +169,7 @@ export function PromptEditorDialog({
                   setTags(tags.slice(0, -1));
                 }
               }}
-              className="h-6 w-28 rounded-md border border-dashed border-border bg-transparent px-2 text-[11px] outline-none placeholder:text-muted-foreground focus:border-solid focus:border-ring"
+              className="h-6 w-28 rounded-lg border border-dashed border-foreground/15 bg-transparent px-2 text-[11px] outline-none placeholder:text-muted-foreground focus:border-solid focus:border-ring"
             />
             <datalist id="prompt-tags">
               {knownTags
@@ -185,7 +181,7 @@ export function PromptEditorDialog({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 border-t border-border bg-muted/30 px-5 py-3">
+        <div className="flex items-center gap-2 px-6 pt-1 pb-4 [&_[data-slot=button]]:h-9 [&_[data-slot=button]]:rounded-xl [&_[data-slot=button]]:px-4 [&_[data-slot=button]]:text-xs">
           <span className="min-w-0 truncate text-[11px] text-muted-foreground">
             {shared
               ? "Shared with all projects this app opens."
@@ -210,25 +206,24 @@ function Toggle({
   label,
   hint,
   icon,
-  className,
 }: {
   pressed: boolean;
   onPressedChange: (pressed: boolean) => void;
   label: string;
   hint: string;
   icon: React.ReactNode;
-  className?: string;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             aria-pressed={pressed}
+            data-selected={pressed}
             onClick={() => onPressedChange(!pressed)}
-            className={cn("h-7 gap-1.5 text-xs", !pressed && "text-muted-foreground", className)}
+            className="home-pane h-7 gap-1.5 rounded-xl px-3 text-xs font-medium"
           />
         }
       >

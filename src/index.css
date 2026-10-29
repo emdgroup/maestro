@@ -156,6 +156,11 @@
 
 /* Map shadcn variables to Tailwind 4 color utilities */
 @theme inline {
+  /* Home's glass popups (`home-pop`, `home-pop-strong`) as shadow utilities, for the shared popup
+     primitives in src/components/ui, which carry the rest of the recipe as plain utilities so a
+     caller's own classes still win. */
+  --shadow-pop: inset 0 1px 0 rgb(255 255 255 / 0.2), 0 20px 50px -18px rgb(0 0 0 / 0.35);
+  --shadow-pop-strong: inset 0 1px 0 rgb(255 255 255 / 0.2), 0 20px 50px -18px rgb(0 0 0 / 0.45);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -382,22 +387,16 @@
 }
 
 .selected-session-item,
-.selected-file-item {
-  background: linear-gradient(
-    to right,
-    color-mix(in oklch, var(--accent) 28%, transparent),
-    color-mix(in oklch, var(--accent) 8%, transparent) 55%,
-    transparent
-  );
+/* File tree rows, as the Settings sidebar draws its own: rounded, accent-washed when picked. */
+.selected-file-item,
+.file-tree-item {
+  border-radius: 10px;
 }
-
+.selected-file-item {
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
+}
 .file-tree-item:hover:not(.selected-file-item) {
-  background: linear-gradient(
-    to right,
-    color-mix(in oklch, var(--accent) 14%, transparent),
-    color-mix(in oklch, var(--accent) 4%, transparent) 55%,
-    transparent
-  );
+  background: color-mix(in oklab, var(--foreground) 7%, transparent);
 }
 
 @property --ha {
@@ -453,37 +452,28 @@
 }
 
 /* ── Project colour: accent gradient + rising bubbles ──
-   Used by the header bar and by the welcome screen. Both fade from an accent tint at the top
+   Behind Home and behind every project view: an accent tint fading from the top of the window
    to nothing at the bottom, with bubbles rising through. Everything reads the live --accent,
    so the whole assembly follows the selected project's colour with no extra wiring.
 
    Light needs heavier mixes than dark to land in the same place: its accent is oklch(50% …)
    against a 98% background, so the same alpha that glows on dark washes out on white. The
-   bubble body is also darkened slightly, otherwise the discs disappear into the page. The
-   screen tint is the exception in both themes — spread over a window rather than a 48px bar,
-   the header's mix is too heavy, so each is dialled back on its own. */
+   bubble body is also darkened slightly, otherwise the discs disappear into the page. */
 :root {
-  --header-tint: color-mix(in oklch, var(--accent) 34%, transparent);
   --screen-tint: color-mix(in oklch, var(--accent) 24%, transparent);
   --bubble-body: color-mix(in oklch, oklch(from var(--accent) calc(l - 0.04) c h) 55%, transparent);
   --bubble-hi: color-mix(in oklch, oklch(from var(--accent) calc(l + 0.14) c h) 60%, transparent);
 }
 .dark {
-  --header-tint: color-mix(in oklch, var(--accent) 24%, transparent);
   --screen-tint: color-mix(in oklch, var(--accent) 16%, transparent);
   --bubble-body: color-mix(in oklch, var(--accent) 36%, transparent);
   --bubble-hi: color-mix(in oklch, oklch(from var(--accent) calc(l + 0.09) c h) 46%, transparent);
 }
 
-.header-gradient,
 .screen-gradient {
   position: absolute;
   inset: 0;
   pointer-events: none;
-}
-
-.header-gradient {
-  background: linear-gradient(to bottom, var(--header-tint), transparent);
 }
 
 .screen-gradient {
@@ -493,8 +483,7 @@
 /* Across a whole window the tint changes by less than one 8-bit step per pixel, so its
    quantisation shows as horizontal bands. Fine noise dithers those edges away — masked to the
    gradient's own shape so no grain lands on the clean part of the page, and kept under 2%,
-   past which it reads as film grain rather than as a smoother gradient. The header gradient
-   needs none of this: over 48px the steps are too close together to separate. */
+   past which it reads as film grain rather than as a smoother gradient. */
 .screen-gradient::after {
   content: "";
   position: absolute;
@@ -1062,8 +1051,10 @@
   background: color-mix(in oklab, var(--accent) 10%, transparent);
   transform: none;
 }
-/* A project that needs the user: tinted amber all over, never an edge stripe. */
-.home-pane[data-attention="true"] {
+/* A project that needs the user: tinted amber all over, never an edge stripe. `needs-you` is the
+   same state on a task card, where it arrives as a class from the card's state line. */
+.home-pane[data-attention="true"],
+.home-pane.needs-you {
   background: color-mix(
     in oklab,
     #f59e0b 13%,
@@ -1071,7 +1062,8 @@
   );
   border-color: color-mix(in oklab, #f59e0b 34%, transparent);
 }
-.home-pane[data-attention="true"]:hover {
+.home-pane[data-attention="true"]:hover,
+.home-pane.needs-you:hover {
   background: color-mix(
     in oklab,
     #f59e0b 19%,
@@ -1282,6 +1274,72 @@
   --usage-token-type-3: #ec4899;
   --usage-token-type-4: #a16207;
   --usage-token-type-5: #94a3b8;
+}
+/* The inner panel of a project tab (the agent stream, a collection, the worktree grid): the
+   page's background, see-through enough for the tint and bubbles to show, blurred so the text
+   on it stays readable. Plain CSS so it outranks the panel's own `bg-*` utility. */
+.inner-glass,
+.inner-glass-scroll {
+  --inner-glass-bg: color-mix(in oklab, var(--background) 40%, transparent);
+  /* Edged in the accent rather than the grey hairline, wherever a panel draws its border. */
+  border-color: color-mix(in oklab, var(--accent) 22%, transparent);
+}
+/* A light background over the tint reads as a flat wash, so dark mode alone takes the denser glass. */
+.dark .inner-glass,
+.dark .inner-glass-scroll {
+  --inner-glass-bg: color-mix(in oklab, var(--background) 60%, transparent);
+}
+/* The blur sits on a pseudo-element, not the panel: an element with a backdrop-filter is a backdrop
+   root, and a second backdrop-filter inside it (the compose bar, the pinned plan) then blurs
+   nothing. */
+.inner-glass {
+  position: relative;
+  isolation: isolate;
+}
+.inner-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--inner-glass-bg);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+  pointer-events: none;
+}
+/* For a panel that is its own scroller, where a pseudo-element would scroll away with the content.
+   Nothing inside these blurs its own backdrop, so the panel can carry the filter itself. */
+.inner-glass-scroll {
+  background: var(--inner-glass-bg);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+}
+/* A card on a glass panel: lighter than the panel and edged with a highlight, so it holds its own
+   against the light theme's pale wash where `home-pane` blends in. */
+.glass-tile {
+  background: color-mix(in oklab, var(--card) 55%, transparent);
+  border: 1px solid color-mix(in oklab, var(--foreground) 9%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.5),
+    0 10px 28px -18px rgb(0 0 0 / 0.3);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
+  transition:
+    background 0.18s,
+    border-color 0.18s;
+}
+.glass-tile:hover {
+  background: color-mix(in oklab, var(--card) 75%, transparent);
+  border-color: color-mix(in oklab, var(--foreground) 15%, transparent);
+}
+.dark .glass-tile {
+  background: color-mix(in oklab, var(--card) 25%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    0 10px 28px -16px rgb(0 0 0 / 0.6);
+}
+.dark .glass-tile:hover {
+  background: color-mix(in oklab, var(--card) 40%, transparent);
 }
 /* A pane that holds a chart: the `home-pane` look without its hover lift. */
 .usage-pane {

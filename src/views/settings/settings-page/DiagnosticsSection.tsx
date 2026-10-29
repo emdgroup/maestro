@@ -80,7 +80,7 @@ export function DiagnosticsSection() {
   }
 
   return (
-    <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+    <div className="rounded-2xl border border-foreground/7 bg-card p-4 space-y-4">
       <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
         <ScrollText className="w-4 h-4 text-muted-foreground" />
         Diagnostics
@@ -101,7 +101,7 @@ export function DiagnosticsSection() {
               leaves the two-line content overflowing a 36px box. */}
           <SelectTrigger
             id="log-level"
-            className="w-full data-[size=default]:h-auto py-2 px-3 border-border bg-transparent shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted"
+            className="w-full data-[size=default]:h-auto py-2 px-3 home-field rounded-xl shadow-none"
           >
             <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
               <SelectedIcon className="size-3.5 shrink-0 text-muted-foreground" />
