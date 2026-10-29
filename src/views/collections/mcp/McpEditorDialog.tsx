@@ -295,8 +295,8 @@ export function McpEditorDialog({
         showCloseButton={false}
         className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
       >
-        <div className="flex items-center gap-2 border-b border-border px-5 py-2.5">
-          <DialogTitle className="text-[11px] font-medium text-muted-foreground">
+        <div className="flex items-center gap-2 px-6 pt-4">
+          <DialogTitle className="text-[11px] font-normal tracking-[0.14em] uppercase text-muted-foreground">
             {editing ? "Edit MCP server" : "New MCP server"}
           </DialogTitle>
           <Segmented
@@ -312,9 +312,9 @@ export function McpEditorDialog({
           />
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             aria-label="Close"
-            className="text-muted-foreground"
+            className="size-7 rounded-full"
             onClick={close}
           >
             <X className="size-4" />
@@ -322,7 +322,7 @@ export function McpEditorDialog({
         </div>
 
         {json ? (
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-6 py-5">
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-6 pt-3 pb-4">
             <Textarea
               aria-label="JSON config"
               value={json.text}
@@ -338,7 +338,7 @@ export function McpEditorDialog({
             </p>
           </div>
         ) : (
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 pt-3 pb-4">
             <div className="flex items-end gap-3">
               <Field label="Name" className="flex-1">
                 <Input
@@ -479,7 +479,7 @@ export function McpEditorDialog({
           </div>
         )}
 
-        <div className="flex items-center gap-2 border-t border-border bg-muted/30 px-5 py-3">
+        <div className="flex items-center gap-2 px-6 pt-1 pb-4 [&_[data-slot=button]]:h-9 [&_[data-slot=button]]:rounded-xl [&_[data-slot=button]]:px-4 [&_[data-slot=button]]:text-xs">
           <Button
             variant="outline"
             size="sm"

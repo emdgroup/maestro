@@ -181,7 +181,7 @@ export function PromptEditorDialog({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 border-t border-foreground/7 px-6 py-3 [&_[data-slot=button]]:h-9 [&_[data-slot=button]]:rounded-xl [&_[data-slot=button]]:px-4 [&_[data-slot=button]]:text-xs">
+        <div className="flex items-center gap-2 px-6 pt-1 pb-4 [&_[data-slot=button]]:h-9 [&_[data-slot=button]]:rounded-xl [&_[data-slot=button]]:px-4 [&_[data-slot=button]]:text-xs">
           <span className="min-w-0 truncate text-[11px] text-muted-foreground">
             {shared
               ? "Shared with all projects this app opens."
