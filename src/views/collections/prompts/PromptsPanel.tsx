@@ -213,8 +213,10 @@ function PromptColumn({
       ref={ref}
       aria-label={title}
       className={cn(
-        // The task board's column: one glass pane that lights up whole under a drag.
-        "home-glass flex min-h-64 flex-col overflow-hidden rounded-[18px] transition-colors sm:min-h-0",
+        // A faint lane on the panel's glass, lighting up whole under a drag. Not a glass pane of
+        // its own: that came out as dense as the prompt tiles in it, which then had nothing to
+        // stand out against.
+        "border border-foreground/7 bg-foreground/[0.025] flex min-h-64 flex-col overflow-hidden rounded-[18px] transition-colors sm:min-h-0",
         isDropTarget && "border-accent/70! bg-accent/10",
       )}
     >
