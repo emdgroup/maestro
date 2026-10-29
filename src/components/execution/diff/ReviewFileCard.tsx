@@ -126,11 +126,11 @@ export function ReviewFileCard({
       {/* Stuck a gap below the top, as the card sits when unscrolled. The scroller masks that gap
           out (see `DiffFileStack`) rather than this box painting a strip over it: a strip would
           have to be opaque, and the well behind it is glass. */}
-      <div className="sticky top-3 z-10">
+      <div className="diff-card-sticky sticky top-3 z-10">
         <div
           onClick={onToggleExpanded}
           className={cn(
-            "border bg-[color-mix(in_oklab,var(--card)_70%,var(--background))] shadow-[inset_0_1px_0_rgb(255_255_255/0.06)] flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors",
+            "diff-card-header border bg-[color-mix(in_oklab,var(--card)_70%,var(--background))] shadow-[inset_0_1px_0_rgb(255_255_255/0.06)] flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors",
             expanded ? "rounded-t-xl" : "rounded-xl",
             // The card outlined in the accent, rather than a tint on the header. The tint was
             // competing with the hover state on the same element and lost — this reads at a

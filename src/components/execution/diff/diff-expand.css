@@ -39,3 +39,18 @@
   --diff-hunk-content--: color-mix(in oklab, var(--accent) 9%, transparent);
   --diff-hunk-lineNumber--: color-mix(in oklab, var(--accent) 18%, transparent);
 }
+
+/**
+ * A stuck file header squares its top corners. Rounded, its corners left the card scrolling
+ * beneath showing through the curve, and the well behind is glass, so nothing can be painted
+ * there instead. Where scroll-state queries are unsupported (WebKit), the corners stay round.
+ */
+.diff-card-sticky {
+  container-type: scroll-state;
+}
+@container scroll-state(stuck: top) {
+  .diff-card-header {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+}
