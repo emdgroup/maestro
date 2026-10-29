@@ -49,8 +49,11 @@ function DialogContent({
       <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
+        // Centred by auto margins, not `top-1/2 -translate-y-1/2`: layout snaps to whole pixels
+        // and a translate does not, so a dialog of fractional height (`h-[85vh]`) sat on a half
+        // pixel and every 1px horizontal border inside it painted at half strength.
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-6 rounded-[22px] bg-card/60 backdrop-blur-[20px] backdrop-saturate-150 border border-foreground/9 p-6 text-sm text-popover-foreground shadow-pop duration-100 outline-none sm:max-w-md data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed inset-0 z-50 m-auto grid h-fit w-full max-w-[calc(100%-2rem)] gap-6 rounded-[22px] bg-card/60 backdrop-blur-[20px] backdrop-saturate-150 border border-foreground/9 p-6 text-sm text-popover-foreground shadow-pop duration-100 outline-none sm:max-w-md data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className,
         )}
         {...props}
