@@ -49,8 +49,8 @@ function DiffStats({ hunks }: { hunks: string[] }) {
   );
 }
 
-/** A file header's surface, which the floating file list shares so the two read as one. */
-export const FILE_HEADER_BG =
+/** A file header's surface. The floating file list (`ReviewPanelOverlayShell`) is this at half strength. */
+const FILE_HEADER_BG =
   "bg-[color-mix(in_oklab,var(--accent)_8%,color-mix(in_oklab,var(--card)_70%,var(--background)))]";
 
 const CARD_SHADOW = "shadow-[0_10px_24px_-14px_rgb(0_0_0/0.25)]";

@@ -4,7 +4,6 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { FileStatus } from "@/types/review";
 import { FileTree } from "./FileTree";
-import { FILE_HEADER_BG } from "./ReviewFileCard";
 
 export interface ReviewFilePanelProps {
   files: Array<{ fileName: string; status?: FileStatus }>;
@@ -95,8 +94,8 @@ export function ReviewFilePanel({
  * before a `window` listener can see it, so in task review and the worktree view the dialog is
  * what Escape reaches. That is why it is not the only way out.
  *
- * In the file card headers' surface, so the two read as one. The layout also hides the diff
- * beneath it.
+ * The file card headers' surface at half strength, so the glass behind shows through. The layout
+ * hides the diff beneath it, so that glass is all there is to see.
  *
  * Taken apart from `ReviewFilePanelOverlay` so the Files tab's own tree can float in exactly this
  * shell rather than growing a second, slightly different answer to the same question.
@@ -120,7 +119,7 @@ export function ReviewPanelOverlayShell({
     <div
       className={cn(
         "absolute inset-0 z-30 flex flex-col min-h-0 border-r border-foreground/9",
-        FILE_HEADER_BG,
+        "bg-[color-mix(in_oklab,color-mix(in_oklab,var(--accent)_8%,color-mix(in_oklab,var(--card)_70%,var(--background)))_50%,transparent)]",
       )}
     >
       {children}
