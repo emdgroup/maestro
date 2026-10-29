@@ -94,6 +94,9 @@ export function ReviewFilePanel({
  * before a `window` listener can see it, so in task review and the worktree view the dialog is
  * what Escape reaches. That is why it is not the only way out.
  *
+ * See-through, tinted in the accent as the file card headers are; the layout hides the diff
+ * beneath it rather than this painting over it.
+ *
  * Taken apart from `ReviewFilePanelOverlay` so the Files tab's own tree can float in exactly this
  * shell rather than growing a second, slightly different answer to the same question.
  */
@@ -113,7 +116,7 @@ export function ReviewPanelOverlayShell({
   }, [onDismiss]);
 
   return (
-    <div className="absolute inset-0 z-30 flex flex-col min-h-0 border-r border-foreground/9 bg-card/60 backdrop-blur-[20px] backdrop-saturate-150">
+    <div className="absolute inset-0 z-30 flex flex-col min-h-0 border-r border-foreground/9 bg-accent/8">
       {children}
     </div>
   );

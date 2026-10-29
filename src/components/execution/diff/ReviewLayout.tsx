@@ -125,7 +125,11 @@ export function ReviewLayout({ panel, files, renderPanel, children }: ReviewLayo
         </ResizablePanelGroup>
       ) : (
         <>
-          <div className="flex-1 flex flex-col min-w-0">{diffSurface}</div>
+          {/* Hidden, not unmounted, under the floating panel: the panel is see-through, and the
+              diff keeps its scroll position for when the panel closes. */}
+          <div className={cn("flex-1 flex flex-col min-w-0", panelOpen && "invisible")}>
+            {diffSurface}
+          </div>
           {panelOpen &&
             (renderPanel ? (
               <ReviewPanelOverlayShell onDismiss={() => setPanelOpen(false)}>
