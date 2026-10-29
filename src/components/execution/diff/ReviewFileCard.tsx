@@ -122,18 +122,20 @@ export function ReviewFileCard({
   // too. The header controls all stop the event, which keeps them from moving the selection — being
   // told a file is viewed is not the same as being told to look at it.
   return (
-    <div ref={ref} data-file-card={path} className="shrink-0" onClick={onSelect}>
-      {/* The strip above a stuck header blurs what scrolls under it. */}
-      <div className="sticky top-0 z-10 pt-3 backdrop-blur-md">
+    <div ref={ref} data-file-card={path} className="shrink-0 pt-3" onClick={onSelect}>
+      {/* Stuck flush to the top, with the gap above the card outside the sticky box: a strip of
+          the gap would have to hide what scrolls under it, which glass cannot. The header is opaque
+          for the same reason. */}
+      <div className="sticky top-0 z-10">
         <div
           onClick={onToggleExpanded}
           className={cn(
-            "border bg-card/55 backdrop-blur-[24px] backdrop-saturate-150 flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors",
+            "border bg-[color-mix(in_oklab,var(--card)_70%,var(--background))] shadow-[inset_0_1px_0_rgb(255_255_255/0.06)] flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors",
             expanded ? "rounded-t-xl" : "rounded-xl",
             // The card outlined in the accent, rather than a tint on the header. The tint was
             // competing with the hover state on the same element and lost — this reads at a
             // glance, and from the body as well as the header.
-            focused ? "border-accent" : "border-foreground/9 hover:bg-card/75",
+            focused ? "border-accent" : "border-foreground/9 hover:bg-card",
             // Except where the header meets the body, which is a divider inside the card rather
             // than part of its outline: in the accent it draws a line straight across the middle.
             focused && expanded && "border-b-border",
