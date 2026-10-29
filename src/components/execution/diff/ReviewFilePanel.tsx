@@ -113,7 +113,7 @@ export function ReviewPanelOverlayShell({
   }, [onDismiss]);
 
   return (
-    <div className="absolute inset-0 z-30 flex flex-col min-h-0 border-r border-border bg-popover">
+    <div className="absolute inset-0 z-30 flex flex-col min-h-0 border-r border-foreground/9 bg-card/60 backdrop-blur-[20px] backdrop-saturate-150">
       {children}
     </div>
   );

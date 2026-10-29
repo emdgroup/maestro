@@ -123,18 +123,17 @@ export function ReviewFileCard({
   // told a file is viewed is not the same as being told to look at it.
   return (
     <div ref={ref} data-file-card={path} className="shrink-0" onClick={onSelect}>
-      {/* The strip above a stuck header hides what scrolls under it: the well's colour where there
-          is one, otherwise a blur of the glass it sits on. */}
-      <div className="sticky top-0 z-10 pt-3 bg-(--diff-well) backdrop-blur-md">
+      {/* The strip above a stuck header blurs what scrolls under it. */}
+      <div className="sticky top-0 z-10 pt-3 backdrop-blur-md">
         <div
           onClick={onToggleExpanded}
           className={cn(
-            "border bg-card flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors",
+            "border bg-card/55 backdrop-blur-[24px] backdrop-saturate-150 flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors",
             expanded ? "rounded-t-xl" : "rounded-xl",
             // The card outlined in the accent, rather than a tint on the header. The tint was
             // competing with the hover state on the same element and lost — this reads at a
             // glance, and from the body as well as the header.
-            focused ? "border-accent" : "border-border hover:bg-muted/20",
+            focused ? "border-accent" : "border-foreground/9 hover:bg-card/75",
             // Except where the header meets the body, which is a divider inside the card rather
             // than part of its outline: in the accent it draws a line straight across the middle.
             focused && expanded && "border-b-border",
@@ -224,7 +223,7 @@ export function ReviewFileCard({
         <div
           className={cn(
             "border border-t-0 rounded-b-xl overflow-auto transition-colors",
-            focused ? "border-accent" : "border-border",
+            focused ? "border-accent" : "border-foreground/9",
           )}
         >
           {fileComment && (

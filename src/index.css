@@ -387,22 +387,16 @@
 }
 
 .selected-session-item,
-.selected-file-item {
-  background: linear-gradient(
-    to right,
-    color-mix(in oklch, var(--accent) 28%, transparent),
-    color-mix(in oklch, var(--accent) 8%, transparent) 55%,
-    transparent
-  );
+/* File tree rows, as the Settings sidebar draws its own: rounded, accent-washed when picked. */
+.selected-file-item,
+.file-tree-item {
+  border-radius: 10px;
 }
-
+.selected-file-item {
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
+}
 .file-tree-item:hover:not(.selected-file-item) {
-  background: linear-gradient(
-    to right,
-    color-mix(in oklch, var(--accent) 14%, transparent),
-    color-mix(in oklch, var(--accent) 4%, transparent) 55%,
-    transparent
-  );
+  background: color-mix(in oklab, var(--foreground) 7%, transparent);
 }
 
 @property --ha {

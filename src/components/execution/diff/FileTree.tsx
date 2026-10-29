@@ -215,7 +215,7 @@ const FileNode: React.FC<{
       onClick={() => node.fileName && onSelectFile(node.fileName)}
       className={cn(
         "flex items-center gap-1.5 px-2 py-1.5 cursor-pointer border-l-2 transition-colors text-xs",
-        isSelected ? "border-ring selected-file-item" : "border-transparent file-tree-item",
+        isSelected ? "border-transparent selected-file-item" : "border-transparent file-tree-item",
       )}
       style={{ paddingLeft: `${level * 12 + 8}px` }}
     >
@@ -266,7 +266,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
   }
 
   return (
-    <div className="py-1">
+    <div className="px-1.5 py-1">
       {tree.map((node) => (
         <FileNode
           key={node.path}

@@ -83,9 +83,9 @@ export function ReviewLayout({ panel, files, renderPanel, children }: ReviewLayo
       <div
         className={cn(
           "flex flex-col flex-1 min-h-0 border-t border-border overflow-hidden",
-          // An opaque well beside the file list, as Settings has; on its own it is the host's
-          // glass, which the file cards and the diff's own rows sit on.
-          inset && "rounded-tl-[18px] border-l bg-background [--diff-well:var(--background)]",
+          // A glass well beside the file list, as the tabs' inner panels; on its own it is the
+          // host's glass already.
+          inset && "inner-glass rounded-tl-[18px] border-l",
         )}
       >
         {children}

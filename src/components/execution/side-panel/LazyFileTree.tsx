@@ -300,7 +300,7 @@ function FilterResults({
               className={cn(
                 "w-full flex items-center gap-1.5 px-2 py-1.5 text-xs text-left border-l-2 transition-colors",
                 isSelected
-                  ? "border-ring selected-file-item text-foreground"
+                  ? "border-transparent selected-file-item text-foreground"
                   : "border-transparent text-foreground/80 file-tree-item hover:text-foreground",
               )}
               style={{ paddingLeft: indentFor(0) }}
@@ -461,7 +461,7 @@ function DirContents({
             className={cn(
               "w-full flex items-center gap-1.5 px-2 py-1.5 text-xs text-left border-l-2 transition-colors",
               isSelected
-                ? "border-ring selected-file-item text-foreground"
+                ? "border-transparent selected-file-item text-foreground"
                 : "border-transparent text-foreground/80 file-tree-item hover:text-foreground",
             )}
             style={{ paddingLeft: indentFor(depth) }}
