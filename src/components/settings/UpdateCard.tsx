@@ -1,6 +1,7 @@
 import { useState, useEffect, useReducer } from "react";
-import { RefreshCw, CircleCheck, CircleX, ArrowDownToLine } from "lucide-react";
+import { RefreshCw, CircleCheck, CircleX, ArrowDownToLine, ExternalLink } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
@@ -21,6 +22,48 @@ export function formatLastChecked(date: Date | null): string {
   const hours = Math.floor(mins / 60);
   if (hours === 1) return "1 hour ago";
   return `${hours} hours ago`;
+}
+
+/**
+ * A version number that opens its GitHub release, whose body release-please fills with that
+ * version's changelog. Plain text until `getVersion` resolves, so nothing links to `v…`.
+ */
+export function VersionLink({
+  version,
+  label,
+  icon = true,
+  className,
+}: {
+  version: string;
+  label: string;
+  icon?: boolean;
+  className?: string;
+}) {
+  if (version === "…") return <>v{version}</>;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={() =>
+              void openUrl(`https://github.com/emdgroup/maestro/releases/tag/v${version}`)
+            }
+            className={cn(
+              "group inline-flex cursor-pointer items-center gap-0.5 underline-offset-2 hover:underline",
+              className,
+            )}
+          />
+        }
+      >
+        v{version}
+        {icon && (
+          <ExternalLink className="size-2.5 opacity-0 transition-opacity group-hover:opacity-100" />
+        )}
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 export function UpdateCard() {
@@ -60,7 +103,6 @@ export function UpdateCard() {
     checkForUpdates(autoUpdate);
   }
 
-  const newVersion = status.phase === "available" ? status.version : null;
   const isChecking = status.phase === "checking";
 
   return (
@@ -82,11 +124,25 @@ export function UpdateCard() {
           <div className="text-xs text-muted-foreground mt-0.5">
             {status.phase === "available" ? (
               <>
-                v{appVersion} <span className="text-muted-foreground">→</span>{" "}
-                <span className="text-accent font-medium">v{newVersion}</span>
+                <VersionLink
+                  version={appVersion}
+                  label={`View v${appVersion} changelog on GitHub`}
+                  icon={false}
+                  className="hover:text-foreground"
+                />{" "}
+                <span className="text-muted-foreground">→</span>{" "}
+                <VersionLink
+                  version={status.version}
+                  label={`What's new in v${status.version}`}
+                  className="text-accent font-medium"
+                />
               </>
             ) : (
-              <>v{appVersion}</>
+              <VersionLink
+                version={appVersion}
+                label={`View v${appVersion} changelog on GitHub`}
+                className="hover:text-foreground"
+              />
             )}
           </div>
         </div>
