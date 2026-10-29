@@ -1284,14 +1284,39 @@
 /* The inner panel of a project tab (the agent stream, a collection, the worktree grid): the
    page's background, see-through enough for the tint and bubbles to show, blurred so the text
    on it stays readable. Plain CSS so it outranks the panel's own `bg-*` utility. */
-.inner-glass {
-  background: color-mix(in oklab, var(--background) 40%, transparent);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
-  backdrop-filter: blur(20px) saturate(150%);
+.inner-glass,
+.inner-glass-scroll {
+  --inner-glass-bg: color-mix(in oklab, var(--background) 40%, transparent);
 }
 /* A light background over the tint reads as a flat wash, so dark mode alone takes the denser glass. */
-.dark .inner-glass {
-  background: color-mix(in oklab, var(--background) 60%, transparent);
+.dark .inner-glass,
+.dark .inner-glass-scroll {
+  --inner-glass-bg: color-mix(in oklab, var(--background) 60%, transparent);
+}
+/* The blur sits on a pseudo-element, not the panel: an element with a backdrop-filter is a backdrop
+   root, and a second backdrop-filter inside it (the compose bar, the pinned plan) then blurs
+   nothing. */
+.inner-glass {
+  position: relative;
+  isolation: isolate;
+}
+.inner-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--inner-glass-bg);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+  pointer-events: none;
+}
+/* For a panel that is its own scroller, where a pseudo-element would scroll away with the content.
+   Nothing inside these blurs its own backdrop, so the panel can carry the filter itself. */
+.inner-glass-scroll {
+  background: var(--inner-glass-bg);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
 }
 /* A pane that holds a chart: the `home-pane` look without its hover lift. */
 .usage-pane {
