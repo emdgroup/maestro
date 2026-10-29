@@ -430,7 +430,7 @@ export function ComposeBar({
         ref={containerRef}
         className={cn(
           "rounded-[25px] border transition-colors duration-200",
-          "bg-card/55 backdrop-blur-[20px] backdrop-saturate-150 shadow-pop",
+          "bg-card/25 backdrop-blur-[24px] backdrop-saturate-150 shadow-pop",
           isFocused ? "border-accent/40" : "border-foreground/10",
           variant === "centered" && "shadow-lg",
         )}
