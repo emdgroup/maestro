@@ -560,7 +560,8 @@ export function CanvasAnnotationLayer({
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3">
+      {/* Opaque under the glass panel: the canvas paints the theme background, so this matches it. */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto bg-background p-3">
         {/* A viewport-sized document gets the pane's height rather than growing the scroller:
             without a definite height to resolve against it collapses to its starting size. */}
         <div ref={frameRef} className={cn("relative", fillHeight && "h-full")}>
