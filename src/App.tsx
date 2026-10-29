@@ -8,6 +8,7 @@ import { motion, useAnimationControls } from "framer-motion";
 import { useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { AppHeader } from "@/components/layout/app-header/AppHeader";
 import { HomeView } from "@/views/home/HomeView";
+import { AccentBubbles } from "@/components/common/accent-bubbles/AccentBubbles";
 import { useSettings } from "@/services/settings.service";
 import { useActiveSessionsQuery } from "@/services/execution.service";
 import { useSessionNotifications } from "@/hooks/useSessionNotifications";
@@ -311,7 +312,16 @@ function App() {
     <TooltipProvider>
       <ShortcutHintProvider>
         {/* Named so the view transition from Home morphs the project's tile into this window. */}
-        <div className="app flex flex-col h-screen bg-background [view-transition-name:project-zoom]">
+        <div className="app relative isolate flex flex-col h-screen bg-background [view-transition-name:project-zoom]">
+          {/* The Tasks view sits on Home's screen: one accent tint and its bubbles from the top of
+              the window down, behind the header and the board alike. Other views still have the
+              header's own strip. */}
+          {activeTab === "kanban" && (
+            <>
+              <AccentBubbles variant="screen" className="-z-10" />
+              <span aria-hidden className="screen-gradient -z-10" />
+            </>
+          )}
           <AppHeader
             currentProject={currentProject}
             activeView={activeTab}
@@ -320,8 +330,14 @@ function App() {
             connectionQuiet={connectionHealth === "quiet"}
           />
           {/* A haze of the panes' own colour rising into the header's bottom strip, so the tinted
-              header and the card-coloured panes meet without a hard edge. */}
-          <main className="relative flex-1 overflow-hidden shadow-[0_-2px_5px_var(--card)]">
+              header and the card-coloured panes meet without a hard edge. Tasks has no pane colour to
+              blend, so it goes without. */}
+          <main
+            className={cn(
+              "relative flex-1 overflow-hidden",
+              activeTab !== "kanban" && "shadow-[0_-2px_5px_var(--card)]",
+            )}
+          >
             {/* Slides up or down when the window switches project; `main` clips it. */}
             <motion.div animate={projectControls} className="absolute inset-0">
               {/* Agents View — always mounted, imperative animation */}

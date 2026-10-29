@@ -140,7 +140,7 @@ export function FooterCTAs({
   const starting = task.phase === "Spawning" && task.phase_status !== "Failed";
 
   const base =
-    "flex-1 flex items-center justify-center gap-1 text-[10px] font-bold py-2 rounded-full border border-border bg-primary-foreground text-primary hover:bg-muted disabled:opacity-50";
+    "flex-1 flex items-center justify-center gap-1 text-[10.5px] font-semibold py-[7px] rounded-lg border border-foreground/12 bg-background/55 text-foreground hover:bg-background/90 disabled:opacity-50";
 
   /*
     A disabled button emits no pointer events, so base-ui's tooltip never fires on one and the

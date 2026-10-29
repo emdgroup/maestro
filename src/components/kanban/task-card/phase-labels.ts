@@ -33,17 +33,19 @@ export const USER_GATE_LABELS: Partial<Record<TaskPhase, string>> = {
 };
 
 /**
- * Three intensities, keyed on `phase_status`. Only `Blocked` animates: it is the one case where an
- * agent is stopped dead waiting on the user. Spreading the pulse across every card the user owns —
- * including a review gate untouched for days — is what would turn it into wallpaper.
+ * Three intensities, keyed on `phase_status`. Only `Blocked` tints the whole card amber, Home's
+ * "needs you": it is the one case where an agent is stopped dead waiting on the user. Spreading
+ * the tint across every card the user owns, including a review gate untouched for days, is what
+ * would turn it into wallpaper.
  *
  * These read apart only because the card's own border is neutral; they each take over the border
- * rather than sitting outside a coloured one.
+ * rather than sitting outside a coloured one. The card is a `home-pane`, whose border is plain
+ * CSS outside Tailwind's layers, so a border colour here needs `!` to win.
  */
 export const PHASE_STATUS_RING: Partial<Record<PhaseStatus, string>> = {
-  Blocked: "animate-glow-warning border-warning",
-  Waiting: "border-accent ring-1 ring-accent/40",
-  Failed: "border-destructive ring-1 ring-destructive/40",
+  Blocked: "needs-you",
+  Waiting: "border-accent! ring-1 ring-accent/40",
+  Failed: "border-destructive! ring-1 ring-destructive/40",
 };
 
 /**

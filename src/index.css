@@ -1062,8 +1062,10 @@
   background: color-mix(in oklab, var(--accent) 10%, transparent);
   transform: none;
 }
-/* A project that needs the user: tinted amber all over, never an edge stripe. */
-.home-pane[data-attention="true"] {
+/* A project that needs the user: tinted amber all over, never an edge stripe. `needs-you` is the
+   same state on a task card, where it arrives as a class from the card's state line. */
+.home-pane[data-attention="true"],
+.home-pane.needs-you {
   background: color-mix(
     in oklab,
     #f59e0b 13%,
@@ -1071,7 +1073,8 @@
   );
   border-color: color-mix(in oklab, #f59e0b 34%, transparent);
 }
-.home-pane[data-attention="true"]:hover {
+.home-pane[data-attention="true"]:hover,
+.home-pane.needs-you:hover {
   background: color-mix(
     in oklab,
     #f59e0b 19%,

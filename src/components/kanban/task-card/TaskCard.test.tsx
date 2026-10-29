@@ -373,17 +373,17 @@ describe("TaskCard pipeline treatment", () => {
     expect(screen.getByText("Self review")).toBeInTheDocument();
   });
 
-  /** The distinction the whole design rests on: only a blocked agent animates. */
-  it("animates only when an agent is blocked, not when a gate is merely waiting", () => {
+  /** The distinction the whole design rests on: only a blocked agent tints the card. */
+  it("tints only when an agent is blocked, not when a gate is merely waiting", () => {
     const blocked = renderCard({
       phase: "Implementing",
       phase_status: "Blocked",
       ball: "User",
     });
-    expect(blocked.className).toContain("animate-glow-warning");
+    expect(blocked.className).toContain("needs-you");
 
     const waiting = renderCard({ phase: "Approval", phase_status: "Waiting", ball: "User" });
-    expect(waiting.className).not.toContain("animate-glow-warning");
+    expect(waiting.className).not.toContain("needs-you");
     expect(waiting.className).toContain("border-accent");
   });
 
@@ -394,8 +394,8 @@ describe("TaskCard pipeline treatment", () => {
    */
   it("keeps a neutral border when no phase state applies", () => {
     const running = renderCard({ phase: "Implementing", phase_status: "Running", ball: "Agent" });
-    expect(running.className).toContain("border-border");
-    expect(running.className).not.toContain("animate-glow-warning");
+    expect(running.className).toContain("home-pane");
+    expect(running.className).not.toContain("needs-you");
     expect(running.className).not.toContain("border-accent");
     expect(running.className).not.toContain("border-destructive");
   });
