@@ -3,9 +3,9 @@ import { ChevronDown, ChevronRight, Lock, TriangleAlert, X } from "lucide-react"
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Input } from "@/ui/input";
+import { Kbd } from "@/ui/kbd";
 import { cn } from "@/lib/utils";
 import { buildFileTree, type FileTreeNode } from "@/components/execution/diff/file-tree";
-import { namedPaths } from "./LoopEditor";
 import type { LoopDraft } from "./loop-draft";
 import { hiddenMatcher, isRule, orderPatterns, type Hidden } from "./loop-state";
 
@@ -144,10 +144,8 @@ export function HiddenFilesCard({
     return counts;
   }, [files, states]);
 
-  const named = namedPaths(value.checks, files);
-  const builtinOn = named.length > 0 && named.every((p) => patterns.includes(p));
   const rules = patterns.filter(isRule);
-  const picked = patterns.filter((p) => !isRule(p) && !p.startsWith("!") && !named.includes(p));
+  const picked = patterns.filter((p) => !isRule(p) && !p.startsWith("!"));
   const exceptions = patterns.filter((p) => p.startsWith("!"));
   const commands = value.checks
     .filter((c) => c.kind === "Command" || c.kind === "Setup")
@@ -158,8 +156,6 @@ export function HiddenFilesCard({
     for (const f of files) if (dep.file.test(f)) depends.set(f, dep.why);
   }
   const gaps = [...depends.keys()].filter((f) => !state(f).hidden);
-  const namer = (path: string) =>
-    value.checks.find((c) => c.command.includes(path.replace(/\/$/, "")))?.label.trim();
 
   const save = (next: string[], dismiss: string[] = [], undismiss: string[] = []) =>
     onChange({
@@ -191,13 +187,6 @@ export function HiddenFilesCard({
     const inside = (p: string) => p.replace(/^!/, "").startsWith(`${dir}/`) || p === `!${dir}`;
     save([...patterns.filter((p) => !inside(p) || isRule(p)), `${dir}/`]);
   };
-  const toggleBuiltin = (on: boolean) =>
-    on
-      ? save([...patterns, ...named], [], named)
-      : save(
-          without(named),
-          named.filter((p) => patterns.includes(p)),
-        );
   const add = () => {
     const pattern = adding
       .trim()
@@ -230,7 +219,6 @@ export function HiddenFilesCard({
   const why = (s: Hidden) => {
     if (!s.by) return null;
     if (s.by.startsWith("!")) return `visible: ${s.by}`;
-    if (named.includes(s.by)) return `named by ${namer(s.by) ?? "a check"}`;
     return isRule(s.by) ? `rule ${s.by}` : "picked";
   };
 
@@ -331,9 +319,8 @@ export function HiddenFilesCard({
         <Lock className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="shrink-0 text-sm font-medium">Hidden from the agent</span>
         <span className="min-w-0 truncate text-muted-foreground">
-          · {hidden} of {plural(files.length, "file")} hidden ·{" "}
-          {plural(rules.length + (builtinOn ? 1 : 0), "rule")}, {picked.length} picked,{" "}
-          {plural(exceptions.length, "exception")}
+          · {hidden} of {plural(files.length, "file")} hidden · {plural(rules.length, "rule")},{" "}
+          {picked.length} picked, {plural(exceptions.length, "exception")}
         </span>
         {gaps.length > 0 && (
           <span className="ml-auto flex shrink-0 items-center gap-1 text-warning">
@@ -361,29 +348,11 @@ export function HiddenFilesCard({
               <div className="space-y-1">
                 <div className="px-1 font-medium">Rules</div>
                 <div className="rounded-md border border-border bg-background p-1">
-                  <label className="flex items-start gap-2 rounded px-2 py-1 hover:bg-muted/40">
-                    <Checkbox
-                      checked={builtinOn}
-                      disabled={locked || named.length === 0}
-                      onCheckedChange={toggleBuiltin}
-                      className="mt-0.5"
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate">Paths written in a command</span>
-                      <span className="block truncate text-muted-foreground">
-                        {named.length > 0 ? (
-                          <span className="font-mono">{named.join(", ")}</span>
-                        ) : (
-                          "None yet. A path in a check or step command, like bun test tests/login.test.ts, is hidden here."
-                        )}
-                      </span>
-                    </span>
-                    {named.length > 0 && (
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {plural(files.filter((f) => hiddenMatcher(named)(f).hidden).length, "file")}
-                      </span>
-                    )}
-                  </label>
+                  {rules.length === 0 && (
+                    <div className="px-2 py-1 text-muted-foreground">
+                      A pattern hides every file it matches.
+                    </div>
+                  )}
                   {rules.map((rule) => (
                     <Entry
                       key={rule}
@@ -402,13 +371,18 @@ export function HiddenFilesCard({
                       add();
                     }}
                   >
-                    <Input
-                      value={adding}
-                      aria-label="Add a pattern"
-                      placeholder="Add a pattern: tests/, **/*.spec.ts, !tests/helpers/"
-                      onChange={(e) => setAdding(e.target.value)}
-                      className="h-7 flex-1 font-mono text-xs"
-                    />
+                    <div className="relative flex-1">
+                      <Input
+                        value={adding}
+                        aria-label="Add a pattern"
+                        placeholder="Add a pattern: tests/, **/*.spec.ts, !tests/helpers/"
+                        onChange={(e) => setAdding(e.target.value)}
+                        className={cn("h-7 font-mono text-xs", adding.trim() && "pr-16")}
+                      />
+                      {adding.trim() && (
+                        <Kbd className="absolute top-1/2 right-1 -translate-y-1/2">↵ Enter</Kbd>
+                      )}
+                    </div>
                     {adding.trim() && (
                       <span className="shrink-0 tabular-nums text-muted-foreground">
                         {plural(matches(adding.trim(), files), "file")}
