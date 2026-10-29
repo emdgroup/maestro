@@ -69,7 +69,7 @@ export function BackgroundServerSection({ connection }: { connection: Connection
   const now = useNow();
 
   return (
-    <div className="rounded-2xl border border-foreground/7 bg-background/50 p-4 space-y-4">
+    <div className="rounded-2xl border border-foreground/7 bg-card p-4 space-y-4">
       <div className="flex items-center justify-between gap-4">
         <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
           <Server className="w-4 h-4 text-muted-foreground" />
