@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.41.0](https://github.com/emdgroup/maestro/compare/v0.40.0...v0.41.0) (2026-10-29)
+
+
+### Features
+
+* **chat:** animate the copied state on copy buttons ([1e2855e](https://github.com/emdgroup/maestro/commit/1e2855ebfdb695b301fb1dc6ef893cb58c64dad8))
+* **files:** copy a file's absolute path from the Files tab header ([1e2855e](https://github.com/emdgroup/maestro/commit/1e2855ebfdb695b301fb1dc6ef893cb58c64dad8))
+* link the app version to its GitHub release notes ([b8927e9](https://github.com/emdgroup/maestro/commit/b8927e969787fb91ae66526f61c2ecd7fe4d093a))
+* **loops:** clarify the loop setup and hidden-files editors ([762fe66](https://github.com/emdgroup/maestro/commit/762fe666dcda2b39f60266a233c89fd0f2f0c8a4))
+* **review:** move the Changes card copy button next to the file name ([1e2855e](https://github.com/emdgroup/maestro/commit/1e2855ebfdb695b301fb1dc6ef893cb58c64dad8))
+
+
+### Bug Fixes
+
+* **deps:** align katex override with direct dependency ([762fe66](https://github.com/emdgroup/maestro/commit/762fe666dcda2b39f60266a233c89fd0f2f0c8a4))
+
 ## [0.40.0](https://github.com/emdgroup/maestro/compare/v0.39.0...v0.40.0) (2026-10-29)
 
 
