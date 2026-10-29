@@ -141,13 +141,13 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
   if (worktree === null) return null;
 
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div className="flex flex-col h-full">
       {/* The gap below the bar belongs to the diff's inset, so it takes a matching one above
           rather than sitting high in its own band. */}
-      <div className={cn("shrink-0 bg-card", panel.inset && "pt-2")}>
+      <div className={cn("shrink-0", panel.inset && "pt-2")}>
         <DiffActionBar
           centerLabel={worktree.branch_name}
-          className="bg-card border-b-0"
+          className="border-b-0"
           leadingSlot={
             <>
               <FilePanelToggle

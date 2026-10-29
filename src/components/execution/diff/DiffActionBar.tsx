@@ -1,6 +1,7 @@
 import { DiffModeEnum } from "@git-diff-view/react";
 import { X, AlignJustify, Columns2, CheckCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
 import { Button } from "@/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 
@@ -36,7 +37,7 @@ export function DiffActionBar({
   return (
     <div
       className={cn(
-        "relative h-12 border-b border-border bg-muted/30 flex items-center px-4 shrink-0",
+        "relative h-12 border-b border-border flex items-center px-4 shrink-0",
         className,
       )}
     >
@@ -63,6 +64,8 @@ export function DiffActionBar({
           </div>
         )}
         <ToggleGroup
+          spacing={1}
+          className={SEGMENT_GROUP}
           value={[splitActive ? "split" : "unified"]}
           onValueChange={(values) => {
             if (values.includes("split")) {
@@ -72,15 +75,15 @@ export function DiffActionBar({
             }
           }}
         >
-          <ToggleGroupItem value="unified" size="sm" variant="outline" className="size-8 p-0">
+          <ToggleGroupItem value="unified" size="sm" className={cn(SEGMENT_ITEM, "w-7 px-0")}>
             <AlignJustify className="size-3.5" />
           </ToggleGroupItem>
-          <ToggleGroupItem value="split" size="sm" variant="outline" className="size-8 p-0">
+          <ToggleGroupItem value="split" size="sm" className={cn(SEGMENT_ITEM, "w-7 px-0")}>
             <Columns2 className="size-3.5" />
           </ToggleGroupItem>
         </ToggleGroup>
         {splitButtonNode}
-        <Button variant="ghost" size="sm" onClick={onClose}>
+        <Button variant="ghost" size="icon" className="size-7 rounded-full" onClick={onClose}>
           <X className="size-4" />
         </Button>
       </div>

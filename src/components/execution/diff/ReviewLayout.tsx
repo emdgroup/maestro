@@ -23,10 +23,10 @@ export function FilePanelToggle({ open, onToggle }: { open: boolean; onToggle: (
       <TooltipTrigger
         render={
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             aria-label={label}
-            className="size-8 p-0"
+            className="home-pane size-8 rounded-xl p-0"
             onClick={onToggle}
           />
         }
@@ -83,7 +83,7 @@ export function ReviewLayout({ panel, files, renderPanel, children }: ReviewLayo
       <div
         className={cn(
           "flex flex-col flex-1 min-h-0 border-t border-border bg-background overflow-hidden",
-          inset && "rounded-tl-xl border-l",
+          inset && "rounded-tl-[18px] border-l",
         )}
       >
         {children}
@@ -92,7 +92,7 @@ export function ReviewLayout({ panel, files, renderPanel, children }: ReviewLayo
   );
 
   return (
-    <div ref={containerRef} className="relative flex flex-1 min-h-0 bg-card">
+    <div ref={containerRef} className="relative flex flex-1 min-h-0">
       {inset ? (
         <ResizablePanelGroup
           orientation="horizontal"

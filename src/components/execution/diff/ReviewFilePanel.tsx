@@ -47,9 +47,9 @@ export function ReviewFilePanel({
   );
 
   return (
-    <div className={cn("flex flex-col min-h-0 bg-card", className)}>
+    <div className={cn("flex flex-col min-h-0", className)}>
       <div className="px-2 py-2 shrink-0">
-        <div className="flex items-center gap-1.5 h-7 px-2 rounded-md border border-border bg-background focus-within:border-ring transition-colors">
+        <div className="home-field flex items-center gap-1.5 h-7 px-2.5 rounded-lg">
           <Search className="size-3 shrink-0 text-muted-foreground" />
           <input
             value={search}
@@ -113,7 +113,7 @@ export function ReviewPanelOverlayShell({
   }, [onDismiss]);
 
   return (
-    <div className="absolute inset-0 z-30 flex flex-col min-h-0 border-r border-border bg-card">
+    <div className="absolute inset-0 z-30 flex flex-col min-h-0 border-r border-border bg-popover">
       {children}
     </div>
   );

@@ -432,13 +432,13 @@ export function TaskReviewPanel({
     diffFiles.some((f) => f.status === "M" || f.status === "A" || f.status === "D");
 
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div className="flex flex-col h-full">
       {/* Action Bar. The gap below it belongs to the diff's inset, so it takes a matching one
           above rather than sitting high in its own band. */}
-      <div className={cn("shrink-0 bg-card", panel.inset && "pt-2")}>
+      <div className={cn("shrink-0", panel.inset && "pt-2")}>
         <DiffActionBar
           centerLabel={task.title}
-          className="bg-card border-b-0"
+          className="border-b-0"
           leadingSlot={
             <>
               <FilePanelToggle
