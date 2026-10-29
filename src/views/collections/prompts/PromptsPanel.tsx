@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -212,15 +213,16 @@ function PromptColumn({
       ref={ref}
       aria-label={title}
       className={cn(
-        "usage-pane flex min-h-64 flex-col overflow-hidden rounded-[18px] transition-colors sm:min-h-0",
-        isDropTarget && "border-accent/70! bg-accent/10!",
+        // The task board's column: one glass pane that lights up whole under a drag.
+        "home-glass flex min-h-64 flex-col overflow-hidden rounded-[18px] transition-colors sm:min-h-0",
+        isDropTarget && "border-accent/70! bg-accent/10",
       )}
     >
-      <header className="flex items-start gap-2 border-b border-border bg-muted/30 px-4 py-3">
+      <header className="flex items-start gap-2 px-4 pt-3.5 pb-2.5">
         <div className="min-w-0 flex-1">
-          <h3 className="flex items-center gap-2 text-sm font-semibold">
+          <h3 className="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.025em]">
             {title}
-            <span className="rounded-full bg-muted px-1.5 text-[10px] font-medium text-muted-foreground">
+            <span className="text-[15px] font-semibold tabular-nums text-muted-foreground/50">
               {query.data?.length ?? 0}
             </span>
           </h3>
@@ -239,7 +241,7 @@ function PromptColumn({
           variant="ghost"
           size="icon-sm"
           aria-label={`New prompt in ${title.toLowerCase()}`}
-          className="-my-1 text-muted-foreground"
+          className="-my-1 rounded-full text-muted-foreground"
           onClick={onNew}
         >
           <Plus className="size-4" />
@@ -247,10 +249,7 @@ function PromptColumn({
       </header>
       <div
         data-testid={`prompts-${collection}`}
-        className={cn(
-          "flex-1 overflow-y-auto p-3 transition-colors",
-          isDropTarget && "bg-accent/10",
-        )}
+        className={cn("flex-1 overflow-y-auto px-2.5 pt-0.5 pb-2.5")}
       >
         {query.isError ? (
           <div className="flex flex-col items-center gap-2 p-5 text-center">
@@ -265,7 +264,7 @@ function PromptColumn({
             </Button>
           </div>
         ) : query.isPending ? null : prompts.length === 0 ? (
-          <div className="flex flex-col items-center gap-1 rounded-lg border border-dashed border-border p-5 text-center text-xs text-muted-foreground">
+          <div className="flex flex-col items-center gap-1 rounded-[14px] border-[1.5px] border-dashed border-foreground/18 p-5 text-center text-xs text-muted-foreground">
             {filtered && query.data.length > 0 ? (
               <p>No prompt matches.</p>
             ) : (
@@ -358,7 +357,7 @@ export function PromptsPanel({
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search prompts…"
             aria-label="Search prompts"
-            className="h-8 pl-8 text-xs"
+            className="home-field h-8 rounded-xl pl-8 text-xs"
           />
         </div>
         <ToggleGroup
@@ -368,14 +367,15 @@ export function PromptsPanel({
             if (next) setFilter(next as PromptFilter);
           }}
           aria-label="Show"
+          spacing={1}
+          className={SEGMENT_GROUP}
         >
           {FILTERS.map((option) => (
             <ToggleGroupItem
               key={option.value}
               value={option.value}
               size="sm"
-              variant="outline"
-              className="text-xs"
+              className={SEGMENT_ITEM}
             >
               {option.label}
             </ToggleGroupItem>

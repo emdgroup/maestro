@@ -29,7 +29,7 @@ export function SearchBox({
         }}
         placeholder={placeholder}
         aria-label={label}
-        className="h-8 px-8 text-xs"
+        className="home-field h-8 rounded-xl px-8 text-xs"
       />
       {value && (
         <Button
