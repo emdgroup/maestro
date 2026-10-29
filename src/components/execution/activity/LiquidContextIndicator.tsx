@@ -207,11 +207,8 @@ export function LiquidContextIndicator({
         sideOffset={8}
         onMouseEnter={handlePopoverMouseEnter}
         onMouseLeave={handlePopoverMouseLeave}
-        className={cn(
-          "w-64 p-3.5 flex flex-col gap-3",
-          "backdrop-blur-[4px] bg-popover/60 border-border/30",
-          "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)]",
-        )}
+        // The session cost hover card's glass, so the two meters' cards match.
+        className="w-64 p-3.5 flex flex-col gap-3 bg-card/75 dark:bg-card/25 backdrop-blur-[24px]"
       >
         {/* Header */}
         <div className="flex items-center justify-between">
