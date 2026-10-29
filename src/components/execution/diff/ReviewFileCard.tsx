@@ -123,10 +123,10 @@ export function ReviewFileCard({
   // told a file is viewed is not the same as being told to look at it.
   return (
     <div ref={ref} data-file-card={path} className="shrink-0 pt-3" onClick={onSelect}>
-      {/* Stuck flush to the top, with the gap above the card outside the sticky box: a strip of
-          the gap would have to hide what scrolls under it, which glass cannot. The header is opaque
-          for the same reason. */}
-      <div className="sticky top-0 z-10">
+      {/* Stuck a gap below the top, as the card sits when unscrolled. The scroller masks that gap
+          out (see `DiffFileStack`) rather than this box painting a strip over it: a strip would
+          have to be opaque, and the well behind it is glass. */}
+      <div className="sticky top-3 z-10">
         <div
           onClick={onToggleExpanded}
           className={cn(

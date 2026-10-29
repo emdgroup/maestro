@@ -454,7 +454,9 @@ export function DiffFileStack({
     <div
       ref={scrollContainerRef}
       data-slot="diff-stack-scroller"
-      className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 flex flex-col"
+      // The top 12px is masked out, so a stuck card header keeps the gap above it clear of the
+      // diff scrolling past, on a well that is glass and so cannot be painted over.
+      className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 flex flex-col [mask-image:linear-gradient(to_bottom,transparent_12px,black_12px)]"
     >
       {loading && (
         <div className="text-xs text-muted-foreground py-8 text-center animate-pulse">
