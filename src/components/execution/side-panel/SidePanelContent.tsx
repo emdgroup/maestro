@@ -341,16 +341,7 @@ export function SidePanelContent({
         const isActive = isSessionActive && activeTabId === id;
         const ptyEntry = kind === "terminal" && !acpTerminalId ? ptyState.get(id) : undefined;
         return (
-          <div
-            key={id}
-            // A canvas paints the theme's opaque background, so its tab drops the panel's glass
-            // rather than showing a mismatched block inside it.
-            className={cn(
-              "absolute inset-0",
-              kind === "canvas" && "bg-background",
-              !isActive && "hidden",
-            )}
-          >
+          <div key={id} className={cn("absolute inset-0", !isActive && "hidden")}>
             {kind === "overview" && (
               <OverviewPanel
                 subagentItems={subagentItems}
