@@ -39,7 +39,7 @@ export function Card({
         tabIndex={0}
         onClick={onClick}
         onKeyDown={(e) => e.key === "Enter" && onClick()}
-        className="home-pane rounded-[14px] overflow-hidden cursor-pointer"
+        className="glass-tile rounded-[14px] overflow-hidden cursor-pointer"
       >
         <div className="flex items-center gap-2.5 px-3 py-2.5">
           <div

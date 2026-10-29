@@ -96,7 +96,7 @@ export function CardSection({
   );
 }
 
-export const CARD = "home-pane group relative flex flex-col gap-2 rounded-[14px] p-4";
+export const CARD = "glass-tile group relative flex flex-col gap-2 rounded-[14px] p-4";
 
 /** A card for something listed but not managed here: Maestro's own, or the project's. */
 export function ListedCard({
@@ -115,7 +115,7 @@ export function ListedCard({
   footer: React.ReactNode;
 }) {
   return (
-    <div className="usage-pane flex flex-col gap-2 rounded-[14px] border-dashed! p-4">
+    <div className="glass-tile flex flex-col gap-2 rounded-[14px] border-dashed! p-4">
       <div className="flex items-center gap-2">
         {icon}
         <CardTitle title={title} href={href} />

@@ -148,7 +148,7 @@ export function PullRequestRow({ entry, projectId, now, poll, onAct }: PullReque
   ].filter((metric) => metric != null);
 
   return (
-    <div className="home-pane rounded-[14px] p-2.5">
+    <div className="glass-tile rounded-[14px] p-2.5">
       <div className="flex items-center gap-2">
         <Tooltip>
           <TooltipTrigger

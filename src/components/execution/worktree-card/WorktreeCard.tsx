@@ -93,7 +93,7 @@ export function WorktreeCard({
       aria-busy={deleting || undefined}
       aria-disabled={deleting || undefined}
       className={cn(
-        "home-pane relative group rounded-[14px] w-72 shrink-0 overflow-hidden",
+        "glass-tile relative group rounded-[14px] w-72 shrink-0 overflow-hidden",
         deleting ? "opacity-60 pointer-events-none" : "cursor-pointer",
       )}
     >

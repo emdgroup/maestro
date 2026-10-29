@@ -100,7 +100,7 @@ function PromptCard({
     <div
       ref={ref}
       className={cn(
-        "home-pane group relative flex flex-col gap-2 rounded-[14px] p-4",
+        "glass-tile group relative flex flex-col gap-2 rounded-[14px] p-4",
         isDragging && "border-dashed! opacity-30",
       )}
     >
