@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import { Dialog, DialogContent, DialogTitle, DialogHeader } from "@/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/ui/tabs";
-import { SEGMENT_LIST, SEGMENT_TRIGGER } from "@/components/kanban/shared/pill-styles";
+import { SEGMENT_LIST, SEGMENT_TRIGGER } from "@/lib/segmented";
 import {
   AlertDialog,
   AlertDialogAction,

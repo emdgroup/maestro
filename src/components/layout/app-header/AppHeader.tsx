@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import { LayoutDashboard, Bot, FolderGit2, Library, Settings } from "lucide-react";
 import { ThemeToggle } from "@/components/common/theme-toggle/ThemeToggle";
 import { AccentColorPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
-import { AccentBubbles } from "@/components/common/accent-bubbles/AccentBubbles";
 import type { Project } from "@/types/bindings";
 import type { ViewType } from "@/store/navigationStore";
 import { WindowControls } from "@/components/layout/window-chrome/WindowControls";
@@ -54,15 +53,6 @@ export function AppHeader({
       data-tauri-drag-region
       className="relative isolate grid grid-cols-[1fr_auto_1fr] h-[52px] shrink-0 items-center px-4 pb-1 gap-4"
     >
-      {/* Project-colour dressing: bubbles behind the accent gradient, both absolutely
-          positioned and -z-10, so the grid layout and the content above are untouched. The
-          Tasks view draws one tint across the whole window instead, as Home does (App.tsx). */}
-      {activeView !== "kanban" && (
-        <>
-          <AccentBubbles variant="header" className="-z-10" />
-          <span aria-hidden className="header-gradient -z-10" />
-        </>
-      )}
       {/* Left section: Home / connection / project */}
       <ProjectPath project={currentProject} />
 

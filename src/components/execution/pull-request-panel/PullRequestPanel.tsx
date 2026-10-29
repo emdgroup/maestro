@@ -91,7 +91,7 @@ export function PullRequestPanel({
     // whole point of the inset, rounded grid beside it. The header inside does keep its bottom
     // border — that one separates the filters from the list, not the panel from the view.
     // Width comes from the resizable panel that owns this, so there is none here.
-    <div className="flex h-full flex-col overflow-hidden bg-card">
+    <div className="flex h-full flex-col overflow-hidden">
       <div className="flex flex-col gap-2 p-3">
         <div className="flex items-center gap-2">
           <GitPullRequest className="size-3.5 text-muted-foreground" />

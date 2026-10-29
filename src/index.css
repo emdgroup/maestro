@@ -458,37 +458,28 @@
 }
 
 /* ── Project colour: accent gradient + rising bubbles ──
-   Used by the header bar and by the welcome screen. Both fade from an accent tint at the top
+   Behind Home and behind every project view: an accent tint fading from the top of the window
    to nothing at the bottom, with bubbles rising through. Everything reads the live --accent,
    so the whole assembly follows the selected project's colour with no extra wiring.
 
    Light needs heavier mixes than dark to land in the same place: its accent is oklch(50% …)
    against a 98% background, so the same alpha that glows on dark washes out on white. The
-   bubble body is also darkened slightly, otherwise the discs disappear into the page. The
-   screen tint is the exception in both themes — spread over a window rather than a 48px bar,
-   the header's mix is too heavy, so each is dialled back on its own. */
+   bubble body is also darkened slightly, otherwise the discs disappear into the page. */
 :root {
-  --header-tint: color-mix(in oklch, var(--accent) 34%, transparent);
   --screen-tint: color-mix(in oklch, var(--accent) 24%, transparent);
   --bubble-body: color-mix(in oklch, oklch(from var(--accent) calc(l - 0.04) c h) 55%, transparent);
   --bubble-hi: color-mix(in oklch, oklch(from var(--accent) calc(l + 0.14) c h) 60%, transparent);
 }
 .dark {
-  --header-tint: color-mix(in oklch, var(--accent) 24%, transparent);
   --screen-tint: color-mix(in oklch, var(--accent) 16%, transparent);
   --bubble-body: color-mix(in oklch, var(--accent) 36%, transparent);
   --bubble-hi: color-mix(in oklch, oklch(from var(--accent) calc(l + 0.09) c h) 46%, transparent);
 }
 
-.header-gradient,
 .screen-gradient {
   position: absolute;
   inset: 0;
   pointer-events: none;
-}
-
-.header-gradient {
-  background: linear-gradient(to bottom, var(--header-tint), transparent);
 }
 
 .screen-gradient {
@@ -498,8 +489,7 @@
 /* Across a whole window the tint changes by less than one 8-bit step per pixel, so its
    quantisation shows as horizontal bands. Fine noise dithers those edges away — masked to the
    gradient's own shape so no grain lands on the clean part of the page, and kept under 2%,
-   past which it reads as film grain rather than as a smoother gradient. The header gradient
-   needs none of this: over 48px the steps are too close together to separate. */
+   past which it reads as film grain rather than as a smoother gradient. */
 .screen-gradient::after {
   content: "";
   position: absolute;

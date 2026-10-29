@@ -44,8 +44,8 @@ function NavItem({
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex items-center gap-2 rounded-md px-2 py-1.5 text-left",
-        active ? "bg-accent/10 text-foreground" : "text-muted-foreground hover:bg-muted/50",
+        "flex items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-left",
+        active ? "bg-accent/10 text-foreground" : "text-muted-foreground hover:bg-foreground/7",
       )}
     >
       <Icon className={cn("size-3.5 shrink-0", active && "text-accent")} />
@@ -115,7 +115,7 @@ export function CollectionsView({
   }
 
   return (
-    <div className="flex h-full flex-col bg-card">
+    <div className="flex h-full flex-col">
       {/* No bottom border: the inset pane's own `border-t` is the seam, and it starts after the
           rounded corner so no line runs under the sidebar. */}
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 px-4">
@@ -124,7 +124,7 @@ export function CollectionsView({
           <Button
             variant="accent"
             size="sm"
-            className="h-8 bg-clip-border text-xs"
+            className="h-8 rounded-xl px-4 bg-clip-border text-xs"
             onClick={() => openSkillEditor(null)}
           >
             <Plus className="mr-1 size-3.5" />
@@ -134,7 +134,7 @@ export function CollectionsView({
           <Button
             variant="accent"
             size="sm"
-            className="h-8 bg-clip-border text-xs"
+            className="h-8 rounded-xl px-4 bg-clip-border text-xs"
             onClick={() => setMcpDraft({ editing: null, seed: null })}
           >
             <Plus className="mr-1 size-3.5" />
@@ -144,7 +144,7 @@ export function CollectionsView({
           <Button
             variant="accent"
             size="sm"
-            className="h-8 bg-clip-border text-xs"
+            className="h-8 rounded-xl px-4 bg-clip-border text-xs"
             onClick={() => openPromptEditor(null)}
           >
             <Plus className="mr-1 size-3.5" />
@@ -155,7 +155,7 @@ export function CollectionsView({
             <Button
               variant="accent"
               size="sm"
-              className="h-8 bg-clip-border text-xs"
+              className="h-8 rounded-xl px-4 bg-clip-border text-xs"
               onClick={() => openEditor(null)}
             >
               <Plus className="mr-1 size-3.5" />
@@ -165,7 +165,11 @@ export function CollectionsView({
               <DropdownMenuTrigger
                 aria-label="New automation from a template"
                 render={
-                  <Button variant="accent" size="sm" className="h-8 bg-clip-border px-1.5!" />
+                  <Button
+                    variant="accent"
+                    size="sm"
+                    className="h-8 rounded-r-xl! bg-clip-border px-1.5!"
+                  />
                 }
               >
                 <ChevronDown className="size-3.5" />
@@ -183,7 +187,7 @@ export function CollectionsView({
 
       <div className="flex min-h-0 flex-1">
         <nav className="flex w-56 shrink-0 flex-col gap-0.5 px-2 pb-3">
-          <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+          <p className="px-2.5 pb-1 text-[11px] uppercase tracking-[0.14em] text-muted-foreground/70">
             Collections
           </p>
           <NavItem
@@ -217,7 +221,7 @@ export function CollectionsView({
 
         {/* The inset surface is the panel's own, not this one's: it rounds away from the runs
             column when that is open, which this cannot know. Same shape as Worktrees. */}
-        <div className="flex min-h-0 flex-1 overflow-hidden bg-card">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
           {section === "skills" ? (
             <SkillsPanel
               connection={connection}

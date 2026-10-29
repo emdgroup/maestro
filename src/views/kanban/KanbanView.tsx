@@ -25,12 +25,9 @@ import { ArchiveModal } from "@/components/kanban/archive-modal/ArchiveModal";
 import { usePullRequestPoll } from "@/hooks/usePullRequestPoll";
 import { QueueCapacityBadge } from "@/components/kanban/QueueCapacityBadge";
 import { AutoModeToggle } from "@/components/kanban/AutoModeToggle";
+import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
 
 const EMPTY_TASKS: Task[] = [];
-
-/** One segment of the run-mode switch, drawn as Home's `Segmented`. */
-const SEGMENT =
-  "h-6 rounded-lg px-2.5 text-xs text-muted-foreground hover:bg-transparent aria-pressed:bg-card/90 aria-pressed:text-foreground aria-pressed:shadow-sm";
 
 export const KanbanView: React.FC = () => {
   const activeTaskId = useActiveTaskId();
@@ -238,20 +235,20 @@ export const KanbanView: React.FC = () => {
         <ToggleGroup
           aria-label="How tasks run"
           spacing={1}
-          className="rounded-xl border border-foreground/10 bg-background/45 p-[3px]"
+          className={SEGMENT_GROUP}
           value={[runMode ?? "All"]}
           onValueChange={(values) => {
             const picked = values.find((v) => v !== (runMode ?? "All"));
             if (picked) setRunMode(picked === "All" ? null : (picked as RunMode));
           }}
         >
-          <ToggleGroupItem value="All" size="sm" className={SEGMENT}>
+          <ToggleGroupItem value="All" size="sm" className={SEGMENT_ITEM}>
             All
           </ToggleGroupItem>
-          <ToggleGroupItem value="Pipeline" size="sm" className={SEGMENT}>
+          <ToggleGroupItem value="Pipeline" size="sm" className={SEGMENT_ITEM}>
             Pipeline
           </ToggleGroupItem>
-          <ToggleGroupItem value="Loop" size="sm" className={SEGMENT}>
+          <ToggleGroupItem value="Loop" size="sm" className={SEGMENT_ITEM}>
             <Repeat className="size-3" />
             Loops
           </ToggleGroupItem>

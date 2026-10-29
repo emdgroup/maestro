@@ -179,7 +179,7 @@ export function ExecutionSidePanel({
   return (
     <div
       className={cn(
-        "flex flex-col bg-card overflow-hidden",
+        "flex flex-col overflow-hidden",
         fill
           ? "h-full w-full"
           : collapsed

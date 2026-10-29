@@ -627,7 +627,7 @@ export function AgentMonitor({
           if (e.propertyName === "width") setRailExpanded(e.currentTarget.matches(":hover"));
         }}
         onMouseLeave={() => setRailExpanded(false)}
-        className="group session-sidebar flex flex-col bg-card shrink-0 overflow-hidden transition-[width] duration-220 [transition-timing-function:cubic-bezier(0.4,0,0.2,1)]"
+        className="group session-sidebar flex flex-col shrink-0 overflow-hidden transition-[width] duration-220 [transition-timing-function:cubic-bezier(0.4,0,0.2,1)]"
       >
         <SidebarContent className="gap-0">
           {filteredSessions.length === 0 && (
@@ -685,7 +685,7 @@ export function AgentMonitor({
           ))}
 
         {selectedSession?.execution_mode !== "acp" && selectedSession != null && (
-          <div className="flex-1 flex flex-col min-h-0 bg-card">
+          <div className="flex-1 flex flex-col min-h-0">
             <div className="flex flex-col flex-1 min-h-0 p-[8px_7px_0]">
               <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border bg-background overflow-hidden">
                 {renderSessionHeader(selectedSession)}
@@ -702,7 +702,7 @@ export function AgentMonitor({
           </div>
         )}
         {!selectedSession && (
-          <div className="flex-1 flex flex-col min-h-0 bg-card">
+          <div className="flex-1 flex flex-col min-h-0">
             <div className="flex flex-col flex-1 min-h-0 p-[8px_7px_0]">
               <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border bg-background overflow-hidden">
                 <Empty>

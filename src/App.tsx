@@ -313,15 +313,11 @@ function App() {
       <ShortcutHintProvider>
         {/* Named so the view transition from Home morphs the project's tile into this window. */}
         <div className="app relative isolate flex flex-col h-screen bg-background [view-transition-name:project-zoom]">
-          {/* The Tasks view sits on Home's screen: one accent tint and its bubbles from the top of
-              the window down, behind the header and the board alike. Other views still have the
-              header's own strip. */}
-          {activeTab === "kanban" && (
-            <>
-              <AccentBubbles variant="screen" className="-z-10" />
-              <span aria-hidden className="screen-gradient -z-10" />
-            </>
-          )}
+          {/* Every view sits on Home's screen: one accent tint and its bubbles from the top of the
+              window down, behind the header and the view alike. Each view's outer layer is
+              transparent over it, and only its inner panels are opaque. */}
+          <AccentBubbles variant="screen" className="-z-10" />
+          <span aria-hidden className="screen-gradient -z-10" />
           <AppHeader
             currentProject={currentProject}
             activeView={activeTab}
@@ -329,15 +325,7 @@ function App() {
             onOpenSettings={openSettings}
             connectionQuiet={connectionHealth === "quiet"}
           />
-          {/* A haze of the panes' own colour rising into the header's bottom strip, so the tinted
-              header and the card-coloured panes meet without a hard edge. Tasks has no pane colour to
-              blend, so it goes without. */}
-          <main
-            className={cn(
-              "relative flex-1 overflow-hidden",
-              activeTab !== "kanban" && "shadow-[0_-2px_5px_var(--card)]",
-            )}
-          >
+          <main className="relative flex-1 overflow-hidden">
             {/* Slides up or down when the window switches project; `main` clips it. */}
             <motion.div animate={projectControls} className="absolute inset-0">
               {/* Agents View — always mounted, imperative animation */}

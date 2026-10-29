@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/ui/dialog";
 import { Input } from "@/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
-import { SEGMENT_LIST, SEGMENT_TRIGGER } from "@/components/kanban/shared/pill-styles";
+import { SEGMENT_LIST, SEGMENT_TRIGGER } from "@/lib/segmented";
 import { Button } from "@/ui/button";
 import { useTasksQuery } from "@/services/task.service";
 import { useNavigationActions } from "@/store/navigationStore";

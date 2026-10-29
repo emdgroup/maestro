@@ -926,7 +926,12 @@ export function AgentActivityPanel({
           disabled={maximized}
           className="relative flex-1 min-h-0 overflow-hidden"
         >
-          <ResizablePanel minSize="42rem" className="flex flex-col min-h-0 overflow-hidden bg-card">
+          <ResizablePanel
+            minSize="42rem"
+            // Hidden under a maximized side panel, which floats over this one and is transparent
+            // outside its own inset well.
+            className={cn("flex flex-col min-h-0 overflow-hidden", maximized && "invisible")}
+          >
             <div className="flex flex-col flex-1 min-h-0">
               <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border bg-background overflow-hidden">
                 {headerSlot}
@@ -935,17 +940,18 @@ export function AgentActivityPanel({
             </div>
           </ResizablePanel>
           {/*
-          Draggable but not drawn. It takes the panels' own background rather than
-          `bg-transparent`, which would leave a 1px slot showing the view behind the
-          group — a thin dark line, and a hook where the stream card's rounded corner
-          curves away from it. Collapsed or maximized there is nothing to drag
-          between, so it goes away entirely; `disabled` is what suppresses the drag
+          Draggable but not drawn: transparent, like the panels either side of it, so the
+          window's tint runs through the slot. Collapsed or maximized there is nothing to
+          drag between, so it goes away entirely; `disabled` is what suppresses the drag
           target, since the library falls back to the panel edge when a separator is
           missing.
         */}
           <ResizableHandle
             disabled={sidePanelCollapsed || maximized}
-            className={cn("bg-card hover:bg-card", (sidePanelCollapsed || maximized) && "hidden")}
+            className={cn(
+              "bg-transparent hover:bg-transparent",
+              (sidePanelCollapsed || maximized) && "hidden",
+            )}
           />
           <ResizablePanel
             elementRef={sidePanelElementRef}

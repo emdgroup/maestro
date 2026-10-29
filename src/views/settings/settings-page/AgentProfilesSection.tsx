@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, Bot, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
-import { SEGMENT_LIST, SEGMENT_TRIGGER } from "@/components/kanban/shared/pill-styles";
+import { SEGMENT_LIST, SEGMENT_TRIGGER } from "@/lib/segmented";
 import { Textarea } from "@/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { AgentConfigFields } from "@/components/common/agent-config/AgentConfigFields";

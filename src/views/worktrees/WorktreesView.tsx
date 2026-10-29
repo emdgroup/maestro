@@ -4,6 +4,7 @@ import { useShortcuts } from "@/hooks/useShortcuts";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { ChevronsUpDown, GitBranch, Plus, RefreshCw, Scissors, SearchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Spinner } from "@/ui/spinner";
@@ -354,14 +355,14 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
     // `bg-card` all the way up, so the toolbar and the pull request column are one surface and the
     // grid is the inset island on it. The toolbar's own tint is gone: it was a band across the top
     // of both columns, which is the seam this layout exists to remove.
-    <div className="flex flex-col h-full bg-card">
+    <div className="flex flex-col h-full">
       {/* Action bar — full width, above both columns. It carries no bottom border of its own: the
           inset grid below draws that line and rounds away from the pull request column, and the
           absence of one over the column is what lets the two read as a single surface. */}
       <div className="h-12 flex items-center justify-between px-4 gap-2 shrink-0">
         <div className="flex items-center gap-2">
           <ShortcutHint shortcutId="focus-search">
-            <InputGroup>
+            <InputGroup className="home-field w-48 rounded-xl">
               <InputGroupInput
                 ref={searchInputRef}
                 type="text"
@@ -375,14 +376,14 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
               </InputGroupAddon>
             </InputGroup>
           </ShortcutHint>
-          <ToggleGroup variant="outline" size="sm" value={[statusFilter]}>
+          <ToggleGroup spacing={1} size="sm" value={[statusFilter]} className={SEGMENT_GROUP}>
             {STATUS_FILTERS.map((f) => (
               <ToggleGroupItem
                 key={f}
                 value={f}
                 pressed={statusFilter === f}
                 onClick={() => setStatusFilter(f)}
-                className="text-xs px-3"
+                className={SEGMENT_ITEM}
               >
                 {f}
               </ToggleGroupItem>
@@ -397,7 +398,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className="h-8 w-8"
+                    className="h-8 w-8 rounded-xl"
                     disabled={isRefreshing}
                     onClick={() => void refresh(true)}
                   />
@@ -412,14 +413,19 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
             <Button
               variant="ghost"
               size="sm"
-              className="h-8"
+              className="home-pane h-8 gap-2 rounded-xl px-3.5 text-xs font-medium"
               onClick={() => setShowPruneDialog(true)}
             >
               <Scissors className="w-3.5 h-3.5 mr-1" />
               <span className="text-xs">Prune branches ({prunableBranches.length})</span>
             </Button>
           )}
-          <Button variant="ghost" size="sm" className="h-8" onClick={toggleAll}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="home-pane h-8 gap-2 rounded-xl px-3.5 text-xs font-medium"
+            onClick={toggleAll}
+          >
             <ChevronsUpDown className="w-3.5 h-3.5 mr-1" />
             <span className="text-xs">Collapse all</span>
           </Button>
@@ -427,7 +433,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
             <Button
               variant="accent"
               size="sm"
-              className="h-8 text-xs bg-clip-border"
+              className="h-8 rounded-xl px-4 text-xs bg-clip-border"
               onClick={() => setShowCreateDialog(true)}
             >
               <Plus className="w-3.5 h-3.5 mr-1" />
@@ -437,7 +443,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-hidden bg-card">
+      <div className="flex-1 min-h-0 overflow-hidden">
         <ResizablePanelGroup orientation="horizontal" className="h-full">
           <ResizablePanel minSize="28rem" className="flex h-full min-w-0 flex-col">
             {/* The inset surface, shaped like the Agents view's: rounded at both top corners and

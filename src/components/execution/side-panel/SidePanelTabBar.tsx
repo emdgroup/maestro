@@ -82,7 +82,7 @@ export function SidePanelTabBar({
   }, [activeTabId, scrollRef]);
 
   return (
-    <div className="flex items-center shrink-0 bg-card px-2 py-1.5 gap-2">
+    <div className="flex items-center shrink-0 px-2 py-1.5 gap-2">
       {!maximized && (
         <Tooltip>
           <TooltipTrigger
@@ -95,7 +95,7 @@ export function SidePanelTabBar({
           <TooltipContent>Collapse panel</TooltipContent>
         </Tooltip>
       )}
-      <div className="flex items-center bg-muted rounded-lg p-0.75 gap-1 flex-1 min-w-0">
+      <div className="flex items-center rounded-xl border border-foreground/10 bg-background/45 p-0.75 gap-1 flex-1 min-w-0">
         <div
           ref={scrollRef}
           style={maskStyle}
