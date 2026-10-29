@@ -13,7 +13,7 @@ export function LoopWaitCapSection({ projectId }: { projectId: number }) {
   if (cap === undefined) return null;
 
   return (
-    <div className="rounded-lg border border-border p-4 space-y-2">
+    <div className="rounded-2xl border border-foreground/7 bg-background/50 p-4 space-y-2">
       <h4 className="text-sm font-semibold">Waiting on you</h4>
       <div className="flex items-center gap-3">
         <Label htmlFor="loop-wait-cap" className="text-sm font-medium">

@@ -91,8 +91,9 @@ export function SettingsPage({
     <div className={cn("h-full overflow-hidden", framed && "p-4")}>
       <div
         className={cn(
-          "mx-auto flex h-full flex-col overflow-hidden bg-card",
-          framed && "max-w-6xl rounded-xl border border-border shadow-xs",
+          "mx-auto flex h-full flex-col overflow-hidden",
+          // In a dialog the surface is the dialog's glass, so it paints nothing of its own.
+          framed && "max-w-6xl rounded-xl border border-border bg-card shadow-xs",
         )}
       >
         {/* No bottom border: the inset pane's own `border-t` is the seam, and it starts after
@@ -112,12 +113,12 @@ export function SettingsPage({
             projectLabel={projectLabel}
           />
 
-          {/* Recessed to `bg-background`: the section cards inside are `bg-card`, so on a
-              card-coloured well they would have no surface to sit on. */}
-          <div className="min-h-0 flex-1 overflow-y-auto rounded-tl-xl border-t border-l border-border bg-background">
+          {/* A translucent well inset behind a rounded corner, on the dialog's glass; the section
+              cards inside are Home's panes on it. */}
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-tl-[18px] border-t border-l border-foreground/9 bg-background/40">
             <div className="mx-auto max-w-2xl p-6">
               <div className="mb-6">
-                <h1 className="text-2xl font-semibold text-foreground">
+                <h1 className="text-2xl font-semibold tracking-[-0.025em] text-foreground">
                   {active?.label ?? "Settings"}
                 </h1>
                 <p className="mt-1 text-sm text-muted-foreground">

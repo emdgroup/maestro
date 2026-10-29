@@ -22,11 +22,10 @@ export function OptionTile({ selected, onSelect, className, children }: OptionTi
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
+      data-selected={selected}
       className={cn(
-        "relative rounded-md border p-3 transition-colors cursor-pointer",
-        selected
-          ? "border-accent bg-accent/10 text-foreground"
-          : "border-border bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground",
+        "home-pane relative rounded-xl p-3 cursor-pointer",
+        selected ? "text-foreground" : "text-muted-foreground hover:text-foreground",
         className,
       )}
     >

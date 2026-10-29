@@ -32,12 +32,12 @@ function AgentAuthRow({ agent, isDefault, onSetDefault, connection }: AgentAuthR
   return (
     <div
       className={cn(
-        "group flex items-center gap-2 py-2 px-3 rounded-lg border transition-colors",
+        "group flex items-center gap-2 py-2 px-3 rounded-xl border transition-colors",
         // The same accent treatment `AgentProfilesSection`'s default profile card uses, so the two
         // cards on this page mark "this is the one in force" the same way.
         isDefault
           ? "cursor-default border-accent/60 bg-accent/5"
-          : "cursor-pointer border-border bg-muted/20 hover:bg-muted/40 hover:border-accent/20",
+          : "cursor-pointer border-foreground/7 bg-background/50 hover:bg-background/84 hover:border-foreground/14",
       )}
       onClick={() => {
         if (!isDefault) onSetDefault();
@@ -111,7 +111,7 @@ export function AgentDefaultsSection({
   connection,
 }: AgentDefaultsSectionProps) {
   return (
-    <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+    <div className="rounded-2xl border border-foreground/7 bg-background/50 p-4 space-y-4">
       <div>
         <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
           <Bot className="w-4 h-4 text-muted-foreground" />

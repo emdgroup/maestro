@@ -57,7 +57,7 @@ export function UpdateStrip({ padEnd = false }: { padEnd?: boolean }) {
   return (
     <div
       className={cn(
-        "flex h-12 shrink-0 items-center gap-3 bg-card pl-4 pr-4",
+        "flex h-12 shrink-0 items-center gap-3 pl-4 pr-4",
         // A host that overlays its own control in this corner — the picker's dialog puts its
         // close button there — needs the bar to stop short of it.
         padEnd && "pr-14",

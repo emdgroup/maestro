@@ -40,7 +40,7 @@ export function SettingsSidebar({
   return (
     // No right border: the content pane's own `border-l` is the seam, so the sidebar sits on
     // the same card surface as the header bar above it.
-    <div className="flex w-56 shrink-0 flex-col bg-card">
+    <div className="flex w-56 shrink-0 flex-col">
       <div className="p-3">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -50,7 +50,7 @@ export function SettingsSidebar({
             onChange={(e) => onQueryChange(e.target.value)}
             placeholder="Search settings…"
             aria-label="Search settings"
-            className="h-8 pl-8 text-xs"
+            className="home-field h-8 rounded-xl pl-8 text-xs"
           />
         </div>
       </div>
@@ -69,7 +69,7 @@ export function SettingsSidebar({
 
             return (
               <div key={scope} className="mb-3 last:mb-0">
-                <p className="truncate px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                <p className="truncate px-2.5 pb-1 pt-2 text-[11px] uppercase tracking-[0.14em] text-muted-foreground/70">
                   {headingFor(scope)}
                 </p>
                 <div className="space-y-0.5">
@@ -83,10 +83,10 @@ export function SettingsSidebar({
                         onClick={() => onSelect(page.id)}
                         aria-current={isActive ? "page" : undefined}
                         className={cn(
-                          "flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+                          "flex w-full items-start gap-2 rounded-[10px] px-2.5 py-1.5 text-left transition-colors",
                           isActive
                             ? "bg-accent/10 text-foreground"
-                            : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+                            : "text-muted-foreground hover:bg-foreground/7 hover:text-foreground",
                         )}
                       >
                         {/* The tint alone is easy to miss at this size, so the icon carries the

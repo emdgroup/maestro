@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, Bot, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
+import { SEGMENT_LIST, SEGMENT_TRIGGER } from "@/components/kanban/shared/pill-styles";
 import { Textarea } from "@/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { AgentConfigFields } from "@/components/common/agent-config/AgentConfigFields";
@@ -174,8 +175,8 @@ function ProfileRow({
     <div
       onBlur={onCommit}
       className={cn(
-        "rounded-md border p-3 space-y-3",
-        isDefault ? "border-accent/60 bg-accent/5" : "border-border",
+        "rounded-xl border p-3 space-y-3",
+        isDefault ? "border-accent/60 bg-accent/5" : "border-foreground/7 bg-background/50",
       )}
     >
       <div className="flex items-center gap-3">
@@ -216,7 +217,7 @@ function ProfileRow({
       </div>
 
       {open && (
-        <div className="space-y-3 border-t border-border pt-3">
+        <div className="space-y-3 border-t border-foreground/9 pt-3">
           <label className="block space-y-1 text-xs text-muted-foreground">
             Name
             <Input
@@ -272,9 +273,9 @@ function StageButton({
       aria-pressed={selected}
       aria-label={`${entry.stage}: ${runs.text}`}
       className={cn(
-        "min-w-0 flex-1 rounded-lg border px-3 py-2.5 text-left transition-colors",
+        "min-w-0 flex-1 rounded-xl border border-foreground/7 bg-background/50 px-3 py-2.5 text-left transition-colors",
         runs.kind === "skip" && "border-dashed text-muted-foreground",
-        selected ? "border-accent bg-accent/10 ring-1 ring-accent/40" : "hover:bg-muted",
+        selected ? "border-accent bg-accent/10 ring-1 ring-accent/40" : "hover:bg-background/84",
       )}
     />
   );
@@ -554,7 +555,7 @@ export function AgentProfilesSection({
   );
 
   return (
-    <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+    <div className="rounded-2xl border border-foreground/7 bg-background/50 p-4 space-y-4">
       <div>
         <h3 className="text-sm font-semibold flex items-center gap-2">
           <Bot className="size-4" />
@@ -573,9 +574,13 @@ export function AgentProfilesSection({
             setEditing(null);
           }}
         >
-          <TabsList>
-            <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
-            <TabsTrigger value="loop">Loops</TabsTrigger>
+          <TabsList className={SEGMENT_LIST}>
+            <TabsTrigger value="pipeline" className={SEGMENT_TRIGGER}>
+              Pipeline
+            </TabsTrigger>
+            <TabsTrigger value="loop" className={SEGMENT_TRIGGER}>
+              Loops
+            </TabsTrigger>
           </TabsList>
         </Tabs>
         <p className="text-xs text-muted-foreground">{MODES[mode].help}</p>
@@ -614,7 +619,10 @@ export function AgentProfilesSection({
         </div>
       )}
 
-      <section aria-label={entry.title} className="rounded-lg border border-border p-4 space-y-3">
+      <section
+        aria-label={entry.title}
+        className="rounded-2xl border border-foreground/7 bg-background/50 p-4 space-y-3"
+      >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h4 className="text-sm font-semibold">{entry.title}</h4>
@@ -634,7 +642,7 @@ export function AgentProfilesSection({
         </div>
 
         {forRole.length === 0 ? (
-          <p className="rounded-md bg-muted/60 px-3 py-2.5 text-xs">
+          <p className="rounded-xl bg-foreground/5 px-3 py-2.5 text-xs">
             <span className="font-medium">No profile.</span> {entry.noneText}
           </p>
         ) : (

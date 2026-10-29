@@ -157,7 +157,7 @@ export function IssueTrackingSection({
   }
 
   return (
-    <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+    <div className="rounded-2xl border border-foreground/7 bg-background/50 p-4 space-y-4">
       <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
         <CircleDot className="w-4 h-4 text-muted-foreground" />
         Issue Tracking
@@ -184,7 +184,7 @@ export function IssueTrackingSection({
       ) : (
         <>
           {detectedUnconnected && (
-            <div className="flex items-center gap-3 rounded-lg border border-dashed border-border/70 p-3">
+            <div className="flex items-center gap-3 rounded-xl border border-dashed border-foreground/18 p-3">
               <BrandIcon slug={detectedUnconnected.provider} className="w-5 h-5 shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">
@@ -220,7 +220,7 @@ export function IssueTrackingSection({
                   // for the rest `saveNow` waits until the form below is complete.
                   saveNow(integration, issueTrackingFields);
                 }}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-card hover:bg-muted/50 transition-colors"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-foreground/7 bg-background/50 hover:bg-background/84 transition-colors"
               >
                 <div className="relative shrink-0">
                   <BrandIcon slug={integration.provider} className="w-4 h-4" />
@@ -249,7 +249,7 @@ export function IssueTrackingSection({
           </div>
 
           {pickerOpen && (
-            <div className="rounded-lg border border-border p-3">
+            <div className="rounded-xl border border-foreground/9 p-3">
               <p className="text-xs text-muted-foreground mb-2">Select a provider to connect</p>
               <div className="grid grid-cols-4 gap-2">
                 {ISSUE_PROVIDERS.map((provider) => (
@@ -257,7 +257,7 @@ export function IssueTrackingSection({
                     key={provider}
                     type="button"
                     onClick={() => setConnectProvider(provider)}
-                    className="flex flex-col items-center gap-1.5 p-2 rounded-lg border border-border bg-card hover:bg-muted/50 hover:border-accent transition-colors"
+                    className="flex flex-col items-center gap-1.5 p-2 rounded-xl border border-foreground/7 bg-background/50 hover:bg-background/84 hover:border-accent transition-colors"
                   >
                     <BrandIcon slug={provider} className="w-6 h-6" />
                     <span className="text-xs font-medium text-center leading-tight">

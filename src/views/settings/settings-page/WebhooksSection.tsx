@@ -28,7 +28,7 @@ export function WebhooksSection({ connection }: { connection: ConnectionKey }) {
   const exposed = current.bind_address !== "127.0.0.1" && current.bind_address !== "::1";
 
   return (
-    <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+    <div className="rounded-2xl border border-foreground/7 bg-background/50 p-4 space-y-4">
       <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
         <Webhook className="w-4 h-4 text-muted-foreground" />
         Webhooks

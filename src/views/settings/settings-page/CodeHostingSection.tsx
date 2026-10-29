@@ -44,10 +44,7 @@ function RemoteSelect({
       value={value ?? AUTO_REMOTE}
       onValueChange={(next) => onChange(next === AUTO_REMOTE ? null : next)}
     >
-      <SelectTrigger
-        id="git-remote"
-        className="w-full border-border bg-transparent shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted"
-      >
+      <SelectTrigger id="git-remote" className="w-full home-field rounded-xl shadow-none">
         <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
           <Cloud className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate text-sm">{value ?? "Auto-detect"}</span>
@@ -161,7 +158,7 @@ export function CodeHostingSection({
   const reason = unreachableReason(status.landing_mode, status);
 
   return (
-    <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+    <div className="rounded-2xl border border-foreground/7 bg-background/50 p-4 space-y-4">
       <div>
         <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
           <Cloud className="w-4 h-4 text-muted-foreground" />
@@ -198,7 +195,7 @@ export function CodeHostingSection({
           {/* Where the choice above lands, resolved. The URL rather than just the name, because
               a name says nothing about which server it reaches, which is the whole question on a
               machine with several accounts. */}
-          <div className="rounded-lg border border-border bg-muted/20 px-3 py-2 space-y-0.5">
+          <div className="rounded-xl border border-foreground/9 bg-foreground/3 px-3 py-2 space-y-0.5">
             <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               {status.remote}
             </div>
@@ -266,7 +263,7 @@ export function CodeHostingSection({
           {/* See `WorkspaceModeSelect` on why the height override has to carry the size variant. */}
           <SelectTrigger
             id="landing-mode"
-            className="w-full data-[size=default]:h-auto py-2 px-3 border-border bg-transparent shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted"
+            className="w-full data-[size=default]:h-auto py-2 px-3 home-field rounded-xl shadow-none"
           >
             <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
               <SelectedIcon className="size-3.5 shrink-0 text-muted-foreground" />
