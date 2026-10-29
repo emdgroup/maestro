@@ -274,7 +274,7 @@ export function PlanAnnotationLayer({
     <div className={cn("flex flex-col min-h-0", className)}>
       {/* One right-hand slot. The hint is an affordance rather than a status, so it sits where
           the control that supersedes it will appear instead of being stranded opposite it. */}
-      <div className="flex items-center justify-end h-10 px-2 border-b border-border bg-card/50 shrink-0">
+      <div className="flex items-center justify-end h-10 px-2 border-b border-accent/22 bg-card/50 shrink-0">
         {annotations.length === 0 ? (
           <span className="text-[11px] text-muted-foreground truncate">
             Select any text to annotate the plan

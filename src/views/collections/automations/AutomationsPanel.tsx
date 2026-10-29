@@ -439,7 +439,7 @@ export function AutomationsPanel({
         <Tabs
           value={tab}
           onValueChange={(value) => onTabChange(value as AutomationsTab)}
-          className="shrink-0 border-b border-border px-4 pt-2"
+          className="shrink-0 border-b border-accent/22 px-4 pt-2"
         >
           <TabsList variant="line">
             <TabsTrigger value="dashboard" className="text-xs">

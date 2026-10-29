@@ -255,7 +255,7 @@ export function ReviewChangesPanelCompact({
       </div>
 
       {truncationInfo && (
-        <div className="flex items-start gap-2 px-3 py-2 border-b border-border bg-amber-500/5 text-amber-400 shrink-0">
+        <div className="flex items-start gap-2 px-3 py-2 border-b border-accent/22 bg-amber-500/5 text-amber-400 shrink-0">
           <TriangleAlert className="w-3.5 h-3.5 mt-0.5 shrink-0" />
           <div className="flex flex-col gap-0.5 text-xs">
             <span className="font-medium">Diff too large, partial view</span>
