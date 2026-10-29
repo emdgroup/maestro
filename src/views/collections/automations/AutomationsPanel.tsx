@@ -435,7 +435,7 @@ export function AutomationsPanel({
     <div className="flex h-full min-w-0 flex-1">
       {/* Its own top edge, rounding away from Recent runs on its right and the sidebar on its left.
           Recent runs stays beside both tabs, so switching moves nothing but this pane's body. */}
-      <div className="flex h-full min-w-0 flex-1 flex-col rounded-t-xl border-x border-t border-border bg-background">
+      <div className="flex h-full min-w-0 flex-1 flex-col rounded-t-xl border-x border-t border-border inner-glass">
         <Tabs
           value={tab}
           onValueChange={(value) => onTabChange(value as AutomationsTab)}

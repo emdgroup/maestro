@@ -1281,6 +1281,14 @@
   --usage-token-type-4: #a16207;
   --usage-token-type-5: #94a3b8;
 }
+/* The inner panel of a project tab (the agent stream, a collection, the worktree grid): the
+   page's background, see-through enough for the tint and bubbles to show, blurred so the text
+   on it stays readable. Plain CSS so it outranks the panel's own `bg-*` utility. */
+.inner-glass {
+  background: color-mix(in oklab, var(--background) 60%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+}
 /* A pane that holds a chart: the `home-pane` look without its hover lift. */
 .usage-pane {
   background: color-mix(in oklab, var(--background) 50%, transparent);

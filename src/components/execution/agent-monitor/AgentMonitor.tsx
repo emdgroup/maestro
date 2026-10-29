@@ -463,7 +463,7 @@ export function AgentMonitor({
   const selectedSession = sessions.find((s) => s.session_id === selectedSessionId);
 
   const renderSessionHeader = (session: ActiveSessionInfo) => (
-    <div className="px-4 py-3 border-b border-border bg-background shrink-0">
+    <div className="px-4 py-3 border-b border-border shrink-0">
       <div className="flex items-center justify-between gap-2">
         {session.execution_mode === "acp" && session.agent_id ? (
           <Tooltip>
@@ -687,7 +687,7 @@ export function AgentMonitor({
         {selectedSession?.execution_mode !== "acp" && selectedSession != null && (
           <div className="flex-1 flex flex-col min-h-0">
             <div className="flex flex-col flex-1 min-h-0 p-[8px_7px_0]">
-              <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border bg-background overflow-hidden">
+              <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border inner-glass overflow-hidden">
                 {renderSessionHeader(selectedSession)}
                 <div className="relative flex-1 min-h-0">
                   <div className="absolute inset-0">
@@ -704,7 +704,7 @@ export function AgentMonitor({
         {!selectedSession && (
           <div className="flex-1 flex flex-col min-h-0">
             <div className="flex flex-col flex-1 min-h-0 p-[8px_7px_0]">
-              <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border bg-background overflow-hidden">
+              <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border inner-glass overflow-hidden">
                 <Empty>
                   <EmptyDescription>Select a session to view its activity</EmptyDescription>
                 </Empty>

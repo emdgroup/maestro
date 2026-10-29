@@ -933,7 +933,7 @@ export function AgentActivityPanel({
             className={cn("flex flex-col min-h-0 overflow-hidden", maximized && "invisible")}
           >
             <div className="flex flex-col flex-1 min-h-0">
-              <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border bg-background overflow-hidden">
+              <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border inner-glass overflow-hidden">
                 {headerSlot}
                 {streamContent}
               </div>

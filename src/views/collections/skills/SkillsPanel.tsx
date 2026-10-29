@@ -344,7 +344,7 @@ export function SkillsPanel({
   );
 
   return (
-    <div className="mr-[7px] flex h-full min-w-0 flex-1 flex-col gap-5 overflow-y-auto rounded-t-xl border-x border-t border-border bg-background p-4">
+    <div className="mr-[7px] flex h-full min-w-0 flex-1 flex-col gap-5 overflow-y-auto rounded-t-xl border-x border-t border-border inner-glass p-4">
       <SearchBox
         value={query}
         onChange={setQuery}

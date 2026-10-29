@@ -349,7 +349,7 @@ export function PromptsPanel({
   );
 
   return (
-    <div className="mr-[7px] flex h-full min-w-0 flex-1 flex-col gap-3 overflow-y-auto rounded-t-xl border-x border-t border-border bg-background p-4 sm:overflow-hidden">
+    <div className="mr-[7px] flex h-full min-w-0 flex-1 flex-col gap-3 overflow-y-auto rounded-t-xl border-x border-t border-border inner-glass p-4 sm:overflow-hidden">
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
