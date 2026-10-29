@@ -86,7 +86,7 @@ export function ArtifactsPanel({
   return (
     <div className="relative flex flex-col h-full min-h-0">
       {/* Header */}
-      <div className="flex items-center h-10 px-2 border-b border-accent/22 bg-card/50 shrink-0 gap-1">
+      <div className="flex items-center h-10 px-2 border-b border-accent/10 bg-card/50 shrink-0 gap-1">
         <Tooltip>
           <TooltipTrigger
             type="button"

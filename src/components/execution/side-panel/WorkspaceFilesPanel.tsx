@@ -331,13 +331,13 @@ export function WorkspaceFilesPanel({
   const body = showsEditorSurface ? (
     <div ref={editAreaRef} data-slot="markdown-edit-area" className="flex-1 flex flex-col min-h-0">
       {mode === "edit" && isProcessing && (
-        <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-muted-foreground bg-muted/40 border-b border-accent/22 shrink-0">
+        <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-muted-foreground bg-muted/40 border-b border-accent/10 shrink-0">
           <TriangleAlert className="w-3 h-3 shrink-0" />
           The agent is running and may write to this file. Your save will check first.
         </div>
       )}
       {mode === "edit" && saveError && (
-        <div className="flex items-center px-3 py-1.5 text-[11px] text-destructive bg-destructive/10 border-b border-accent/22 shrink-0">
+        <div className="flex items-center px-3 py-1.5 text-[11px] text-destructive bg-destructive/10 border-b border-accent/10 shrink-0">
           {saveError}
         </div>
       )}

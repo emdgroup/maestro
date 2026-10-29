@@ -463,7 +463,7 @@ export function AgentMonitor({
   const selectedSession = sessions.find((s) => s.session_id === selectedSessionId);
 
   const renderSessionHeader = (session: ActiveSessionInfo) => (
-    <div className="px-4 py-3 border-b border-accent/22 shrink-0">
+    <div className="px-4 py-3 border-b border-accent/10 shrink-0">
       <div className="flex items-center justify-between gap-2">
         {session.execution_mode === "acp" && session.agent_id ? (
           <Tooltip>
