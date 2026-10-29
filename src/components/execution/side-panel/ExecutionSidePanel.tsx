@@ -211,7 +211,8 @@ export function ExecutionSidePanel({
             tabTitles={tabFiles}
           />
           <div className="flex-1 min-h-0 flex flex-col pl-[10px]">
-            <div className="flex-1 relative min-h-0 rounded-tl-xl border-t border-l border-border inner-glass overflow-hidden">
+            {/* Opaque, not inner-glass: a canvas paints its own `--background`, which cannot match glass. */}
+            <div className="flex-1 relative min-h-0 rounded-tl-xl border-t border-l border-border bg-background overflow-hidden">
               <SidePanelContent
                 tabs={tabs}
                 activeTabId={activeTabId}
