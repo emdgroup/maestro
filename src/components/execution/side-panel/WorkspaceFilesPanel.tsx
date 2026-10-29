@@ -393,7 +393,7 @@ export function WorkspaceFilesPanel({
   const splitTooltip = "The panel is too narrow for a split view — widen or maximize it";
 
   return (
-    <div className="absolute inset-0 flex flex-col bg-card">
+    <div className="absolute inset-0 flex flex-col">
       {/* No bottom border and the same surface as the file panel below it, so the two read as one
           thing rather than a header stacked on a second header. It takes the gap above it that the
           inset layout leaves below, which is what keeps its contents on the band's centre line.
@@ -402,7 +402,7 @@ export function WorkspaceFilesPanel({
           panel's width, which is nothing the viewport knows. */}
       <div
         className={cn(
-          "@container flex items-center h-10 px-2 bg-card shrink-0 gap-1",
+          "@container flex items-center h-10 px-2 shrink-0 gap-1",
           panel.inset && "mt-2",
         )}
       >

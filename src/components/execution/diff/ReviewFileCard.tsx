@@ -123,7 +123,9 @@ export function ReviewFileCard({
   // told a file is viewed is not the same as being told to look at it.
   return (
     <div ref={ref} data-file-card={path} className="shrink-0" onClick={onSelect}>
-      <div className="sticky top-0 z-10 pt-3 bg-background">
+      {/* The strip above a stuck header hides what scrolls under it: the well's colour where there
+          is one, otherwise a blur of the glass it sits on. */}
+      <div className="sticky top-0 z-10 pt-3 bg-(--diff-well) backdrop-blur-md">
         <div
           onClick={onToggleExpanded}
           className={cn(
