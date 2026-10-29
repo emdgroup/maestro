@@ -30,7 +30,7 @@ import { SubagentsPanel } from "./SubagentsPanel";
 import { ArtifactsPanel } from "./ArtifactsPanel";
 import { WorkspaceFilesPanel } from "./WorkspaceFilesPanel";
 import type { CanvasSurface, PlanEntry, ToolCallItem } from "@/components/execution/activity/types";
-import type { WorkingFileEntry } from "@/components/execution/agent-activity-panel/useWorkingFileTracker";
+import type { ArtifactFile } from "@/types/bindings";
 import type { SidePanelTab, TabKind } from "./useSidePanelTabs";
 import type { ConnectionKey } from "@/types/bindings";
 import { Skeleton } from "@/ui/skeleton";
@@ -67,7 +67,7 @@ interface SidePanelContentProps {
   onCloseCanvas: (surfaceId: string) => void;
   /** Takes a `.html` file on *this* machine and brings it in as a surface. */
   onImportCanvas: (path: string) => void;
-  workingFiles: WorkingFileEntry[];
+  workingFiles: ArtifactFile[];
   taskId: number | null;
   workspacePath: string;
   connection: ConnectionKey;

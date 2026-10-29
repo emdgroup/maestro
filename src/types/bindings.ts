@@ -1817,6 +1817,14 @@ async listWorkspaceFiles(connection: ConnectionKey, path: string, includeHidden:
     else return { status: "error", error: e  as any };
 }
 },
+async listArtifactFiles(connection: ConnectionKey, path: string, sinceMs: number) : Promise<Result<ArtifactFile[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_artifact_files", { connection, path, sinceMs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async readFile(connection: ConnectionKey, path: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("read_file", { connection, path }) };
@@ -3450,6 +3458,18 @@ markdown_edit_layout?: string | null;
  * plain bool could not tell "never chosen" from an explicit off.
  */
 markdown_scroll_sync?: boolean | null }
+/**
+ * A file under one of [`ARTIFACT_DIRS`], and when it last changed.
+ */
+export type ArtifactFile = { 
+/**
+ * The root joined to the path under it with `/`, so a caller can strip the root back off.
+ */
+path: string; 
+/**
+ * Milliseconds since the epoch, by the host's clock.
+ */
+modified_ms: number }
 export type AttachmentValidation = { size_bytes: number; 
 /**
  * `None` when the file can be attached. Otherwise the reason to show the user, phrased for

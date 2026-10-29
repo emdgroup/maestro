@@ -17,7 +17,7 @@ import { SidePanelTabBar } from "./SidePanelTabBar";
 import { SidePanelContent } from "./SidePanelContent";
 import type { SidePanelTab, TabKind } from "./useSidePanelTabs";
 import type { CanvasSurface, PlanEntry, ToolCallItem } from "@/components/execution/activity/types";
-import type { WorkingFileEntry } from "@/components/execution/agent-activity-panel/useWorkingFileTracker";
+import type { ArtifactFile } from "@/types/bindings";
 import type { ConnectionKey } from "@/types/bindings";
 import type { Annotation } from "@/store/annotationStore";
 import type { PendingCanvasAwait } from "@/components/execution/activity/canvas/await-matching";
@@ -35,7 +35,7 @@ interface ExecutionSidePanelProps {
   onOpenTabKind: (kind: TabKind) => void;
   /** Opens a path (absolute, or project-relative) in a Files tab. */
   onOpenFile: (path: string) => void;
-  workingFiles: WorkingFileEntry[];
+  workingFiles: ArtifactFile[];
   taskId: number | null;
   workspacePath: string;
   connection: ConnectionKey;
