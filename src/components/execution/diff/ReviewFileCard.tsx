@@ -49,7 +49,7 @@ function DiffStats({ hunks }: { hunks: string[] }) {
   );
 }
 
-/** A file header's surface. The floating file list (`ReviewPanelOverlayShell`) is this at half strength. */
+/** A file header's surface. */
 const FILE_HEADER_BG =
   "bg-[color-mix(in_oklab,var(--accent)_8%,color-mix(in_oklab,var(--card)_70%,var(--background)))]";
 

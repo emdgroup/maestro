@@ -94,8 +94,8 @@ export function ReviewFilePanel({
  * before a `window` listener can see it, so in task review and the worktree view the dialog is
  * what Escape reaches. That is why it is not the only way out.
  *
- * The file card headers' surface at half strength, so the glass behind shows through. The layout
- * hides the diff beneath it, so that glass is all there is to see.
+ * No background of its own: the layout hides the diff beneath it, so the host's glass shows
+ * through and the panel reads as one surface with the action bar above.
  *
  * Taken apart from `ReviewFilePanelOverlay` so the Files tab's own tree can float in exactly this
  * shell rather than growing a second, slightly different answer to the same question.
@@ -115,16 +115,7 @@ export function ReviewPanelOverlayShell({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onDismiss]);
 
-  return (
-    <div
-      className={cn(
-        "absolute inset-0 z-30 flex flex-col min-h-0 border-r border-foreground/9",
-        "bg-[color-mix(in_oklab,color-mix(in_oklab,var(--accent)_8%,color-mix(in_oklab,var(--card)_70%,var(--background)))_50%,transparent)]",
-      )}
-    >
-      {children}
-    </div>
-  );
+  return <div className="absolute inset-0 z-30 flex flex-col min-h-0">{children}</div>;
 }
 
 /** The review's file panel in that shell, dismissing itself once a file has been picked. */
