@@ -96,10 +96,10 @@ function Entry({
 }
 
 /**
- * What the agent's copy of the branch leaves out: rules, paths picked in the tree, and exceptions
- * the agent sees anyway, all one ordered list of patterns. The tree shows the loop's branch as the
- * agent gets it, and flags a file a check depends on that it can still change. Fixed once the loop
- * has started, but for what accepting a proposal adds.
+ * What the agent's copy of the branch leaves out: rules, paths selected in the tree or named by a
+ * command, and exceptions the agent sees anyway, all one ordered list of patterns. The tree shows
+ * the loop's branch as the agent gets it, and flags a file a check depends on that it can still
+ * change. Fixed once the loop has started, but for what accepting a proposal adds.
  */
 export function HiddenFilesCard({
   value,
@@ -219,7 +219,7 @@ export function HiddenFilesCard({
   const why = (s: Hidden) => {
     if (!s.by) return null;
     if (s.by.startsWith("!")) return `visible: ${s.by}`;
-    return isRule(s.by) ? `rule ${s.by}` : "picked";
+    return isRule(s.by) ? `rule ${s.by}` : "selected";
   };
 
   const row = (node: FileTreeNode, depth: number): React.ReactNode => {
@@ -320,7 +320,7 @@ export function HiddenFilesCard({
         <span className="shrink-0 text-sm font-medium">Hidden from the agent</span>
         <span className="min-w-0 truncate text-muted-foreground">
           · {hidden} of {plural(files.length, "file")} hidden · {plural(rules.length, "rule")},{" "}
-          {picked.length} picked, {plural(exceptions.length, "exception")}
+          {picked.length} selected, {plural(exceptions.length, "exception")}
         </span>
         {gaps.length > 0 && (
           <span className="ml-auto flex shrink-0 items-center gap-1 text-warning">
@@ -395,11 +395,11 @@ export function HiddenFilesCard({
                 )}
               </div>
               <div className="space-y-1">
-                <div className="px-1 font-medium">Picked in the tree</div>
+                <div className="px-1 font-medium">Selected files and folders</div>
                 <div className="rounded-md border border-border bg-background p-1">
                   {picked.length === 0 && (
                     <div className="px-2 py-1 text-muted-foreground">
-                      Click the lock of a row in the tree to hide one file or folder.
+                      Click the lock of a row in the tree, or write a path in a check command.
                     </div>
                   )}
                   {picked.map((path) => (
