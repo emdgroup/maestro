@@ -25,12 +25,6 @@ export const colors: Record<TaskStatus, string> = {
   Cancelled: "var(--destructive)",
 };
 
-const getDropTargetClass = (status: TaskStatus): string => {
-  if (status === "Queue") return "ring-[1.5px] ring-inset ring-blue-500/30 bg-blue-500/5";
-  if (status === "Planning") return "ring-[1.5px] ring-inset ring-slate-400/30 bg-slate-400/5";
-  return "";
-};
-
 const COLUMN_EMPTY_STATE: Partial<
   Record<TaskStatus, { icon: React.ReactNode; title: string; sub: string }>
 > = {
@@ -90,6 +84,10 @@ export function KanbanColumn({
       className={cn(
         "home-glass flex flex-col rounded-[18px] overflow-hidden transition-all duration-150",
         isDimmed && "opacity-35",
+        // The whole pane lights up, header included, now that no band separates the two. The
+        // accent and not the column's colour, as a selected pane on Home. `!` because the glass
+        // border is plain CSS outside Tailwind's layers.
+        isHighlighted && "border-accent/70! bg-accent/10",
       )}
     >
       <div className="px-4 pt-3.5 pb-2.5 flex items-center justify-between">
@@ -108,10 +106,7 @@ export function KanbanColumn({
       </div>
       <div
         ref={ref}
-        className={cn(
-          "flex-1 overflow-y-auto px-2.5 pt-0.5 pb-2.5 transition-all duration-150",
-          isHighlighted && getDropTargetClass(status),
-        )}
+        className={cn("flex-1 overflow-y-auto px-2.5 pt-0.5 pb-2.5 transition-all duration-150")}
       >
         {tasks.length === 0 && COLUMN_EMPTY_STATE[status] && (
           <div className="border-[1.5px] border-dashed border-foreground/18 rounded-[14px] p-5 flex flex-col items-center gap-2 text-center w-full text-muted-foreground">
