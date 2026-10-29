@@ -1161,7 +1161,7 @@ function ChecksPanel({
   const heading = "text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
   return (
     <div className="space-y-1.5">
-      <div className={heading}>Before the checks</div>
+      <div className={heading}>Setup checks environment</div>
       <CheckList outcomes={steps} running={stepping} inOrder />
       <div className={cn(heading, "pt-1")}>Checks</div>
       {failed ? (

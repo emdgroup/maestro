@@ -270,7 +270,7 @@ describe("LoopIterations", () => {
       />,
     );
     expect(screen.getByText("check 2 of 2 · Frontend tests pass")).toBeTruthy();
-    expect(screen.getByText("Before the checks")).toBeTruthy();
+    expect(screen.getByText("Setup checks environment")).toBeTruthy();
     expect(screen.getByText("running")).toBeTruthy();
   });
 

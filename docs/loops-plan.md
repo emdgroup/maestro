@@ -921,9 +921,8 @@ use. This phase replaces both, and supersedes the lines marked above.
   them there. `loop_hidden_files` and its requests are gone.
 - **The hidden-files card is one model**: rules, paths picked in a tree of the loop's branch
   (`loop_branch_files`, `git ls-tree -r` capped at 20 000 files), and exceptions. A lock shows only
-  on hidden rows, on hover elsewhere. The built-in rule "Files the checks and steps name" is not a
-  stored kind: it is the literal paths the commands name, added on blur as before, and unticking
-  it removes them and marks them dismissed. A visible file a check depends on is flagged:
+  on hidden rows, on hover elsewhere. The literal paths a command names are added on blur as
+  picked paths, as if the user had picked them, and removing one marks it dismissed. A visible file a check depends on is flagged:
   `package.json` for `npm|pnpm|yarn|bun run`, `vitest.config.*` for `vitest`, `jest.config.*` for
   `jest`. The card is read-only once the loop has started.
 - **The Preparer adds steps and hides dependencies.** `PREPARE_PROTOCOL` tells it to put a `Setup`
