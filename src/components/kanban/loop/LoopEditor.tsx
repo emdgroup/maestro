@@ -27,7 +27,7 @@ export const CHECK_KINDS: Record<LoopCheckKind, { icon: typeof Terminal; name: s
   Setup: { icon: ListOrdered, name: "Step" },
 };
 
-/** The kinds a check is picked from. A step is added in Before the checks instead. */
+/** The kinds a check is picked from. A step is added in Setup checks environment instead. */
 export const PICKED_KINDS: LoopCheckKind[] = ["Command", "Judge", "Manual"];
 
 /** What each kind of check means, said where the user picks or reads one. */
@@ -393,7 +393,7 @@ function StepRow({
             <Input
               value={step.label}
               aria-label={`Step ${index + 1} reason`}
-              placeholder="Why it runs, for example Install dependencies"
+              placeholder="(Optional) Why it runs, for example Install dependencies"
               onChange={(e) => onChange({ label: e.target.value })}
               className="h-7 text-xs"
             />
@@ -458,7 +458,7 @@ export function SetupCard({
         onClick={add}
         className="flex w-full items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-accent hover:bg-accent/8"
       >
-        + Add a step before the checks
+        + Add a setup step
       </button>
     );
   }
@@ -486,7 +486,7 @@ export function SetupCard({
           <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
         )}
         <Terminal className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="shrink-0 text-sm font-medium">Before the checks</span>
+        <span className="shrink-0 text-sm font-medium">Setup checks environment</span>
         {!open && (
           <span className="min-w-0 truncate text-muted-foreground">
             {plural(steps.length, "step")}

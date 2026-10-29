@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Lock, TriangleAlert, X } from "lucide-react";
+import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Input } from "@/ui/input";
 import { cn } from "@/lib/utils";
@@ -114,7 +115,7 @@ export function HiddenFilesCard({
 }) {
   const files = useMemo(() => listed ?? [], [listed]);
   const patterns = value.sealedPaths;
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [hiddenOnly, setHiddenOnly] = useState(false);
   const [adding, setAdding] = useState("");
@@ -360,16 +361,28 @@ export function HiddenFilesCard({
               <div className="space-y-1">
                 <div className="px-1 font-medium">Rules</div>
                 <div className="rounded-md border border-border bg-background p-1">
-                  <label className="flex items-center gap-2 rounded px-2 py-1 hover:bg-muted/40">
+                  <label className="flex items-start gap-2 rounded px-2 py-1 hover:bg-muted/40">
                     <Checkbox
                       checked={builtinOn}
                       disabled={locked || named.length === 0}
                       onCheckedChange={toggleBuiltin}
+                      className="mt-0.5"
                     />
-                    <span className="min-w-0 flex-1 truncate">Files the checks and steps name</span>
-                    <span className="shrink-0 tabular-nums text-muted-foreground">
-                      {plural(files.filter((f) => hiddenMatcher(named)(f).hidden).length, "file")}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">Paths written in a command</span>
+                      <span className="block truncate text-muted-foreground">
+                        {named.length > 0 ? (
+                          <span className="font-mono">{named.join(", ")}</span>
+                        ) : (
+                          "None yet. A path in a check or step command, like bun test tests/login.test.ts, is hidden here."
+                        )}
+                      </span>
                     </span>
+                    {named.length > 0 && (
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        {plural(files.filter((f) => hiddenMatcher(named)(f).hidden).length, "file")}
+                      </span>
+                    )}
                   </label>
                   {rules.map((rule) => (
                     <Entry
@@ -382,18 +395,18 @@ export function HiddenFilesCard({
                   ))}
                 </div>
                 {!locked && (
-                  <div className="flex items-center gap-1.5 px-1 pt-1">
+                  <form
+                    className="flex items-center gap-1.5 px-1 pt-1"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      add();
+                    }}
+                  >
                     <Input
                       value={adding}
                       aria-label="Add a pattern"
                       placeholder="Add a pattern: tests/, **/*.spec.ts, !tests/helpers/"
                       onChange={(e) => setAdding(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          add();
-                        }
-                      }}
                       className="h-7 flex-1 font-mono text-xs"
                     />
                     {adding.trim() && (
@@ -401,7 +414,10 @@ export function HiddenFilesCard({
                         {plural(matches(adding.trim(), files), "file")}
                       </span>
                     )}
-                  </div>
+                    <Button type="submit" size="xs" variant="outline" disabled={!adding.trim()}>
+                      Add
+                    </Button>
+                  </form>
                 )}
               </div>
               <div className="space-y-1">
