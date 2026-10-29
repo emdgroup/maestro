@@ -1,11 +1,10 @@
 import { useSyncExternalStore, type ReactNode } from "react";
-import { Check, Copy } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { formatTimeAgoLong } from "@/lib/format-utils";
-import { useCopyToClipboard } from "./HighlightedCode";
+import { CopyStateIcon, useCopyToClipboard } from "./HighlightedCode";
 
 // One timer for the whole stream, not one per message: a long session holds hundreds of
 // these and each would otherwise wake the main thread on its own schedule.
@@ -86,7 +85,7 @@ export function MessageActionBar({
             />
           }
         >
-          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+          <CopyStateIcon copied={copied} className="size-3.5" />
         </TooltipTrigger>
         <TooltipContent>{copied ? "Copied" : "Copy message"}</TooltipContent>
       </Tooltip>
