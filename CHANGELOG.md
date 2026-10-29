@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.40.0](https://github.com/emdgroup/maestro/compare/v0.39.0...v0.40.0) (2026-10-29)
+
+
+### Features
+
+* **loop:** run setup steps before the checks, per-check time limits, and hide files with gitignore-style patterns ([fc9b2c4](https://github.com/emdgroup/maestro/commit/fc9b2c46bf36f4184c4d9cac837cfb628dc9966b))
+
+
+### Bug Fixes
+
+* **artifacts:** find session artifacts by scanning the artifact folders ([e49112a](https://github.com/emdgroup/maestro/commit/e49112abdec548be63c5a1d6bbb53fb1f8a452fd))
+* **deps:** match the @codemirror/view override to its pinned dependency ([9ea46af](https://github.com/emdgroup/maestro/commit/9ea46af6b2bf220b6aa80fc44a622fa6c2df7290))
+* **deps:** update agent-client-protocol to 3.6.0 (schema 1.13.0) ([d0b7318](https://github.com/emdgroup/maestro/commit/d0b731849ed30285c4c5af5c6cbcf0bb757d0f31))
+* **loops:** let a stopped loop preparation be started again ([23fb51c](https://github.com/emdgroup/maestro/commit/23fb51cbeffc7acdcb2743487f490ce158cd1579))
+* **terminal:** keep local terminal output when switching between sessions ([b542652](https://github.com/emdgroup/maestro/commit/b542652b220871c9adb12fb8df5b0c3e35d3b639))
+* **utils:** show hours in elapsed times and GB in byte sizes ([dda7609](https://github.com/emdgroup/maestro/commit/dda76091f99fd21548d923fa253b3c6efc9d76bd))
+
 ## [0.39.0](https://github.com/emdgroup/maestro/compare/v0.38.0...v0.39.0) (2026-10-22)
 
 
