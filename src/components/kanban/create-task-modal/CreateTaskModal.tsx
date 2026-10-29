@@ -512,7 +512,7 @@ export function CreateTaskModal({
           </div>
 
           {/* Footer */}
-          <div className="border-t border-foreground/7 px-6 py-3 flex items-center gap-2 shrink-0 [&_[data-slot=button]]:h-9 [&_[data-slot=button]]:rounded-xl [&_[data-slot=button]]:px-4 [&_[data-slot=button]]:text-xs">
+          <div className="px-6 pt-1 pb-4 flex items-center gap-2 shrink-0 [&_[data-slot=button]]:h-9 [&_[data-slot=button]]:rounded-xl [&_[data-slot=button]]:px-4 [&_[data-slot=button]]:text-xs">
             <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
               <Switch
                 size="sm"
