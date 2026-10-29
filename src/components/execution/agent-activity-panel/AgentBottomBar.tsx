@@ -82,7 +82,7 @@ export function AgentBottomBar({
         <div className={cn("w-full px-3", isCompact && "mx-auto max-w-3xl")}>
           {/* Opaque under the gradient — which is only a background-image — because the stream
               keeps scrolling behind this. No bottom border: that edge is off the panel. */}
-          <div className="rounded-t-xl border border-b-0 border-accent/30 bg-background bg-gradient-to-br from-accent/10 to-transparent px-3.5 pt-3 pb-2.5">
+          <div className="rounded-t-xl border border-b-0 border-accent/30 bg-background bg-gradient-to-br from-accent/20 to-accent/3 dark:from-accent/10 dark:to-transparent px-3.5 pt-3 pb-2.5">
             {replacement}
           </div>
         </div>
