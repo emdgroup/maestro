@@ -49,6 +49,10 @@ function DiffStats({ hunks }: { hunks: string[] }) {
   );
 }
 
+/** A file header's surface, which the floating file list shares so the two read as one. */
+export const FILE_HEADER_BG =
+  "bg-[color-mix(in_oklab,var(--accent)_8%,color-mix(in_oklab,var(--card)_70%,var(--background)))]";
+
 const CARD_SHADOW = "shadow-[0_10px_24px_-14px_rgb(0_0_0/0.25)]";
 
 interface ReviewFileCardProps {
@@ -132,7 +136,8 @@ export function ReviewFileCard({
         <div
           onClick={onToggleExpanded}
           className={cn(
-            "border bg-[color-mix(in_oklab,var(--accent)_8%,color-mix(in_oklab,var(--card)_70%,var(--background)))] dark:shadow-[inset_0_1px_0_rgb(255_255_255/0.06)] flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors",
+            "border dark:shadow-[inset_0_1px_0_rgb(255_255_255/0.06)] flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors",
+            FILE_HEADER_BG,
             // The card's drop shadow falls from whichever box is its bottom edge. Light mode only:
             // there the card and the pale well behind it are too close to tell apart.
             expanded ? "rounded-t-xl" : `rounded-xl ${CARD_SHADOW}`,
