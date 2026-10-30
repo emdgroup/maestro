@@ -346,7 +346,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
       open={sidebarOpen}
       onOpenChange={setSidebarOpen}
       className="!min-h-0 h-full flex-col"
-      style={{ "--sidebar-width": "288px", "--sidebar-width-icon": "52px" } as React.CSSProperties}
+      style={{ "--sidebar-width": "288px", "--sidebar-width-icon": "56px" } as React.CSSProperties}
     >
       {/* Action bar */}
       <div className="h-12 flex items-center justify-between pl-2.5 pr-4 gap-2 shrink-0">

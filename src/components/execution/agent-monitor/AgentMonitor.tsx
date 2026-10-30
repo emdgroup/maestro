@@ -246,7 +246,7 @@ const SessionRow = memo(function SessionRow({
             </div>
 
             {/* Text column */}
-            <div className="session-text-col flex-1 min-w-0 pr-3 pl-2 py-2.5 flex flex-col justify-center gap-0.75">
+            <div className="session-text-col flex-1 min-w-0 -ml-1 pr-3 flex flex-col justify-center gap-0.75">
               <div className="flex items-baseline justify-between gap-2 min-w-0">
                 <span ref={nameRef} className="session-item-name text-sm font-medium truncate">
                   {name}
