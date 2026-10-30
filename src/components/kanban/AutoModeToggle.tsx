@@ -35,7 +35,7 @@ export function AutoModeToggle({ projectId }: { projectId: number | null }) {
               "h-8 gap-1.5 px-2.5 text-xs font-medium",
               autoMode
                 ? "bg-green-500/15 text-green-600 dark:text-green-400 hover:bg-green-500/25"
-                : "bg-muted/60 text-muted-foreground hover:bg-foreground/7",
+                : "bg-foreground/5 text-muted-foreground hover:bg-foreground/7",
             )}
           />
         }

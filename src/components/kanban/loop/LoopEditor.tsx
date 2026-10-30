@@ -83,7 +83,7 @@ function LimitCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex-1 space-y-1.5 rounded-md border border-border bg-card p-3">
+    <div className="flex-1 space-y-1.5 glass-tile rounded-[14px] p-3">
       <div className="flex items-center justify-between gap-2 text-xs">
         <span className="font-medium">{label}</span>
         <span className="flex items-center gap-1 tabular-nums">
@@ -100,7 +100,7 @@ function LimitCard({
         </span>
       </div>
       {used !== null && (
-        <div className="h-1 rounded-full bg-muted">
+        <div className="h-1 rounded-full bg-foreground/10">
           <div
             className={cn("h-1 rounded-full", warn ? "bg-destructive" : "bg-accent")}
             style={{ width: `${Math.min(100, Math.max(0, share * 100))}%` }}
@@ -200,7 +200,7 @@ export function CheckEditor({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <div className="flex overflow-hidden rounded-md border border-border bg-card text-xs">
+        <div className="flex gap-1 rounded-xl border border-foreground/10 bg-background/45 p-[3px] text-xs">
           {PICKED_KINDS.map((kind) => {
             const { icon: Icon, name } = CHECK_KINDS[kind];
             return (
@@ -210,9 +210,9 @@ export function CheckEditor({
                 aria-pressed={check.kind === kind}
                 onClick={() => onChange({ kind })}
                 className={cn(
-                  "flex items-center gap-1 px-2 py-1",
+                  "flex items-center gap-1 rounded-lg px-2 py-1",
                   check.kind === kind
-                    ? "bg-accent/12 font-medium text-accent"
+                    ? "bg-card/90 font-medium text-accent shadow-sm"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
@@ -400,7 +400,7 @@ function StepRow({
           </>
         )}
         {state === "Fail" && outcome?.result?.detail?.trim() && (
-          <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-card p-1.5 font-mono text-[11px] leading-4">
+          <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-foreground/5 p-1.5 font-mono text-[11px] leading-4">
             {outcome.result.detail.trim()}
           </pre>
         )}
@@ -456,7 +456,7 @@ export function SetupCard({
       <button
         type="button"
         onClick={add}
-        className="flex w-full items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-accent hover:bg-accent/8"
+        className="flex w-full items-center gap-1.5 rounded-lg border border-dashed border-foreground/10 px-3 py-2 text-xs text-accent hover:bg-accent/8"
       >
         + Add a setup step
       </button>
@@ -468,12 +468,7 @@ export function SetupCard({
   const passed = !!last?.outcomes.length && last.outcomes.every((o) => o.result?.state === "Pass");
   const names = steps.map((s) => s.label.trim() || s.command.trim()).filter(Boolean);
   return (
-    <section
-      className={cn(
-        "rounded-lg border bg-card",
-        failed >= 0 ? "border-destructive/40" : "border-border",
-      )}
-    >
+    <section className={cn("glass-tile rounded-[14px]", failed >= 0 && "border-destructive/40!")}>
       <button
         type="button"
         aria-expanded={open}
@@ -513,7 +508,7 @@ export function SetupCard({
             Runs in order before each round of checks. If a step fails, no check runs and they all
             count as failed.{last ? " Changes apply from the next round." : ""}
           </p>
-          <div className="rounded-md border border-border bg-background">
+          <div className="rounded-lg border border-foreground/7 bg-background/50">
             <DragDropProvider
               onDragEnd={(event) => {
                 if (event.canceled) return;
@@ -524,7 +519,7 @@ export function SetupCard({
                 onChange(order.map((key) => steps.find((s) => s.key === key)!));
               }}
             >
-              <ul className="divide-y divide-border">
+              <ul className="divide-y divide-foreground/7">
                 {steps.map((step, index) => (
                   <StepRow
                     key={step.key}
@@ -543,7 +538,7 @@ export function SetupCard({
               </ul>
             </DragDropProvider>
             {!readOnly && (
-              <div className="border-t border-border px-3 py-1.5">
+              <div className="border-t border-foreground/10 px-3 py-1.5">
                 <button type="button" className="text-accent hover:underline" onClick={add}>
                   + Add a step
                 </button>

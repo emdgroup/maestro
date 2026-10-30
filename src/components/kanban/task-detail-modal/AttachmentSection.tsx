@@ -53,7 +53,7 @@ function AttachmentThumbnail({
           render={
             <button
               aria-label={`Open ${attachment.filename}`}
-              className="w-20 h-20 flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border px-1 text-[10px] text-muted-foreground"
+              className="w-20 h-20 flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-foreground/10 px-1 text-[10px] text-muted-foreground"
               onClick={() => void openAttachment(attachment.file_path)}
             />
           }
@@ -74,7 +74,7 @@ function AttachmentThumbnail({
       <img
         src={src}
         alt={attachment.filename}
-        className="w-20 h-20 object-cover rounded-md border border-border"
+        className="w-20 h-20 object-cover rounded-md border border-foreground/10"
       />
     </ZoomableContent>
   );
@@ -165,7 +165,7 @@ export function AttachmentSection({
                       variant="ghost"
                       size="icon"
                       aria-label={`Remove ${att.filename}`}
-                      className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-background border border-border opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-background border border-foreground/10 opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={() =>
                         removeAttachment.mutate({
                           projectId,
@@ -187,7 +187,7 @@ export function AttachmentSection({
               {fileAtts.map((att: TaskAttachment) => (
                 <li
                   key={att.id}
-                  className="h-9 flex items-center gap-2 rounded-md border border-border bg-card px-3 text-sm"
+                  className="h-9 flex items-center gap-2 rounded-xl border border-foreground/7 bg-background/50 px-3 text-sm"
                 >
                   <button
                     className="flex-1 min-w-0 truncate text-left text-foreground hover:underline underline-offset-2"
@@ -229,7 +229,7 @@ export function AttachmentSection({
             "border-2 border-dashed rounded-lg p-4 text-center text-sm text-muted-foreground transition-colors",
             isDragging
               ? "border-ring bg-muted/20"
-              : "border-border hover:border-muted-foreground/50",
+              : "border-foreground/10 hover:border-muted-foreground/50",
           )}
         >
           <Download className="mx-auto mb-2 size-5 text-muted-foreground/60" />

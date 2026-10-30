@@ -67,8 +67,8 @@ function MarkdownCodeComponent({
   }
   return (
     <code
-      style={{ background: "color-mix(in oklch, var(--foreground) 15%, var(--muted))" }}
-      className="px-1 py-0.5 rounded text-xs font-mono"
+      style={{ background: "color-mix(in oklab, var(--foreground) 10%, transparent)" }}
+      className="px-1 py-0.5 rounded-md text-xs font-mono"
     >
       {children}
     </code>
@@ -544,7 +544,7 @@ export const MARKDOWN_COMPONENTS = {
     <InteractiveTable>{children}</InteractiveTable>
   ),
   thead: ({ children }: { children?: ReactNode }) => (
-    <thead className="bg-muted/40">{children}</thead>
+    <thead className="bg-foreground/5">{children}</thead>
   ),
   th: ({ children }: { children?: ReactNode }) => <InteractiveTh>{children}</InteractiveTh>,
   tbody: ({ children }: { children?: ReactNode }) => (
