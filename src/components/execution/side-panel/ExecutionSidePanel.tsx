@@ -158,7 +158,7 @@ export function ExecutionSidePanel({
           onAddTab("terminal");
           onCollapsedChange(false);
         }}
-        className="flex items-center gap-2 w-full px-2.5 py-1.5 text-xs rounded hover:bg-muted/60 text-left transition-colors"
+        className="flex items-center gap-2 w-full px-2.5 py-1.5 text-xs rounded-[10px] hover:bg-foreground/7 text-left transition-colors"
       >
         <Terminal className="w-3.5 h-3.5 text-muted-foreground" />
         New Terminal
@@ -168,7 +168,7 @@ export function ExecutionSidePanel({
           onAddTab("files");
           onCollapsedChange(false);
         }}
-        className="flex items-center gap-2 w-full px-2.5 py-1.5 text-xs rounded hover:bg-muted/60 text-left transition-colors"
+        className="flex items-center gap-2 w-full px-2.5 py-1.5 text-xs rounded-[10px] hover:bg-foreground/7 text-left transition-colors"
       >
         <FileText className="w-3.5 h-3.5 text-muted-foreground" />
         Files Browser

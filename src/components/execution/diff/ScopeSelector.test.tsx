@@ -61,17 +61,15 @@ describe("ScopeSelector", () => {
     expect(screen.getAllByText(/ago$/).length).toBeGreaterThan(0);
   });
 
-  // The accent fill means "the pointer is here", as it does in every menu in the app, and it
-  // always brings `text-accent-foreground` with it — the pair is what keeps a mid-lightness fill
-  // readable. Selection is the accent *text*, so no row sits permanently lit.
-  it("marks selection with accent text and reserves the accent fill for hover", async () => {
+  // Selection is the accent *text*, so no row sits permanently lit. Hover is the neutral wash
+  // every menu in the app uses.
+  it("marks selection with accent text and a neutral wash for hover", async () => {
     renderSelector();
     await open();
     const title = within(popover()).getByText("All changes");
     const row = title.closest("button");
 
-    expect(row?.className).toContain("hover:bg-accent");
-    expect(row?.className).toContain("hover:text-accent-foreground");
+    expect(row?.className).toContain("hover:bg-foreground/7");
     expect(row?.className).not.toMatch(/(^|\s)bg-accent/);
     expect(title.className).toContain("text-accent");
 

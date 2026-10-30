@@ -30,7 +30,7 @@ function CopyPathButton({ path }: { path: string }) {
           e.stopPropagation();
           copy();
         }}
-        className="p-1 rounded transition-colors shrink-0 text-muted-foreground/70 hover:text-foreground hover:bg-muted/30"
+        className="p-1 rounded transition-colors shrink-0 text-muted-foreground/70 hover:text-foreground hover:bg-foreground/7"
       >
         <CopyStateIcon copied={copied} className="size-3" />
       </TooltipTrigger>
@@ -199,7 +199,7 @@ export function ReviewFileCard({
                 aria-label={hasComment ? "Edit file comment" : "Add file comment"}
                 onClick={openFileComment}
                 className={cn(
-                  "p-1 rounded transition-colors shrink-0 hover:bg-muted/30",
+                  "p-1 rounded transition-colors shrink-0 hover:bg-foreground/7",
                   // An existing note is the only sign of itself while the card is shut.
                   hasComment ? "text-accent" : "text-muted-foreground/70 hover:text-foreground",
                 )}
@@ -222,8 +222,8 @@ export function ReviewFileCard({
               className={cn(
                 "p-1 rounded transition-colors shrink-0",
                 viewed
-                  ? "text-success hover:bg-muted/30"
-                  : "text-muted-foreground/70 hover:text-foreground hover:bg-muted/30",
+                  ? "text-success hover:bg-foreground/7"
+                  : "text-muted-foreground/70 hover:text-foreground hover:bg-foreground/7",
               )}
             >
               <CheckCheck className="size-3" />

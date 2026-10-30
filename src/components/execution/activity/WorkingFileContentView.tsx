@@ -224,7 +224,7 @@ export function WorkingFileContentView({
           <button
             type="button"
             onClick={() => setZoom(100)}
-            className="px-1 py-0.5 rounded text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors min-w-10 text-center shrink-0"
+            className="px-1 py-0.5 rounded text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-foreground/7 transition-colors min-w-10 text-center shrink-0"
           >
             {zoom}%
           </button>
@@ -274,7 +274,7 @@ export function WorkingFileContentView({
           <button
             type="button"
             onClick={copyPath}
-            className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] border border-border rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
+            className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] border border-border rounded text-muted-foreground hover:text-foreground hover:bg-foreground/7 transition-colors shrink-0"
           >
             {copied ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
             {copied ? "Copied" : "Copy path"}

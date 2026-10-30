@@ -30,7 +30,7 @@ export function ActivityElicitationCard({ item }: Props) {
       onOpenChange={setExpanded}
       className="glass-tile rounded-lg overflow-hidden"
     >
-      <CollapsibleTrigger className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-muted/50 transition-colors">
+      <CollapsibleTrigger className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-foreground/7 transition-colors">
         <MessageCircleQuestionMark className="w-3.5 h-3.5 text-accent shrink-0" />
         <span className="text-xs font-medium text-foreground flex-1 truncate">{item.message}</span>
         <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">

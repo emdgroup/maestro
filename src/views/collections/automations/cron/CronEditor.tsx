@@ -78,7 +78,7 @@ export function CronEditor({
             "flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors",
             broken
               ? "border-destructive/40 bg-destructive/5 text-destructive"
-              : "border-border bg-muted/30 hover:bg-muted/50",
+              : "border-border bg-muted/30 hover:bg-foreground/7",
           )}
         >
           <span className="flex-1 text-xs">
@@ -100,7 +100,7 @@ export function CronEditor({
                 type="button"
                 onClick={() => onChange(template)}
                 className={cn(
-                  "rounded px-2 py-1.5 text-left text-xs hover:bg-muted",
+                  "rounded px-2 py-1.5 text-left text-xs hover:bg-foreground/7",
                   template === cron.trim() && "bg-muted",
                 )}
               >

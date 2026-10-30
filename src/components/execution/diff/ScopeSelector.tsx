@@ -38,11 +38,8 @@ function ScopeIcon({ scope, className }: { scope: DiffScope["type"]; className?:
 /**
  * A row in the scope list.
  *
- * Selection is carried by the accent *text* and the tick, leaving the accent fill to mean "the
- * pointer is here" — the same thing it means in every menu in the app (`dropdown-menu.tsx` uses
- * `focus:bg-accent focus:text-accent-foreground`). Filling the selected row instead left one row
- * permanently lit and, because the text stayed at `foreground` over an `oklch(50%)` accent in the
- * light theme, unreadable.
+ * Selection is carried by the accent *text* and the tick, so no row sits permanently lit. Hover is
+ * the neutral wash every menu in the app uses.
  */
 function ScopeRow({
   gutter,
@@ -63,23 +60,16 @@ function ScopeRow({
     <button
       type="button"
       onClick={onClick}
-      className="group w-full flex items-start gap-2.5 px-3 py-2 text-left rounded-md transition-colors hover:bg-accent hover:text-accent-foreground"
+      className="group w-full flex items-start gap-2.5 px-3 py-2 text-left rounded-md transition-colors hover:bg-foreground/7"
     >
       {/* `self-center`, against the row's `items-start`: the mark belongs to the whole card, so it
           sits on the card's centre line rather than beside the title. */}
       <span className="w-4 shrink-0 self-center flex items-center justify-center">{gutter}</span>
       <span className="flex-1 min-w-0">
-        <span
-          className={cn(
-            "block text-xs font-medium leading-snug group-hover:text-accent-foreground",
-            selected && "text-accent",
-          )}
-        >
+        <span className={cn("block text-xs font-medium leading-snug", selected && "text-accent")}>
           {title}
         </span>
-        <span className="block text-[11px] mt-0.5 text-muted-foreground group-hover:text-accent-foreground/75">
-          {subtitle}
-        </span>
+        <span className="block text-[11px] mt-0.5 text-muted-foreground">{subtitle}</span>
       </span>
       {trailing}
     </button>
@@ -175,11 +165,7 @@ export function ScopeSelector({
           truncating, which is the whole reason these are cards rather than rows. */}
       <PopoverContent align="start" className="w-[430px] p-1 gap-0">
         <ScopeRow
-          gutter={
-            selectedScope.type === "all" ? (
-              <Check className="size-3.5 text-accent group-hover:text-accent-foreground" />
-            ) : null
-          }
+          gutter={selectedScope.type === "all" ? <Check className="size-3.5 text-accent" /> : null}
           title="All changes"
           subtitle={`${allChangesFileCount} files · ${commits.length} commits`}
           selected={selectedScope.type === "all"}
@@ -187,9 +173,7 @@ export function ScopeSelector({
         />
         <ScopeRow
           gutter={
-            selectedScope.type === "uncommitted" ? (
-              <Check className="size-3.5 text-accent group-hover:text-accent-foreground" />
-            ) : null
+            selectedScope.type === "uncommitted" ? <Check className="size-3.5 text-accent" /> : null
           }
           title="Uncommitted"
           subtitle={`${uncommittedFileCount} files`}
@@ -220,9 +204,6 @@ export function ScopeSelector({
                         onCheckedChange={() => toggleCommit(commit.sha)}
                         onClick={(e) => e.stopPropagation()}
                         aria-label={`Include ${shortSha(commit.sha)} in the range`}
-                        // Over a hovered row the fill is already accent, so a checked box would
-                        // vanish into it — swap the two on hover instead.
-                        className="group-hover:border-accent-foreground group-hover:data-checked:bg-accent-foreground group-hover:data-checked:text-accent"
                         tabIndex={-1}
                       />
                     }
@@ -231,7 +212,7 @@ export function ScopeSelector({
                     trailing={
                       <span
                         className={cn(
-                          "font-mono text-[11px] shrink-0 pt-0.5 group-hover:text-accent-foreground/75",
+                          "font-mono text-[11px] shrink-0 pt-0.5",
                           isCurrent ? "text-accent" : "text-muted-foreground",
                         )}
                       >

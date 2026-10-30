@@ -109,8 +109,8 @@ export function AgentSelector({ option, value, onChange, disabled }: SelectorPro
                   key={opt.value}
                   type="button"
                   className={cn(
-                    "group relative flex w-full cursor-default items-start gap-2 rounded-sm py-2 pl-2 pr-2 text-left outline-none select-none",
-                    "hover:bg-accent hover:text-accent-foreground",
+                    "group relative flex w-full cursor-default items-start gap-2 rounded-[10px] py-2 pl-2 pr-2 text-left outline-none select-none",
+                    "hover:bg-foreground/7",
                   )}
                   onMouseEnter={() => setHoveredOpt(opt)}
                   onMouseLeave={() => setHoveredOpt(null)}
@@ -119,21 +119,19 @@ export function AgentSelector({ option, value, onChange, disabled }: SelectorPro
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <p
                       className={cn(
-                        "truncate text-xs font-medium leading-none group-hover:!text-accent-foreground",
+                        "truncate text-xs font-medium leading-none",
                         opt.value === value && "text-accent",
                       )}
                     >
                       {opt.name}
                     </p>
                     {opt.description && (
-                      <p className="truncate text-[11px] leading-snug text-muted-foreground group-hover:text-accent-foreground/70">
+                      <p className="truncate text-[11px] leading-snug text-muted-foreground">
                         {opt.description}
                       </p>
                     )}
                   </div>
-                  {opt.value === value && (
-                    <Check className="mt-0.5 size-3 shrink-0 text-accent group-hover:text-accent-foreground" />
-                  )}
+                  {opt.value === value && <Check className="mt-0.5 size-3 shrink-0 text-accent" />}
                 </button>
               ))}
             </div>

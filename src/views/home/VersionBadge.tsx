@@ -27,7 +27,7 @@ export function VersionBadge() {
 
   return (
     <Popover>
-      <PopoverTrigger className="absolute bottom-4 right-4 flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer border border-transparent hover:border-border/50">
+      <PopoverTrigger className="absolute bottom-4 right-4 flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] text-muted-foreground hover:bg-foreground/7 hover:text-foreground transition-colors cursor-pointer border border-transparent hover:border-border/50">
         {icon}v{appVersion}
       </PopoverTrigger>
       <PopoverContent

@@ -83,7 +83,7 @@ export function FileSelector({
                   "p-1.5 rounded text-xs transition-colors",
                   mode === "flat"
                     ? "text-foreground bg-muted"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                    : "text-muted-foreground hover:text-foreground hover:bg-foreground/7",
                 )}
               >
                 <List className="w-3.5 h-3.5" />
@@ -98,7 +98,7 @@ export function FileSelector({
                   "p-1.5 rounded text-xs transition-colors",
                   mode === "tree"
                     ? "text-foreground bg-muted"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                    : "text-muted-foreground hover:text-foreground hover:bg-foreground/7",
                 )}
               >
                 <FolderTree className="w-3.5 h-3.5" />
@@ -150,7 +150,7 @@ export function FileSelector({
                   "w-full flex items-center gap-2 px-2 py-2 text-left border-l-2 transition-colors",
                   isSelected
                     ? "border-transparent selected-file-item"
-                    : "border-transparent hover:bg-muted/10",
+                    : "border-transparent hover:bg-foreground/7",
                 )}
               >
                 <Tooltip>

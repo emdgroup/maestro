@@ -62,7 +62,7 @@ function BranchList({
             className={cn(
               "flex items-center gap-2 w-full rounded-md px-3 py-1.5 text-xs transition-colors text-left",
               reason === null
-                ? "hover:bg-muted"
+                ? "hover:bg-foreground/7"
                 : "opacity-50 pointer-events-none text-muted-foreground",
             )}
             onClick={() => onSelect(b)}

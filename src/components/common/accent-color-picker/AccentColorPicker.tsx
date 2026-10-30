@@ -32,7 +32,7 @@ export function SwatchGrid({
         className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors cursor-pointer border-0 ${
           selectedHue === null
             ? "bg-accent/10 text-foreground"
-            : "bg-transparent hover:bg-muted text-muted-foreground hover:text-foreground"
+            : "bg-transparent hover:bg-foreground/7 text-muted-foreground hover:text-foreground"
         }`}
       >
         <span
@@ -125,7 +125,7 @@ function PalettePopover({
         <TooltipTrigger
           render={
             <PopoverTrigger
-              className="flex items-center justify-center h-7 w-7 rounded-full hover:bg-muted/80 transition-colors [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-muted-foreground cursor-pointer"
+              className="flex items-center justify-center h-7 w-7 rounded-full hover:bg-foreground/7 transition-colors [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-muted-foreground cursor-pointer"
               aria-label={label}
             />
           }

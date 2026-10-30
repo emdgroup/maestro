@@ -78,7 +78,7 @@ export function ReworkModal({
             <Button
               variant="ghost"
               onClick={() => setExpanded(!expanded)}
-              className="flex items-center gap-2 w-full px-3 py-2 h-auto text-xs font-medium hover:bg-accent rounded-t-md justify-start"
+              className="flex items-center gap-2 w-full px-3 py-2 h-auto text-xs font-medium hover:bg-foreground/7 rounded-t-md justify-start"
             >
               {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
               {comments.length} comment{comments.length !== 1 ? "s" : ""}

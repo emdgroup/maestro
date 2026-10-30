@@ -294,7 +294,7 @@ export function ElicitationPrompt({
           onClick={() => setCollapsed((prev) => !prev)}
           aria-expanded={!collapsed}
           aria-label={collapsed ? "Expand the questions" : "Collapse the questions"}
-          className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+          className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-foreground/7 hover:text-foreground transition-colors"
         >
           {/* A bottom sheet: open, it points down to where collapsing sends it; closed, up. */}
           <ChevronDown

@@ -163,7 +163,7 @@ export function UpdateStrip({ padEnd = false }: { padEnd?: boolean }) {
                 type="button"
                 onClick={() => checkForUpdates(autoUpdate)}
                 disabled={isChecking}
-                className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/7 hover:text-foreground disabled:opacity-50"
                 aria-label="Check for updates"
               />
             }
@@ -175,7 +175,7 @@ export function UpdateStrip({ padEnd = false }: { padEnd?: boolean }) {
 
         <Popover>
           <PopoverTrigger
-            className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/7 hover:text-foreground"
             aria-label="Update settings"
           >
             <ChevronDown className="size-3.5" />

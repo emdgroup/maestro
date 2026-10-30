@@ -237,7 +237,7 @@ function CheckRow({
             <button
               type="button"
               aria-label={`Edit "${draft.label}"`}
-              className="rounded p-1 hover:bg-muted hover:text-foreground"
+              className="rounded p-1 hover:bg-foreground/7 hover:text-foreground"
               onClick={onEdit}
             >
               <Pencil className="size-3.5" />
@@ -245,7 +245,7 @@ function CheckRow({
             <button
               type="button"
               aria-label={`Remove "${draft.label}"`}
-              className="rounded p-1 hover:bg-muted hover:text-foreground"
+              className="rounded p-1 hover:bg-foreground/7 hover:text-foreground"
               onClick={onRemove}
             >
               <X className="size-3.5" />

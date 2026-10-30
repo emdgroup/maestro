@@ -95,7 +95,7 @@ export function ArtifactsPanel({
               "p-1.5 rounded-md transition-colors shrink-0",
               listOpen
                 ? "text-foreground bg-muted/60"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                : "text-muted-foreground hover:text-foreground hover:bg-foreground/7",
             )}
           >
             <Files className="w-4 h-4" />
@@ -121,7 +121,7 @@ export function ArtifactsPanel({
             <button
               type="button"
               onClick={() => setZoom(100)}
-              className="px-1 py-0.5 rounded text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors min-w-[2.5rem] text-center shrink-0"
+              className="px-1 py-0.5 rounded text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-foreground/7 transition-colors min-w-[2.5rem] text-center shrink-0"
             >
               {zoom}%
             </button>
@@ -135,7 +135,7 @@ export function ArtifactsPanel({
                   "p-1.5 rounded-md transition-colors shrink-0",
                   openTransfer.state.status === "error"
                     ? "text-destructive"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                    : "text-muted-foreground hover:text-foreground hover:bg-foreground/7",
                 )}
               >
                 <TransferIcon
@@ -164,7 +164,7 @@ export function ArtifactsPanel({
                       ? "text-destructive"
                       : downloadTransfer.state.status === "done"
                         ? "text-emerald-600"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                        : "text-muted-foreground hover:text-foreground hover:bg-foreground/7",
                   )}
                 >
                   <TransferIcon

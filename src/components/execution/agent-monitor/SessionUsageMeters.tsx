@@ -162,7 +162,7 @@ export function SessionUsageMeters({
           <HoverCardTrigger
             render={
               <div
-                className="rounded-md px-2 py-1 transition-colors hover:bg-muted/50"
+                className="rounded-md px-2 py-1 transition-colors hover:bg-foreground/7"
                 aria-label="Session cost and tokens"
               />
             }
@@ -217,7 +217,7 @@ export function SessionUsageMeters({
           <HoverCardTrigger
             render={
               <div
-                className="rounded-md px-2 py-1 transition-colors hover:bg-muted/50"
+                className="rounded-md px-2 py-1 transition-colors hover:bg-foreground/7"
                 aria-label="Usage limits"
               />
             }

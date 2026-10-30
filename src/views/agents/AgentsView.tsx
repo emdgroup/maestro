@@ -359,7 +359,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
                 "p-1.5 rounded-md transition-colors",
                 !sidebarOpen
                   ? "bg-muted/60 text-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                  : "text-muted-foreground hover:text-foreground hover:bg-foreground/7",
               )}
             >
               <Menu className="w-4 h-4" />
@@ -418,7 +418,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
               <TooltipTrigger
                 render={
                   <PopoverTrigger
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/7 hover:text-foreground"
                     aria-label="Display settings"
                   />
                 }

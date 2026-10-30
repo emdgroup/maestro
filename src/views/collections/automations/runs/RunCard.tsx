@@ -191,7 +191,7 @@ export function RunCard({
           "flex h-7 items-center gap-2 px-2 text-[11px]",
           state === "awaiting" && "bg-amber-500/5",
           state === "failed" && "bg-destructive/5",
-          showable && "cursor-pointer hover:bg-muted/60",
+          showable && "cursor-pointer hover:bg-foreground/7",
         )}
       >
         <span className="w-8 shrink-0 font-mono text-muted-foreground/70">
@@ -219,7 +219,7 @@ export function RunCard({
           : state === "failed"
             ? "border-destructive/30 bg-destructive/5"
             : "border-border bg-background",
-        showable && "cursor-pointer hover:bg-muted/60",
+        showable && "cursor-pointer hover:bg-foreground/7",
       )}
     >
       <div className="flex items-center gap-1.5 text-[11px]">

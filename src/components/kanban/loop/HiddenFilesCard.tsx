@@ -51,7 +51,7 @@ function LockButton({
         state === "on" && "text-warning",
         state === "part" && "text-warning/50",
         state === "off" && "text-muted-foreground opacity-0 group-hover:opacity-100",
-        !locked && "hover:bg-muted",
+        !locked && "hover:bg-foreground/7",
         locked && state === "off" && "invisible",
       )}
     >
@@ -73,7 +73,7 @@ function Entry({
   onRemove: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded px-2 py-1 hover:bg-muted/40">
+    <div className="flex items-center gap-2 rounded px-2 py-1 hover:bg-foreground/7">
       <span className="min-w-0 flex-1 truncate font-mono">{text}</span>
       {count !== undefined && (
         <span className="shrink-0 tabular-nums text-muted-foreground">
@@ -85,7 +85,7 @@ function Entry({
         <button
           type="button"
           aria-label={`Remove ${text}`}
-          className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-foreground/7 hover:text-foreground"
           onClick={onRemove}
         >
           <X className="size-3" />
@@ -231,7 +231,7 @@ export function HiddenFilesCard({
       return (
         <li key={node.path}>
           <div
-            className="group flex items-center gap-1 rounded py-0.5 hover:bg-muted/40"
+            className="group flex items-center gap-1 rounded py-0.5 hover:bg-foreground/7"
             style={indent}
           >
             <LockButton
@@ -267,7 +267,7 @@ export function HiddenFilesCard({
     return (
       <li
         key={node.path}
-        className="group flex items-center gap-1.5 rounded py-0.5 hover:bg-muted/40"
+        className="group flex items-center gap-1.5 rounded py-0.5 hover:bg-foreground/7"
         style={indent}
       >
         <LockButton

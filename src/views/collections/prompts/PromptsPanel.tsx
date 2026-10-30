@@ -396,7 +396,7 @@ export function PromptsPanel({
                 "rounded-full border px-2 py-0.5 text-[11px]",
                 activeTag === known
                   ? "border-accent bg-accent/10 text-foreground"
-                  : "border-border text-muted-foreground hover:bg-muted/50",
+                  : "border-border text-muted-foreground hover:bg-foreground/7",
               )}
             >
               {known}

@@ -415,7 +415,7 @@ function StepRow({
         <button
           type="button"
           aria-label={`Remove step ${index + 1}`}
-          className="mt-1 shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="mt-1 shrink-0 rounded p-0.5 text-muted-foreground hover:bg-foreground/7 hover:text-foreground"
           onClick={onRemove}
         >
           <X className="size-3.5" />

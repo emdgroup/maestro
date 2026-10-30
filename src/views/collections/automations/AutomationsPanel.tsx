@@ -145,7 +145,7 @@ function AutomationRow({
         onClick={history.length > 0 ? onRowClick : undefined}
         className={cn(
           "flex items-center gap-3 px-4 py-3",
-          history.length > 0 && "cursor-pointer transition-colors hover:bg-muted/40",
+          history.length > 0 && "cursor-pointer transition-colors hover:bg-foreground/7",
         )}
       >
         <Tooltip>

@@ -46,7 +46,7 @@ export function WindowControls({ className }: { className?: string }) {
 
   const appWindow = getCurrentWindow();
   const buttonClass =
-    "flex h-8 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground";
+    "flex h-8 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/7 hover:text-foreground";
 
   return (
     <div className={cn("flex items-center gap-0.5", className)}>

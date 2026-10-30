@@ -175,7 +175,7 @@ export function WorktreeCard({
             <Popover>
               <PopoverTrigger
                 aria-label="Show what uses this worktree"
-                className="flex-1 flex items-center gap-3 px-3 py-1.5 text-xs hover:bg-muted transition-colors"
+                className="flex-1 flex items-center gap-3 px-3 py-1.5 text-xs hover:bg-foreground/7 transition-colors"
               >
                 {usage.task && (
                   <span className="flex items-center gap-1 text-muted-foreground">
@@ -202,7 +202,7 @@ export function WorktreeCard({
                 {usage.task && (
                   <button
                     type="button"
-                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left hover:bg-muted"
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left hover:bg-foreground/7"
                     onClick={() => navigate({ taskId: usage.task!.id })}
                   >
                     <SquareCheckBig className="size-3.5 shrink-0 text-muted-foreground" />
@@ -213,7 +213,7 @@ export function WorktreeCard({
                   <button
                     key={session.session_id}
                     type="button"
-                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left hover:bg-muted"
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left hover:bg-foreground/7"
                     onClick={() => navigate({ sessionId: session.session_id })}
                   >
                     <Bot className="size-3.5 shrink-0 text-muted-foreground" />

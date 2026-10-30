@@ -1114,7 +1114,7 @@ function CheckCards({
               <button
                 type="button"
                 aria-expanded={opened}
-                className="block w-full hover:bg-muted/50"
+                className="block w-full hover:bg-foreground/7"
                 onClick={() => onToggle(check.id)}
               >
                 {head}
@@ -1442,7 +1442,7 @@ function IterationRow({
         <button
           type="button"
           aria-expanded={open}
-          className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted/30"
+          className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-foreground/7"
           onClick={toggle}
         >
           {open ? (

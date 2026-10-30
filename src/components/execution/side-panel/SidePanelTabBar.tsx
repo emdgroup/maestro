@@ -88,7 +88,7 @@ export function SidePanelTabBar({
           <TooltipTrigger
             type="button"
             onClick={() => onCollapsedChange(true)}
-            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/7 transition-colors shrink-0"
           >
             <ChevronRight className="w-4 h-4" />
           </TooltipTrigger>
@@ -117,7 +117,7 @@ export function SidePanelTabBar({
                 data-tab-id={id}
                 onClick={() => onTabChange(id)}
                 className={cn(
-                  "relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors shrink-0 z-10",
+                  "relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[9px] whitespace-nowrap transition-colors shrink-0 z-10",
                   isActive
                     ? "text-accent hover:bg-transparent"
                     : "text-muted-foreground hover:bg-background/50",
@@ -126,7 +126,7 @@ export function SidePanelTabBar({
                 {isActive && (
                   <motion.span
                     layoutId="side-panel-tab-pill"
-                    className="absolute inset-0 rounded-md bg-background shadow-sm"
+                    className="absolute inset-0 rounded-[9px] bg-background shadow-sm"
                     transition={{ type: "spring", stiffness: 400, damping: 35 }}
                   />
                 )}
@@ -144,7 +144,7 @@ export function SidePanelTabBar({
                       onTabClose(id);
                     }}
                     className={cn(
-                      "relative z-10 ml-0.5 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-muted transition-colors",
+                      "relative z-10 ml-0.5 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-foreground/7 transition-colors",
                       isActive ? "opacity-50 hover:opacity-100" : "opacity-20 hover:opacity-60",
                     )}
                   >
@@ -168,7 +168,7 @@ export function SidePanelTabBar({
           <Tooltip>
             <TooltipTrigger
               render={
-                <PopoverTrigger className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-background/50 transition-colors shrink-0" />
+                <PopoverTrigger className="p-1.5 rounded-[9px] text-muted-foreground hover:text-foreground hover:bg-background/50 transition-colors shrink-0" />
               }
             >
               <Plus className="w-3.5 h-3.5" />
@@ -183,7 +183,7 @@ export function SidePanelTabBar({
           <TooltipTrigger
             type="button"
             onClick={() => onMaximizedChange(!maximized)}
-            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/7 transition-colors shrink-0"
           >
             {maximized ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </TooltipTrigger>

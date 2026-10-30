@@ -172,7 +172,7 @@ export function SessionHistoryList({
                   }}
                   className={cn(
                     "group flex items-center gap-2.5 w-full px-2 py-2 rounded-md cursor-pointer transition-colors",
-                    ticked.has(entry.session_id) ? "bg-muted/40" : "hover:bg-muted/20",
+                    ticked.has(entry.session_id) ? "bg-muted/40" : "hover:bg-foreground/7",
                   )}
                 >
                   {/* Selecting is only for deleting, so an agent that cannot delete offers none. */}
@@ -194,7 +194,7 @@ export function SessionHistoryList({
                         <Button
                           variant="ghost"
                           size="icon-xs"
-                          className="opacity-0 group-hover:opacity-100 p-0.5 transition-opacity hover:bg-muted/40"
+                          className="opacity-0 group-hover:opacity-100 p-0.5 transition-opacity hover:bg-foreground/7"
                           onClick={(e) => onStartRename(entry.session_id, entry.title, e)}
                         />
                       }

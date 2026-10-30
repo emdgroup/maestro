@@ -202,7 +202,7 @@ export function UpdateCard() {
                     onClick={handleReloadClick}
                     disabled={isChecking}
                     aria-label="Check for updates"
-                    className="w-8 h-8 rounded-lg border border-border/60 bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+                    className="w-8 h-8 rounded-lg border border-border/60 bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-foreground/7 transition-colors disabled:opacity-50"
                   />
                 }
               >

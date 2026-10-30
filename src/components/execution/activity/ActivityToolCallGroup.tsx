@@ -183,7 +183,7 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
             "-ml-1 flex min-w-0 gap-1.5 rounded-md px-1 py-0.5 text-xs text-muted-foreground",
             showCommand ? "flex-1 items-start" : "items-center",
             expandable &&
-              "cursor-pointer transition-colors hover:bg-muted/40 hover:text-foreground/75",
+              "cursor-pointer transition-colors hover:bg-foreground/7 hover:text-foreground/75",
           )}
         >
           {fileLine || line}
