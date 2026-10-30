@@ -27,9 +27,9 @@ function cssVarAlpha(varName: string, alpha: number): string {
 // App chrome rather than terminal colors, so they apply in the "default" color mode too.
 function getScrollbarTheme(): ITheme {
   return {
-    scrollbarSliderBackground: cssVarAlpha("--muted-foreground", 0.3),
-    scrollbarSliderHoverBackground: cssVarAlpha("--muted-foreground", 0.5),
-    scrollbarSliderActiveBackground: cssVarAlpha("--muted-foreground", 0.5),
+    scrollbarSliderBackground: cssVarAlpha("--accent", 0.18),
+    scrollbarSliderHoverBackground: cssVarAlpha("--accent", 0.7),
+    scrollbarSliderActiveBackground: cssVarAlpha("--accent", 0.7),
     // Setting overviewRuler.width also enables the ruler, which draws a 1px line in this color,
     // white by default. "transparent" is rejected like any other non-rgba translucent color.
     overviewRulerBorder: "rgba(0, 0, 0, 0)",
@@ -110,7 +110,7 @@ export function getTerminalTheme(colorMode?: TerminalColorMode): ITerminalOption
       '"JetBrainsMono Nerd Font Mono", "JetBrains Mono", "FiraCode Nerd Font Mono", "Fira Code", monospace',
     fontSize: 13,
     letterSpacing: 0,
-    // Also sizes the scrollbar: 8px, as in index.css. FitAddon reads the same value.
+    // Also sizes the scrollbar. FitAddon reads the same value.
     overviewRuler: { width: 8 },
     // TUIs pick colors for a dark terminal, which wash out on the light theme's pale glass.
     minimumContrastRatio: 4.5,

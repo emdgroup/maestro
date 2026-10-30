@@ -250,23 +250,29 @@
      possible specificity, so `scrollbar-none` and any other class-based override still wins.
 
      `height` is what sizes a *horizontal* bar; without it only vertical bars were ever themed,
-     which is why the file tree's horizontal bar came out at the OS default. */
+     which is why the file tree's horizontal bar came out at the OS default.
+
+     No `scrollbar-width` or `scrollbar-color` anywhere near this: Chromium drops every rule below
+     for an element that sets either one. */
   *::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
   }
 
   *::-webkit-scrollbar-track {
     background: transparent;
   }
 
+  /* A 6px pill floating in the 10px gutter: the transparent border is the gap around it. */
   *::-webkit-scrollbar-thumb {
-    background-color: oklch(from var(--muted-foreground) l c h / 0.3);
-    border-radius: 4px;
+    background-color: color-mix(in oklab, var(--accent) 18%, transparent);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: 999px;
   }
 
   *::-webkit-scrollbar-thumb:hover {
-    background-color: oklch(from var(--muted-foreground) l c h / 0.5);
+    background-color: color-mix(in oklab, var(--accent) 70%, transparent);
   }
 
   *::-webkit-scrollbar-corner {
@@ -276,12 +282,6 @@
   /* xterm draws its own scrollbar; its width and colors are set in terminalTheme.ts. */
   .xterm .xterm-scrollable-element > .scrollbar > .slider {
     border-radius: 4px;
-  }
-
-  /* Firefox scrollbar styling */
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: oklch(from var(--muted-foreground) l c h / 0.3) transparent;
   }
 
   /* Hide native password reveal button (we have custom one) */
@@ -1429,8 +1429,10 @@
   background-color: transparent;
 }
 /* A card on a glass panel: lighter than the panel and edged with a highlight, so it holds its own
-   against the light theme's pale wash where `home-pane` blends in. */
-.glass-tile {
+   against the light theme's pale wash where `home-pane` blends in. `settings-section` is the same
+   card with no hover, for large panels the user works inside. */
+.glass-tile,
+.settings-section {
   background: color-mix(in oklab, var(--card) 55%, transparent);
   border: 1px solid color-mix(in oklab, var(--foreground) 9%, transparent);
   box-shadow:
@@ -1446,7 +1448,8 @@
   background: color-mix(in oklab, var(--card) 75%, transparent);
   border-color: color-mix(in oklab, var(--foreground) 15%, transparent);
 }
-.dark .glass-tile {
+.dark .glass-tile,
+.dark .settings-section {
   background: color-mix(in oklab, var(--card) 25%, transparent);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.08),

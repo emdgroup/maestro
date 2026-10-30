@@ -555,7 +555,7 @@ export function AgentProfilesSection({
   );
 
   return (
-    <div className="rounded-2xl border border-foreground/7 bg-card p-4 space-y-4">
+    <div className="settings-section rounded-[14px] p-4 space-y-4">
       <div>
         <h3 className="text-sm font-semibold flex items-center gap-2">
           <Bot className="size-4" />
@@ -621,7 +621,7 @@ export function AgentProfilesSection({
 
       <section
         aria-label={entry.title}
-        className="rounded-2xl border border-foreground/7 bg-card p-4 space-y-3"
+        className="rounded-[12px] border border-foreground/7 bg-background/50 p-4 space-y-3"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

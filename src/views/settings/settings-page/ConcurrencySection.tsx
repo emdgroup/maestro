@@ -15,7 +15,7 @@ export function ConcurrencySection({ connection }: { connection: ConnectionKey }
     saveCapacity.mutate({ connection, settings: { ...capacity, ...patch } });
 
   return (
-    <div className="rounded-2xl border border-foreground/7 bg-card p-4 space-y-4">
+    <div className="settings-section rounded-[14px] p-4 space-y-4">
       <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
         <Cpu className="w-4 h-4 text-muted-foreground" />
         Running agents
