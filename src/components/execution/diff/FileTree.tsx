@@ -204,8 +204,7 @@ const FileNode: React.FC<{
   }
 
   const isSelected = node.fileName === selectedFile;
-  const status = node.fileStatus ?? "M";
-  const statusColor = STATUS_TEXT[status];
+  const status = node.fileStatus;
   const checkState = node.fileName
     ? (checkedFiles?.get(node.fileName) ?? "unchecked")
     : "unchecked";
@@ -238,7 +237,7 @@ const FileNode: React.FC<{
         </CheckboxPrimitive.Root>
       )}
       <File className="h-3 w-3 shrink-0 text-muted-foreground" />
-      <span className={cn("font-medium shrink-0", statusColor)}>{status}</span>
+      {status && <span className={cn("font-medium shrink-0", STATUS_TEXT[status])}>{status}</span>}
       <span className="font-mono truncate">{node.name}</span>
       {viewedFiles?.has(node.fileName!) && (
         <CheckCheck className="size-3.5 shrink-0 text-success ml-auto" />

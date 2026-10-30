@@ -141,7 +141,7 @@ export function LazyFileTree({
           </ToolbarButton>
         )}
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto px-1.5 py-1">
         {normalizedFilter ? (
           <FilterResults
             root={root}

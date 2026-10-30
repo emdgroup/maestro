@@ -63,7 +63,7 @@ export function buildFileTree(files: FileListEntry[]): FileTreeNode[] {
         isDir: !isLast,
         children: isLast ? undefined : [],
         fileName: isLast ? file.fileName : undefined,
-        fileStatus: isLast ? (file.status ?? "M") : undefined,
+        fileStatus: isLast ? file.status : undefined,
       };
       nodeByPath[path] = node;
 

@@ -2,6 +2,8 @@ import { useState, useMemo } from "react";
 import { PanelLeft, ExternalLink, FolderDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Slider } from "@/ui/slider";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { CopyStateIcon, useCopyToClipboard } from "@/components/execution/activity/HighlightedCode";
 import { ReviewLayout } from "@/components/execution/diff/ReviewLayout";
 import { useReviewPanelLayout } from "@/components/execution/diff/useReviewPanelLayout";
 import { WorkingFileContentView } from "@/components/execution/activity/WorkingFileContentView";
@@ -57,6 +59,11 @@ export function ArtifactsPanel({
   }, [selected, relativeFiles, files]);
 
   const basename = selected ? (selected.split("/").pop() ?? selected) : null;
+  const absolutePath =
+    selectedAbsPath && cwd && !/^([a-zA-Z]:)?[\\/]/.test(selectedAbsPath)
+      ? `${cwd}/${selectedAbsPath}`
+      : selectedAbsPath;
+  const { copied, copy: copyPath } = useCopyToClipboard(absolutePath ?? "");
 
   async function handleOpen() {
     if (!selectedAbsPath) return;
@@ -96,10 +103,34 @@ export function ArtifactsPanel({
         >
           <PanelLeft className="size-4" />
         </ToolbarButton>
-        <div className="flex-1 flex items-center justify-center min-w-0">
-          <span className="text-xs font-mono text-muted-foreground truncate">
-            {basename ?? "No file selected"}
-          </span>
+        {/* As the Files tab: clicking the name copies the absolute path. */}
+        <div className="flex-1 flex items-center justify-center gap-1.5 min-w-0 overflow-hidden">
+          {basename ? (
+            <Tooltip trackCursorAxis="x">
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    onClick={copyPath}
+                    className="group/name flex items-center gap-1 min-w-0 text-xs font-mono text-muted-foreground hover:text-foreground transition-colors"
+                  />
+                }
+              >
+                <span className="truncate">{basename}</span>
+                <CopyStateIcon
+                  copied={copied}
+                  className={cn(
+                    "size-3 shrink-0",
+                    !copied &&
+                      "opacity-0 group-hover/name:opacity-100 group-focus-visible/name:opacity-100 transition-opacity",
+                  )}
+                />
+              </TooltipTrigger>
+              <TooltipContent className="max-w-md break-all">{selected}</TooltipContent>
+            </Tooltip>
+          ) : (
+            <span className="text-xs text-muted-foreground truncate">No file selected</span>
+          )}
         </div>
         {selected !== null && (
           <>
