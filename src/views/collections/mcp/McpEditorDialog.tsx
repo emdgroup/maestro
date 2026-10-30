@@ -296,9 +296,7 @@ export function McpEditorDialog({
         className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
       >
         <div className="flex items-center gap-2 px-6 pt-4">
-          <DialogTitle className="text-[11px] font-normal tracking-[0.14em] uppercase text-muted-foreground">
-            {editing ? "Edit MCP server" : "New MCP server"}
-          </DialogTitle>
+          <DialogTitle>{editing ? "Edit MCP server" : "New MCP server"}</DialogTitle>
           <Segmented
             label="View"
             className="ml-auto"

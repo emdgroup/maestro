@@ -313,9 +313,7 @@ export function CreateTaskModal({
             ref={issuePopupAnchor}
             className="pointer-events-none absolute inset-x-6 bottom-0"
           />
-          <DialogTitle className="text-[11px] font-normal tracking-[0.14em] uppercase text-muted-foreground">
-            Create task
-          </DialogTitle>
+          <DialogTitle>Create task</DialogTitle>
           {hasProvider && issueConfig && (
             <IssueSearchCombobox
               issueConfig={issueConfig}

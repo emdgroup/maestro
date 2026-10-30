@@ -119,9 +119,7 @@ export function SkillEditorDialog({
         className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
       >
         <div className="flex items-center gap-2 px-6 pt-4">
-          <DialogTitle className="text-[11px] font-normal tracking-[0.14em] uppercase text-muted-foreground">
-            {editing ? "Edit skill" : "New skill"}
-          </DialogTitle>
+          <DialogTitle>{editing ? "Edit skill" : "New skill"}</DialogTitle>
           <Segmented
             label="View"
             className="ml-auto"

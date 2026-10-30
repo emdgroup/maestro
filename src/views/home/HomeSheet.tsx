@@ -56,7 +56,7 @@ export function HomeSheet({
                 {eyebrow}
               </DialogDescription>
             )}
-            <DialogTitle className="mt-0.5 text-2xl font-semibold tracking-[-0.025em]">
+            <DialogTitle className="mt-0.5 text-2xl font-semibold tracking-[-0.025em] normal-case text-foreground">
               {title}
             </DialogTitle>
           </div>

@@ -198,8 +198,8 @@ export function AgentsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent showCloseButton={false} className="gap-4 p-5 sm:max-w-sm">
         <div className="space-y-1">
-          <DialogTitle className="text-sm">Agents</DialogTitle>
-          <DialogDescription className="text-xs">
+          <DialogTitle>Agents</DialogTitle>
+          <DialogDescription>
             Which agents on this connection get <span className="font-mono">{name}</span>.
           </DialogDescription>
         </div>

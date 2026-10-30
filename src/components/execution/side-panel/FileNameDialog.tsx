@@ -74,7 +74,7 @@ export function FileNameDialog({
       <DialogContent className="sm:max-w-sm gap-4">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription className="text-xs">{description}</DialogDescription>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-1.5">
           <Input

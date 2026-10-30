@@ -290,7 +290,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
           <>
             {/* Header */}
             <DialogHeader className="flex-row items-center gap-3 px-6 pt-4 shrink-0">
-              <DialogTitle className="text-[11px] font-normal tracking-[0.14em] uppercase text-muted-foreground">
+              <DialogTitle>
                 {isEditable ? "Edit task" : "Task detail"} ·{" "}
                 {task.is_imported ? task.external_id : `task-${task.id}`}
               </DialogTitle>
