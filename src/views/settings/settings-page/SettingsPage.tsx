@@ -115,7 +115,7 @@ export function SettingsPage({
 
           {/* A translucent well inset behind a rounded corner, on the dialog's glass. The section
               cards inside are `settings-section` tiles, which lift off it. */}
-          <div className="min-h-0 flex-1 overflow-y-auto rounded-tl-[18px] border-t border-l border-foreground/7 bg-background/30">
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-tl-[18px] border-t border-l border-accent/22 bg-background/30">
             <div className="mx-auto max-w-2xl p-6">
               <div className="mb-6">
                 <h1 className="text-2xl font-semibold tracking-[-0.025em] text-foreground">
