@@ -222,7 +222,7 @@ const SessionRow = memo(function SessionRow({
             onClick={() => onSelect(session.session_id)}
             className={cn(
               "pr-row relative flex items-stretch cursor-pointer transition-colors",
-              isSelected && "selected-session-item selected",
+              isSelected && "selected",
             )}
           >
             {/* Avatar column */}
