@@ -25,7 +25,7 @@ export function TerminalComponent({ sessionId }: TerminalComponentProps) {
   const channelRef = useRef<Channel<string> | null>(null);
   const { data: settings } = useSettings();
   const terminalColorMode = settings?.terminal_color_mode ?? "follow_theme";
-  const { theme, systemTheme } = useTheme();
+  const { theme, systemTheme, effectiveAccentHue } = useTheme();
   const effectiveTheme = theme === "system" ? systemTheme : theme;
 
   useEffect(() => {
@@ -148,10 +148,10 @@ export function TerminalComponent({ sessionId }: TerminalComponentProps) {
     const terminal = xtermRef.current;
     if (!terminal) return;
     terminal.options = getTerminalColorOptions(terminalColorMode);
-  }, [terminalColorMode, effectiveTheme]);
+  }, [terminalColorMode, effectiveTheme, effectiveAccentHue]);
 
   return (
-    <div className="py-2 pl-2 h-full w-full bg-background dark:bg-transparent">
+    <div className="py-2 pl-2 h-full w-full bg-(--terminal-surface) dark:bg-transparent">
       <div
         ref={terminalRef}
         {...{ [TERMINAL_CONTAINER_ATTRIBUTE]: "" }}

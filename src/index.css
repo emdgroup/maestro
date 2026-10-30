@@ -487,6 +487,8 @@
   --screen-tint: color-mix(in oklch, var(--accent) 24%, transparent);
   --bubble-body: color-mix(in oklch, oklch(from var(--accent) calc(l - 0.04) c h) 55%, transparent);
   --bubble-hi: color-mix(in oklch, oklch(from var(--accent) calc(l + 0.14) c h) 60%, transparent);
+  /* The light theme's terminal: opaque, see terminalTheme.ts, but tinted as the glass around it is. */
+  --terminal-surface: color-mix(in oklab, var(--accent) 8%, var(--background));
 }
 .dark {
   --screen-tint: color-mix(in oklch, var(--accent) 16%, transparent);

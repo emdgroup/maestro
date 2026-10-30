@@ -85,7 +85,7 @@ function getTerminalThemeOnly(colorMode?: TerminalColorMode): ITheme {
     // rather than plain transparent: xterm draws inverse-video text in this color with the alpha
     // forced to 1. The WebGL renderer also paints dim and italic cells in it at full alpha, which
     // the light theme's pale glass shows as boxes, so that theme stays opaque.
-    background: isDark ? cssVarAlpha("--background", 0) : cssVar("--background"),
+    background: isDark ? cssVarAlpha("--background", 0) : cssVar("--terminal-surface"),
     foreground: cssVar("--foreground"),
     cursor: cssVar("--foreground"),
     selectionBackground: cssVar("--accent"),
