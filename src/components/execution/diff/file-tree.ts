@@ -13,32 +13,18 @@ export interface FileListEntry {
 }
 
 /**
- * How each status is coloured in the two file lists, and what it is called.
+ * How each status is coloured in the file tree.
  *
- * Shared so the flat list's dot and the tree's letter cannot drift apart, and so adding a status
- * is one edit rather than a hunt through ternaries. Untracked takes `info` because the other three
+ * A table so that adding a status is one edit rather than a hunt through ternaries. Untracked takes
+ * `info` because the other three
  * are already spoken for and, unlike them, it is not a judgement about the change — it says the
  * file is outside git's view, not that it is good or bad.
  */
-export const STATUS_DOT: Record<FileStatus, string> = {
-  A: "bg-success",
-  M: "bg-warning",
-  D: "bg-destructive",
-  U: "bg-info",
-};
-
 export const STATUS_TEXT: Record<FileStatus, string> = {
   A: "text-success",
   M: "text-muted-foreground",
   D: "text-destructive",
   U: "text-info",
-};
-
-export const STATUS_LABEL: Record<FileStatus, string> = {
-  A: "Added",
-  M: "Modified",
-  D: "Deleted",
-  U: "Untracked",
 };
 
 export interface FileTreeNode {
