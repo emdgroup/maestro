@@ -213,13 +213,10 @@ export function RunCard({
     <div
       {...interactive}
       className={cn(
-        "rounded-md border px-2 py-1.5",
-        state === "awaiting"
-          ? "border-amber-500/40 bg-amber-500/5"
-          : state === "failed"
-            ? "border-destructive/30 bg-destructive/5"
-            : "border-border bg-background",
-        showable && "cursor-pointer hover:bg-foreground/7",
+        "glass-tile rounded-[14px] px-3 py-2",
+        state === "awaiting" && "border-amber-500/40! bg-amber-500/10!",
+        state === "failed" && "border-destructive/30! bg-destructive/10! hover:bg-destructive/15!",
+        showable && "cursor-pointer",
       )}
     >
       <div className="flex items-center gap-1.5 text-[11px]">
