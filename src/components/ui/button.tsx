@@ -11,7 +11,7 @@ const buttonVariants = cva(
         default: "bg-primary text-primary-foreground hover:bg-primary/80",
         // Home's pane (`home-pane` in index.css) as utilities, so a caller's classes still win.
         outline:
-          "border-foreground/7 bg-background/50 hover:-translate-y-0.5 hover:border-foreground/14 hover:bg-background/84 hover:text-foreground aria-expanded:bg-background/84 aria-expanded:text-foreground",
+          "border-foreground/7 bg-background/50 hover:border-foreground/14 hover:bg-background/84 hover:text-foreground aria-expanded:bg-background/84 aria-expanded:text-foreground",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:
