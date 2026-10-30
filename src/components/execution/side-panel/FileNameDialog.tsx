@@ -73,9 +73,7 @@ export function FileNameDialog({
     >
       <DialogContent className="sm:max-w-sm gap-4">
         <DialogHeader>
-          <DialogTitle className="text-[11px] font-normal tracking-[0.14em] uppercase text-muted-foreground">
-            {title}
-          </DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription className="text-xs">{description}</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-1.5">
@@ -91,11 +89,11 @@ export function FileNameDialog({
                 submit();
               }
             }}
-            className="home-field rounded-xl font-mono text-xs shadow-none focus-visible:ring-0"
+            className="font-mono text-xs"
           />
           <p className="text-xs text-destructive min-h-4">{showError ? error : ""}</p>
         </div>
-        <DialogFooter className="[&_[data-slot=button]]:h-9 [&_[data-slot=button]]:rounded-xl [&_[data-slot=button]]:px-4 [&_[data-slot=button]]:text-xs">
+        <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={pending}>
             Cancel
           </Button>

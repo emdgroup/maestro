@@ -65,7 +65,7 @@ function CopyButton({ value, label }: { value: string; label: string }) {
 function SecretField({ secret, children }: { secret: string; children?: ReactNode }) {
   const [revealed, setRevealed] = useState(false);
   return (
-    <div className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1">
+    <div className="home-field flex items-center gap-1 rounded-lg px-2 py-1">
       {/* One line that scrolls rather than one cut short: a secret ending in "…" reads as one that
           was not all copied. At this size it fits both dialogs; in a narrow window it scrolls, with no bar. */}
       <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap scrollbar-none text-[11px]">
@@ -172,7 +172,7 @@ export function WebhookSection({
   // dialog. Until there is something to copy, the only choice to make here is the overlap.
   if (!secret) {
     return (
-      <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
+      <div className="usage-pane space-y-3 rounded-xl p-3">
         {overlap}
         <p className="text-[11px] text-muted-foreground/70">
           {template
@@ -184,11 +184,11 @@ export function WebhookSection({
   }
 
   return (
-    <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
+    <div className="usage-pane space-y-3 rounded-xl p-3">
       {url && (
         <div className="space-y-1">
           <span className="text-[11px] text-muted-foreground">URL</span>
-          <div className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1">
+          <div className="home-field flex items-center gap-1 rounded-lg px-2 py-1">
             <code className="min-w-0 flex-1 truncate text-[11px]">{url}</code>
             <CopyButton value={url} label="Copy the URL" />
           </div>
@@ -275,7 +275,7 @@ export function WebhookCreatedDialog({
             {url && (
               <div className="space-y-1">
                 <span className="text-[11px] text-muted-foreground">URL</span>
-                <div className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1">
+                <div className="home-field flex items-center gap-1 rounded-lg px-2 py-1">
                   <code className="min-w-0 flex-1 truncate text-[11px]">{url}</code>
                   <CopyButton value={url} label="Copy the URL" />
                 </div>

@@ -40,7 +40,7 @@ export function SessionHistorySidebar({
 }: Props) {
   const now = useNow();
   return (
-    <div className="w-44 border-r border-border flex flex-col shrink-0 py-2">
+    <div className="w-44 border-r border-accent/10 flex flex-col shrink-0 py-2">
       <div className="flex flex-col gap-0.5 px-2">
         {(Object.keys(PRESET_LABELS) as Exclude<Preset, "custom">[]).map((p) => (
           <button
@@ -48,10 +48,10 @@ export function SessionHistorySidebar({
             type="button"
             onClick={() => onPresetChange(p)}
             className={cn(
-              "w-full text-left px-2.5 py-1.5 rounded-md text-xs transition-colors",
+              "w-full text-left px-2.5 py-1.5 rounded-[10px] text-xs transition-colors",
               preset === p
-                ? "bg-muted text-foreground font-medium"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                ? "bg-accent/14 text-foreground font-medium"
+                : "text-muted-foreground hover:text-foreground hover:bg-foreground/5",
             )}
           >
             {PRESET_LABELS[p]}

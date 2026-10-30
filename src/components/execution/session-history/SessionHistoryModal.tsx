@@ -43,7 +43,7 @@ export function SessionHistoryModal(props: SessionHistoryModalProps) {
 
         {/* Agent pills */}
         {agents.length > 0 && (
-          <div className="px-3 py-2 border-b border-border shrink-0 overflow-x-auto">
+          <div className="px-3 py-2 border-b border-accent/10 shrink-0 overflow-x-auto">
             <div className="flex gap-1.5 min-w-max">
               {agents.map((agent) => (
                 <button
@@ -51,11 +51,10 @@ export function SessionHistoryModal(props: SessionHistoryModalProps) {
                   type="button"
                   onClick={() => h.setAgentId(agent.id)}
                   className={cn(
-                    "h-8 px-3 rounded-md text-xs font-medium flex items-center gap-1.5 border transition-colors shrink-0",
-                    h.agentId === agent.id
-                      ? "bg-primary/10 border-primary/30 text-primary"
-                      : "border-border text-muted-foreground hover:text-foreground hover:border-border/80 bg-transparent",
+                    "home-pane h-8 px-3 rounded-xl text-xs font-medium flex items-center gap-1.5 shrink-0",
+                    h.agentId !== agent.id && "text-muted-foreground hover:text-foreground",
                   )}
+                  data-selected={h.agentId === agent.id}
                 >
                   {hasBrandIcon(agent.id) ? (
                     <BrandIcon slug={agent.id} className="size-4 shrink-0" />

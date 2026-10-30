@@ -175,7 +175,7 @@ export function NewWorktreeFields({
           <InputGroup className={cn(suffixError && "border-destructive")}>
             <InputGroupAddon
               align="inline-start"
-              className="font-mono text-xs border-r border-border bg-muted/60 h-full rounded-l-md px-2.5"
+              className="font-mono text-xs border-r border-foreground/12 bg-foreground/5 h-full rounded-l-xl px-2.5"
             >
               {MAESTRO_BRANCH_PREFIX}
             </InputGroupAddon>

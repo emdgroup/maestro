@@ -72,7 +72,7 @@ export function SessionHistoryList({
   return (
     <div className="flex flex-1 flex-col min-w-0">
       {/* Search row */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-accent/10 shrink-0">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/50 pointer-events-none" />
           <input
@@ -101,7 +101,7 @@ export function SessionHistoryList({
       </div>
 
       {/* Summary bar */}
-      <div className="px-3 py-1.5 border-b border-border shrink-0 flex items-center gap-2">
+      <div className="px-3 py-1.5 border-b border-accent/10 shrink-0 flex items-center gap-2">
         {supportsSessionDelete && (
           <span onClick={(e) => e.stopPropagation()} className="shrink-0">
             <Checkbox
@@ -220,7 +220,7 @@ export function SessionHistoryList({
       {/* Multi-select footer */}
       <div
         className={cn(
-          "overflow-hidden transition-[height,opacity] duration-200 border-t border-border shrink-0",
+          "overflow-hidden transition-[height,opacity] duration-200 border-t border-accent/10 shrink-0",
           ticked.size > 0 ? "h-12 opacity-100" : "h-0 opacity-0",
         )}
       >

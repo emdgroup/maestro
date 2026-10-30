@@ -79,14 +79,10 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
             <button
               key={agent.id}
               onClick={() => setSelected(agent.id)}
-              className={cn(
-                "flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left transition-colors",
-                selected === agent.id
-                  ? "border-primary bg-primary/10"
-                  : "border-border hover:bg-muted",
-              )}
+              className={cn("home-pane flex items-center gap-2.5 px-3 py-2 rounded-xl text-left")}
+              data-selected={selected === agent.id}
             >
-              <div className="size-7 rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-muted">
+              <div className="size-7 rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-foreground/5">
                 {hasBrandIcon(agent.id) ? (
                   <BrandIcon slug={agent.id} className="size-5" />
                 ) : (

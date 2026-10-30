@@ -38,17 +38,17 @@ function BitbucketModeToggle({
   disabled: boolean;
 }) {
   return (
-    <div className="flex rounded-md border border-border overflow-hidden w-fit">
+    <div className="flex gap-1 w-fit rounded-xl border border-foreground/10 bg-background/45 p-[3px]">
       {(["cloud", "server"] as const).map((m) => (
         <button
           key={m}
           type="button"
           disabled={disabled}
           onClick={() => onChange(m)}
-          className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+          className={`h-6 rounded-lg px-2.5 text-xs transition-colors ${
             mode === m
-              ? "bg-primary text-primary-foreground"
-              : "bg-background text-muted-foreground hover:bg-muted"
+              ? "bg-card/90 text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
           }`}
         >
           {m === "cloud" ? "Cloud" : "Server / DC"}

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
 import { Ban, CalendarClock, ChevronDown, Webhook, type LucideIcon } from "lucide-react";
 import {
   Dialog,
@@ -194,15 +195,14 @@ function TriggerSection({
           const next = values.find((value) => value !== trigger) as Trigger | undefined;
           if (next) choose(next);
         }}
-        className="w-full"
+        spacing={1}
+        className={`w-full ${SEGMENT_GROUP}`}
       >
         {TRIGGERS.map((option) => (
           <ToggleGroupItem
             key={option.value}
             value={option.value}
-            size="sm"
-            variant="outline"
-            className="flex-1 gap-1.5 text-xs"
+            className={`flex-1 gap-1.5 ${SEGMENT_ITEM}`}
           >
             <option.icon className="size-3.5" />
             {option.label}

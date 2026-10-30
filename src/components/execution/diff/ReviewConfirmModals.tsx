@@ -337,7 +337,7 @@ export function ApproveModal({
                   variant. */}
               <SelectTrigger
                 aria-label="When this task is approved"
-                className="w-full data-[size=default]:h-auto py-2 px-3 border-border bg-transparent shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted"
+                className="w-full data-[size=default]:h-auto py-2 px-3 hover:bg-background/84"
               >
                 <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
                   <SelectedIcon className="size-3.5 shrink-0 text-muted-foreground" />
