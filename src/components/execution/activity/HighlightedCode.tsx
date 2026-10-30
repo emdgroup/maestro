@@ -105,11 +105,8 @@ export const CodeBlockWrapper = memo(function CodeBlockWrapper({
   const { copied, copy: handleCopy } = useCopyToClipboard(code);
 
   return (
-    <div className="relative group/code my-2 rounded-md border border-border overflow-hidden">
-      <div
-        className="flex items-center justify-between px-3 py-1.5 border-b border-border"
-        style={{ background: "color-mix(in oklch, var(--foreground) 15%, var(--muted))" }}
-      >
+    <div className="glass-tile relative group/code my-3 rounded-[14px] p-1 shadow-[0_6px_18px_-8px_rgb(0_0_0/0.35)]! dark:shadow-[0_8px_20px_-8px_rgb(0_0_0/0.8)]!">
+      <div className="flex items-center justify-between px-2 pt-0.5 pb-1">
         <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wide">
           {lang || "text"}
         </span>
@@ -122,7 +119,12 @@ export const CodeBlockWrapper = memo(function CodeBlockWrapper({
           <CopyStateIcon copied={copied} className="size-3" />
         </button>
       </div>
-      <HighlightedCode code={code} lang={lang} stripContainerStyle={stripContainerStyle} />
+      <HighlightedCode
+        code={code}
+        lang={lang}
+        stripContainerStyle={stripContainerStyle}
+        className="rounded-[10px] overflow-hidden"
+      />
     </div>
   );
 });
