@@ -399,7 +399,9 @@ function ProxiedImage({
   const resolvedSrc = needsProxy ? (proxyQuery.data ?? src) : (dataUrl ?? src);
 
   if (loading) {
-    return <span className="inline-block w-32 h-20 bg-muted rounded-md animate-pulse my-2" />;
+    return (
+      <span className="inline-block w-32 h-20 bg-foreground/8 rounded-md animate-pulse my-2" />
+    );
   }
 
   if (insideAnchor) {

@@ -358,7 +358,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
               className={cn(
                 "p-1.5 rounded-md transition-colors",
                 !sidebarOpen
-                  ? "bg-muted/60 text-foreground"
+                  ? "home-pane rounded-xl text-foreground"
                   : "text-muted-foreground hover:text-foreground hover:bg-foreground/7",
               )}
             >

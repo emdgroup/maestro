@@ -246,7 +246,7 @@ function CatalogCard({
           }
         />
       ) : (
-        <span className="inline-block h-3 w-3/4 animate-pulse rounded bg-muted" />
+        <span className="inline-block h-3 w-3/4 animate-pulse rounded bg-foreground/8" />
       )}
       <div className="mt-auto flex items-center gap-2">
         <span className="truncate font-mono text-[11px] text-muted-foreground">{entry.source}</span>

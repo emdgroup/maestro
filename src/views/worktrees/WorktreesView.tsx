@@ -334,7 +334,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
 
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-8">
-        <div className="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center">
+        <div className="w-12 h-12 rounded-full border border-foreground/7 bg-background/50 flex items-center justify-center">
           <GitBranch className="w-6 h-6 text-muted-foreground" />
         </div>
         <div className="space-y-1.5">

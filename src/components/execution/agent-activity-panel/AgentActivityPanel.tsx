@@ -801,7 +801,7 @@ export function AgentActivityPanel({
   ) : (
     <>
       {liveState.plan && (
-        <div className="shrink-0 bg-card border-b border-accent/10">
+        <div className="shrink-0 border-b border-accent/10">
           <ActivityPlanPanel entries={liveState.plan} title={liveState.planTitle} />
         </div>
       )}

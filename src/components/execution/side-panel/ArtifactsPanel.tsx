@@ -86,7 +86,7 @@ export function ArtifactsPanel({
   return (
     <div className="relative flex flex-col h-full min-h-0">
       {/* Header */}
-      <div className="flex items-center h-10 px-2 border-b border-accent/10 bg-card/50 shrink-0 gap-1">
+      <div className="flex items-center h-10 px-2 border-b border-accent/10 shrink-0 gap-1">
         <Tooltip>
           <TooltipTrigger
             type="button"
@@ -94,7 +94,7 @@ export function ArtifactsPanel({
             className={cn(
               "p-1.5 rounded-md transition-colors shrink-0",
               listOpen
-                ? "text-foreground bg-muted/60"
+                ? "text-foreground bg-accent/14"
                 : "text-muted-foreground hover:text-foreground hover:bg-foreground/7",
             )}
           >

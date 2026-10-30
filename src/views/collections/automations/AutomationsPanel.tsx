@@ -216,27 +216,27 @@ function AutomationRow({
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
             {(automation.cron || !automation.webhook_enabled) && (
-              <span className="rounded bg-muted/50 px-1.5 py-0.5">
+              <span className="rounded bg-foreground/7 px-1.5 py-0.5">
                 {describeSchedule(automation.cron)}
               </span>
             )}
             {automation.webhook_enabled && (
-              <span className="flex items-center gap-1 rounded bg-muted/50 px-1.5 py-0.5">
+              <span className="flex items-center gap-1 rounded bg-foreground/7 px-1.5 py-0.5">
                 <Webhook className="size-3" />
                 Webhook
               </span>
             )}
             {next && <span>next {describeNextRun(next, new Date(now))}</span>}
-            <span className="rounded bg-muted/50 px-1.5 py-0.5">{agentName}</span>
+            <span className="rounded bg-foreground/7 px-1.5 py-0.5">{agentName}</span>
             {automation.model && (
-              <span className="rounded bg-muted/50 px-1.5 py-0.5">{automation.model}</span>
+              <span className="rounded bg-foreground/7 px-1.5 py-0.5">{automation.model}</span>
             )}
             {automation.permission_mode && (
-              <span className="rounded bg-muted/50 px-1.5 py-0.5">
+              <span className="rounded bg-foreground/7 px-1.5 py-0.5">
                 {automation.permission_mode}
               </span>
             )}
-            <span className="rounded bg-muted/50 px-1.5 py-0.5">
+            <span className="rounded bg-foreground/7 px-1.5 py-0.5">
               {describeWorkspace(automation.workspace)}
             </span>
           </div>

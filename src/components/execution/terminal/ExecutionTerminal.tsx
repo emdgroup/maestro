@@ -187,7 +187,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
     return (
       <div className="execution-terminal modal-backdrop">
         <div className="execution-terminal-container">
-          <div className="flex items-center justify-between px-4 py-2 bg-muted border-b border-border">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-accent/10">
             <h2>{taskName}</h2>
             <Tooltip>
               <TooltipTrigger render={<Button variant="ghost" size="icon-sm" onClick={onClose} />}>
@@ -208,7 +208,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
     return (
       <div className="execution-terminal modal-backdrop">
         <div className="execution-terminal-container">
-          <div className="flex items-center justify-between px-4 py-2 bg-muted border-b border-border">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-accent/10">
             <h2>{taskName}</h2>
             <Tooltip>
               <TooltipTrigger render={<Button variant="ghost" size="icon-sm" onClick={onClose} />}>
@@ -239,7 +239,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
   return (
     <div className="execution-terminal modal-backdrop">
       <div className="execution-terminal-container">
-        <div className="flex items-center justify-between px-4 py-2 bg-muted border-b border-border">
+        <div className="flex items-center justify-between px-4 py-2 border-b border-accent/10">
           <div>
             <h2>{taskName}</h2>
             {error && <div className="terminal-error-banner">{error}</div>}
@@ -266,7 +266,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Type command and press Enter to send (Ctrl+C for SIGINT)..."
-              className="border-t border-border p-2 flex gap-2"
+              className="border-t border-accent/10 p-2 flex gap-2"
               disabled={sending}
               autoFocus
             />

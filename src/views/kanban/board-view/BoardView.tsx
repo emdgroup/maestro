@@ -177,7 +177,7 @@ export function BoardView({ tasks }: BoardViewProps) {
         </div>
         <DragOverlay>
           {draggingTask && (
-            <div className="rounded-lg border border-accent/50 bg-card shadow-xl p-3 rotate-[-1.5deg] scale-[1.03] pointer-events-none">
+            <div className="home-pane glass-volume rounded-[14px] border-accent/50! p-3 rotate-[-1.5deg] scale-[1.03] pointer-events-none">
               <p className="text-sm font-medium text-foreground line-clamp-2">
                 {draggingTask.title}
               </p>

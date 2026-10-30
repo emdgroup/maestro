@@ -406,7 +406,7 @@ function DirContents({
                   // The tint alone was too faint to find; the whole row — chevron, icon and name —
                   // takes the accent colour, which no other row in this tree wears.
                   isFolderSelected
-                    ? "text-accent font-medium bg-muted/40"
+                    ? "text-accent font-medium bg-accent/14"
                     : "text-muted-foreground hover:text-foreground",
                 )}
                 style={{ paddingLeft: indentFor(depth) }}

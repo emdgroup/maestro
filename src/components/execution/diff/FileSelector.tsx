@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { List, FolderTree, CheckCheck, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SEGMENT_GROUP } from "@/lib/segmented";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { FileStatus } from "@/types/review";
 import { FileTree } from "./FileTree";
@@ -54,12 +55,12 @@ export function FileSelector({
   return (
     <div className={cn("flex flex-col min-h-0", className)}>
       {/* Search + mode toggle */}
-      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border shrink-0">
+      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-accent/10 shrink-0">
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Filter files..."
-          className="flex-1 min-w-0 text-xs bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
+          className="home-field h-7 rounded-lg px-2.5 flex-1 min-w-0 text-xs outline-none text-foreground placeholder:text-muted-foreground"
         />
         {search && (
           <Tooltip>
@@ -74,15 +75,15 @@ export function FileSelector({
           </Tooltip>
         )}
         {!treeOnly && (
-          <div className="flex items-center gap-0.5 shrink-0">
+          <div className={cn("flex items-center gap-0.5 shrink-0", SEGMENT_GROUP)}>
             <Tooltip>
               <TooltipTrigger
                 type="button"
                 onClick={() => setFileListMode("flat")}
                 className={cn(
-                  "p-1.5 rounded text-xs transition-colors",
+                  "p-1 rounded-lg text-xs transition-colors",
                   mode === "flat"
-                    ? "text-foreground bg-muted"
+                    ? "text-foreground bg-card/90 shadow-sm"
                     : "text-muted-foreground hover:text-foreground hover:bg-foreground/7",
                 )}
               >
@@ -95,9 +96,9 @@ export function FileSelector({
                 type="button"
                 onClick={() => setFileListMode("tree")}
                 className={cn(
-                  "p-1.5 rounded text-xs transition-colors",
+                  "p-1 rounded-lg text-xs transition-colors",
                   mode === "tree"
-                    ? "text-foreground bg-muted"
+                    ? "text-foreground bg-card/90 shadow-sm"
                     : "text-muted-foreground hover:text-foreground hover:bg-foreground/7",
                 )}
               >

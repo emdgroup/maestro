@@ -79,7 +79,7 @@ export function CanvasCard({ surface }: Props) {
               <ScrollArea className="max-h-[600px]">
                 <div className="p-4">
                   {showHtml ? (
-                    <pre className="text-xs font-mono bg-muted rounded p-3 overflow-x-auto whitespace-pre-wrap break-all">
+                    <pre className="text-xs font-mono rounded-lg border border-foreground/7 bg-background/50 p-3 overflow-x-auto whitespace-pre-wrap break-all">
                       {surface.html}
                     </pre>
                   ) : (

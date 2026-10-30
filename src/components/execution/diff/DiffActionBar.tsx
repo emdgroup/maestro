@@ -37,7 +37,7 @@ export function DiffActionBar({
   return (
     <div
       className={cn(
-        "relative h-12 border-b border-border flex items-center px-4 shrink-0",
+        "relative h-12 border-b border-accent/10 flex items-center px-4 shrink-0",
         className,
       )}
     >

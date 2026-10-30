@@ -43,7 +43,7 @@ export function ActivityElicitationCard({ item }: Props) {
           )}
         />
       </CollapsibleTrigger>
-      <CollapsibleContent className="border-t border-border divide-y divide-border/40">
+      <CollapsibleContent className="border-t border-foreground/7 divide-y divide-foreground/7">
         {item.fields.map((f) => (
           <div key={f.key} className="px-3 py-2 flex flex-col gap-1">
             <span className="text-xs text-muted-foreground break-words">{f.question}</span>

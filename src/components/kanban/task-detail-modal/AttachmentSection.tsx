@@ -40,7 +40,7 @@ function AttachmentThumbnail({
   const { data: src, isPending } = useProxyImageQuery(projectId, attachment.file_path);
 
   if (isPending) {
-    return <span className="w-20 h-20 bg-muted rounded-md animate-pulse" />;
+    return <span className="w-20 h-20 bg-foreground/8 rounded-md animate-pulse" />;
   }
 
   // `proxy_image` answers with an error the query maps to null — a file that has moved or been
@@ -228,7 +228,7 @@ export function AttachmentSection({
           className={cn(
             "border-2 border-dashed rounded-lg p-4 text-center text-sm text-muted-foreground transition-colors",
             isDragging
-              ? "border-ring bg-muted/20"
+              ? "border-ring bg-accent/14"
               : "border-foreground/10 hover:border-muted-foreground/50",
           )}
         >

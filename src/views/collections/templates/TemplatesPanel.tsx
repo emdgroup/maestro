@@ -72,7 +72,7 @@ function asAutomation(template: Template): Automation {
 
 function Chip({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
   return (
-    <span className="flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+    <span className="flex items-center gap-1 rounded-md bg-foreground/7 px-1.5 py-0.5 text-[10px] text-muted-foreground">
       <Icon className="size-3" />
       {label}
     </span>
@@ -168,7 +168,7 @@ function Section({
     <section className="space-y-3">
       <h3 className="flex items-center gap-2 text-sm font-semibold">
         {title}
-        <span className="rounded-full bg-muted px-1.5 text-[10px] font-medium text-muted-foreground">
+        <span className="rounded-full bg-foreground/7 px-1.5 text-[10px] font-medium text-muted-foreground">
           {count}
         </span>
       </h3>
@@ -239,7 +239,7 @@ export function TemplatesPanel({
       <Section title="Yours" count={shownOwn.length}>
         {shownOwn.map(card)}
         {own.length === 0 && (
-          <div className="col-span-full flex items-center gap-3 rounded-xl border border-dashed border-border p-4 text-xs text-muted-foreground">
+          <div className="col-span-full flex items-center gap-3 rounded-xl border border-dashed border-foreground/10 p-4 text-xs text-muted-foreground">
             <LayoutTemplate className="size-4 shrink-0" />
             No templates of your own yet. To make one, open the ⋯ menu on an automation and choose
             Save as template.
