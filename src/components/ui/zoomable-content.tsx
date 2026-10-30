@@ -255,7 +255,7 @@ export function ZoomableContent({
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent
           showCloseButton={false}
-          className="w-[95vw] h-[90vh] max-w-[95vw] sm:max-w-[95vw] max-h-[90vh] rounded-xl p-0 ring-1 ring-border shadow-2xl bg-background/95 backdrop-blur-sm flex flex-col overflow-hidden"
+          className="w-[95vw] h-[90vh] max-w-[95vw] sm:max-w-[95vw] max-h-[90vh] p-0 flex flex-col overflow-hidden"
         >
           <DialogTitle className="sr-only">{ariaLabel ?? "Zoomed content"}</DialogTitle>
 
@@ -315,7 +315,7 @@ export function ZoomableContent({
               controlsVisible ? "opacity-100" : "opacity-0 pointer-events-none",
             )}
           >
-            <div className="flex items-center gap-0.5 rounded-full border border-border bg-background/88 px-2 py-1.5 shadow-lg backdrop-blur-xl">
+            <div className="home-pill flex items-center gap-0.5 rounded-full px-2 py-1.5">
               <Button
                 variant="ghost"
                 size="icon-xs"
@@ -348,7 +348,7 @@ export function ZoomableContent({
                 <ZoomIn />
               </Button>
 
-              <div className="mx-1.5 h-4 w-px bg-border" />
+              <div className="mx-1.5 h-4 w-px bg-foreground/10" />
 
               <Button
                 variant="ghost"
