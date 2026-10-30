@@ -514,7 +514,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
       <div
         ref={ref}
         className={cn(
-          "home-pane rounded-[14px] px-3 py-[11px] mb-2 flex flex-col",
+          "home-pane glass-volume rounded-[14px] px-3 py-[11px] mb-2 flex flex-col",
           stateLine?.ring ?? (task.phase_status && PHASE_STATUS_RING[task.phase_status]),
           isDragging && "opacity-30 border-dashed!",
           isDraggable && !isDragging ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
