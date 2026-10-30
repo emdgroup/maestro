@@ -2,9 +2,9 @@ import { Skeleton } from "@/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useSettings } from "@/services/settings.service";
 
-/** The compose bar's glass, pulsing with the bones, so the real bar replaces it without a jump. */
+/** The compose bar's glass, shimmering while it loads, so the real bar replaces it without a jump. */
 const COMPOSE_GLASS =
-  "w-full animate-pulse rounded-[25px] border border-foreground/10 bg-card/25 backdrop-blur-[24px] backdrop-saturate-150 shadow-pop";
+  "glass-shimmer w-full rounded-[25px] border border-foreground/10 bg-card/25 backdrop-blur-[24px] backdrop-saturate-150 shadow-pop";
 
 export function AgentLoadingSkeleton({ isNewSession }: { isNewSession?: boolean }) {
   const { data: appSettings } = useSettings();
