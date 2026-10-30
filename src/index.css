@@ -1314,6 +1314,11 @@
   -webkit-backdrop-filter: blur(20px) saturate(150%);
   backdrop-filter: blur(20px) saturate(150%);
 }
+/* xterm.css paints its viewport black beneath the theme's background, which only shows once that
+   background is clear. The "default" color mode still draws its own opaque black above this. */
+.inner-glass .xterm .xterm-viewport {
+  background-color: transparent;
+}
 /* A card on a glass panel: lighter than the panel and edged with a highlight, so it holds its own
    against the light theme's pale wash where `home-pane` blends in. */
 .glass-tile {

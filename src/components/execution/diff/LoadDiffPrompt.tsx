@@ -12,11 +12,7 @@ export function LoadDiffPrompt({ lines, onLoad }: { lines: number; onLoad: () =>
       {/* The size, which is the only reason a file ends up here. Zero means there is nothing to
           count — an untracked file whose body has not been fetched yet. */}
       {lines > 0 && <p className="text-xs text-muted-foreground">{lines.toLocaleString()} lines</p>}
-      <button
-        type="button"
-        onClick={onLoad}
-        className="text-xs px-3 py-1.5 rounded-md border border-border bg-card hover:bg-muted/40 transition-colors"
-      >
+      <button type="button" onClick={onLoad} className="home-pane text-xs px-3 py-1.5 rounded-xl">
         Load diff
       </button>
     </div>

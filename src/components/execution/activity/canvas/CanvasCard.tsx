@@ -23,7 +23,7 @@ export function CanvasCard({ surface }: Props) {
   const isEmpty = surface.html.trim().length === 0;
 
   return (
-    <div className="rounded-xl border bg-card overflow-hidden">
+    <div className="glass-tile rounded-xl overflow-hidden">
       <div className="w-full flex items-center gap-2.5 px-3.5 py-2.5">
         <button
           type="button"

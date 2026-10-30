@@ -108,13 +108,13 @@ export function LazyFileTree({
     : undefined;
 
   return (
-    <div className={cn("flex flex-col min-h-0 bg-card", className)}>
+    <div className={cn("flex flex-col min-h-0", className)}>
       {/* One row, following the review's file panel: a filter field sitting on the panel rather
           than a full-width bordered strip, which read as a second header under the real one. The
           create and visibility actions this row used to carry are in the tab's header now, beside
           the toggle that reveals this panel. */}
       <div className="flex items-center gap-1 px-2 py-2 shrink-0">
-        <div className="flex-1 min-w-0 flex items-center gap-1.5 h-7 px-2 rounded-md border border-border bg-background focus-within:border-ring transition-colors">
+        <div className="home-field flex-1 min-w-0 flex items-center gap-1.5 h-7 px-2.5 rounded-lg">
           <Search className="size-3 shrink-0 text-muted-foreground" />
           <input
             value={filter}

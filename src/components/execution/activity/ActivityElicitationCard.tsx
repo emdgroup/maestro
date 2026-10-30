@@ -13,7 +13,7 @@ export function ActivityElicitationCard({ item }: Props) {
 
   if (item.declined) {
     return (
-      <div className="border border-border rounded-lg bg-card px-3 py-2 flex items-center gap-2">
+      <div className="glass-tile rounded-lg px-3 py-2 flex items-center gap-2">
         <MessageCircleQuestionMark className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
         <span className="text-xs font-medium text-foreground flex-1 truncate">{item.message}</span>
         <span className="text-xs text-muted-foreground italic">Declined</span>
@@ -28,7 +28,7 @@ export function ActivityElicitationCard({ item }: Props) {
     <Collapsible
       open={expanded}
       onOpenChange={setExpanded}
-      className="border border-border rounded-lg bg-card overflow-hidden"
+      className="glass-tile rounded-lg overflow-hidden"
     >
       <CollapsibleTrigger className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-muted/50 transition-colors">
         <MessageCircleQuestionMark className="w-3.5 h-3.5 text-accent shrink-0" />

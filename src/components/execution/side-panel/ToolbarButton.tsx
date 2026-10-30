@@ -44,12 +44,13 @@ export function ToolbarButton({
             variant="ghost"
             size={size}
             aria-label={label}
-            {...(active === undefined ? {} : { "aria-pressed": active })}
+            {...(active === undefined ? {} : { "aria-pressed": active, "data-selected": active })}
             disabled={disabled}
             onClick={onClick}
             className={cn(
-              "text-muted-foreground hover:text-foreground",
-              active && "bg-muted/60 text-foreground",
+              "home-pane text-muted-foreground hover:text-foreground",
+              size === "icon-xs" ? "rounded-lg" : "rounded-xl",
+              active && "text-foreground",
               className,
             )}
           />

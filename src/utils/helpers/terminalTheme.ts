@@ -13,10 +13,10 @@ function cssVar(varName: string): string {
 
 // xterm only parses a translucent color written as rgba(); anything else it reads through a
 // canvas and rejects unless opaque, silently falling back to its default. Hence the round trip.
-function mutedForeground(alpha: number): string {
+function cssVarAlpha(varName: string, alpha: number): string {
   const ctx = document.createElement("canvas").getContext("2d");
   if (!ctx) return `rgba(128, 128, 128, ${alpha})`;
-  ctx.fillStyle = cssVar("--muted-foreground");
+  ctx.fillStyle = cssVar(varName);
   ctx.fillRect(0, 0, 1, 1);
   const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
@@ -27,9 +27,9 @@ function mutedForeground(alpha: number): string {
 // App chrome rather than terminal colors, so they apply in the "default" color mode too.
 function getScrollbarTheme(): ITheme {
   return {
-    scrollbarSliderBackground: mutedForeground(0.3),
-    scrollbarSliderHoverBackground: mutedForeground(0.5),
-    scrollbarSliderActiveBackground: mutedForeground(0.5),
+    scrollbarSliderBackground: cssVarAlpha("--muted-foreground", 0.3),
+    scrollbarSliderHoverBackground: cssVarAlpha("--muted-foreground", 0.5),
+    scrollbarSliderActiveBackground: cssVarAlpha("--muted-foreground", 0.5),
     // Setting overviewRuler.width also enables the ruler, which draws a 1px line in this color,
     // white by default. "transparent" is rejected like any other non-rgba translucent color.
     overviewRulerBorder: "rgba(0, 0, 0, 0)",
@@ -82,7 +82,9 @@ export function getTerminalThemeOnly(colorMode?: TerminalColorMode): ITheme {
   if (colorMode === "default") return getScrollbarTheme();
   const isDark = document.documentElement.classList.contains("dark");
   return {
-    background: cssVar("--background"),
+    // Clear, so the tab's glass shows through. Keeps the real color at alpha 0 rather than plain
+    // transparent: xterm draws inverse-video text in this color with the alpha forced to 1.
+    background: cssVarAlpha("--background", 0),
     foreground: cssVar("--foreground"),
     cursor: cssVar("--foreground"),
     selectionBackground: cssVar("--accent"),
@@ -99,6 +101,7 @@ export function getTerminalTheme(colorMode?: TerminalColorMode): ITerminalOption
     letterSpacing: 0,
     // Also sizes the scrollbar: 8px, as in index.css. FitAddon reads the same value.
     overviewRuler: { width: 8 },
+    allowTransparency: true,
   };
   return { ...base, theme: getTerminalThemeOnly(colorMode) };
 }

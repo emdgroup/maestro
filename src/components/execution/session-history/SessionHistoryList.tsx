@@ -80,7 +80,7 @@ export function SessionHistoryList({
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             placeholder={`Search ${agentName} sessions…`}
-            className="w-full h-8 bg-muted/30 border border-border rounded pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring"
+            className="home-field w-full h-8 rounded-xl pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground/50"
           />
         </div>
         <Tooltip>
@@ -90,7 +90,7 @@ export function SessionHistoryList({
                 variant="ghost"
                 onClick={onRefetch}
                 disabled={isFetching}
-                className="h-8 w-8 shrink-0 border border-border text-muted-foreground hover:text-foreground"
+                className="home-pane size-8 shrink-0 rounded-xl p-0 text-muted-foreground hover:text-foreground"
               />
             }
           >

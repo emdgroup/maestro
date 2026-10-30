@@ -5,6 +5,7 @@ import type { ConnectionKey, UsageProjectRef, UsageSplit } from "@/types/binding
 import { useUsageReport, useUsageSync } from "@/services/usage.service";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { connectionKeyId } from "@/store/homeStore";
+import { SEGMENT_GROUP } from "@/lib/segmented";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { folderName, formatCost, formatMetric, formatTokens, type Metric } from "./format";
@@ -44,8 +45,8 @@ const SPLITS: { id: UsageSplit; label: string; tokensOnly?: string }[] = [
 const LOCAL: ConnectionKey = { type: "local" };
 const projectId = (p: UsageProjectRef) => `${p.connection_key}|${p.project_path}`;
 const segment =
-  "rounded-[9px] px-2.5 py-1 text-xs text-muted-foreground disabled:pointer-events-none disabled:opacity-40";
-const segmentOn = "bg-background text-foreground shadow-sm";
+  "rounded-lg px-2.5 py-1 text-xs text-muted-foreground disabled:pointer-events-none disabled:opacity-40";
+const segmentOn = "bg-card/90 text-foreground shadow-sm";
 
 function parseConnectionKey(key: string): ConnectionKey | null {
   if (key === "local") return LOCAL;
@@ -293,7 +294,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
 
         <div className="usage-pane mt-4 rounded-2xl p-4">
           <div className="mb-3 flex items-center gap-3">
-            <div className="flex rounded-xl bg-muted/60 p-0.5">
+            <div className={cn("flex gap-1", SEGMENT_GROUP)}>
               {[false, true].map((cum) => (
                 <button
                   key={String(cum)}
@@ -305,7 +306,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
                 </button>
               ))}
             </div>
-            <div className="ml-auto flex rounded-xl bg-muted/60 p-0.5">
+            <div className={cn("ml-auto flex gap-1", SEGMENT_GROUP)}>
               {SPLITS.map((s) => {
                 const disabled = metric === "cost" && !!s.tokensOnly;
                 const button = (
