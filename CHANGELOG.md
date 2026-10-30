@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.43.0](https://github.com/emdgroup/maestro/compare/v0.42.0...v0.43.0) (2026-10-30)
+
+
+### Features
+
+* finish the glass style migration in the session view ([f366481](https://github.com/emdgroup/maestro/commit/f366481e83ec3484e2ad3015da1ad788ea54d822))
+* give the task card a glass body with volume ([f366481](https://github.com/emdgroup/maestro/commit/f366481e83ec3484e2ad3015da1ad788ea54d822))
+* move every dialog onto the glass style ([f366481](https://github.com/emdgroup/maestro/commit/f366481e83ec3484e2ad3015da1ad788ea54d822))
+* slide a glass pill between sessions and main tabs ([f366481](https://github.com/emdgroup/maestro/commit/f366481e83ec3484e2ad3015da1ad788ea54d822))
+* use uppercase titles and section labels across dialogs ([f366481](https://github.com/emdgroup/maestro/commit/f366481e83ec3484e2ad3015da1ad788ea54d822))
+
+
+### Bug Fixes
+
+* drop the hover lift from outline buttons ([f366481](https://github.com/emdgroup/maestro/commit/f366481e83ec3484e2ad3015da1ad788ea54d822))
+* give attachment cards the glass tile ([f366481](https://github.com/emdgroup/maestro/commit/f366481e83ec3484e2ad3015da1ad788ea54d822))
+* give code blocks an accent tinted glass tile with an inset code panel ([f366481](https://github.com/emdgroup/maestro/commit/f366481e83ec3484e2ad3015da1ad788ea54d822))
+* give every hover state the glass wash ([f366481](https://github.com/emdgroup/maestro/commit/f366481e83ec3484e2ad3015da1ad788ea54d822))
+* give recent run cards the glass tile ([f366481](https://github.com/emdgroup/maestro/commit/f366481e83ec3484e2ad3015da1ad788ea54d822))
+* give the zoom lightbox the glass dialog surface ([f366481](https://github.com/emdgroup/maestro/commit/f366481e83ec3484e2ad3015da1ad788ea54d822))
+* match the Artifacts tab to Files and inset the Files tree ([f366481](https://github.com/emdgroup/maestro/commit/f366481e83ec3484e2ad3015da1ad788ea54d822))
+* move the remaining session and collection surfaces onto glass ([f366481](https://github.com/emdgroup/maestro/commit/f366481e83ec3484e2ad3015da1ad788ea54d822))
+* round the zoom hover ring to match what it wraps ([f366481](https://github.com/emdgroup/maestro/commit/f366481e83ec3484e2ad3015da1ad788ea54d822))
+* show the selected session as a glass pane ([f366481](https://github.com/emdgroup/maestro/commit/f366481e83ec3484e2ad3015da1ad788ea54d822))
+
 ## [0.42.0](https://github.com/emdgroup/maestro/compare/v0.41.0...v0.42.0) (2026-10-29)
 
 
