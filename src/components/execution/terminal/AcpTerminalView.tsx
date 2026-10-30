@@ -4,7 +4,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { getTerminalTheme, getTerminalThemeOnly } from "@/lib/terminalTheme";
+import { getTerminalTheme, getTerminalColorOptions } from "@/lib/terminalTheme";
 import { useSettings } from "@/services/settings.service";
 import { useTheme } from "@/providers/ThemeProvider";
 import {
@@ -115,11 +115,11 @@ export function AcpTerminalView({
   useEffect(() => {
     const terminal = xtermRef.current;
     if (!terminal) return;
-    terminal.options.theme = getTerminalThemeOnly(terminalColorMode);
+    terminal.options = getTerminalColorOptions(terminalColorMode);
   }, [terminalColorMode, effectiveTheme]);
 
   return (
-    <div className="pt-2 pl-2 h-full w-full">
+    <div className="pt-2 pl-2 h-full w-full bg-background dark:bg-transparent">
       <div
         ref={containerRef}
         {...{ [TERMINAL_CONTAINER_ATTRIBUTE]: "" }}
