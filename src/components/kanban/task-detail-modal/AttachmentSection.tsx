@@ -68,6 +68,7 @@ function AttachmentThumbnail({
 
   return (
     <ZoomableContent
+      className="rounded-md"
       ariaLabel={attachment.filename}
       lightboxContent={<img src={src} alt={attachment.filename} />}
     >

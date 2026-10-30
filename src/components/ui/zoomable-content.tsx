@@ -248,7 +248,7 @@ export function ZoomableContent({
       >
         {children}
         {!disabled && (
-          <div className="absolute inset-0 rounded-sm ring-inset ring-0 group-hover/zoomable:ring-2 ring-accent/25 pointer-events-none transition-all duration-150" />
+          <div className="absolute inset-0 rounded-[inherit] ring-inset ring-0 group-hover/zoomable:ring-2 ring-accent/25 pointer-events-none transition-all duration-150" />
         )}
       </div>
 
