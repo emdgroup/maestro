@@ -71,27 +71,31 @@ export function FileNameDialog({
         if (!next && !pending) onClose();
       }}
     >
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent className="sm:max-w-sm gap-4">
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          <DialogTitle className="text-[11px] font-normal tracking-[0.14em] uppercase text-muted-foreground">
+            {title}
+          </DialogTitle>
+          <DialogDescription className="text-xs">{description}</DialogDescription>
         </DialogHeader>
-        <Input
-          autoFocus
-          value={name}
-          disabled={pending}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={() => setTouched(true)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              submit();
-            }
-          }}
-          className="font-mono text-xs"
-        />
-        <p className="text-xs text-destructive min-h-4">{showError ? error : ""}</p>
-        <DialogFooter>
+        <div className="flex flex-col gap-1.5">
+          <Input
+            autoFocus
+            value={name}
+            disabled={pending}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={() => setTouched(true)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            className="home-field rounded-xl font-mono text-xs shadow-none focus-visible:ring-0"
+          />
+          <p className="text-xs text-destructive min-h-4">{showError ? error : ""}</p>
+        </div>
+        <DialogFooter className="[&_[data-slot=button]]:h-9 [&_[data-slot=button]]:rounded-xl [&_[data-slot=button]]:px-4 [&_[data-slot=button]]:text-xs">
           <Button variant="ghost" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
