@@ -7,6 +7,7 @@ import {
   memo,
   useSyncExternalStore,
 } from "react";
+import { motion } from "framer-motion";
 import { BotOff, GitBranch, RotateCw, Terminal, X } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { cn } from "@/lib/utils";
@@ -175,6 +176,9 @@ function RoleChip({
     </Tooltip>
   );
 }
+
+/** A row's height, set by `.pr-row`. The selected pane slides between rows by this much. */
+const SESSION_ROW_HEIGHT = 56;
 
 interface SessionRowProps {
   session: ActiveSessionInfo;
@@ -459,6 +463,7 @@ export function AgentMonitor({
           .includes(search.toLowerCase()),
     );
   }, [sessions, search]);
+  const selectedIndex = filteredSessions.findIndex((s) => s.session_id === selectedSessionId);
 
   const selectedSession = sessions.find((s) => s.session_id === selectedSessionId);
 
@@ -635,23 +640,34 @@ export function AgentMonitor({
               <BotOff className="size-8" strokeWidth={1.5} />
             </div>
           )}
-          <SidebarMenu className="gap-0">
-            {filteredSessions.map((session) => (
-              <SessionRow
-                key={session.session_id}
-                session={session}
-                isSelected={session.session_id === selectedSessionId}
-                onSelect={onSelect}
-                onClose={state === "collapsed" && !railExpanded ? undefined : onClose}
-                agentIcons={agentIcons}
-                agentNames={agentNames}
-                profileNames={profileNames}
-                runOrdinal={
-                  session.acp_session_id ? runOrdinals.get(session.acp_session_id) : undefined
-                }
+          <div className="relative">
+            {selectedIndex >= 0 && (
+              <motion.div
+                aria-hidden
+                className="glass-pill absolute inset-x-1 top-1 h-12 rounded-xl"
+                initial={false}
+                animate={{ y: selectedIndex * SESSION_ROW_HEIGHT }}
+                transition={{ type: "spring", stiffness: 400, damping: 35 }}
               />
-            ))}
-          </SidebarMenu>
+            )}
+            <SidebarMenu className="relative gap-0">
+              {filteredSessions.map((session) => (
+                <SessionRow
+                  key={session.session_id}
+                  session={session}
+                  isSelected={session.session_id === selectedSessionId}
+                  onSelect={onSelect}
+                  onClose={state === "collapsed" && !railExpanded ? undefined : onClose}
+                  agentIcons={agentIcons}
+                  agentNames={agentNames}
+                  profileNames={profileNames}
+                  runOrdinal={
+                    session.acp_session_id ? runOrdinals.get(session.acp_session_id) : undefined
+                  }
+                />
+              ))}
+            </SidebarMenu>
+          </div>
         </SidebarContent>
       </div>
 

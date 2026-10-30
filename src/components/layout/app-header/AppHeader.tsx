@@ -87,7 +87,7 @@ export function AppHeader({
                     {isActive && (
                       <motion.span
                         layoutId="active-tab-pill"
-                        className="absolute inset-0 rounded-lg bg-card/90 shadow-sm"
+                        className="glass-pill absolute inset-0 rounded-lg"
                         transition={{ type: "spring", stiffness: 400, damping: 35 }}
                       />
                     )}

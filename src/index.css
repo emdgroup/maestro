@@ -463,10 +463,11 @@
     background 0.15s,
     border-color 0.15s;
 }
-.pr-row:hover::before {
+.pr-row:not(.selected):hover::before {
   background: color-mix(in oklab, var(--foreground) 6%, transparent);
 }
-.pr-row.selected::before {
+/* The selected pill of a switcher: clear glass over whatever sits behind it. */
+.glass-pill {
   background: linear-gradient(
     135deg,
     color-mix(in oklab, white 70%, transparent),
@@ -478,7 +479,7 @@
     0 2px 8px color-mix(in oklab, var(--foreground) 8%, transparent);
   backdrop-filter: blur(10px) saturate(160%);
 }
-.dark .pr-row.selected::before {
+.dark .glass-pill {
   background: linear-gradient(
     135deg,
     color-mix(in oklab, white 14%, transparent),
