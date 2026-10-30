@@ -41,7 +41,7 @@ export function OwnerRepoForm({
   return (
     <>
       <div className="space-y-1.5">
-        <Label className="text-sm font-medium">Owner</Label>
+        <Label className="field-label">Owner</Label>
         <Input
           placeholder="username or org"
           value={owner}
@@ -51,7 +51,7 @@ export function OwnerRepoForm({
       </div>
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium">Repository</Label>
+          <Label className="field-label">Repository</Label>
           {owner.length >= 1 && (
             <button
               type="button"

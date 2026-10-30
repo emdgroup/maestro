@@ -81,7 +81,7 @@ export function SaveAsTemplateDialog({
           </DialogHeader>
           <div className="min-w-0 space-y-3">
             <label className="block min-w-0 space-y-1">
-              <span className="text-[11px] text-muted-foreground">Template name</span>
+              <span className="field-label">Template name</span>
               <Input
                 autoFocus
                 value={name}
@@ -91,7 +91,7 @@ export function SaveAsTemplateDialog({
               />
             </label>
             <label className="block min-w-0 space-y-1">
-              <span className="text-[11px] text-muted-foreground">Tag</span>
+              <span className="field-label">Tag</span>
               <Input
                 value={tag}
                 list="template-tags"

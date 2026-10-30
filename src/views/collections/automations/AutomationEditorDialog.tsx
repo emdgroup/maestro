@@ -105,7 +105,7 @@ function TimezoneField({
 
   return (
     <label className="block space-y-1">
-      <span className="text-[11px] text-muted-foreground">Read the time in</span>
+      <span className="field-label">Read the time in</span>
       <Select value={value} onValueChange={(next) => next && onChange(next)}>
         <SelectTrigger size="sm" className="w-full text-xs" aria-label="Timezone">
           <span className="flex-1 truncate text-left">
@@ -188,7 +188,7 @@ function TriggerSection({
 
   return (
     <div className="space-y-2">
-      <span className="text-[11px] text-muted-foreground">Trigger</span>
+      <span className="field-label">Trigger</span>
       <ToggleGroup
         value={[trigger]}
         onValueChange={(values) => {
@@ -385,7 +385,7 @@ export function AutomationEditorDialog({
         {/* min-w-0: the dialog is a grid, and a grid item will not shrink below a one-line secret. */}
         <div className="min-w-0 space-y-4">
           <label className="block space-y-1">
-            <span className="text-[11px] text-muted-foreground">Name</span>
+            <span className="field-label">Name</span>
             <Input
               value={draft.name}
               onChange={(e) => patch({ name: e.target.value })}
@@ -395,7 +395,7 @@ export function AutomationEditorDialog({
           </label>
 
           <div className="space-y-1">
-            <span className="text-[11px] text-muted-foreground">Prompt</span>
+            <span className="field-label">Prompt</span>
             <div className="h-48">
               <MarkdownEditor
                 value={draft.prompt}
@@ -453,7 +453,7 @@ export function AutomationEditorDialog({
 
                 {isGitRepo && (
                   <div className="space-y-2">
-                    <span className="text-[11px] text-muted-foreground">Workspace</span>
+                    <span className="field-label">Workspace</span>
                     <WorkspaceModeSelect
                       value={mode}
                       // Writing the mode rebuilds the workspace, so switching away cannot leave a

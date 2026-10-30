@@ -197,7 +197,9 @@ export function IntegrationConnectDialog({
             <>
               {bitbucketMode === "server" && (
                 <div className="space-y-2">
-                  <Label htmlFor="integration-instance-url">Instance URL</Label>
+                  <Label htmlFor="integration-instance-url" className="field-label">
+                    Instance URL
+                  </Label>
                   <Input
                     id="integration-instance-url"
                     placeholder="https://bitbucket.mycompany.com"
@@ -208,7 +210,7 @@ export function IntegrationConnectDialog({
                 </div>
               )}
               <div className="space-y-2">
-                <Label htmlFor="integration-token" required>
+                <Label htmlFor="integration-token" className="field-label" required>
                   {bitbucketMode === "cloud" ? "API Token" : "HTTP Access Token"}
                 </Label>
                 <Input
@@ -234,7 +236,7 @@ export function IntegrationConnectDialog({
             <>
               {fields.showInstanceUrl && (
                 <div className="space-y-2">
-                  <Label htmlFor="integration-instance-url" required>
+                  <Label htmlFor="integration-instance-url" className="field-label" required>
                     {fields.instanceUrlLabel}
                   </Label>
                   <Input
@@ -256,7 +258,7 @@ export function IntegrationConnectDialog({
 
               {fields.showEmail && (
                 <div className="space-y-2">
-                  <Label htmlFor="integration-email" required>
+                  <Label htmlFor="integration-email" className="field-label" required>
                     Email
                   </Label>
                   <Input
@@ -276,7 +278,7 @@ export function IntegrationConnectDialog({
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="integration-token" required>
+                <Label htmlFor="integration-token" className="field-label" required>
                   {fields.tokenLabel}
                 </Label>
                 <Input

@@ -54,7 +54,7 @@ function BitbucketCloudRepoForm({
   return (
     <>
       <div className="space-y-1.5">
-        <Label className="text-sm font-medium">Workspace</Label>
+        <Label className="field-label">Workspace</Label>
         <Input
           placeholder="workspace slug"
           value={workspace}
@@ -64,7 +64,7 @@ function BitbucketCloudRepoForm({
       </div>
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium">Repository</Label>
+          <Label className="field-label">Repository</Label>
           {workspace.length >= 1 && (
             <button
               type="button"
@@ -144,7 +144,7 @@ function BitbucketServerRepoForm({
     <>
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium">Project</Label>
+          <Label className="field-label">Project</Label>
           <button
             type="button"
             className="text-muted-foreground hover:text-foreground transition-colors"
@@ -183,7 +183,7 @@ function BitbucketServerRepoForm({
       </div>
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium">Repository</Label>
+          <Label className="field-label">Repository</Label>
           {selectedProject.length >= 1 && (
             <button
               type="button"

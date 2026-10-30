@@ -1115,6 +1115,15 @@
   backdrop-filter: blur(14px);
   border: 1px solid color-mix(in oklab, var(--foreground) 10%, transparent);
 }
+/* A section or field label inside a dialog. */
+.field-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
 .home-field {
   background: color-mix(in oklab, var(--background) 55%, transparent);
   border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);

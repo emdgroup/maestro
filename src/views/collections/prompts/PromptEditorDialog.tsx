@@ -132,7 +132,7 @@ export function PromptEditorDialog({
             />
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-[11px] text-muted-foreground">Tags</span>
+            <span className="field-label mr-1">Tags</span>
             {tags.map((tag) => (
               <span
                 key={tag}

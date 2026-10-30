@@ -17,7 +17,7 @@ interface IntegrationDetailsDialogProps {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="field-label">{label}</div>
       <div className="mt-1 font-mono text-xs break-all">{children}</div>
     </div>
   );
@@ -27,7 +27,7 @@ function Input(props: React.ComponentProps<"input"> & { label: string }) {
   const { label, ...input } = props;
   return (
     <label className="block">
-      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <span className="field-label">{label}</span>
       <input {...input} className="home-field mt-1 h-9 w-full rounded-xl px-3 text-xs" />
     </label>
   );

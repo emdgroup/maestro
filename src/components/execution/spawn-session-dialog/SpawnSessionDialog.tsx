@@ -344,7 +344,7 @@ export function SpawnSessionDialog({
           <div className="space-y-5 py-1">
             {/* Agent selection */}
             <div className="space-y-2">
-              <p className="text-[11px] text-muted-foreground">Agent</p>
+              <p className="field-label">Agent</p>
               <div className="grid grid-cols-2 gap-1.5">
                 {!resume && (
                   <Button
@@ -469,7 +469,7 @@ export function SpawnSessionDialog({
                 lands on a branch named after the number. Saying so is all this can do. */}
             {isGitRepo && pullRequestNumber !== null && (
               <div className="flex flex-col gap-1.5">
-                <span className="text-[11px] text-muted-foreground">Workspace</span>
+                <span className="field-label">Workspace</span>
                 <span className="flex w-fit items-center gap-1.5 home-field rounded-lg px-2.5 h-7 font-mono text-xs text-muted-foreground">
                   <GitPullRequest className="size-3 shrink-0" />
                   <span className="truncate">
@@ -509,11 +509,11 @@ export function SpawnSessionDialog({
 
             {/* Session name */}
             <div className="space-y-1.5">
-              <Label
-                htmlFor="spawn-session-name"
-                className="text-[11px] text-muted-foreground font-normal"
-              >
-                Session name <span className="opacity-60">(optional)</span>
+              <Label htmlFor="spawn-session-name" className="field-label">
+                Session name{" "}
+                <span className="normal-case tracking-normal font-normal opacity-60">
+                  (optional)
+                </span>
               </Label>
               <Input
                 id="spawn-session-name"

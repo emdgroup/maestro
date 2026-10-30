@@ -782,7 +782,7 @@ function Field({
   return (
     <div className={cn("space-y-1.5", className)}>
       <div className="flex items-center gap-2">
-        <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+        <p className="field-label">{label}</p>
         {aside && <span className="ml-auto">{aside}</span>}
       </div>
       {children}
@@ -839,7 +839,7 @@ function Rows({
     <div className="space-y-1.5">
       {label && (
         <div className="flex items-center">
-          <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+          <p className="field-label">{label}</p>
           <span className="ml-auto">{add}</span>
         </div>
       )}

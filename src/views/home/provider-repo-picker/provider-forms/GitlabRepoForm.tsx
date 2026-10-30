@@ -27,7 +27,7 @@ export function GitLabRepoForm({
 
   return (
     <div className="space-y-1.5">
-      <Label className="text-sm font-medium">Project</Label>
+      <Label className="field-label">Project</Label>
       <Combobox
         value=""
         onValueChange={(v) => {

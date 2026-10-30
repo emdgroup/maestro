@@ -31,7 +31,7 @@ function GroupHeader({ label, count, note }: { label: string; count: number; not
     <div className="flex items-baseline gap-2 mb-1.5">
       <span
         className={cn(
-          "text-[11px]",
+          "text-[10px] font-semibold uppercase tracking-wider",
           label === "Unmerged" ? "text-warning" : "text-muted-foreground",
         )}
       >

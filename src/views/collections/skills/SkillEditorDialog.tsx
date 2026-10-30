@@ -266,7 +266,7 @@ function Field({
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline gap-2">
-        <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+        <p className="field-label">{label}</p>
         {aside && (
           <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/70">{aside}</span>
         )}

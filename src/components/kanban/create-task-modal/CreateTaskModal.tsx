@@ -410,7 +410,7 @@ export function CreateTaskModal({
                 project, since a loop needs a worktree of its own. */}
             {isGitRepo && (
               <div className="shrink-0 space-y-1.5">
-                <span className="text-[11px] text-muted-foreground">How it runs</span>
+                <span className="field-label">How it runs</span>
                 <div className="grid grid-cols-2 gap-2">
                   {(
                     [
