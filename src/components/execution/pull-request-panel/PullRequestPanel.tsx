@@ -21,7 +21,7 @@ import { PullRequestRow } from "./PullRequestRow";
 
 /** The dropdown trigger, so it sits at the same height as the search field beside it. */
 const filterTriggerClass =
-  "flex h-7 shrink-0 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-popup-open:bg-muted data-popup-open:text-foreground";
+  "home-pane flex h-7 shrink-0 items-center gap-1 rounded-xl px-2.5 text-[11px] text-muted-foreground hover:text-foreground data-popup-open:bg-foreground/7! data-popup-open:text-foreground";
 
 interface PullRequestPanelProps {
   projectId: number;
@@ -136,7 +136,7 @@ export function PullRequestPanel({
               thirty rows on screen would mean the project on three providers and this page on the
               other three. */}
           {canSearch && (
-            <InputGroup className="ml-auto h-7 min-w-0 flex-1">
+            <InputGroup className="home-field ml-auto h-7 min-w-0 flex-1 rounded-xl">
               <InputGroupInput
                 type="text"
                 value={search}

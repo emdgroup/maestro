@@ -52,7 +52,7 @@ export function SidePanelCollapsedStrip({
         <TooltipTrigger
           type="button"
           onClick={() => onCollapsedChange(false)}
-          className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+          className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/7 transition-colors"
         >
           <ChevronLeft className="w-4 h-4" />
         </TooltipTrigger>
@@ -73,7 +73,7 @@ export function SidePanelCollapsedStrip({
                 "relative p-2 rounded-md transition-colors",
                 activeTabId === id
                   ? "text-foreground bg-muted/60"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                  : "text-muted-foreground hover:text-foreground hover:bg-foreground/7",
               )}
             >
               <Icon className="w-4 h-4" />
@@ -90,7 +90,7 @@ export function SidePanelCollapsedStrip({
         <Tooltip>
           <TooltipTrigger
             render={
-              <PopoverTrigger className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors" />
+              <PopoverTrigger className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/7 transition-colors" />
             }
           >
             <Plus className="w-4 h-4" />
@@ -107,7 +107,7 @@ export function SidePanelCollapsedStrip({
               onMaximizedChange(true);
               onCollapsedChange(false);
             }}
-            className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+            className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/7 transition-colors"
           >
             <Maximize2 className="w-4 h-4" />
           </TooltipTrigger>

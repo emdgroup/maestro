@@ -31,7 +31,7 @@ function GroupHeader({ label, count, note }: { label: string; count: number; not
     <div className="flex items-baseline gap-2 mb-1.5">
       <span
         className={cn(
-          "text-[10px] font-semibold uppercase tracking-wider",
+          "text-[10px] uppercase tracking-wider",
           label === "Unmerged" ? "text-warning" : "text-muted-foreground",
         )}
       >
@@ -84,7 +84,7 @@ export function PruneBranchesDialog({
     return (
       <div
         key={branch.name}
-        className="flex items-center gap-3 px-3 py-2 border-b border-border last:border-b-0 cursor-pointer hover:bg-muted/30"
+        className="flex items-center gap-3 px-3 py-2 border-b border-foreground/7 last:border-b-0 cursor-pointer hover:bg-foreground/5"
         onClick={() => toggle(branch.name)}
       >
         <Checkbox
@@ -137,9 +137,7 @@ export function PruneBranchesDialog({
           {merged.length > 0 && (
             <>
               <GroupHeader label="Merged into HEAD" count={merged.length} note="nothing is lost" />
-              <div className="rounded-lg border border-border overflow-hidden">
-                {merged.map(renderRow)}
-              </div>
+              <div className="usage-pane rounded-xl overflow-hidden">{merged.map(renderRow)}</div>
             </>
           )}
           {unmerged.length > 0 && (

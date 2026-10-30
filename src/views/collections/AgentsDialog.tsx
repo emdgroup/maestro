@@ -100,7 +100,7 @@ export function AgentsSummary({
       aria-label="Choose agents"
       disabled={disabled}
       onClick={onClick}
-      className="-mx-1.5 -my-0.5 rounded-md px-1.5 py-0.5 hover:bg-muted disabled:opacity-50 [&_span]:hover:text-foreground"
+      className="-mx-1.5 -my-0.5 rounded-md px-1.5 py-0.5 hover:bg-foreground/7 disabled:opacity-50 [&_span]:hover:text-foreground"
     >
       {summary}
     </button>
@@ -198,13 +198,13 @@ export function AgentsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent showCloseButton={false} className="gap-4 p-5 sm:max-w-sm">
         <div className="space-y-1">
-          <DialogTitle className="text-sm">Agents</DialogTitle>
-          <DialogDescription className="text-xs">
+          <DialogTitle>Agents</DialogTitle>
+          <DialogDescription>
             Which agents on this connection get <span className="font-mono">{name}</span>.
           </DialogDescription>
         </div>
         <div className="-mx-2 space-y-0.5">
-          <label className="flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-muted/60">
+          <label className="flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-foreground/7">
             <Checkbox
               checked={all}
               onCheckedChange={(checked) => setPicked(checked ? [ALL_AGENTS] : [])}
@@ -226,7 +226,7 @@ export function AgentsDialog({
           {agents.map((agent) => (
             <label
               key={agent.id}
-              className="flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-muted/60 has-disabled:opacity-45 has-disabled:hover:bg-transparent"
+              className="flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-foreground/7 has-disabled:opacity-45 has-disabled:hover:bg-transparent"
             >
               <Checkbox
                 checked={usable(agent) && (all || picked.includes(agent.id))}

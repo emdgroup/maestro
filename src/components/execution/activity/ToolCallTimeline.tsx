@@ -308,7 +308,7 @@ export function RowMeta({ tc, prefix }: { tc: ToolCallItem; prefix?: string | nu
             e.stopPropagation();
             void openUrl(url);
           }}
-          className="rounded-full border border-border px-1.5 text-success hover:bg-muted/40"
+          className="rounded-full border border-border px-1.5 text-success hover:bg-foreground/7"
         >
           {label}
         </button>
@@ -529,7 +529,7 @@ export function ToolCallTimeline({ items, inline }: { items: ToolCallItem[]; inl
                   className={cn(
                     "flex min-w-0 gap-2 rounded-md px-1 py-0.5 text-xs",
                     showCommand ? "flex-1 items-start" : "items-center",
-                    hasContent && "cursor-pointer hover:bg-muted/40",
+                    hasContent && "cursor-pointer hover:bg-foreground/7",
                   )}
                 >
                   {isFileRow ? (

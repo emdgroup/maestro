@@ -159,7 +159,7 @@ export function IssueSearchCombobox({
         {/* Wrapped so ComboboxContent's rules for a direct-child input group, sized for a much
             smaller list, do not apply. */}
         <div>
-          <InputGroup className="h-9 border-transparent bg-muted/60 shadow-none has-[[data-slot=input-group-control]:focus-visible]:border-transparent has-[[data-slot=input-group-control]:focus-visible]:ring-0">
+          <InputGroup className="h-9">
             <InputGroupAddon align="inline-start">
               <Search className="size-3.5 opacity-50" />
             </InputGroupAddon>
@@ -181,7 +181,7 @@ export function IssueSearchCombobox({
                 value={issue.external_id}
                 className={cn(
                   "flex h-9 cursor-default items-center gap-2.5 rounded-md px-2.5 outline-hidden select-none",
-                  issue === previewed && "bg-muted text-foreground",
+                  issue === previewed && "bg-foreground/7 text-foreground",
                 )}
               >
                 <span className="w-14 shrink-0 truncate font-mono text-[11px] text-accent">
@@ -233,7 +233,7 @@ export function IssueSearchCombobox({
                     {previewed.labels.map((label) => (
                       <span
                         key={label}
-                        className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                        className="rounded-md border border-foreground/10 px-1.5 py-0.5 text-[10px] text-muted-foreground"
                       >
                         {label}
                       </span>

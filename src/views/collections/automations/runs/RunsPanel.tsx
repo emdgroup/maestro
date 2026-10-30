@@ -195,7 +195,7 @@ export function RunsPanel({
               filter === id
                 ? id === "awaiting"
                   ? "bg-amber-500/20 text-amber-600"
-                  : "bg-muted text-foreground"
+                  : "bg-foreground/7 text-foreground"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >

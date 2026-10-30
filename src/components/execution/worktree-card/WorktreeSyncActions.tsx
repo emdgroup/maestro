@@ -193,8 +193,8 @@ export function WorktreeSyncActions({
                 // The button already carries `border border-transparent`, so colouring it in costs
                 // no layout. A `bg-muted` tint alone was tried first and is invisible against the
                 // card in the light themes.
-                "bg-transparent group-hover:border-border group-hover:bg-muted",
-                "hover:border-accent hover:bg-muted",
+                "bg-transparent group-hover:border-border group-hover:bg-foreground/7",
+                "hover:border-accent hover:bg-foreground/7",
               )}
             />
           }

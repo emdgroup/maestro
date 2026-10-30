@@ -87,7 +87,7 @@ export function AppHeader({
                     {isActive && (
                       <motion.span
                         layoutId="active-tab-pill"
-                        className="absolute inset-0 rounded-lg bg-card/90 shadow-sm"
+                        className="glass-pill absolute inset-0 rounded-lg"
                         transition={{ type: "spring", stiffness: 400, damping: 35 }}
                       />
                     )}
@@ -136,7 +136,7 @@ export function AppHeader({
             // Wrapped rather than passed straight through: the store's action takes an optional
             // page id, which would otherwise be handed the click event.
             onClick={() => onOpenSettings()}
-            className="flex items-center justify-center h-7 w-7 rounded-full hover:bg-muted/80 transition-colors [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-muted-foreground cursor-pointer"
+            className="flex items-center justify-center h-7 w-7 rounded-full hover:bg-foreground/7 transition-colors [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-muted-foreground cursor-pointer"
             aria-label="Settings"
           >
             <Settings />

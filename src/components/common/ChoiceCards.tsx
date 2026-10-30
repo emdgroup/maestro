@@ -23,7 +23,7 @@ export function ChoiceCards<T extends string>({
           aria-checked={option.value === value}
           onClick={() => onChange(option.value)}
           className={cn(
-            "rounded-md border p-2 text-left transition-colors hover:bg-muted/50",
+            "rounded-md border p-2 text-left transition-colors hover:bg-foreground/7",
             option.value === value &&
               "border-accent bg-accent/10 ring-1 ring-accent hover:bg-accent/10",
           )}

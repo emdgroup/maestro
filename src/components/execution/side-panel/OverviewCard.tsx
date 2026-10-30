@@ -104,9 +104,9 @@ export function CardAction({
       className={cn(
         "flex items-center gap-2 w-full text-[11px] text-left rounded-md transition-colors",
         variant === "seed"
-          ? "px-1.5 py-1 -mx-1.5 text-muted-foreground enabled:hover:bg-muted enabled:hover:text-foreground"
-          : "px-2.5 py-1.5 border border-border bg-background enabled:hover:bg-muted",
-        disabled && "opacity-40 cursor-default",
+          ? "px-1.5 py-1 -mx-1.5 text-muted-foreground enabled:hover:bg-foreground/7 enabled:hover:text-foreground"
+          : "home-pane px-2.5 py-1.5 rounded-xl",
+        disabled && "opacity-40 pointer-events-none",
       )}
     >
       <Icon className="w-3.5 h-3.5 flex-shrink-0" />

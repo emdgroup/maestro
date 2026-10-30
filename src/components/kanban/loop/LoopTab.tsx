@@ -148,7 +148,7 @@ function ProposalRow({ task, check }: { task: Task; check: LoopCheck }) {
             )}
           </div>
         </div>
-        <span className="flex shrink-0 items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 text-xs text-muted-foreground">
+        <span className="flex shrink-0 items-center gap-1 rounded-md bg-foreground/7 px-1.5 py-0.5 text-xs text-muted-foreground">
           <Sparkles className="size-3" />
           Proposed
         </span>
@@ -220,7 +220,7 @@ function CheckRow({
             )}
           </div>
         </div>
-        <span className="flex shrink-0 items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 text-xs text-muted-foreground">
+        <span className="flex shrink-0 items-center gap-1 rounded-md bg-foreground/7 px-1.5 py-0.5 text-xs text-muted-foreground">
           <KindIcon className="size-3" />
           {name}
         </span>
@@ -237,7 +237,7 @@ function CheckRow({
             <button
               type="button"
               aria-label={`Edit "${draft.label}"`}
-              className="rounded p-1 hover:bg-muted hover:text-foreground"
+              className="rounded p-1 hover:bg-foreground/7 hover:text-foreground"
               onClick={onEdit}
             >
               <Pencil className="size-3.5" />
@@ -245,7 +245,7 @@ function CheckRow({
             <button
               type="button"
               aria-label={`Remove "${draft.label}"`}
-              className="rounded p-1 hover:bg-muted hover:text-foreground"
+              className="rounded p-1 hover:bg-foreground/7 hover:text-foreground"
               onClick={onRemove}
             >
               <X className="size-3.5" />
@@ -524,7 +524,7 @@ export function LoopTab({
         pendingNotes.map((c) => (
           <div
             key={c.id}
-            className="flex items-start gap-2 rounded-md border border-border bg-accent/5 px-2.5 py-1.5 text-xs"
+            className="flex items-start gap-2 rounded-md border border-foreground/10 bg-accent/5 px-2.5 py-1.5 text-xs"
           >
             <StickyNote className="mt-0.5 size-3.5 shrink-0 text-accent" />
             <span className="flex-1">{c.body}</span>
@@ -539,7 +539,7 @@ export function LoopTab({
   const doneWhen = (
     <section className="space-y-2">
       <div className="flex items-baseline justify-between px-1">
-        <h3 className="text-sm font-medium">Done when</h3>
+        <h3 className="field-label">Done when</h3>
         {real.length > 0 && (
           <span className="text-xs text-muted-foreground">
             {real.length} {real.length === 1 ? "check" : "checks"}
@@ -556,7 +556,7 @@ export function LoopTab({
       />
       {rows.length > 0 ? (
         <>
-          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+          <ul className="divide-y divide-foreground/7 overflow-hidden glass-tile rounded-[14px]">
             {rows.map((row) =>
               row.kind === "proposal" ? (
                 <ProposalRow key={`p-${row.live.id}`} task={task} check={row.live} />
@@ -597,7 +597,7 @@ export function LoopTab({
           )}
         </>
       ) : (
-        <div className="space-y-3 rounded-lg border border-dashed border-border p-6 text-center">
+        <div className="space-y-3 rounded-lg border border-dashed border-foreground/10 p-6 text-center">
           <div className="text-sm font-medium">No checks yet</div>
           <p className="mx-auto max-w-md text-xs text-muted-foreground">
             A loop runs until all its checks pass, so it needs at least one before it can start.
@@ -624,7 +624,7 @@ export function LoopTab({
   const settings = (
     <div className="space-y-4">
       {checksLocked && (
-        <div className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5 rounded-xl border border-foreground/7 bg-background/50 px-2.5 py-1 text-xs text-muted-foreground">
           <Lock className="size-3 shrink-0" />
           {summary?.hold ? (
             <span>Locked until iteration {summary.iteration} and its checks end.</span>
@@ -682,7 +682,7 @@ export function LoopTab({
                   by the judge, from the notes, iterations and diff
                 </span>
               </h3>
-              <div className="rounded-lg border border-border bg-card p-3 text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_h3]:font-semibold">
+              <div className="glass-tile rounded-[14px] p-3 text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_h3]:font-semibold">
                 <MarkdownBlock text={digest.body} projectId={task.project_id} />
               </div>
             </section>

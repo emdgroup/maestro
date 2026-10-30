@@ -296,9 +296,7 @@ export function McpEditorDialog({
         className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
       >
         <div className="flex items-center gap-2 px-6 pt-4">
-          <DialogTitle className="text-[11px] font-normal tracking-[0.14em] uppercase text-muted-foreground">
-            {editing ? "Edit MCP server" : "New MCP server"}
-          </DialogTitle>
+          <DialogTitle>{editing ? "Edit MCP server" : "New MCP server"}</DialogTitle>
           <Segmented
             label="View"
             className="ml-auto"
@@ -784,7 +782,7 @@ function Field({
   return (
     <div className={cn("space-y-1.5", className)}>
       <div className="flex items-center gap-2">
-        <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+        <p className="field-label">{label}</p>
         {aside && <span className="ml-auto">{aside}</span>}
       </div>
       {children}
@@ -841,7 +839,7 @@ function Rows({
     <div className="space-y-1.5">
       {label && (
         <div className="flex items-center">
-          <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+          <p className="field-label">{label}</p>
           <span className="ml-auto">{add}</span>
         </div>
       )}

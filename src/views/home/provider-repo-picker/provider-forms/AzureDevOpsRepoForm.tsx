@@ -42,7 +42,7 @@ export function AzureDevOpsRepoForm({
   return (
     <>
       <div className="space-y-1.5">
-        <Label className="text-sm font-medium">Project</Label>
+        <Label className="field-label">Project</Label>
         <Combobox
           value={selectedProject}
           onValueChange={(v) => setSelectedProject(v ?? "")}
@@ -75,7 +75,7 @@ export function AzureDevOpsRepoForm({
       </div>
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium">Repository</Label>
+          <Label className="field-label">Repository</Label>
           {selectedProject && (
             <button
               type="button"

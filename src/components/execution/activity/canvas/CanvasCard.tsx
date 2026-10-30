@@ -23,7 +23,7 @@ export function CanvasCard({ surface }: Props) {
   const isEmpty = surface.html.trim().length === 0;
 
   return (
-    <div className="rounded-xl border bg-card overflow-hidden">
+    <div className="glass-tile rounded-xl overflow-hidden">
       <div className="w-full flex items-center gap-2.5 px-3.5 py-2.5">
         <button
           type="button"
@@ -79,7 +79,7 @@ export function CanvasCard({ surface }: Props) {
               <ScrollArea className="max-h-[600px]">
                 <div className="p-4">
                   {showHtml ? (
-                    <pre className="text-xs font-mono bg-muted rounded p-3 overflow-x-auto whitespace-pre-wrap break-all">
+                    <pre className="text-xs font-mono rounded-lg border border-foreground/7 bg-background/50 p-3 overflow-x-auto whitespace-pre-wrap break-all">
                       {surface.html}
                     </pre>
                   ) : (

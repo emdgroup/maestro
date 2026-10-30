@@ -4,7 +4,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { getTerminalTheme, getTerminalThemeOnly } from "@/lib/terminalTheme";
+import { getTerminalTheme, getTerminalColorOptions } from "@/lib/terminalTheme";
 import { useSettings } from "@/services/settings.service";
 import { useTheme } from "@/providers/ThemeProvider";
 import {
@@ -35,7 +35,7 @@ export function AcpTerminalView({
   const xtermRef = useRef<Terminal | null>(null);
   const { data: settings } = useSettings();
   const terminalColorMode = settings?.terminal_color_mode ?? "follow_theme";
-  const { theme, systemTheme } = useTheme();
+  const { theme, systemTheme, effectiveAccentHue } = useTheme();
   const effectiveTheme = theme === "system" ? systemTheme : theme;
 
   useEffect(() => {
@@ -115,11 +115,11 @@ export function AcpTerminalView({
   useEffect(() => {
     const terminal = xtermRef.current;
     if (!terminal) return;
-    terminal.options.theme = getTerminalThemeOnly(terminalColorMode);
-  }, [terminalColorMode, effectiveTheme]);
+    terminal.options = getTerminalColorOptions(terminalColorMode);
+  }, [terminalColorMode, effectiveTheme, effectiveAccentHue]);
 
   return (
-    <div className="pt-2 pl-2 h-full w-full">
+    <div className="pt-2 pl-2 h-full w-full bg-(--terminal-surface) dark:bg-transparent">
       <div
         ref={containerRef}
         {...{ [TERMINAL_CONTAINER_ATTRIBUTE]: "" }}

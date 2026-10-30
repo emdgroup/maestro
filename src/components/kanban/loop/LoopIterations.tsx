@@ -115,11 +115,11 @@ const TEXT: Record<Tone, string> = {
   muted: "text-muted-foreground",
 };
 const BORDER: Record<Tone, string> = {
-  accent: "border-accent/30",
-  warning: "border-warning/50",
-  destructive: "border-destructive/40",
-  success: "border-success/40",
-  muted: "border-border",
+  accent: "border-accent/30!",
+  warning: "border-warning/50!",
+  destructive: "border-destructive/40!",
+  success: "border-success/40!",
+  muted: "",
 };
 const DOT_TONE: Record<Tone, string> = {
   accent: "animate-pulse bg-accent",
@@ -161,7 +161,7 @@ function Ring({ share, tone, big, small, glow, label }: RingProps) {
       role="img"
       aria-label={label}
       className={cn(
-        "relative grid size-[72px] shrink-0 place-items-center rounded-full bg-card",
+        "relative grid size-[72px] shrink-0 place-items-center rounded-full bg-background/50",
         glow === "accent" && "animate-glow-accent",
         glow === "warning" && "animate-glow-warning",
       )}
@@ -261,7 +261,8 @@ function StepTile({
         state === "live" && "border-accent/50 bg-accent/10",
         state === "waiting" && "border-warning/60 bg-warning/10",
         state === "failed" && "border-destructive/40 bg-destructive/5",
-        state === "todo" && (optional ? "border-dashed border-border" : "border-border"),
+        state === "todo" &&
+          (optional ? "border-dashed border-foreground/10" : "border-foreground/10"),
       )}
     >
       {state === "done" ? (
@@ -290,7 +291,7 @@ function StepTile({
         <div className="truncate text-[11px] tabular-nums text-muted-foreground">{sub}</div>
       </div>
       {state === "live" && (
-        <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-muted">
+        <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-foreground/10">
           <div className="absolute inset-y-0 left-0 w-[60%] animate-rail-comet bg-gradient-to-r from-transparent via-accent/50 to-accent" />
         </div>
       )}
@@ -564,7 +565,7 @@ function HeldBody({
         </div>
       )}
       {head.kind === "signoff" && manual.length > 0 && (
-        <ul className="space-y-1 rounded-md border border-border bg-background p-2 text-xs">
+        <ul className="space-y-1 rounded-lg border border-foreground/7 bg-background/50 p-2 text-xs">
           {manual.map(({ check }) => (
             <li key={check.id}>
               <label className="flex cursor-pointer items-center gap-2">
@@ -642,7 +643,7 @@ function WorkingOn({
       {notes.map((note) => (
         <span
           key={note.id}
-          className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border bg-accent/5 px-2 py-1 text-xs"
+          className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-foreground/10 bg-accent/5 px-2 py-1 text-xs"
         >
           <StickyNote className="size-3 shrink-0 text-accent" />
           <span className="truncate">{note.body}</span>
@@ -665,7 +666,7 @@ function Question({
   const [answer, setAnswer] = useState("");
   return (
     <>
-      <div className="rounded-md border border-warning/40 bg-background p-3 text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_h3]:font-semibold">
+      <div className="rounded-lg border border-warning/40 bg-background/50 p-3 text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_h3]:font-semibold">
         <MarkdownBlock text={iteration.blocked ?? ""} projectId={task.project_id} />
       </div>
       <Textarea
@@ -899,7 +900,7 @@ function HeadIteration({
       break;
     case "Merge back":
       body = (
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background p-2 font-mono text-[11px] leading-relaxed">
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-foreground/7 bg-background/50 p-2 font-mono text-[11px] leading-relaxed">
           {iteration.check_output?.trim() || "Git gave no output."}
         </pre>
       );
@@ -930,7 +931,7 @@ function HeadIteration({
       )}
       <span className="absolute left-0 top-2">{ring}</span>
       <span className={cn("absolute left-[72px] top-[43px] h-0.5 w-4", LINK[tone])} />
-      <section className={cn("space-y-3 rounded-xl border bg-card p-4", BORDER[tone])}>
+      <section className={cn("glass-tile space-y-3 rounded-[14px] p-4", BORDER[tone])}>
         <div className="flex items-center gap-3">
           <span className="text-xl font-bold tabular-nums">#{iteration.n}</span>
           <span className="text-xs text-muted-foreground">
@@ -950,7 +951,7 @@ function HeadIteration({
           </span>
           <div className="flex-1" />
           {live && hold && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1 rounded-full border border-foreground/10 px-2 py-0.5 text-[11px] text-muted-foreground">
               {hold === "Stopped" ? <OctagonX className="size-3" /> : <Pause className="size-3" />}
               {hold === "Stopped" ? "Stops" : "Pauses"} once this step ends
             </span>
@@ -1027,7 +1028,7 @@ function DoneHead({ task, railBelow }: { task: Task; railBelow: boolean }) {
         />
       </span>
       <span className={cn("absolute left-[72px] top-[35px] h-0.5 w-4", LINK.success)} />
-      <section className="flex min-h-[72px] items-center gap-2 rounded-xl border border-success/40 bg-card px-4 text-sm font-medium">
+      <section className="flex min-h-[72px] items-center gap-2 glass-tile rounded-[14px] border-success/40! px-4 text-sm font-medium">
         <CircleCheck className="size-4 shrink-0 text-success" />
         Done after {plural(summary?.counted ?? 0, "iteration")} and{" "}
         {formatDuration(summary?.agent_secs ?? 0)}.
@@ -1069,7 +1070,7 @@ function CheckCards({
 }) {
   const runningId = running ? outcomes.find((o) => !o.result)?.check.id : undefined;
   return (
-    <ul className="divide-y divide-border overflow-hidden rounded-md border border-border bg-background">
+    <ul className="divide-y divide-foreground/7 overflow-hidden rounded-lg border border-foreground/7 bg-background/50">
       {(inOrder ? outcomes : failedFirst(outcomes)).map(({ check, result }) => {
         const { icon: Mark, tone } = MARK[result?.state ?? "Pending"];
         const opened = open.has(check.id);
@@ -1114,7 +1115,7 @@ function CheckCards({
               <button
                 type="button"
                 aria-expanded={opened}
-                className="block w-full hover:bg-muted/50"
+                className="block w-full hover:bg-foreground/7"
                 onClick={() => onToggle(check.id)}
               >
                 {head}
@@ -1123,7 +1124,7 @@ function CheckCards({
               head
             )}
             {result && opened && (
-              <div className="border-t border-border bg-background">
+              <div className="border-t border-foreground/7">
                 {result.command && (
                   <div className="px-3 pt-1.5 font-mono text-[11px] text-muted-foreground">
                     $ {result.command}
@@ -1221,8 +1222,10 @@ function JudgeVerdicts({
           <li
             key={check.id}
             className={cn(
-              "space-y-2 rounded-md border p-3 text-xs",
-              failed ? "border-destructive/40 bg-destructive/5" : "border-border bg-background",
+              "space-y-2 rounded-lg border p-3 text-xs",
+              failed
+                ? "border-destructive/40 bg-destructive/5"
+                : "border-foreground/7 bg-background/50",
             )}
           >
             <div className="flex items-start gap-2 font-medium">
@@ -1253,7 +1256,7 @@ function JudgeVerdicts({
 }
 
 const MARKDOWN_BOX =
-  "rounded-md border border-border bg-background p-3 text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_h3]:font-semibold";
+  "rounded-lg border border-foreground/7 bg-background/50 p-3 text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_h3]:font-semibold";
 
 /** What the agent wrote when its Build ended, or the question it stopped on. */
 function AgentSummary({ task, iteration }: { task: Task; iteration: LoopIteration }) {
@@ -1278,8 +1281,8 @@ function AgentSummary({ task, iteration }: { task: Task; iteration: LoopIteratio
  */
 function NotesFile({ task, notes }: { task: Task; notes: string | null | undefined }) {
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-background">
-      <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs">
+    <div className="overflow-hidden rounded-lg border border-foreground/7 bg-background/50">
+      <div className="flex items-center gap-2 border-b border-foreground/10 px-3 py-1.5 text-xs">
         <NotebookPen className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="font-mono">.maestro/loop/PROGRESS.md</span>
         <span className="text-muted-foreground">written by the agent, never committed</span>
@@ -1381,7 +1384,7 @@ function IterationDetail({
         {ran ? (
           <ChecksPanel iteration={iteration} checks={checks} outcomes={outcomes} />
         ) : (
-          <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+          <div className="rounded-md border border-dashed border-foreground/10 p-3 text-xs text-muted-foreground">
             {note ? `No checks ran: ${note}.` : "No results recorded for this iteration."}
             {iteration.outcome === "Failed" && iteration.check_output && (
               <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground">
@@ -1437,12 +1440,12 @@ function IterationRow({
           )}
         />
       )}
-      <span className="absolute left-[30px] top-3.5 size-3 rounded-full border-2 border-border bg-background" />
-      <div className={cn("rounded-lg", open && "border border-border bg-card")}>
+      <span className="absolute left-[30px] top-3.5 size-3 rounded-full border-2 border-foreground/10 bg-background" />
+      <div className={cn("rounded-lg", open && "glass-tile")}>
         <button
           type="button"
           aria-expanded={open}
-          className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted/30"
+          className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-foreground/7"
           onClick={toggle}
         >
           {open ? (
@@ -1545,7 +1548,7 @@ export function LoopIterations({
   const headed = !!current || done;
   if (!headed && earlier.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+      <p className="rounded-lg border border-dashed border-foreground/10 p-4 text-center text-xs text-muted-foreground">
         No iterations yet
       </p>
     );

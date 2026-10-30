@@ -5,7 +5,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { api } from "@/lib/tauri-utils";
-import { getTerminalTheme, getTerminalThemeOnly } from "@/lib/terminalTheme";
+import { getTerminalTheme, getTerminalColorOptions } from "@/lib/terminalTheme";
 import { useSettings } from "@/services/settings.service";
 import {
   registerTerminal,
@@ -25,7 +25,7 @@ export function TerminalComponent({ sessionId }: TerminalComponentProps) {
   const channelRef = useRef<Channel<string> | null>(null);
   const { data: settings } = useSettings();
   const terminalColorMode = settings?.terminal_color_mode ?? "follow_theme";
-  const { theme, systemTheme } = useTheme();
+  const { theme, systemTheme, effectiveAccentHue } = useTheme();
   const effectiveTheme = theme === "system" ? systemTheme : theme;
 
   useEffect(() => {
@@ -147,11 +147,11 @@ export function TerminalComponent({ sessionId }: TerminalComponentProps) {
   useEffect(() => {
     const terminal = xtermRef.current;
     if (!terminal) return;
-    terminal.options.theme = getTerminalThemeOnly(terminalColorMode);
-  }, [terminalColorMode, effectiveTheme]);
+    terminal.options = getTerminalColorOptions(terminalColorMode);
+  }, [terminalColorMode, effectiveTheme, effectiveAccentHue]);
 
   return (
-    <div className="py-2 pl-2 h-full w-full">
+    <div className="py-2 pl-2 h-full w-full bg-(--terminal-surface) dark:bg-transparent">
       <div
         ref={terminalRef}
         {...{ [TERMINAL_CONTAINER_ATTRIBUTE]: "" }}

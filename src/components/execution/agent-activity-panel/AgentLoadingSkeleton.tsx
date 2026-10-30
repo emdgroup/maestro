@@ -2,6 +2,10 @@ import { Skeleton } from "@/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useSettings } from "@/services/settings.service";
 
+/** The compose bar's glass, shimmering while it loads, so the real bar replaces it without a jump. */
+const COMPOSE_GLASS =
+  "glass-shimmer w-full rounded-[25px] border border-foreground/10 bg-card/25 backdrop-blur-[24px] backdrop-saturate-150 shadow-pop";
+
 export function AgentLoadingSkeleton({ isNewSession }: { isNewSession?: boolean }) {
   const { data: appSettings } = useSettings();
   const isCompact = appSettings?.agent_stream_width === "compact";
@@ -10,7 +14,7 @@ export function AgentLoadingSkeleton({ isNewSession }: { isNewSession?: boolean 
     return (
       <div className="flex-1 flex flex-col min-h-0 relative">
         <div className="absolute inset-0 flex items-center justify-center px-8">
-          <Skeleton className="h-12 w-[min(48rem,100%)] rounded-3xl" />
+          <div className={cn(COMPOSE_GLASS, "h-12 max-w-3xl")} />
         </div>
       </div>
     );
@@ -39,7 +43,7 @@ export function AgentLoadingSkeleton({ isNewSession }: { isNewSession?: boolean 
           className={cn(isCompact ? "mx-auto w-full px-12" : "px-16")}
           style={isCompact ? { maxWidth: "min(48rem, calc(100% - 2rem))" } : undefined}
         >
-          <Skeleton className="h-18 w-full rounded-3xl" />
+          <div className={cn(COMPOSE_GLASS, "h-18")} />
         </div>
       </div>
     </div>

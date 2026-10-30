@@ -94,7 +94,7 @@ export function WorkspaceSelector({
     const branchName = newBranchName && `${MAESTRO_BRANCH_PREFIX}${newBranchName}`;
     return (
       <div className="flex flex-col gap-1">
-        <span className="text-[11px] text-muted-foreground">Workspace</span>
+        <span className="field-label">Workspace</span>
         {mode === "NewWorktree" ? (
           <span className="home-field flex items-stretch h-7 w-fit max-w-full rounded-lg overflow-hidden text-xs cursor-default">
             <span className="flex items-center gap-1.5 shrink-0 px-2.5 bg-foreground/5 border-r border-foreground/12">
@@ -137,7 +137,7 @@ export function WorkspaceSelector({
 
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-[11px] text-muted-foreground">Workspace</span>
+      <span className="field-label">Workspace</span>
 
       <WorkspaceModeSelect
         value={mode}

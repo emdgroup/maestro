@@ -372,6 +372,30 @@
   animation: shimmer 1.5s ease-in-out infinite;
 }
 
+/* A band of light crossing a pane of glass. An image over the element's own colour, so the glass and
+   its blur stay as they are. White would not show on the light theme's pale glass, so it takes the
+   accent there. */
+.glass-shimmer {
+  --glass-shimmer-light: color-mix(in oklab, var(--accent) 22%, transparent);
+  background-image: linear-gradient(
+    105deg,
+    transparent 35%,
+    var(--glass-shimmer-light) 50%,
+    transparent 65%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2.4s linear infinite;
+}
+.dark .glass-shimmer {
+  --glass-shimmer-light: color-mix(in oklab, white 12%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .glass-shimmer {
+    animation: none;
+    background-image: none;
+  }
+}
+
 .shimmer-text {
   background: linear-gradient(
     90deg,
@@ -386,7 +410,6 @@
   -webkit-text-fill-color: transparent;
 }
 
-.selected-session-item,
 /* File tree rows, as the Settings sidebar draws its own: rounded, accent-washed when picked. */
 .selected-file-item,
 .file-tree-item {
@@ -397,26 +420,6 @@
 }
 .file-tree-item:hover:not(.selected-file-item) {
   background: color-mix(in oklab, var(--foreground) 7%, transparent);
-}
-
-@property --ha {
-  syntax: "<percentage>";
-  initial-value: 0%;
-  inherits: false;
-}
-
-.pr-row:not(.selected) {
-  --ha: 0%;
-  transition: --ha 0.15s ease;
-  background: linear-gradient(
-    to right,
-    color-mix(in oklch, var(--muted) var(--ha), transparent),
-    color-mix(in oklch, var(--muted) calc(var(--ha) * 0.3), transparent) 55%,
-    transparent
-  );
-}
-.pr-row:not(.selected):hover {
-  --ha: 100%;
 }
 
 /* ── Agent session sidebar ── */
@@ -444,9 +447,50 @@
 /* Fixed, not min-height: while the rail animates, the text column is squeezed
    to 0 width and its content would otherwise reflow and drive the row taller. */
 .pr-row {
-  height: 60px;
+  height: 56px;
   overflow: hidden;
+  isolation: isolate;
 }
+/* Drawn behind the row rather than on it, so the pane can inset without moving an avatar. */
+.pr-row::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  z-index: -1;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.pr-row:not(.selected):hover::before {
+  background: color-mix(in oklab, var(--foreground) 6%, transparent);
+}
+/* The selected pill of a switcher: clear glass over whatever sits behind it. */
+.glass-pill {
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, white 70%, transparent),
+    color-mix(in oklab, white 35%, transparent)
+  );
+  border-color: color-mix(in oklab, white 85%, transparent);
+  box-shadow:
+    inset 0 1px 0 white,
+    0 2px 8px color-mix(in oklab, var(--foreground) 8%, transparent);
+  backdrop-filter: blur(10px) saturate(160%);
+}
+.dark .glass-pill {
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, white 14%, transparent),
+    color-mix(in oklab, white 5%, transparent)
+  );
+  border-color: color-mix(in oklab, white 18%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, white 22%, transparent),
+    0 2px 8px color-mix(in oklab, black 20%, transparent);
+}
+
 .pr-avatar-col {
   width: var(--sidebar-width-icon, 52px);
 }
@@ -463,6 +507,8 @@
   --screen-tint: color-mix(in oklch, var(--accent) 24%, transparent);
   --bubble-body: color-mix(in oklch, oklch(from var(--accent) calc(l - 0.04) c h) 55%, transparent);
   --bubble-hi: color-mix(in oklch, oklch(from var(--accent) calc(l + 0.14) c h) 60%, transparent);
+  /* The light theme's terminal: opaque, see terminalTheme.ts, but tinted as the glass around it is. */
+  --terminal-surface: color-mix(in oklab, var(--accent) 8%, var(--background));
 }
 .dark {
   --screen-tint: color-mix(in oklch, var(--accent) 16%, transparent);
@@ -1053,6 +1099,60 @@
 }
 /* A project that needs the user: tinted amber all over, never an edge stripe. `needs-you` is the
    same state on a task card, where it arrives as a class from the card's state line. */
+/* A home-pane with body: lit from the top, shaded along the bottom, and lifted off the page. */
+.glass-volume {
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
+  box-shadow:
+    var(--tw-ring-shadow, 0 0 #0000),
+    inset 0 1px 0 color-mix(in oklab, white 75%, transparent),
+    inset 0 -1px 0 color-mix(in oklab, var(--foreground) 6%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.06),
+    0 12px 24px -12px rgb(0 0 0 / 0.22);
+  transition:
+    background 0.18s,
+    transform 0.18s,
+    border-color 0.18s,
+    box-shadow 0.18s;
+}
+.glass-volume:hover {
+  box-shadow:
+    var(--tw-ring-shadow, 0 0 #0000),
+    inset 0 1px 0 color-mix(in oklab, white 85%, transparent),
+    inset 0 -1px 0 color-mix(in oklab, var(--foreground) 6%, transparent),
+    0 2px 4px rgb(0 0 0 / 0.08),
+    0 18px 32px -12px rgb(0 0 0 / 0.3);
+}
+.glass-volume:not(.needs-you, [data-attention="true"]) {
+  background: linear-gradient(
+    160deg,
+    color-mix(in oklab, white 62%, transparent),
+    color-mix(in oklab, white 24%, transparent)
+  );
+}
+.dark .glass-volume {
+  box-shadow:
+    var(--tw-ring-shadow, 0 0 #0000),
+    inset 0 1px 0 color-mix(in oklab, white 16%, transparent),
+    inset 0 -1px 0 rgb(0 0 0 / 0.25),
+    0 1px 2px rgb(0 0 0 / 0.25),
+    0 14px 28px -12px rgb(0 0 0 / 0.55);
+}
+.dark .glass-volume:hover {
+  box-shadow:
+    var(--tw-ring-shadow, 0 0 #0000),
+    inset 0 1px 0 color-mix(in oklab, white 22%, transparent),
+    inset 0 -1px 0 rgb(0 0 0 / 0.25),
+    0 2px 4px rgb(0 0 0 / 0.3),
+    0 20px 36px -12px rgb(0 0 0 / 0.65);
+}
+.dark .glass-volume:not(.needs-you, [data-attention="true"]) {
+  background: linear-gradient(
+    160deg,
+    color-mix(in oklab, white 11%, transparent),
+    color-mix(in oklab, white 3%, transparent)
+  );
+}
 .home-pane[data-attention="true"],
 .home-pane.needs-you {
   background: color-mix(
@@ -1089,6 +1189,15 @@
   backdrop-filter: blur(14px);
   border: 1px solid color-mix(in oklab, var(--foreground) 10%, transparent);
 }
+/* A section or field label inside a dialog. */
+.field-label {
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
 .home-field {
   background: color-mix(in oklab, var(--background) 55%, transparent);
   border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
@@ -1313,6 +1422,11 @@
   background: var(--inner-glass-bg);
   -webkit-backdrop-filter: blur(20px) saturate(150%);
   backdrop-filter: blur(20px) saturate(150%);
+}
+/* xterm.css paints its viewport black beneath the theme's background, which only shows once that
+   background is clear. The "default" color mode still draws its own opaque black above this. */
+.inner-glass .xterm .xterm-viewport {
+  background-color: transparent;
 }
 /* A card on a glass panel: lighter than the panel and edged with a highlight, so it holds its own
    against the light theme's pale wash where `home-pane` blends in. */

@@ -45,8 +45,8 @@ export function WorktreePullRequestChip({ number, url, title, ci }: WorktreePull
               // The ghost variant's `hover:text-foreground` would drain the CI colour out of the
               // icon exactly when the user is pointing at it, which is the one moment it matters.
               CI_TONE[ci.rollup],
-              "bg-transparent group-hover:border-border group-hover:bg-muted",
-              "hover:border-accent hover:bg-muted",
+              "bg-transparent group-hover:border-border group-hover:bg-foreground/7",
+              "hover:border-accent hover:bg-foreground/7",
             )}
           />
         }

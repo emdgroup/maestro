@@ -263,6 +263,7 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
                       <ZoomableContent
                         key={i}
                         ariaLabel={b.name}
+                        className="rounded-[14px]"
                         lightboxContent={<img src={src} alt={b.name} />}
                       >
                         <Attachment orientation="vertical">

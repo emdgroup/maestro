@@ -17,6 +17,7 @@ import {
   Unlink2,
   TriangleAlert,
 } from "lucide-react";
+import { SEGMENT_GROUP } from "@/lib/segmented";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Button } from "@/ui/button";
@@ -331,7 +332,7 @@ export function WorkspaceFilesPanel({
   const body = showsEditorSurface ? (
     <div ref={editAreaRef} data-slot="markdown-edit-area" className="flex-1 flex flex-col min-h-0">
       {mode === "edit" && isProcessing && (
-        <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-muted-foreground bg-muted/40 border-b border-accent/10 shrink-0">
+        <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-muted-foreground border-b border-accent/10 shrink-0">
           <TriangleAlert className="w-3 h-3 shrink-0" />
           The agent is running and may write to this file. Your save will check first.
         </div>
@@ -406,7 +407,7 @@ export function WorkspaceFilesPanel({
           panel.inset && "mt-2",
         )}
       >
-        <div className="flex items-center gap-0.5 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
           <ToolbarButton
             label={panel.panelOpen ? "Hide file list" : "Show file list"}
             active={panel.panelOpen}
@@ -419,7 +420,7 @@ export function WorkspaceFilesPanel({
               the centred filename, which does mean the name shifts when the list is toggled —
               inherent to flex centring, and the price of matching the Changes tab. */}
           {panel.panelOpen && (
-            <div className="flex items-center gap-0.5 @max-[280px]:hidden">
+            <div className="flex items-center gap-1 @max-[280px]:hidden">
               <ToolbarButton
                 label={`New file in ${targetLabel}`}
                 onClick={() => createInTarget("new-file")}
@@ -453,7 +454,7 @@ export function WorkspaceFilesPanel({
                     variant="ghost"
                     size="icon-sm"
                     aria-label="More actions"
-                    className="hidden @max-[280px]:inline-flex text-muted-foreground hover:text-foreground"
+                    className="home-pane rounded-xl hidden @max-[280px]:inline-flex text-muted-foreground hover:text-foreground"
                   />
                 }
               >
@@ -560,7 +561,7 @@ export function WorkspaceFilesPanel({
         </div>
 
         {selected && (
-          <div className="flex items-center gap-0.5 shrink-0">
+          <div className="flex items-center gap-1 shrink-0">
             {mode === "edit" ? (
               // The pairing that confused people was a floppy disk beside a tick: the tick reads
               // as "confirm", which is the opposite of what it does on a dirty buffer. An X always
@@ -584,9 +585,14 @@ export function WorkspaceFilesPanel({
                   </ToolbarButton>
                 )}
                 {showLayoutGroup && (
-                  // 28px items in a 2px-padded container come to 32, so the group lines up with
-                  // every other control rather than sitting 4px short of them.
-                  <div className="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5 shrink-0 @max-[280px]:hidden">
+                  // 24px items in a 3px-padded, bordered container come to 32, so the group lines
+                  // up with every other control rather than sitting short of them.
+                  <div
+                    className={cn(
+                      SEGMENT_GROUP,
+                      "flex items-center gap-0.5 shrink-0 @max-[280px]:hidden",
+                    )}
+                  >
                     {MARKDOWN_LAYOUTS.map(({ value, Icon, label }) => {
                       const unavailable = layoutUnavailable(value);
                       return (
@@ -599,9 +605,9 @@ export function WorkspaceFilesPanel({
                               aria-label={label}
                               aria-pressed={effectiveLayout === value}
                               className={cn(
-                                "inline-flex items-center justify-center size-7 rounded transition-colors disabled:opacity-40 disabled:pointer-events-none",
+                                "inline-flex items-center justify-center size-6 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none",
                                 effectiveLayout === value
-                                  ? "text-foreground bg-background shadow-sm"
+                                  ? "text-foreground bg-card/90 shadow-sm"
                                   : "text-muted-foreground hover:text-foreground",
                               )}
                             >
@@ -620,14 +626,17 @@ export function WorkspaceFilesPanel({
                   <TooltipTrigger
                     render={
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         size="icon-sm"
                         aria-label="Save"
                         onClick={() => void handleSave()}
                         disabled={saveDisabled}
                         // The accent is what says "there is unsaved work here". Wearing it with
                         // nothing to save promised an action the button would not perform.
-                        className={cn("ml-1.5", !saveDisabled && "text-accent")}
+                        className={cn(
+                          "home-pane rounded-xl ml-1.5",
+                          !saveDisabled && "text-accent",
+                        )}
                       />
                     }
                   >

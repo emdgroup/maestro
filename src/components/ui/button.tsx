@@ -9,15 +9,13 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/80",
-        // No `dark:border-input`: --input is a fill colour and in dark it is oklch(32% 0.01 250),
-        // the same value as --card and --popover, so the edge vanished on every card and dialog.
-        // `border-border` now applies in both themes; the --input fills below are untouched.
+        // Home's pane (`home-pane` in index.css) as utilities, so a caller's classes still win.
         outline:
-          "border-border bg-background shadow-xs hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:bg-input/30 dark:hover:bg-input/50",
+          "border-foreground/7 bg-background/50 hover:border-foreground/14 hover:bg-background/84 hover:text-foreground aria-expanded:bg-background/84 aria-expanded:text-foreground",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:
-          "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
+          "hover:bg-foreground/7 hover:text-foreground aria-expanded:bg-foreground/7 aria-expanded:text-foreground dark:hover:bg-foreground/7",
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
         accent: "bg-accent text-accent-foreground hover:bg-accent/80",
@@ -37,6 +35,10 @@ const buttonVariants = cva(
         "icon-lg": "size-10",
       },
     },
+    // After the sizes, whose own radii would otherwise win.
+    compoundVariants: [
+      { variant: "outline", className: "rounded-xl in-data-[slot=button-group]:rounded-md" },
+    ],
     defaultVariants: {
       variant: "default",
       size: "default",

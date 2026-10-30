@@ -596,7 +596,7 @@ export function SidePanelContent({
                       "flex h-full w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed text-xs transition-colors",
                       isDragging
                         ? "border-accent bg-accent/5 text-foreground"
-                        : "border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+                        : "border-border/70 text-muted-foreground hover:bg-foreground/7 hover:text-foreground",
                     )}
                   >
                     <Download className="w-4 h-4" />

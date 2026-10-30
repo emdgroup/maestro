@@ -39,7 +39,7 @@ export function CommandSuggestionsPanel({
                   onSelect(cmd);
                 }}
                 className={cn(
-                  "w-full flex items-center rounded-lg px-2 py-1.5 text-left transition-colors whitespace-nowrap hover:bg-accent/15",
+                  "w-full flex items-center rounded-lg px-2 py-1.5 text-left transition-colors whitespace-nowrap hover:bg-foreground/7",
                 )}
               >
                 <span

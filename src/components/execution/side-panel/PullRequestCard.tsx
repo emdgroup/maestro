@@ -263,7 +263,7 @@ export function CheckRollup({
           e.stopPropagation();
           setExpanded((open) => !open);
         }}
-        className="flex items-center gap-2.5 w-full text-left rounded-md px-1 -mx-1 py-0.5 hover:bg-muted/60 transition-colors"
+        className="flex items-center gap-2.5 w-full text-left rounded-md px-1 -mx-1 py-0.5 hover:bg-foreground/7 transition-colors"
       >
         <CheckRing checks={ordered} />
         <span className="min-w-0 flex-1">

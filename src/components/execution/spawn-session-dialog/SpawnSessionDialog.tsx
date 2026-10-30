@@ -344,9 +344,7 @@ export function SpawnSessionDialog({
           <div className="space-y-5 py-1">
             {/* Agent selection */}
             <div className="space-y-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-                Agent
-              </p>
+              <p className="field-label">Agent</p>
               <div className="grid grid-cols-2 gap-1.5">
                 {!resume && (
                   <Button
@@ -355,13 +353,11 @@ export function SpawnSessionDialog({
                       setSessionType("terminal");
                     }}
                     className={cn(
-                      "flex items-center gap-2.5 px-3 py-2.5 h-auto rounded-lg border text-left justify-start transition-colors",
-                      sessionType === "terminal"
-                        ? "bg-accent/8 border-accent/30"
-                        : "border-border/60 hover:bg-muted/20 hover:border-border",
+                      "home-pane flex items-center gap-2.5 px-3 py-2.5 h-auto rounded-xl text-left justify-start",
                     )}
+                    data-selected={sessionType === "terminal"}
                   >
-                    <div className="w-7 h-7 rounded-md bg-muted/40 border border-border flex items-center justify-center shrink-0">
+                    <div className="w-7 h-7 rounded-lg border border-foreground/10 bg-background/45 flex items-center justify-center shrink-0">
                       <TerminalIcon className="w-3.5 h-3.5 text-accent" />
                     </div>
                     <div className="min-w-0">
@@ -379,8 +375,8 @@ export function SpawnSessionDialog({
                 )}
 
                 {discoveryLoading && (
-                  <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-border/40 opacity-50">
-                    <div className="w-7 h-7 rounded-md bg-muted/30 animate-pulse shrink-0" />
+                  <div className="home-pane flex items-center gap-2.5 px-3 py-2.5 rounded-xl opacity-50">
+                    <div className="w-7 h-7 rounded-lg bg-foreground/8 animate-pulse shrink-0" />
                     <p className="text-xs text-muted-foreground">Loading...</p>
                   </div>
                 )}
@@ -401,15 +397,12 @@ export function SpawnSessionDialog({
                         setSessionType(agent.id);
                       }}
                       className={cn(
-                        "w-full flex items-center gap-2.5 px-3 py-2.5 h-auto rounded-lg border text-left justify-start transition-colors",
-                        disabled
-                          ? "opacity-40 cursor-not-allowed border-border/40"
-                          : isSelected
-                            ? "bg-accent/8 border-accent/30"
-                            : "border-border/60 hover:bg-muted/20 hover:border-border",
+                        "home-pane w-full flex items-center gap-2.5 px-3 py-2.5 h-auto rounded-xl text-left justify-start",
+                        disabled && "opacity-40 cursor-not-allowed",
                       )}
+                      data-selected={isSelected}
                     >
-                      <div className="w-7 h-7 rounded-md border border-border bg-muted/40 flex items-center justify-center shrink-0">
+                      <div className="w-7 h-7 rounded-lg border border-foreground/10 bg-background/45 flex items-center justify-center shrink-0">
                         {hasBrandIcon(agent.id) ? (
                           <BrandIcon slug={agent.id} className="w-4 h-4" />
                         ) : agent.icon ? (
@@ -476,10 +469,8 @@ export function SpawnSessionDialog({
                 lands on a branch named after the number. Saying so is all this can do. */}
             {isGitRepo && pullRequestNumber !== null && (
               <div className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  WORKSPACE
-                </span>
-                <span className="flex w-fit items-center gap-1.5 rounded-full border border-border px-2.5 h-7 font-mono text-xs text-muted-foreground">
+                <span className="field-label">Workspace</span>
+                <span className="flex w-fit items-center gap-1.5 home-field rounded-lg px-2.5 h-7 font-mono text-xs text-muted-foreground">
                   <GitPullRequest className="size-3 shrink-0" />
                   <span className="truncate">
                     #{pullRequestNumber}
@@ -518,18 +509,13 @@ export function SpawnSessionDialog({
 
             {/* Session name */}
             <div className="space-y-1.5">
-              <Label
-                htmlFor="spawn-session-name"
-                className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50"
-              >
+              <Label htmlFor="spawn-session-name" className="field-label">
                 Session name{" "}
-                <span className="normal-case tracking-normal font-normal text-muted-foreground/40">
-                  (optional)
-                </span>
+                <span className="normal-case tracking-normal opacity-60">(optional)</span>
               </Label>
               <Input
                 id="spawn-session-name"
-                className="h-9 text-sm"
+                className="text-xs"
                 placeholder="Auto-generated if blank"
                 value={sessionName}
                 onChange={(e) => setSessionName(e.target.value)}

@@ -111,7 +111,7 @@ export function OpenPullRequestDialog({
 
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">Merge into</Label>
+            <Label className="field-label">Merge into</Label>
             <Combobox value={target} onValueChange={(value) => setTarget(value ?? "")}>
               <ComboboxInput placeholder="Target branch" />
               <ComboboxContent>
@@ -128,7 +128,7 @@ export function OpenPullRequestDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">Title</Label>
+            <Label className="field-label">Title</Label>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} />
           </div>
 

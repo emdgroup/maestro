@@ -21,9 +21,9 @@ export function AuthTabBar({
   const activeIndex = TABS.findIndex((t) => t.id === active);
 
   return (
-    <div className="relative flex rounded-lg bg-muted p-1">
+    <div className="relative flex rounded-xl border border-foreground/10 bg-background/45 p-1">
       <motion.span
-        className="absolute inset-y-1 left-1 rounded-md bg-background shadow-sm"
+        className="absolute inset-y-1 left-1 rounded-lg bg-card/90 shadow-sm"
         style={{ width: "calc((100% - 0.5rem) / 3)" }}
         animate={{ x: `calc(${activeIndex} * 100%)` }}
         transition={{ type: "spring", stiffness: 500, damping: 35 }}

@@ -82,7 +82,7 @@ function FrontmatterValue({ value, depth }: { value: unknown; depth: number }): 
   }
   if (depth >= MAX_DEPTH) {
     return (
-      <code className="px-1 py-0.5 rounded text-[11px] font-mono bg-muted">
+      <code className="px-1 py-0.5 rounded text-[11px] font-mono bg-foreground/7">
         {safeStringify(value)}
       </code>
     );

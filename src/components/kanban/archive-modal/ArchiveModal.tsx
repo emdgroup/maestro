@@ -82,7 +82,7 @@ export function ArchiveModal({ isOpen, onClose, projectId }: ArchiveModalProps) 
           <DialogDescription className="text-[11px] tracking-[0.14em] uppercase text-muted-foreground">
             Archived and cancelled
           </DialogDescription>
-          <DialogTitle className="mt-0.5 text-2xl font-semibold tracking-[-0.025em]">
+          <DialogTitle className="mt-0.5 text-2xl font-semibold tracking-[-0.025em] normal-case text-foreground">
             Archive
           </DialogTitle>
         </div>

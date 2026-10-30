@@ -24,9 +24,8 @@ export interface ReviewFilePanelProps {
  * vary. Tree only: a review is read by where files sit in the project, and the flat/tree toggle
  * was one more control for a choice nobody re-made.
  *
- * It renders `FileTree` directly rather than going through `FileSelector`, whose remaining job is
- * the flat mode and its toggle. That also lets the filter be a control sitting on the panel rather
- * than a full-width bordered row, which read as a second header stacked under the real one.
+ * The filter is a control sitting on the panel rather than a full-width bordered row, which read
+ * as a second header stacked under the real one.
  */
 export function ReviewFilePanel({
   files,

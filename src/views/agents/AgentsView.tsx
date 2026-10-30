@@ -346,7 +346,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
       open={sidebarOpen}
       onOpenChange={setSidebarOpen}
       className="!min-h-0 h-full flex-col"
-      style={{ "--sidebar-width": "288px", "--sidebar-width-icon": "52px" } as React.CSSProperties}
+      style={{ "--sidebar-width": "288px", "--sidebar-width-icon": "56px" } as React.CSSProperties}
     >
       {/* Action bar */}
       <div className="h-12 flex items-center justify-between pl-2.5 pr-4 gap-2 shrink-0">
@@ -358,8 +358,8 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
               className={cn(
                 "p-1.5 rounded-md transition-colors",
                 !sidebarOpen
-                  ? "bg-muted/60 text-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                  ? "home-pane rounded-xl text-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-foreground/7",
               )}
             >
               <Menu className="w-4 h-4" />
@@ -418,7 +418,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
               <TooltipTrigger
                 render={
                   <PopoverTrigger
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/7 hover:text-foreground"
                     aria-label="Display settings"
                   />
                 }

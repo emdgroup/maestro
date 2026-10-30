@@ -51,7 +51,7 @@ function LockButton({
         state === "on" && "text-warning",
         state === "part" && "text-warning/50",
         state === "off" && "text-muted-foreground opacity-0 group-hover:opacity-100",
-        !locked && "hover:bg-muted",
+        !locked && "hover:bg-foreground/7",
         locked && state === "off" && "invisible",
       )}
     >
@@ -73,7 +73,7 @@ function Entry({
   onRemove: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded px-2 py-1 hover:bg-muted/40">
+    <div className="flex items-center gap-2 rounded px-2 py-1 hover:bg-foreground/7">
       <span className="min-w-0 flex-1 truncate font-mono">{text}</span>
       {count !== undefined && (
         <span className="shrink-0 tabular-nums text-muted-foreground">
@@ -85,7 +85,7 @@ function Entry({
         <button
           type="button"
           aria-label={`Remove ${text}`}
-          className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-foreground/7 hover:text-foreground"
           onClick={onRemove}
         >
           <X className="size-3" />
@@ -231,7 +231,7 @@ export function HiddenFilesCard({
       return (
         <li key={node.path}>
           <div
-            className="group flex items-center gap-1 rounded py-0.5 hover:bg-muted/40"
+            className="group flex items-center gap-1 rounded py-0.5 hover:bg-foreground/7"
             style={indent}
           >
             <LockButton
@@ -267,7 +267,7 @@ export function HiddenFilesCard({
     return (
       <li
         key={node.path}
-        className="group flex items-center gap-1.5 rounded py-0.5 hover:bg-muted/40"
+        className="group flex items-center gap-1.5 rounded py-0.5 hover:bg-foreground/7"
         style={indent}
       >
         <LockButton
@@ -280,7 +280,7 @@ export function HiddenFilesCard({
           {node.name}
         </span>
         {reason && (
-          <span className="shrink-0 rounded bg-muted/60 px-1 font-sans text-[10px] text-muted-foreground">
+          <span className="shrink-0 rounded-md bg-foreground/7 px-1 font-sans text-[10px] text-muted-foreground">
             {reason}
           </span>
         )}
@@ -304,7 +304,7 @@ export function HiddenFilesCard({
   };
 
   return (
-    <section className="rounded-lg border border-border bg-card">
+    <section className="glass-tile rounded-[14px]">
       <button
         type="button"
         aria-expanded={open}
@@ -338,7 +338,7 @@ export function HiddenFilesCard({
             what judges it. The checks and the steps run with them in place.
           </p>
           {locked && (
-            <div className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-muted-foreground">
+            <div className="flex items-center gap-1.5 rounded-xl border border-foreground/7 bg-background/50 px-2.5 py-1 text-muted-foreground">
               <Lock className="size-3 shrink-0" />
               Fixed once the loop has started. Accepting a proposed check can still hide more.
             </div>
@@ -346,8 +346,8 @@ export function HiddenFilesCard({
           <div className="grid grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-3">
             <div className="space-y-3">
               <div className="space-y-1">
-                <div className="px-1 font-medium">Rules</div>
-                <div className="rounded-md border border-border bg-background p-1">
+                <div className="field-label px-1">Rules</div>
+                <div className="rounded-lg border border-foreground/7 bg-background/50 p-1">
                   {rules.length === 0 && (
                     <div className="px-2 py-1 text-muted-foreground">
                       A pattern hides every file it matches.
@@ -395,8 +395,8 @@ export function HiddenFilesCard({
                 )}
               </div>
               <div className="space-y-1">
-                <div className="px-1 font-medium">Selected files and folders</div>
-                <div className="rounded-md border border-border bg-background p-1">
+                <div className="field-label px-1">Selected files and folders</div>
+                <div className="rounded-lg border border-foreground/7 bg-background/50 p-1">
                   {picked.length === 0 && (
                     <div className="px-2 py-1 text-muted-foreground">
                       Click the lock of a row in the tree, or write a path in a check command.
@@ -413,8 +413,8 @@ export function HiddenFilesCard({
                 </div>
               </div>
               <div className="space-y-1">
-                <div className="px-1 font-medium">Visible to the agent anyway</div>
-                <div className="rounded-md border border-border bg-background p-1">
+                <div className="field-label px-1">Visible to the agent anyway</div>
+                <div className="rounded-lg border border-foreground/7 bg-background/50 p-1">
                   {exceptions.length === 0 && (
                     <div className="px-2 py-1 text-muted-foreground">
                       Click the lock of a hidden file to let the agent see it.
@@ -445,7 +445,7 @@ export function HiddenFilesCard({
                   Hidden only
                 </label>
               </div>
-              <ul className="max-h-[440px] overflow-auto rounded-md border border-border bg-background p-1 font-mono">
+              <ul className="max-h-[440px] overflow-auto rounded-lg border border-foreground/7 bg-background/50 p-1 font-mono">
                 {listed === undefined ? (
                   <li className="px-2 py-1 font-sans text-muted-foreground">Reading the branch…</li>
                 ) : tree.length === 0 ? (

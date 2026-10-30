@@ -313,9 +313,7 @@ export function CreateTaskModal({
             ref={issuePopupAnchor}
             className="pointer-events-none absolute inset-x-6 bottom-0"
           />
-          <DialogTitle className="text-[11px] font-normal tracking-[0.14em] uppercase text-muted-foreground">
-            Create task
-          </DialogTitle>
+          <DialogTitle>Create task</DialogTitle>
           {hasProvider && issueConfig && (
             <IssueSearchCombobox
               issueConfig={issueConfig}
@@ -412,7 +410,7 @@ export function CreateTaskModal({
                 project, since a loop needs a worktree of its own. */}
             {isGitRepo && (
               <div className="shrink-0 space-y-1.5">
-                <span className="text-[11px] text-muted-foreground">How it runs</span>
+                <span className="field-label">How it runs</span>
                 <div className="grid grid-cols-2 gap-2">
                   {(
                     [

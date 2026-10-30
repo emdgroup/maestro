@@ -72,7 +72,7 @@ export function SessionHistoryList({
   return (
     <div className="flex flex-1 flex-col min-w-0">
       {/* Search row */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-accent/10 shrink-0">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/50 pointer-events-none" />
           <input
@@ -80,7 +80,7 @@ export function SessionHistoryList({
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             placeholder={`Search ${agentName} sessions…`}
-            className="w-full h-8 bg-muted/30 border border-border rounded pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring"
+            className="home-field w-full h-8 rounded-xl pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground/50"
           />
         </div>
         <Tooltip>
@@ -90,7 +90,7 @@ export function SessionHistoryList({
                 variant="ghost"
                 onClick={onRefetch}
                 disabled={isFetching}
-                className="h-8 w-8 shrink-0 border border-border text-muted-foreground hover:text-foreground"
+                className="home-pane size-8 shrink-0 rounded-xl p-0 text-muted-foreground hover:text-foreground"
               />
             }
           >
@@ -101,7 +101,7 @@ export function SessionHistoryList({
       </div>
 
       {/* Summary bar */}
-      <div className="px-3 py-1.5 border-b border-border shrink-0 flex items-center gap-2">
+      <div className="px-3 py-1.5 border-b border-accent/10 shrink-0 flex items-center gap-2">
         {supportsSessionDelete && (
           <span onClick={(e) => e.stopPropagation()} className="shrink-0">
             <Checkbox
@@ -172,7 +172,9 @@ export function SessionHistoryList({
                   }}
                   className={cn(
                     "group flex items-center gap-2.5 w-full px-2 py-2 rounded-md cursor-pointer transition-colors",
-                    ticked.has(entry.session_id) ? "bg-muted/40" : "hover:bg-muted/20",
+                    ticked.has(entry.session_id)
+                      ? "bg-accent/14 rounded-[10px]"
+                      : "hover:bg-foreground/7",
                   )}
                 >
                   {/* Selecting is only for deleting, so an agent that cannot delete offers none. */}
@@ -194,7 +196,7 @@ export function SessionHistoryList({
                         <Button
                           variant="ghost"
                           size="icon-xs"
-                          className="opacity-0 group-hover:opacity-100 p-0.5 transition-opacity hover:bg-muted/40"
+                          className="opacity-0 group-hover:opacity-100 p-0.5 transition-opacity hover:bg-foreground/7"
                           onClick={(e) => onStartRename(entry.session_id, entry.title, e)}
                         />
                       }
@@ -220,7 +222,7 @@ export function SessionHistoryList({
       {/* Multi-select footer */}
       <div
         className={cn(
-          "overflow-hidden transition-[height,opacity] duration-200 border-t border-border shrink-0",
+          "overflow-hidden transition-[height,opacity] duration-200 border-t border-accent/10 shrink-0",
           ticked.size > 0 ? "h-12 opacity-100" : "h-0 opacity-0",
         )}
       >

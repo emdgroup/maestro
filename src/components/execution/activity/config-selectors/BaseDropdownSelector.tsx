@@ -12,7 +12,7 @@ export interface SelectorProps {
 }
 
 export const TRIGGER_CLASS =
-  "inline-flex items-center gap-1 py-0.5 pl-1.5 pr-1.5 text-[11px] rounded border border-transparent bg-transparent text-muted-foreground hover:border-border hover:bg-muted/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus:outline-none select-none";
+  "inline-flex items-center gap-1 py-0.5 pl-1.5 pr-1.5 text-[11px] rounded border border-transparent bg-transparent text-muted-foreground hover:border-border hover:bg-foreground/7 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus:outline-none select-none";
 
 export const ITEM_CLASS =
   "group relative flex w-full cursor-default items-start gap-2 rounded-sm py-2 pl-2 pr-2 outline-hidden select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50";

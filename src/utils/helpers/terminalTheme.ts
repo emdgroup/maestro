@@ -13,10 +13,10 @@ function cssVar(varName: string): string {
 
 // xterm only parses a translucent color written as rgba(); anything else it reads through a
 // canvas and rejects unless opaque, silently falling back to its default. Hence the round trip.
-function mutedForeground(alpha: number): string {
+function cssVarAlpha(varName: string, alpha: number): string {
   const ctx = document.createElement("canvas").getContext("2d");
   if (!ctx) return `rgba(128, 128, 128, ${alpha})`;
-  ctx.fillStyle = cssVar("--muted-foreground");
+  ctx.fillStyle = cssVar(varName);
   ctx.fillRect(0, 0, 1, 1);
   const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
@@ -27,9 +27,9 @@ function mutedForeground(alpha: number): string {
 // App chrome rather than terminal colors, so they apply in the "default" color mode too.
 function getScrollbarTheme(): ITheme {
   return {
-    scrollbarSliderBackground: mutedForeground(0.3),
-    scrollbarSliderHoverBackground: mutedForeground(0.5),
-    scrollbarSliderActiveBackground: mutedForeground(0.5),
+    scrollbarSliderBackground: cssVarAlpha("--muted-foreground", 0.3),
+    scrollbarSliderHoverBackground: cssVarAlpha("--muted-foreground", 0.5),
+    scrollbarSliderActiveBackground: cssVarAlpha("--muted-foreground", 0.5),
     // Setting overviewRuler.width also enables the ruler, which draws a 1px line in this color,
     // white by default. "transparent" is rejected like any other non-rgba translucent color.
     overviewRulerBorder: "rgba(0, 0, 0, 0)",
@@ -77,17 +77,30 @@ function getAnsiPalette(isDark: boolean): Partial<ITheme> {
   };
 }
 
-/** Returns just the theme object for in-place updates on an existing terminal instance. */
-export function getTerminalThemeOnly(colorMode?: TerminalColorMode): ITheme {
+function getTerminalThemeOnly(colorMode?: TerminalColorMode): ITheme {
   if (colorMode === "default") return getScrollbarTheme();
   const isDark = document.documentElement.classList.contains("dark");
   return {
-    background: cssVar("--background"),
+    // Clear on the dark theme, so the tab's glass shows through. Keeps the real color at alpha 0
+    // rather than plain transparent: xterm draws inverse-video text in this color with the alpha
+    // forced to 1. The WebGL renderer also paints dim and italic cells in it at full alpha, which
+    // the light theme's pale glass shows as boxes, so that theme stays opaque.
+    background: isDark ? cssVarAlpha("--background", 0) : cssVar("--terminal-surface"),
     foreground: cssVar("--foreground"),
     cursor: cssVar("--foreground"),
     selectionBackground: cssVar("--accent"),
     ...getAnsiPalette(isDark),
     ...getScrollbarTheme(),
+  };
+}
+
+/** What follows the color mode and the app's theme, for in-place updates on an existing terminal. */
+export function getTerminalColorOptions(colorMode?: TerminalColorMode): ITerminalOptions {
+  return {
+    // Only where the background is clear: it costs glyphs their subpixel antialiasing, which dark
+    // text on a light background needs, and renders dim text close to invisible there.
+    allowTransparency: document.documentElement.classList.contains("dark"),
+    theme: getTerminalThemeOnly(colorMode),
   };
 }
 
@@ -99,6 +112,8 @@ export function getTerminalTheme(colorMode?: TerminalColorMode): ITerminalOption
     letterSpacing: 0,
     // Also sizes the scrollbar: 8px, as in index.css. FitAddon reads the same value.
     overviewRuler: { width: 8 },
+    // TUIs pick colors for a dark terminal, which wash out on the light theme's pale glass.
+    minimumContrastRatio: 4.5,
   };
-  return { ...base, theme: getTerminalThemeOnly(colorMode) };
+  return { ...base, ...getTerminalColorOptions(colorMode) };
 }

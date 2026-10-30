@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Slider } from "@/ui/slider";
 import { MarkdownBlock, SvgBlock, MermaidBlock, HighlightedCode } from "./MarkdownBlock";
@@ -100,7 +99,6 @@ export function WorkingFileContentView({
   onZoomChange,
 }: WorkingFileContentViewProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const [copied, setCopied] = useState(false);
 
   const { data: sessionMeta } = useAcpSessionMeta(sessionId);
   const cwd = sessionMeta?.cwd.replace(/\/+$/, "") ?? null;
@@ -202,13 +200,6 @@ export function WorkingFileContentView({
   const loading = hasTarget && fileQuery.isPending;
   const loadError = fileQuery.error ? String(fileQuery.error) : null;
 
-  function copyPath() {
-    if (!absolutePath) return;
-    navigator.clipboard.writeText(absolutePath);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
   return (
     <div ref={panelRef} className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
       {content !== null && viewType !== null && !onZoomChange && (
@@ -224,7 +215,7 @@ export function WorkingFileContentView({
           <button
             type="button"
             onClick={() => setZoom(100)}
-            className="px-1 py-0.5 rounded text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors min-w-10 text-center shrink-0"
+            className="px-1 py-0.5 rounded text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-foreground/7 transition-colors min-w-10 text-center shrink-0"
           >
             {zoom}%
           </button>
@@ -266,21 +257,6 @@ export function WorkingFileContentView({
           </div>
         )}
       </div>
-      {absolutePath && (
-        <div className="flex items-center gap-2 px-4 py-1.5 border-t border-border bg-card/30 shrink-0">
-          <span className="flex-1 text-[10px] font-mono text-muted-foreground/70 truncate">
-            {absolutePath}
-          </span>
-          <button
-            type="button"
-            onClick={copyPath}
-            className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] border border-border rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
-          >
-            {copied ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
-            {copied ? "Copied" : "Copy path"}
-          </button>
-        </div>
-      )}
     </div>
   );
 }

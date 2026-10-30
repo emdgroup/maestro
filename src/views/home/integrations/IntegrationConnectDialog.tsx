@@ -38,17 +38,17 @@ function BitbucketModeToggle({
   disabled: boolean;
 }) {
   return (
-    <div className="flex rounded-md border border-border overflow-hidden w-fit">
+    <div className="flex gap-1 w-fit rounded-xl border border-foreground/10 bg-background/45 p-[3px]">
       {(["cloud", "server"] as const).map((m) => (
         <button
           key={m}
           type="button"
           disabled={disabled}
           onClick={() => onChange(m)}
-          className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+          className={`h-6 rounded-lg px-2.5 text-xs transition-colors ${
             mode === m
-              ? "bg-primary text-primary-foreground"
-              : "bg-background text-muted-foreground hover:bg-muted"
+              ? "bg-card/90 text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
           }`}
         >
           {m === "cloud" ? "Cloud" : "Server / DC"}
@@ -197,7 +197,9 @@ export function IntegrationConnectDialog({
             <>
               {bitbucketMode === "server" && (
                 <div className="space-y-2">
-                  <Label htmlFor="integration-instance-url">Instance URL</Label>
+                  <Label htmlFor="integration-instance-url" className="field-label">
+                    Instance URL
+                  </Label>
                   <Input
                     id="integration-instance-url"
                     placeholder="https://bitbucket.mycompany.com"
@@ -208,7 +210,7 @@ export function IntegrationConnectDialog({
                 </div>
               )}
               <div className="space-y-2">
-                <Label htmlFor="integration-token" required>
+                <Label htmlFor="integration-token" className="field-label" required>
                   {bitbucketMode === "cloud" ? "API Token" : "HTTP Access Token"}
                 </Label>
                 <Input
@@ -234,7 +236,7 @@ export function IntegrationConnectDialog({
             <>
               {fields.showInstanceUrl && (
                 <div className="space-y-2">
-                  <Label htmlFor="integration-instance-url" required>
+                  <Label htmlFor="integration-instance-url" className="field-label" required>
                     {fields.instanceUrlLabel}
                   </Label>
                   <Input
@@ -256,7 +258,7 @@ export function IntegrationConnectDialog({
 
               {fields.showEmail && (
                 <div className="space-y-2">
-                  <Label htmlFor="integration-email" required>
+                  <Label htmlFor="integration-email" className="field-label" required>
                     Email
                   </Label>
                   <Input
@@ -276,7 +278,7 @@ export function IntegrationConnectDialog({
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="integration-token" required>
+                <Label htmlFor="integration-token" className="field-label" required>
                   {fields.tokenLabel}
                 </Label>
                 <Input

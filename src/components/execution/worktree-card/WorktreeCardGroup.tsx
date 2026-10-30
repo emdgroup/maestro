@@ -22,7 +22,7 @@ export function WorktreeCardGroup({
       <Button
         variant="ghost"
         onClick={onToggleCollapse}
-        className="w-full flex items-center gap-2 px-2 py-2 h-auto text-xs font-semibold text-muted-foreground uppercase tracking-wide hover:bg-muted/10 transition-colors justify-start"
+        className="w-full flex items-center gap-2 px-2 py-2 h-auto text-xs font-semibold text-muted-foreground uppercase tracking-wide hover:bg-foreground/7 transition-colors justify-start"
       >
         {isCollapsed ? (
           <ChevronRight className="h-3.5 w-3.5 shrink-0" />

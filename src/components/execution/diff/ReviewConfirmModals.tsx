@@ -78,7 +78,7 @@ export function ReworkModal({
             <Button
               variant="ghost"
               onClick={() => setExpanded(!expanded)}
-              className="flex items-center gap-2 w-full px-3 py-2 h-auto text-xs font-medium hover:bg-accent rounded-t-md justify-start"
+              className="flex items-center gap-2 w-full px-3 py-2 h-auto text-xs font-medium hover:bg-foreground/7 rounded-t-md justify-start"
             >
               {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
               {comments.length} comment{comments.length !== 1 ? "s" : ""}
@@ -337,7 +337,7 @@ export function ApproveModal({
                   variant. */}
               <SelectTrigger
                 aria-label="When this task is approved"
-                className="w-full data-[size=default]:h-auto py-2 px-3 border-border bg-transparent shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted"
+                className="w-full data-[size=default]:h-auto py-2 px-3 hover:bg-background/84"
               >
                 <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
                   <SelectedIcon className="size-3.5 shrink-0 text-muted-foreground" />

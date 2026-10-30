@@ -169,7 +169,7 @@ function PromptCard({
           {prompt.tags.map((tag) => (
             <span
               key={tag}
-              className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+              className="rounded-md bg-foreground/7 px-1.5 py-0.5 text-[10px] text-muted-foreground"
             >
               {tag}
             </span>
@@ -396,7 +396,7 @@ export function PromptsPanel({
                 "rounded-full border px-2 py-0.5 text-[11px]",
                 activeTag === known
                   ? "border-accent bg-accent/10 text-foreground"
-                  : "border-border text-muted-foreground hover:bg-muted/50",
+                  : "border-border text-muted-foreground hover:bg-foreground/7",
               )}
             >
               {known}
@@ -436,7 +436,7 @@ export function PromptsPanel({
         </div>
         <DragOverlay>
           {dragging && (
-            <div className="pointer-events-none rotate-[-1.5deg] scale-[1.03] rounded-xl border border-accent/50 bg-card p-3 shadow-xl">
+            <div className="home-pane glass-volume pointer-events-none rotate-[-1.5deg] scale-[1.03] rounded-[14px] border-accent/50! p-3">
               <p className="line-clamp-2 text-sm font-semibold">{dragging.title}</p>
             </div>
           )}

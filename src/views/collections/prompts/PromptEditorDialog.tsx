@@ -81,9 +81,7 @@ export function PromptEditorDialog({
         className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
       >
         <div className="flex items-center gap-2 px-6 pt-4">
-          <DialogTitle className="text-[11px] font-normal tracking-[0.14em] uppercase text-muted-foreground">
-            {editing ? "Edit prompt" : "New prompt"}
-          </DialogTitle>
+          <DialogTitle>{editing ? "Edit prompt" : "New prompt"}</DialogTitle>
           <div className="ml-auto flex items-center gap-1.5">
             <Toggle
               pressed={favorite}
@@ -134,7 +132,7 @@ export function PromptEditorDialog({
             />
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-[11px] text-muted-foreground">Tags</span>
+            <span className="field-label mr-1">Tags</span>
             {tags.map((tag) => (
               <span
                 key={tag}

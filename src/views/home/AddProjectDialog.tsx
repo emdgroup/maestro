@@ -220,7 +220,7 @@ function AddProjectSheet({
                 />
               )}
               <div className="flex items-center gap-2">
-                <span className="text-[11px] text-muted-foreground">Into</span>
+                <span className="field-label">Into</span>
                 <input
                   aria-label="Into"
                   value={into}
@@ -260,7 +260,7 @@ function AddProjectSheet({
                 className="home-field h-9 w-full rounded-xl px-3 text-xs"
               />
               <div className="flex items-center gap-2">
-                <span className="text-[11px] text-muted-foreground">In</span>
+                <span className="field-label">In</span>
                 <input
                   aria-label="In folder"
                   value={into}

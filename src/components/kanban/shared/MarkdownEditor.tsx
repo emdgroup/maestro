@@ -350,12 +350,14 @@ export function MarkdownEditor({
           className={cn(
             "w-full min-h-32 resize-none outline-none px-2 py-2 text-sm font-mono text-muted-foreground leading-relaxed bg-transparent",
             fill && "block h-full overflow-y-auto",
+            // Hidden, not `invisible`: that would take its focus, and the blur commits the edit.
+            activeTab === "preview" && "opacity-0",
           )}
         />
         {activeTab === "preview" && (
           <div
             onMouseDown={preventBlur}
-            className="absolute inset-0 bg-background px-2 py-2 overflow-y-auto text-sm leading-relaxed"
+            className="absolute inset-0 px-2 py-2 overflow-y-auto text-sm leading-relaxed"
           >
             {draft.trim() ? (
               <MarkdownBlock text={draft} projectId={projectId} />

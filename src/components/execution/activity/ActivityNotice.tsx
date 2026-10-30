@@ -39,7 +39,7 @@ export function ActivityNotice({ notice }: { notice: NoticeItem }) {
       }
       className={cn(
         "-ml-1 flex items-start gap-1.5 rounded-md px-1 py-0.5 text-xs text-muted-foreground",
-        long && "cursor-pointer transition-colors hover:bg-muted/40",
+        long && "cursor-pointer transition-colors hover:bg-foreground/7",
       )}
     >
       <Icon

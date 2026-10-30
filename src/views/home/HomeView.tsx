@@ -191,7 +191,7 @@ export function HomeView() {
               <button
                 type="button"
                 onClick={() => setSettingsFor("app")}
-                className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full transition-colors hover:bg-muted/80 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-muted-foreground"
+                className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full transition-colors hover:bg-foreground/7 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-muted-foreground"
                 aria-label="Settings"
               />
             }

@@ -119,9 +119,7 @@ export function SkillEditorDialog({
         className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
       >
         <div className="flex items-center gap-2 px-6 pt-4">
-          <DialogTitle className="text-[11px] font-normal tracking-[0.14em] uppercase text-muted-foreground">
-            {editing ? "Edit skill" : "New skill"}
-          </DialogTitle>
+          <DialogTitle>{editing ? "Edit skill" : "New skill"}</DialogTitle>
           <Segmented
             label="View"
             className="ml-auto"
@@ -268,7 +266,7 @@ function Field({
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline gap-2">
-        <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+        <p className="field-label">{label}</p>
         {aside && (
           <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/70">{aside}</span>
         )}
