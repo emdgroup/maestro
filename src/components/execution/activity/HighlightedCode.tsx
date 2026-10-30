@@ -105,8 +105,8 @@ export const CodeBlockWrapper = memo(function CodeBlockWrapper({
   const { copied, copy: handleCopy } = useCopyToClipboard(code);
 
   return (
-    <div className="glass-tile relative group/code my-3 rounded-[14px] p-1 shadow-[0_6px_18px_-8px_rgb(0_0_0/0.35)]! dark:shadow-[0_8px_20px_-8px_rgb(0_0_0/0.8)]!">
-      <div className="mb-1 flex items-center justify-between rounded-[10px] bg-foreground/7 px-2 py-1">
+    <div className="glass-tile relative group/code my-3 rounded-[14px] bg-foreground/12! p-1 shadow-[0_6px_18px_-8px_rgb(0_0_0/0.35)]! dark:shadow-[0_8px_20px_-8px_rgb(0_0_0/0.8)]!">
+      <div className="flex items-center justify-between px-2 pt-0.5 pb-1">
         <span className="text-[10px] font-mono text-foreground/70 uppercase tracking-wide">
           {lang || "text"}
         </span>
