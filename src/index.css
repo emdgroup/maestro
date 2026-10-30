@@ -1118,7 +1118,7 @@
 /* A section or field label inside a dialog. */
 .field-label {
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 400;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--muted-foreground);

@@ -511,9 +511,7 @@ export function SpawnSessionDialog({
             <div className="space-y-1.5">
               <Label htmlFor="spawn-session-name" className="field-label">
                 Session name{" "}
-                <span className="normal-case tracking-normal font-normal opacity-60">
-                  (optional)
-                </span>
+                <span className="normal-case tracking-normal opacity-60">(optional)</span>
               </Label>
               <Input
                 id="spawn-session-name"
