@@ -214,8 +214,8 @@ export function RunCard({
       {...interactive}
       className={cn(
         "glass-tile rounded-[14px] px-3 py-2",
-        state === "awaiting" && "border-amber-500/40! bg-amber-500/10!",
-        state === "failed" && "border-destructive/30! bg-destructive/10! hover:bg-destructive/15!",
+        state === "awaiting" && "border-amber-500/40!",
+        state === "failed" && "border-destructive/30!",
         showable && "cursor-pointer",
       )}
     >
