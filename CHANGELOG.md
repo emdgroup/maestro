@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.43.1](https://github.com/emdgroup/maestro/compare/v0.43.0...v0.43.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* edge the settings well in the accent like the main tabs ([1abc0fa](https://github.com/emdgroup/maestro/commit/1abc0fa47e7616f4fea503d0483225e694f816a8))
+* make the custom scrollbar apply and tint it with the accent ([1abc0fa](https://github.com/emdgroup/maestro/commit/1abc0fa47e7616f4fea503d0483225e694f816a8))
+* move the settings panels onto glass tiles ([1abc0fa](https://github.com/emdgroup/maestro/commit/1abc0fa47e7616f4fea503d0483225e694f816a8))
+
 ## [0.43.0](https://github.com/emdgroup/maestro/compare/v0.42.0...v0.43.0) (2026-10-30)
 
 
