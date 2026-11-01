@@ -1099,7 +1099,8 @@
 }
 /* A project that needs the user: tinted amber all over, never an edge stripe. `needs-you` is the
    same state on a task card, where it arrives as a class from the card's state line. */
-/* A home-pane with body: lit from the top, shaded along the bottom, and lifted off the page. */
+/* A home-pane with body: lit from the top, shaded along the bottom, and resting on the surface with
+   only a contact shadow. It lifts off on hover, and `glass-volume-lifted` holds a dragged copy up. */
 .glass-volume {
   -webkit-backdrop-filter: blur(16px) saturate(160%);
   backdrop-filter: blur(16px) saturate(160%);
@@ -1107,15 +1108,15 @@
     var(--tw-ring-shadow, 0 0 #0000),
     inset 0 1px 0 color-mix(in oklab, white 75%, transparent),
     inset 0 -1px 0 color-mix(in oklab, var(--foreground) 6%, transparent),
-    0 1px 2px rgb(0 0 0 / 0.06),
-    0 12px 24px -12px rgb(0 0 0 / 0.22);
+    0 1px 1px rgb(0 0 0 / 0.06);
   transition:
     background 0.18s,
     transform 0.18s,
     border-color 0.18s,
     box-shadow 0.18s;
 }
-.glass-volume:hover {
+.glass-volume:hover,
+.glass-volume-lifted {
   box-shadow:
     var(--tw-ring-shadow, 0 0 #0000),
     inset 0 1px 0 color-mix(in oklab, white 85%, transparent),
@@ -1135,10 +1136,10 @@
     var(--tw-ring-shadow, 0 0 #0000),
     inset 0 1px 0 color-mix(in oklab, white 16%, transparent),
     inset 0 -1px 0 rgb(0 0 0 / 0.25),
-    0 1px 2px rgb(0 0 0 / 0.25),
-    0 14px 28px -12px rgb(0 0 0 / 0.55);
+    0 1px 1px rgb(0 0 0 / 0.25);
 }
-.dark .glass-volume:hover {
+.dark .glass-volume:hover,
+.dark .glass-volume-lifted {
   box-shadow:
     var(--tw-ring-shadow, 0 0 #0000),
     inset 0 1px 0 color-mix(in oklab, white 22%, transparent),

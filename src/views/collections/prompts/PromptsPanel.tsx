@@ -446,7 +446,7 @@ export function PromptsPanel({
         </div>
         <DragOverlay>
           {dragging && (
-            <div className="home-pane glass-volume pointer-events-none rotate-[-1.5deg] scale-[1.03] rounded-[14px] border-accent/50! p-3">
+            <div className="home-pane glass-volume glass-volume-lifted pointer-events-none rotate-[-1.5deg] scale-[1.03] rounded-[14px] border-accent/50! p-3">
               <p className="line-clamp-2 text-sm font-semibold">{dragging.title}</p>
             </div>
           )}
