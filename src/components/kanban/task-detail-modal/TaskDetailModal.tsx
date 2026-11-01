@@ -230,7 +230,8 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
       return;
     }
     if (!isEditable) {
-      setActiveTaskId(null);
+      // A queued loop stays open: saving is what brings Execute back, and that is the next move.
+      if (task.status !== "Queue") setActiveTaskId(null);
       return;
     }
     updateTask.mutate(
@@ -629,7 +630,8 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
               <div className="flex-1" />
 
-              {task.status === "Queue" && (
+              {/* Starting now would run what is stored, not the edits on screen. Save takes its place. */}
+              {task.status === "Queue" && !loopDirty && (
                 <Button
                   size="sm"
                   disabled={executingTaskId === task.id || task.phase === "Spawning"}
