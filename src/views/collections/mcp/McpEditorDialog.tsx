@@ -1,14 +1,6 @@
 import { useRef, useState } from "react";
-import {
-  ChevronDown,
-  ChevronRight,
-  CircleCheck,
-  CircleX,
-  Copy,
-  Loader2,
-  Plus,
-  X,
-} from "lucide-react";
+import { Reveal } from "@/components/common/Reveal";
+import { ChevronRight, CircleCheck, CircleX, Copy, Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { Button } from "@/ui/button";
@@ -570,13 +562,15 @@ function OAuthPanel({
         className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
         onClick={() => onOpenChange(!open)}
       >
-        {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+        <ChevronRight
+          className={cn("size-3 transition-transform duration-200", open && "rotate-90")}
+        />
         Client settings
         <span className="font-mono">
           · {settings.client_id ? settings.client_id : "registered automatically"}
         </span>
       </button>
-      {open && (
+      <Reveal open={open}>
         <div className="space-y-3 rounded-md border border-border p-3">
           <div className="grid grid-cols-2 gap-3">
             <Field label="Client ID">
@@ -724,7 +718,7 @@ function OAuthPanel({
             />
           </Field>
         </div>
-      )}
+      </Reveal>
     </div>
   );
 }

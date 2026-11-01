@@ -1,5 +1,6 @@
+import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef } from "react";
-import { Brain, ChevronDown, ChevronRight } from "lucide-react";
+import { Brain, ChevronRight } from "lucide-react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/ui/collapsible";
 import type { ThinkingItem } from "./types";
 import { MarkdownBlock, getCompleteBlocksText } from "./MarkdownBlock";
@@ -82,7 +83,9 @@ export function ActivityThinkingBlock({ thinking }: ActivityThinkingBlockProps) 
       className="border-l-2 border-dashed border-border pl-3 py-1 opacity-60"
     >
       <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground/60 transition-colors">
-        {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        <ChevronRight
+          className={cn("w-3 h-3 transition-transform duration-200", expanded && "rotate-90")}
+        />
         <Brain className="w-3 h-3" />
         <span>Thought{expanded ? "" : " (click to expand)"}</span>
       </CollapsibleTrigger>

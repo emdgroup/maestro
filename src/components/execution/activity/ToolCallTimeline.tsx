@@ -1,5 +1,5 @@
 import { useContext, useState } from "react";
-import { Reveal } from "./Reveal";
+import { Reveal } from "@/components/common/Reveal";
 import {
   ArrowRightLeft,
   Bot,

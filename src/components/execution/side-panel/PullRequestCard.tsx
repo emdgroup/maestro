@@ -1,3 +1,4 @@
+import { Reveal } from "@/components/common/Reveal";
 import {
   GitPullRequest,
   GitCommitVertical,
@@ -279,7 +280,7 @@ export function CheckRollup({
           )}
         />
       </button>
-      {expanded && (
+      <Reveal open={expanded}>
         <div className="flex flex-col gap-1 pl-1">
           {ordered.map((check, index) => {
             const Icon = CHECK_ICONS[check.status];
@@ -299,7 +300,7 @@ export function CheckRollup({
             );
           })}
         </div>
-      )}
+      </Reveal>
     </div>
   );
 }

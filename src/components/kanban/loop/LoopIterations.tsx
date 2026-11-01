@@ -1,4 +1,5 @@
 import { Fragment, useState } from "react";
+import { Reveal } from "@/components/common/Reveal";
 import {
   BookOpen,
   Check,
@@ -1310,12 +1311,16 @@ function AgentNotes({ task, notes }: { task: Task; notes: string | null | undefi
         className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
         onClick={() => setOpen(!open)}
       >
-        {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+        <ChevronRight
+          className={cn("size-3 transition-transform duration-200", open && "rotate-90")}
+        />
         <NotebookPen className="size-3.5" />
         It read the agent notes first
         <span>· {lines ? plural(lines, "line") : "none yet"}</span>
       </button>
-      {open && <NotesFile task={task} notes={notes} />}
+      <Reveal open={open}>
+        <NotesFile task={task} notes={notes} />
+      </Reveal>
     </div>
   );
 }
@@ -1448,11 +1453,12 @@ function IterationRow({
           className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-foreground/7"
           onClick={toggle}
         >
-          {open ? (
-            <ChevronDown className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
-          )}
+          <ChevronRight
+            className={cn(
+              "mt-1 size-3.5 shrink-0 text-muted-foreground transition-transform duration-200",
+              open && "rotate-90",
+            )}
+          />
           <span className="w-8 shrink-0 text-base font-semibold leading-6">#{iteration.n}</span>
           <span className="min-w-0 flex-1 space-y-1">
             <span className="flex items-center gap-4 text-xs text-muted-foreground">
@@ -1505,11 +1511,11 @@ function IterationRow({
             )}
           </span>
         </button>
-        {open && (
+        <Reveal open={open}>
           <div className="px-3 pb-3 pl-[68px]">
             <IterationDetail task={task} iteration={iteration} checks={checks} />
           </div>
-        )}
+        </Reveal>
       </div>
     </li>
   );

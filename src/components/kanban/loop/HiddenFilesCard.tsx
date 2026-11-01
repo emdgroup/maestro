@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Reveal } from "@/components/common/Reveal";
 import { ChevronDown, ChevronRight, Lock, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
@@ -246,7 +247,9 @@ export function HiddenFilesCard({
               className="flex min-w-0 items-center gap-1"
               onClick={() => toggleOpen(node.path)}
             >
-              {opened ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+              <ChevronRight
+                className={cn("size-3 transition-transform duration-200", opened && "rotate-90")}
+              />
               <span className="truncate">{node.name}/</span>
             </button>
             {count.hidden > 0 && (
@@ -255,7 +258,9 @@ export function HiddenFilesCard({
               </span>
             )}
           </div>
-          {opened && <ul>{node.children?.map((child) => row(child, depth + 1))}</ul>}
+          <Reveal open={opened}>
+            <ul>{node.children?.map((child) => row(child, depth + 1))}</ul>
+          </Reveal>
         </li>
       );
     }

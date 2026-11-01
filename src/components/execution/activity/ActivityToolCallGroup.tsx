@@ -1,6 +1,6 @@
 import { useContext, useState } from "react";
 import { ChevronRight, Wrench } from "lucide-react";
-import { Reveal } from "./Reveal";
+import { Reveal } from "@/components/common/Reveal";
 import { cn } from "@/lib/utils";
 import { DynamicIcon } from "@/ui/dynamic-icon";
 import { CommandLabel } from "./CommandLabel";

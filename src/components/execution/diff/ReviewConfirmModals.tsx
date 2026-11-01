@@ -1,4 +1,6 @@
+import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { Reveal } from "@/components/common/Reveal";
 import {
   ChevronDown,
   ChevronRight,
@@ -80,10 +82,12 @@ export function ReworkModal({
               onClick={() => setExpanded(!expanded)}
               className="flex items-center gap-2 w-full px-3 py-2 h-auto text-xs font-medium hover:bg-foreground/7 rounded-t-md justify-start"
             >
-              {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+              <ChevronRight
+                className={cn("size-3 transition-transform duration-200", expanded && "rotate-90")}
+              />
               {comments.length} comment{comments.length !== 1 ? "s" : ""}
             </Button>
-            {expanded && (
+            <Reveal open={expanded}>
               <div className="max-h-40 overflow-y-auto border-t divide-y">
                 {comments.map((c) => (
                   <div key={c.id} className="px-3 py-2 text-xs">
@@ -97,7 +101,7 @@ export function ReworkModal({
                   </div>
                 ))}
               </div>
-            )}
+            </Reveal>
           </div>
         )}
 

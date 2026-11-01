@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Reveal } from "@/components/common/Reveal";
 import {
   Cog,
   ChevronDown,
@@ -325,7 +326,7 @@ function AutomationRow({
         </span>
       </div>
 
-      {expanded && history.length > 0 && (
+      <Reveal open={expanded && history.length > 0}>
         <div className="-mt-1 pb-3 pl-10 pr-4">
           <div className="divide-y divide-foreground/7 overflow-hidden rounded-[10px] border border-foreground/7 bg-background/40">
             {shown.map((item) =>
@@ -350,7 +351,7 @@ function AutomationRow({
             </p>
           )}
         </div>
-      )}
+      </Reveal>
     </div>
   );
 }
