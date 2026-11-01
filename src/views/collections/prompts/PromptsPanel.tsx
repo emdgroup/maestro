@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { CopyPlus, Ellipsis, Pencil, Plus, Search, Star, Trash2 } from "lucide-react";
 import {
@@ -317,7 +318,20 @@ function PromptColumn({
           </div>
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3">
-            {prompts.map(card)}
+            <AnimatePresence mode="popLayout" initial={false}>
+              {prompts.map((prompt) => (
+                <motion.div
+                  key={prompt.id}
+                  layout="position"
+                  initial={{ opacity: 0, scale: 0.96 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.96 }}
+                  transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
+                >
+                  {card(prompt)}
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
         )}
       </div>

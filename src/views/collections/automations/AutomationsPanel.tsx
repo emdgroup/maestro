@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Reveal } from "@/components/common/Reveal";
+import { AnimatePresence } from "framer-motion";
+import { Reveal, RevealRow } from "@/components/common/Reveal";
 import {
   Cog,
   ChevronDown,
@@ -329,21 +330,26 @@ function AutomationRow({
       <Reveal open={expanded && history.length > 0}>
         <div className="-mt-1 pb-3 pl-10 pr-4">
           <div className="divide-y divide-foreground/7 overflow-hidden rounded-[10px] border border-foreground/7 bg-background/40">
-            {shown.map((item) =>
-              item.kind === "run" ? (
-                <RunCard
-                  key={item.entry.run.id}
-                  entry={item.entry}
-                  layout="row"
-                  now={now}
-                  onJoin={() => onJoinRun(item.entry)}
-                  onShow={() => onShowRun(item.entry)}
-                  onDelete={() => onDeleteRun(item.entry)}
-                />
-              ) : (
-                <DeliveryRow key={item.delivery.id} delivery={item.delivery} now={now} />
-              ),
-            )}
+            <AnimatePresence initial={false}>
+              {shown.map((item) =>
+                item.kind === "run" ? (
+                  <RevealRow key={item.entry.run.id}>
+                    <RunCard
+                      entry={item.entry}
+                      layout="row"
+                      now={now}
+                      onJoin={() => onJoinRun(item.entry)}
+                      onShow={() => onShowRun(item.entry)}
+                      onDelete={() => onDeleteRun(item.entry)}
+                    />
+                  </RevealRow>
+                ) : (
+                  <RevealRow key={item.delivery.id}>
+                    <DeliveryRow delivery={item.delivery} now={now} />
+                  </RevealRow>
+                ),
+              )}
+            </AnimatePresence>
           </div>
           {olderRuns > 0 && (
             <p className="mt-1 text-[10px] text-muted-foreground">
@@ -474,36 +480,39 @@ export function AutomationsPanel({
             </div>
           ) : (
             <div className="usage-pane divide-y divide-foreground/7 rounded-[14px]">
-              {(automations ?? []).map((automation) => (
-                <AutomationRow
-                  key={automation.id}
-                  projectId={projectId}
-                  automation={automation}
-                  agents={agents}
-                  running={running.get(automation.id)}
-                  runs={entries.filter((entry) => entry.run.automation_id === automation.id)}
-                  now={now}
-                  expanded={expanded === automation.id}
-                  onToggleExpanded={() =>
-                    setExpanded((open) => (open === automation.id ? null : automation.id))
-                  }
-                  onJoinRun={(entry) => void openRun(entry)}
-                  onShowRun={(entry) => setShownRunId(entry.run.id)}
-                  onDeleteRun={onDeleteRun}
-                  onRun={() => run.mutate({ projectId, automationId: automation.id })}
-                  onEdit={() => onEdit(automation)}
-                  onSaveAsTemplate={() => setTemplateFrom(automation)}
-                  onToggleEnabled={(enabled) =>
-                    save.mutate({ projectId, automation: { ...automation, enabled } })
-                  }
-                  onDelete={() => {
-                    remove.mutate(
-                      { projectId, automationId: automation.id },
-                      { onSuccess: () => toast.success(`Deleted “${automation.name}”`) },
-                    );
-                  }}
-                />
-              ))}
+              <AnimatePresence initial={false}>
+                {(automations ?? []).map((automation) => (
+                  <RevealRow key={automation.id}>
+                    <AutomationRow
+                      projectId={projectId}
+                      automation={automation}
+                      agents={agents}
+                      running={running.get(automation.id)}
+                      runs={entries.filter((entry) => entry.run.automation_id === automation.id)}
+                      now={now}
+                      expanded={expanded === automation.id}
+                      onToggleExpanded={() =>
+                        setExpanded((open) => (open === automation.id ? null : automation.id))
+                      }
+                      onJoinRun={(entry) => void openRun(entry)}
+                      onShowRun={(entry) => setShownRunId(entry.run.id)}
+                      onDeleteRun={onDeleteRun}
+                      onRun={() => run.mutate({ projectId, automationId: automation.id })}
+                      onEdit={() => onEdit(automation)}
+                      onSaveAsTemplate={() => setTemplateFrom(automation)}
+                      onToggleEnabled={(enabled) =>
+                        save.mutate({ projectId, automation: { ...automation, enabled } })
+                      }
+                      onDelete={() => {
+                        remove.mutate(
+                          { projectId, automationId: automation.id },
+                          { onSuccess: () => toast.success(`Deleted “${automation.name}”`) },
+                        );
+                      }}
+                    />
+                  </RevealRow>
+                ))}
+              </AnimatePresence>
             </div>
           )}
         </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Rolling } from "@/components/common/Rolling";
 import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { endOfMonth, format as formatDate, min } from "date-fns";
 import { X } from "lucide-react";
@@ -282,8 +283,8 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
             >
               <div className="text-xs text-muted-foreground">{label}</div>
               <div className="flex items-baseline gap-3">
-                <span className="text-[34px] leading-tight font-semibold tracking-[-0.025em] tabular-nums">
-                  {total}
+                <span className="relative overflow-hidden text-[34px] leading-tight font-semibold tracking-[-0.025em] tabular-nums">
+                  <Rolling value={total} />
                 </span>
                 <span className="text-sm text-muted-foreground tabular-nums">
                   avg {average} / {range.bucket}
