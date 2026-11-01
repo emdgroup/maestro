@@ -136,6 +136,8 @@ export function UsageChart({
             )}
             fill={s.color}
             opacity={s.faded ? 0.45 : 0.85}
+            className="usage-bar-in"
+            style={{ animationDelay: `${Math.round((i / n) * 300)}ms` }}
           />,
         );
       });

@@ -77,6 +77,25 @@ const LONG_PRESS_SENSOR = PointerSensor.configure({
   activationConstraints: [new PointerActivationConstraints.Delay({ value: 250, tolerance: 5 })],
 });
 
+/** Confirms the click, with a ring as well when the star was just turned on. */
+function popStar(button: HTMLElement, turnedOn: boolean) {
+  if (document.documentElement.classList.contains("reduce-motion")) return;
+  button.querySelector("svg")?.animate(
+    {
+      transform: ["scale(1)", "scale(1.4) rotate(-10deg)", "scale(0.92)", "scale(1)"],
+      offset: [0, 0.35, 0.7, 1],
+    },
+    { duration: 380, easing: "ease-out" },
+  );
+  if (!turnedOn) return;
+  button
+    .querySelector("[data-star-burst]")
+    ?.animate(
+      { transform: ["scale(0.5)", "scale(1.9)"], opacity: [0.8, 0] },
+      { duration: 440, easing: "ease-out" },
+    );
+}
+
 function PromptCard({
   prompt,
   onFavorite,
@@ -119,7 +138,10 @@ function PromptCard({
       <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={onFavorite}
+          onClick={(e) => {
+            popStar(e.currentTarget, !prompt.favorite);
+            onFavorite();
+          }}
           aria-label={prompt.favorite ? "Remove from favorites" : "Add to favorites"}
           aria-pressed={prompt.favorite}
           className={cn(
@@ -129,6 +151,10 @@ function PromptCard({
               : "text-muted-foreground/40 hover:text-muted-foreground",
           )}
         >
+          <span
+            data-star-burst
+            className="pointer-events-none absolute inset-0 rounded-full border-2 border-amber-500 opacity-0"
+          />
           <Star className={cn("size-4", prompt.favorite && "fill-current")} />
         </button>
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">{prompt.title}</span>
