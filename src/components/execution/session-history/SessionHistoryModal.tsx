@@ -37,13 +37,13 @@ export function SessionHistoryModal(props: SessionHistoryModalProps) {
       }}
     >
       <DialogContent className="w-195 sm:max-w-195 h-140 max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden">
-        <DialogHeader className="p-4 gap-2">
+        <DialogHeader className="px-4 pt-4 pb-2 gap-2">
           <DialogTitle>Session History</DialogTitle>
         </DialogHeader>
 
         {/* Agent pills */}
         {agents.length > 0 && (
-          <div className="px-3 py-2 border-b border-accent/10 shrink-0 overflow-x-auto">
+          <div className="px-4 pt-0.5 pb-4 shrink-0 overflow-x-auto">
             <div className="flex gap-1.5 min-w-max">
               {agents.map((agent) => (
                 <button
@@ -77,7 +77,7 @@ export function SessionHistoryModal(props: SessionHistoryModalProps) {
         )}
 
         {/* Body */}
-        <div className="flex flex-1 min-h-0">
+        <div className="flex flex-1 min-h-0 gap-4 px-4 pb-3">
           <SessionHistorySidebar
             preset={h.preset}
             onPresetChange={h.changePreset}
