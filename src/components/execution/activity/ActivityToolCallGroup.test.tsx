@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 
 // An expanded command label reaches for the theme to pick a syntax palette.
@@ -111,7 +111,7 @@ describe("ActivityToolCallGroup", () => {
     expect(screen.getByText("· 1 failed")).toBeTruthy();
   });
 
-  it("toggles the timeline on click", () => {
+  it("toggles the timeline on click", async () => {
     const items = [
       makeCall("a", "Read one.ts", "error"),
       makeCall("b", "Read two.ts", "completed"),
@@ -124,7 +124,7 @@ describe("ActivityToolCallGroup", () => {
 
     fireEvent.click(groupLine());
     expect(groupLine().getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText(/two\.ts/)).toBeNull();
+    await waitFor(() => expect(screen.queryByText(/two.ts/)).toBeNull());
   });
 
   it("stays expanded when a later call streams in", () => {
