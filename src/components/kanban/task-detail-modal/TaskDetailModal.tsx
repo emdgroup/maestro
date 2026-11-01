@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, type SetStateAction } from "react";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { AnimatePresence, motion } from "framer-motion";
 import { zoomDialogToCard } from "@/components/kanban/taskZoom";
 import {
@@ -341,6 +342,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                 className="flex-1 min-w-0 min-h-0 px-6 py-4 gap-4"
               >
                 <TabsList className={cn("shrink-0", SEGMENT_LIST)}>
+                  <SegmentThumb />
                   {isLoop && (
                     <TabsTrigger value="loop" className={SEGMENT_TRIGGER}>
                       Loop

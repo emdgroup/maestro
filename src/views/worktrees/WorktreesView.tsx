@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { useQueryClient } from "@tanstack/react-query";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
@@ -377,6 +378,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
             </InputGroup>
           </ShortcutHint>
           <ToggleGroup spacing={1} size="sm" value={[statusFilter]} className={SEGMENT_GROUP}>
+            <SegmentThumb />
             {STATUS_FILTERS.map((f) => (
               <ToggleGroupItem
                 key={f}

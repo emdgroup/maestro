@@ -1,4 +1,5 @@
 import { cloneElement, useState, type ReactNode } from "react";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { ArrowLeft, ArrowRight, Bot, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
@@ -575,6 +576,7 @@ export function AgentProfilesSection({
           }}
         >
           <TabsList className={SEGMENT_LIST}>
+            <SegmentThumb />
             <TabsTrigger value="pipeline" className={SEGMENT_TRIGGER}>
               Pipeline
             </TabsTrigger>

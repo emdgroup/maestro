@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { Users } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
@@ -134,6 +135,7 @@ export function Segmented({
       spacing={1}
       className={cn(SEGMENT_GROUP, className)}
     >
+      <SegmentThumb />
       {options.map((option) => (
         <ToggleGroupItem
           key={option.value}

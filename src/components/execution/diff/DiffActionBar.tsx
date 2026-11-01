@@ -1,4 +1,5 @@
 import { DiffModeEnum } from "@git-diff-view/react";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { X, AlignJustify, Columns2, CheckCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
@@ -75,6 +76,7 @@ export function DiffActionBar({
             }
           }}
         >
+          <SegmentThumb />
           <ToggleGroupItem value="unified" size="sm" className={cn(SEGMENT_ITEM, "w-7 px-0")}>
             <AlignJustify className="size-3.5" />
           </ToggleGroupItem>

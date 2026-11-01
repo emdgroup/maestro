@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
 import {
   PanelLeft,
   ExternalLink,
@@ -593,6 +594,7 @@ export function WorkspaceFilesPanel({
                       "flex items-center gap-0.5 shrink-0 @max-[280px]:hidden",
                     )}
                   >
+                    <SegmentThumb />
                     {MARKDOWN_LAYOUTS.map(({ value, Icon, label }) => {
                       const unavailable = layoutUnavailable(value);
                       return (
@@ -605,9 +607,9 @@ export function WorkspaceFilesPanel({
                               aria-label={label}
                               aria-pressed={effectiveLayout === value}
                               className={cn(
-                                "inline-flex items-center justify-center size-6 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none",
+                                "relative inline-flex items-center justify-center size-6 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none",
                                 effectiveLayout === value
-                                  ? "text-foreground bg-card/90 shadow-sm"
+                                  ? "text-foreground"
                                   : "text-muted-foreground hover:text-foreground",
                               )}
                             >

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
 import { Ban, CalendarClock, ChevronDown, Webhook, type LucideIcon } from "lucide-react";
 import {
@@ -198,6 +199,7 @@ function TriggerSection({
         spacing={1}
         className={`w-full ${SEGMENT_GROUP}`}
       >
+        <SegmentThumb />
         {TRIGGERS.map((option) => (
           <ToggleGroupItem
             key={option.value}

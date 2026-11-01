@@ -1,4 +1,5 @@
 import { Search } from "lucide-react";
+import { motion } from "framer-motion";
 import { Input } from "@/ui/input";
 import { cn } from "@/lib/utils";
 import {
@@ -83,18 +84,28 @@ export function SettingsSidebar({
                         onClick={() => onSelect(page.id)}
                         aria-current={isActive ? "page" : undefined}
                         className={cn(
-                          "flex w-full items-start gap-2 rounded-[10px] px-2.5 py-1.5 text-left transition-colors",
+                          "relative flex w-full items-start gap-2 rounded-[10px] px-2.5 py-1.5 text-left transition-colors",
                           isActive
-                            ? "bg-accent/10 text-foreground"
+                            ? "text-foreground"
                             : "text-muted-foreground hover:bg-foreground/7 hover:text-foreground",
                         )}
                       >
+                        {isActive && (
+                          <motion.span
+                            layoutId="settings-nav-pill"
+                            className="absolute inset-0 rounded-[10px] bg-accent/10"
+                            transition={{ type: "spring", stiffness: 400, damping: 35 }}
+                          />
+                        )}
                         {/* The tint alone is easy to miss at this size, so the icon carries the
                             accent too and the row agrees with the controls it leads to. */}
                         <Icon
-                          className={cn("mt-0.5 size-3.5 shrink-0", isActive && "text-accent")}
+                          className={cn(
+                            "relative mt-0.5 size-3.5 shrink-0",
+                            isActive && "text-accent",
+                          )}
                         />
-                        <span className="min-w-0 flex-1">
+                        <span className="relative min-w-0 flex-1">
                           <span className="block truncate text-xs font-medium">{page.label}</span>
                           {/* Why this page is in the results — without it a search for a control
                               name returns a page whose title says nothing about the match. */}

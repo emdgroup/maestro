@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { CopyPlus, Ellipsis, Pencil, Plus, Search, Star, Trash2 } from "lucide-react";
 import {
   DragDropProvider,
@@ -408,6 +409,7 @@ export function PromptsPanel({
           spacing={1}
           className={SEGMENT_GROUP}
         >
+          <SegmentThumb />
           {FILTERS.map((option) => (
             <ToggleGroupItem
               key={option.value}

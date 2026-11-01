@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { endOfMonth, format as formatDate, min } from "date-fns";
 import { X } from "lucide-react";
 import type { ConnectionKey, UsageProjectRef, UsageSplit } from "@/types/bindings";
@@ -45,8 +46,8 @@ const SPLITS: { id: UsageSplit; label: string; tokensOnly?: string }[] = [
 const LOCAL: ConnectionKey = { type: "local" };
 const projectId = (p: UsageProjectRef) => `${p.connection_key}|${p.project_path}`;
 const segment =
-  "rounded-lg px-2.5 py-1 text-xs text-muted-foreground disabled:pointer-events-none disabled:opacity-40";
-const segmentOn = "bg-card/90 text-foreground shadow-sm";
+  "relative rounded-lg px-2.5 py-1 text-xs text-muted-foreground disabled:pointer-events-none disabled:opacity-40";
+const segmentOn = "text-foreground";
 
 function parseConnectionKey(key: string): ConnectionKey | null {
   if (key === "local") return LOCAL;
@@ -295,11 +296,13 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
         <div className="usage-pane mt-4 rounded-2xl p-4">
           <div className="mb-3 flex items-center gap-3">
             <div className={cn("flex gap-1", SEGMENT_GROUP)}>
+              <SegmentThumb />
               {[false, true].map((cum) => (
                 <button
                   key={String(cum)}
                   type="button"
                   onClick={() => setCumulative(cum)}
+                  aria-pressed={cumulative === cum}
                   className={cn(segment, cumulative === cum && segmentOn)}
                 >
                   {cum ? "Cumulative" : "Over time"}
@@ -307,6 +310,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
               ))}
             </div>
             <div className={cn("ml-auto flex gap-1", SEGMENT_GROUP)}>
+              <SegmentThumb />
               {SPLITS.map((s) => {
                 const disabled = metric === "cost" && !!s.tokensOnly;
                 const button = (
@@ -315,6 +319,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
                     type="button"
                     disabled={disabled}
                     onClick={() => setSplit(s.id)}
+                    aria-pressed={effectiveSplit === s.id}
                     className={cn(segment, effectiveSplit === s.id && segmentOn)}
                   >
                     {s.label}

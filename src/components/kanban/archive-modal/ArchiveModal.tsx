@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/ui/dialog";
 import { Input } from "@/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
@@ -96,6 +97,7 @@ export function ArchiveModal({ isOpen, onClose, projectId }: ArchiveModalProps) 
 
         <Tabs value={filter} onValueChange={(v) => setFilter(v as ArchiveFilter)}>
           <TabsList className={SEGMENT_LIST}>
+            <SegmentThumb />
             <TabsTrigger value="all" className={SEGMENT_TRIGGER}>
               All
             </TabsTrigger>

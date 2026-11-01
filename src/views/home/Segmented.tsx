@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
 
 interface SegmentedProps<T extends string> {
   value: T;
@@ -10,9 +11,10 @@ interface SegmentedProps<T extends string> {
 export function Segmented<T extends string>({ value, onChange, options }: SegmentedProps<T>) {
   return (
     <div
-      className="grid gap-1 rounded-xl border border-foreground/10 bg-background/45 p-1 text-xs"
+      className="relative grid gap-1 rounded-xl border border-foreground/10 bg-background/45 p-1 text-xs"
       style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
     >
+      <SegmentThumb />
       {options.map(([option, label]) => (
         <button
           key={option}
@@ -20,10 +22,8 @@ export function Segmented<T extends string>({ value, onChange, options }: Segmen
           aria-pressed={value === option}
           onClick={() => onChange(option)}
           className={cn(
-            "h-8 cursor-pointer rounded-lg",
-            value === option
-              ? "bg-card/90 font-medium shadow-sm"
-              : "text-muted-foreground hover:text-foreground",
+            "relative h-8 cursor-pointer rounded-lg",
+            value === option ? "font-medium" : "text-muted-foreground hover:text-foreground",
           )}
         >
           {label}
