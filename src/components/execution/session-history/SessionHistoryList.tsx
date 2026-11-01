@@ -135,7 +135,7 @@ export function SessionHistoryList({
             )}
           </div>
         )}
-        <div className="py-1">
+        <div className="py-1 pr-3">
           {entries.map((entry) => (
             <div key={entry.session_id}>
               {renamingId === entry.session_id ? (
