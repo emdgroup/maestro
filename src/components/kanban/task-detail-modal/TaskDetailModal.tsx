@@ -525,7 +525,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                           Keep Task
                         </AlertDialogCancel>
                         <AlertDialogAction
-                          className="bg-rose-600 text-white hover:bg-rose-600/90"
+                          variant="destructive"
                           onClick={() => {
                             setDeleteOpen(false);
                             deleteTask.mutate(
@@ -572,6 +572,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                           Keep task
                         </AlertDialogCancel>
                         <AlertDialogAction
+                          variant="destructive"
                           onClick={() => {
                             setCancelOpen(false);
                             cancelTask.mutate(
@@ -614,6 +615,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                       Keep editing
                     </AlertDialogCancel>
                     <AlertDialogAction
+                      variant="destructive"
                       onClick={() => {
                         setDiscardOpen(false);
                         setActiveTaskId(null);
@@ -679,7 +681,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
               {/* A loop at sign-off waits on this review: it is the move to make. */}
               {isLoop && task.phase === "Approval" && (
-                <Button size="sm" variant="accent" onClick={() => openReview(task.id)}>
+                <Button size="sm" onClick={() => openReview(task.id)}>
                   <ScanEye className="size-3" />
                   Review
                 </Button>

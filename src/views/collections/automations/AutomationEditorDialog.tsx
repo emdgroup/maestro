@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
-import { Button, buttonVariants } from "@/ui/button";
+import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { MarkdownEditor } from "@/components/kanban/shared/MarkdownEditor";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
@@ -522,7 +522,6 @@ export function AutomationEditorDialog({
             Cancel
           </Button>
           <Button
-            className={buttonVariants({ variant: "accent" })}
             disabled={!canSave}
             onClick={() => {
               onSave({

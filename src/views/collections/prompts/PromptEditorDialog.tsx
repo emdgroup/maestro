@@ -188,7 +188,7 @@ export function PromptEditorDialog({
           <Button variant="ghost" className="ml-auto" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button variant="accent" disabled={!valid || save.isPending} onClick={submit}>
+          <Button disabled={!valid || save.isPending} onClick={submit}>
             {editing ? "Save" : "Create prompt"}
           </Button>
         </div>

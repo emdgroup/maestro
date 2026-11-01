@@ -500,11 +500,7 @@ export function McpEditorDialog({
           <Button variant="ghost" className="ml-auto" onClick={close}>
             Cancel
           </Button>
-          <Button
-            variant="accent"
-            disabled={!valid || save.isPending || json !== null}
-            onClick={submit}
-          >
+          <Button disabled={!valid || save.isPending || json !== null} onClick={submit}>
             {save.isPending ? "Saving…" : editing ? "Save" : "Create"}
           </Button>
         </div>

@@ -736,10 +736,15 @@ export function WorkspaceFilesPanel({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => conflict && handleReloadFromDisk(conflict.onDisk)}>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => conflict && handleReloadFromDisk(conflict.onDisk)}
+            >
               Reload, discarding mine
             </AlertDialogAction>
-            <AlertDialogAction onClick={() => void handleOverwrite()}>Overwrite</AlertDialogAction>
+            <AlertDialogAction variant="destructive" onClick={() => void handleOverwrite()}>
+              Overwrite
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -760,6 +765,7 @@ export function WorkspaceFilesPanel({
           <AlertDialogFooter>
             <AlertDialogCancel>Keep editing</AlertDialogCancel>
             <AlertDialogAction
+              variant="destructive"
               onClick={() => {
                 const prompt = discardPrompt;
                 discardDraft();
@@ -821,7 +827,11 @@ export function WorkspaceFilesPanel({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deletePending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction disabled={deletePending} onClick={() => void handleDeleteConfirm()}>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deletePending}
+              onClick={() => void handleDeleteConfirm()}
+            >
               {deletePending && <Spinner className="w-3.5 h-3.5" />}
               Delete
             </AlertDialogAction>

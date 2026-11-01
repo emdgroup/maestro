@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { cn } from "@/lib/utils";
 import { useNow } from "@/hooks/useNow";
 import { PRESETS, rangeTitle, type RangeChoice } from "./range";
+import { Button } from "@/ui/button";
 
 interface RangePickerProps {
   choice: RangeChoice;
@@ -85,7 +86,7 @@ export function RangePicker({ choice, onChange }: RangePickerProps) {
             >
               Cancel
             </button>
-            <button
+            <Button
               type="button"
               disabled={!days?.from}
               onClick={() => {
@@ -93,10 +94,10 @@ export function RangePicker({ choice, onChange }: RangePickerProps) {
                 onChange({ from: days.from, to: days.to ?? days.from });
                 setOpen(false);
               }}
-              className="rounded-lg bg-primary px-3 py-1.5 text-primary-foreground disabled:opacity-50"
+              className="h-auto rounded-lg px-3 py-1.5 text-xs font-normal"
             >
               Apply
-            </button>
+            </Button>
           </div>
         </div>
       </PopoverContent>

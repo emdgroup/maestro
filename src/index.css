@@ -43,8 +43,8 @@
   --popover-foreground: oklch(45% 0.01 250);
 
   /* Primary colors */
-  --primary: oklch(0% 0 0);
-  --primary-foreground: oklch(100% 0 0);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-foreground);
 
   /* Secondary colors */
   --secondary: oklch(50% 0.15 250);
@@ -108,8 +108,8 @@
   --popover: oklch(32% 0.01 250);
   --popover-foreground: oklch(90% 0.01 250);
 
-  --primary: oklch(100% 0 0);
-  --primary-foreground: oklch(25% 0.01 250);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-foreground);
 
   --secondary: oklch(75% 0.15 250);
   --secondary-foreground: oklch(25% 0.01 250);

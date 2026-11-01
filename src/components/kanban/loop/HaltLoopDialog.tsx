@@ -76,6 +76,7 @@ export function HaltLoopDialog({
         <AlertDialogFooter>
           <AlertDialogCancel>Keep running</AlertDialogCancel>
           <AlertDialogAction
+            variant="destructive"
             onClick={() => {
               onOpenChange(false);
               const key = { projectId: task.project_id, taskId: task.id };

@@ -247,7 +247,7 @@ export function AgentsDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button variant="accent" disabled={pending} onClick={() => onConfirm(picked)}>
+          <Button disabled={pending} onClick={() => onConfirm(picked)}>
             {confirmLabel}
           </Button>
         </div>

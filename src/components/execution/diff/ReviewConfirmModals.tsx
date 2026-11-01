@@ -487,13 +487,18 @@ export function DiscardModal({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
           <ButtonGroup>
-            <Button size="sm" onClick={() => onConfirm("backlog")} disabled={isPending}>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => onConfirm("backlog")}
+              disabled={isPending}
+            >
               {isPending ? "Discarding..." : "Send to Backlog"}
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
-                  <Button size="sm" className="px-1.5!" disabled={isPending}>
+                  <Button variant="destructive" size="sm" className="px-1.5!" disabled={isPending}>
                     <ChevronDown className="size-3.5" />
                   </Button>
                 }

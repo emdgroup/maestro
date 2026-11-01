@@ -122,7 +122,6 @@ export function CollectionsView({
         <span className="text-sm font-medium">{TITLES[section]}</span>
         {section === "skills" ? (
           <Button
-            variant="accent"
             size="sm"
             className="h-8 rounded-xl px-4 bg-clip-border text-xs"
             onClick={() => openSkillEditor(null)}
@@ -132,7 +131,6 @@ export function CollectionsView({
           </Button>
         ) : section === "mcp" ? (
           <Button
-            variant="accent"
             size="sm"
             className="h-8 rounded-xl px-4 bg-clip-border text-xs"
             onClick={() => setMcpDraft({ editing: null, seed: null })}
@@ -142,7 +140,6 @@ export function CollectionsView({
           </Button>
         ) : section === "prompts" ? (
           <Button
-            variant="accent"
             size="sm"
             className="h-8 rounded-xl px-4 bg-clip-border text-xs"
             onClick={() => openPromptEditor(null)}
@@ -153,7 +150,6 @@ export function CollectionsView({
         ) : (
           <ButtonGroup>
             <Button
-              variant="accent"
               size="sm"
               className="h-8 rounded-xl px-4 bg-clip-border text-xs"
               onClick={() => openEditor(null)}
@@ -164,13 +160,7 @@ export function CollectionsView({
             <DropdownMenu>
               <DropdownMenuTrigger
                 aria-label="New automation from a template"
-                render={
-                  <Button
-                    variant="accent"
-                    size="sm"
-                    className="h-8 rounded-r-xl! bg-clip-border px-1.5!"
-                  />
-                }
+                render={<Button size="sm" className="h-8 rounded-r-xl! bg-clip-border px-1.5!" />}
               >
                 <ChevronDown className="size-3.5" />
               </DropdownMenuTrigger>

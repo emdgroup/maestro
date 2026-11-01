@@ -431,7 +431,6 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
           </Button>
           <ShortcutHint shortcutId="wt-new">
             <Button
-              variant="accent"
               size="sm"
               className="h-8 rounded-xl px-4 text-xs bg-clip-border"
               onClick={() => setShowCreateDialog(true)}

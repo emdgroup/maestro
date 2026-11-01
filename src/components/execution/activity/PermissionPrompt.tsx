@@ -37,7 +37,7 @@ function LegacyButtons({
       <Button variant="ghost" size="sm" onClick={() => onRespond(requestId, null)}>
         Deny
       </Button>
-      <Button variant="accent" size="sm" onClick={() => onRespond(requestId, "allow")}>
+      <Button size="sm" onClick={() => onRespond(requestId, "allow")}>
         Allow
       </Button>
     </div>
@@ -102,7 +102,7 @@ export function PermissionPrompt({ requestId, payload, onRespond }: PermissionPr
           ordered.map((opt) => (
             <Button
               key={opt.optionId}
-              variant={isAllowKind(opt.kind) ? "accent" : "ghost"}
+              variant={isAllowKind(opt.kind) ? "default" : "ghost"}
               size="sm"
               onClick={() => onRespond(requestId, opt.optionId)}
             >

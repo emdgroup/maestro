@@ -107,6 +107,7 @@ export function TaskCardDialogs({
               </AlertDialogAction>
             )}
             <AlertDialogAction
+              variant="outline"
               onClick={() => {
                 onClose();
                 actions.onArchive();
@@ -180,6 +181,7 @@ export function TaskCardDialogs({
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
+              variant="outline"
               onClick={() => {
                 onClose();
                 actions.onForceReview();

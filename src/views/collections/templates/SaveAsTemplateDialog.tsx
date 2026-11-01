@@ -8,7 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
-import { Button, buttonVariants } from "@/ui/button";
+import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { useSaveTemplateMutation, useTemplatesQuery } from "@/services/template.service";
 import { BUILTIN_TEMPLATES, describeTrigger, templateOf } from "./templates";
@@ -111,11 +111,7 @@ export function SaveAsTemplateDialog({
             <Button variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button
-              className={buttonVariants({ variant: "accent" })}
-              disabled={!name.trim() || save.isPending}
-              onClick={submit}
-            >
+            <Button disabled={!name.trim() || save.isPending} onClick={submit}>
               Save template
             </Button>
           </DialogFooter>

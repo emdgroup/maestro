@@ -57,13 +57,13 @@ export function DirtyWorktreeDialog({
         <AlertDialogFooter>
           <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
           <ButtonGroup>
-            <Button size="sm" onClick={() => onChoice("ignore")}>
+            <Button variant="outline" size="sm" onClick={() => onChoice("ignore")}>
               Ignore
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
-                  <Button size="sm" className="px-1.5!">
+                  <Button variant="outline" size="sm" className="px-1.5!">
                     <ChevronDown className="size-3.5" />
                   </Button>
                 }

@@ -155,7 +155,6 @@ export function UpdateCard() {
               onClick={
                 isPackageInstall ? () => void downloadPackage(status.version) : () => void install()
               }
-              variant="accent"
               className="h-7 text-xs gap-1.5"
             >
               <ArrowDownToLine className="w-3 h-3" />

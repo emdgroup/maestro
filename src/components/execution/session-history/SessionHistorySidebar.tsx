@@ -95,22 +95,13 @@ export function SessionHistorySidebar({
             )}
           </div>
           <PopoverContent className="w-auto p-0" side="right" align="start">
-            <div
-              style={
-                {
-                  "--primary": "var(--accent)",
-                  "--primary-foreground": "var(--accent-foreground)",
-                } as React.CSSProperties
-              }
-            >
-              <Calendar
-                mode="range"
-                selected={stagingRange}
-                onSelect={(range) => onStagingRangeChange(range ?? { from: undefined })}
-                disabled={{ after: new Date(now) }}
-                numberOfMonths={1}
-              />
-            </div>
+            <Calendar
+              mode="range"
+              selected={stagingRange}
+              onSelect={(range) => onStagingRangeChange(range ?? { from: undefined })}
+              disabled={{ after: new Date(now) }}
+              numberOfMonths={1}
+            />
             <div className="flex justify-between px-3 pb-3">
               <Button
                 variant="ghost"

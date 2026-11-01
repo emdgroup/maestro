@@ -294,7 +294,6 @@ export const KanbanView: React.FC = () => {
         <div className="ml-auto">
           <ShortcutHint shortcutId="board-new">
             <Button
-              variant="accent"
               size="sm"
               className="h-8 rounded-xl px-4 text-xs bg-clip-border"
               onClick={() => setIsCreateModalOpen(true)}

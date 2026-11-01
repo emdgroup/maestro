@@ -8,7 +8,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/ui/dialog";
-import { Button, buttonVariants } from "@/ui/button";
+import { Button } from "@/ui/button";
 import { Textarea } from "@/ui/textarea";
 import { useTaskCommentsQuery } from "@/services/task.service";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
@@ -105,7 +105,6 @@ export function PlanGate({
               asking for. Approving a plan they have just written objections to is not a thing to
               offer; the objections are the answer. */}
           <Button
-            className={buttonVariants({ variant: "accent" })}
             onClick={() => {
               onOpenChange(false);
               if (annotated) onReplan(feedback.trim());

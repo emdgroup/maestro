@@ -8,7 +8,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/ui/dialog";
-import { Button, buttonVariants } from "@/ui/button";
+import { Button } from "@/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
 import { useAgentProfilesQuery } from "@/services/project.service";
 import { useSetTaskProfileOverridesMutation } from "@/services/task.service";
@@ -199,11 +199,7 @@ export function TaskProfilesDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {profiles.length === 0 ? "Close" : "Cancel"}
           </Button>
-          {profiles.length > 0 && (
-            <Button className={buttonVariants({ variant: "accent" })} onClick={save}>
-              Save
-            </Button>
-          )}
+          {profiles.length > 0 && <Button onClick={save}>Save</Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>

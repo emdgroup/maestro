@@ -243,7 +243,7 @@ export function ConnectionMenu({
           </Button>
           <Button
             onClick={() => void run()}
-            className={confirm === "restart" ? "" : "bg-rose-600 text-white hover:bg-rose-600/90"}
+            variant={confirm === "restart" ? "default" : "destructive"}
           >
             {confirm && copy[confirm].action}
           </Button>
