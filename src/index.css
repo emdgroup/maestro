@@ -1352,6 +1352,11 @@
   animation: none;
   mix-blend-mode: normal;
 }
+/* The window keeps `project-zoom` for opening a project, which would draw it as its own layer above
+   the root being revealed, cross-fading instead of spreading. */
+.theme-reveal .app {
+  view-transition-name: none;
+}
 /* Once, when the Usage chart first draws. */
 .usage-bar-in {
   transform-box: fill-box;
