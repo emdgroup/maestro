@@ -1,7 +1,6 @@
 import { Sun, Moon, SunMoon } from "lucide-react";
 import { useTheme, type ThemeValue } from "@/providers/ThemeProvider";
 import type { MouseEvent, ReactElement } from "react";
-import { useState, useRef } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { buttonVariants } from "@/ui/button";
 import { cn } from "@/lib/utils";
@@ -22,18 +21,6 @@ const themeMap: Record<ThemeValue, ThemeConfig> = {
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
   const { title, icon, nextTheme } = themeMap[theme];
-  const [open, setOpen] = useState(false);
-  const isHovering = useRef(false);
-
-  const handleMouseEnter = () => {
-    isHovering.current = true;
-    setOpen(true);
-  };
-
-  const handleMouseLeave = () => {
-    isHovering.current = false;
-    setOpen(false);
-  };
 
   const handleClick = (e: MouseEvent<HTMLButtonElement>) => {
     const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
@@ -56,20 +43,16 @@ export function ThemeToggle() {
     void (transition?.finished ?? Promise.resolve()).finally(() =>
       root.classList.remove("theme-reveal"),
     );
-    // Keep tooltip open if still hovering
-    if (isHovering.current) {
-      setOpen(true);
-    }
   };
 
   return (
-    <Tooltip open={open} onOpenChange={setOpen}>
+    <Tooltip>
       <TooltipTrigger
+        // The tooltip names the theme just picked, so a click must not close it.
+        closeOnClick={false}
         render={
           <button
             onClick={handleClick}
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
             className={cn(
               buttonVariants({ variant: "ghost" }),
               "h-7 w-7 rounded-full [&>svg]:h-5 [&>svg]:w-5 [&>svg]:text-muted-foreground",
