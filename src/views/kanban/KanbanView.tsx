@@ -1,6 +1,8 @@
 import { useState, useMemo, useRef } from "react";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { Plus, Archive, Search, BellDot, Repeat } from "lucide-react";
+import { motion } from "framer-motion";
+import { cn } from "@/lib/utils";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { BoardView } from "@/views/kanban/board-view/BoardView";
 import { useActiveTaskId } from "@/store/navigationStore";
@@ -28,6 +30,34 @@ import { AutoModeToggle } from "@/components/kanban/AutoModeToggle";
 import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
 
 const EMPTY_TASKS: Task[] = [];
+
+/** A segment whose raised background is one element sliding between them, as the header's tabs. */
+function RunModeItem({
+  value,
+  active,
+  children,
+}: {
+  value: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <ToggleGroupItem
+      value={value}
+      size="sm"
+      className={cn(SEGMENT_ITEM, "relative aria-pressed:bg-transparent aria-pressed:shadow-none")}
+    >
+      {active && (
+        <motion.span
+          layoutId="board-run-mode-pill"
+          className="absolute inset-0 rounded-lg bg-card/90 shadow-sm"
+          transition={{ type: "spring", stiffness: 400, damping: 35 }}
+        />
+      )}
+      <span className="relative z-10 flex items-center gap-1">{children}</span>
+    </ToggleGroupItem>
+  );
+}
 
 export const KanbanView: React.FC = () => {
   const activeTaskId = useActiveTaskId();
@@ -242,16 +272,16 @@ export const KanbanView: React.FC = () => {
             if (picked) setRunMode(picked === "All" ? null : (picked as RunMode));
           }}
         >
-          <ToggleGroupItem value="All" size="sm" className={SEGMENT_ITEM}>
+          <RunModeItem value="All" active={!runMode}>
             All
-          </ToggleGroupItem>
-          <ToggleGroupItem value="Pipeline" size="sm" className={SEGMENT_ITEM}>
+          </RunModeItem>
+          <RunModeItem value="Pipeline" active={runMode === "Pipeline"}>
             Pipeline
-          </ToggleGroupItem>
-          <ToggleGroupItem value="Loop" size="sm" className={SEGMENT_ITEM}>
+          </RunModeItem>
+          <RunModeItem value="Loop" active={runMode === "Loop"}>
             <Repeat className="size-3" />
             Loops
-          </ToggleGroupItem>
+          </RunModeItem>
         </ToggleGroup>
 
         <QueueCapacityBadge projectId={projectId} />
