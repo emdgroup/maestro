@@ -919,7 +919,8 @@
   35% {
     transform: rotate(0deg) scale(0.4);
     opacity: 0;
-    animation-timing-function: cubic-bezier(0.3, 1.5, 0.5, 1);
+    /* No overshoot: past 360 and back, on an icon this small, reads as the plane shaking. */
+    animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
   }
   55% {
     opacity: 1;
