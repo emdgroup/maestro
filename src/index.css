@@ -749,6 +749,216 @@
   }
 }
 
+/* The compose bar's Send and Stop, one button changing between them (SendStopButton). A state each
+   part rests in, then the two changes. A keyframe list that stops short of 100% finishes on the
+   resting value, which is how a disabled Send lands dim and Stop lands at its own opacity. */
+.send-stop > .send-stop-plane,
+.send-stop > .send-stop-square {
+  grid-area: 1 / 1;
+}
+.send-stop[data-stop="true"] > .send-stop-plane,
+.send-stop[data-stop="false"] > .send-stop-square {
+  opacity: 0;
+}
+.send-stop-whip {
+  position: absolute;
+  inset: -5px;
+  width: 42px;
+  height: 42px;
+  pointer-events: none;
+  transform-origin: 20px 20px;
+}
+.send-stop[data-stop="false"]:not([data-play]) .send-stop-whip {
+  visibility: hidden;
+}
+/* Animate the svg root, not the circle: transform animations on SVG child elements run on the
+   renderer main thread and freeze under load, while the root element composites. Origin matches the
+   circle's center so the arc traces the same path. Stays on through the return, which closes the
+   ring while it is still turning. */
+.send-stop-arc {
+  display: block;
+  width: 42px;
+  height: 42px;
+  overflow: visible;
+  transform-origin: 20px 20px;
+}
+.send-stop[data-stop="true"] .send-stop-arc,
+.send-stop[data-play="return"] .send-stop-arc {
+  animation: arc-spin-cw 0.9s linear infinite;
+}
+
+/* Send to Stop: the plane dips, then flies off the way it points. The arc grows as it leaves and the
+   square turns in behind it. */
+.send-stop[data-play="start"] {
+  animation: send-stop-start 1150ms linear;
+}
+.send-stop[data-play="start"] > .send-stop-plane {
+  animation: send-stop-plane-out 1150ms;
+}
+.send-stop[data-play="start"] > .send-stop-square {
+  animation: send-stop-square-in 1150ms;
+}
+.send-stop[data-play="start"] .send-stop-arc circle {
+  animation: send-stop-arc-grow 1150ms;
+}
+@keyframes send-stop-start {
+  0%,
+  29% {
+    background-color: color-mix(in oklab, var(--accent) 15%, transparent);
+    border-color: color-mix(in oklab, var(--accent) 25%, transparent);
+    color: var(--accent);
+    opacity: 1;
+  }
+  83% {
+    background-color: color-mix(in oklab, var(--destructive) 8%, transparent);
+    border-color: color-mix(in oklab, var(--destructive) 40%, transparent);
+    color: var(--destructive);
+    opacity: 1;
+  }
+}
+@keyframes send-stop-plane-out {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+    animation-timing-function: ease-out;
+  }
+  10% {
+    transform: translate(-1.5px, 1.5px) scale(1);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.5, 0, 0.8, 0.4);
+  }
+  42%,
+  100% {
+    transform: translate(20px, -20px) scale(0.85);
+    opacity: 0;
+  }
+}
+@keyframes send-stop-square-in {
+  0%,
+  42% {
+    transform: rotate(-90deg) scale(0.3);
+    opacity: 0;
+    animation-timing-function: cubic-bezier(0.3, 1.4, 0.5, 1);
+  }
+  92%,
+  100% {
+    transform: rotate(0deg) scale(1);
+    opacity: 1;
+  }
+}
+@keyframes send-stop-arc-grow {
+  0%,
+  21% {
+    stroke-dasharray: 0 101;
+    opacity: 0;
+  }
+  25% {
+    stroke-dasharray: 0 101;
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.3, 0.7, 0.2, 1);
+  }
+  100% {
+    stroke-dasharray: 22 79;
+    opacity: 1;
+  }
+}
+
+/* Stop to Send: the arc whips round into a full ring that opens out and fades, while the square
+   shrinks and the plane pops back from it, still turning clockwise. A crossfade rather than a morph
+   of one path, because WebKit, which runs the app on macOS and Linux, cannot animate `d`. */
+.send-stop[data-play="return"] {
+  animation: send-stop-return 960ms linear;
+}
+.send-stop[data-play="return"] > .send-stop-plane {
+  animation: send-stop-plane-in 960ms;
+}
+.send-stop[data-play="return"] > .send-stop-square {
+  animation: send-stop-square-out 960ms;
+}
+.send-stop[data-play="return"] .send-stop-whip {
+  animation: send-stop-whip 960ms;
+}
+.send-stop[data-play="return"] .send-stop-arc circle {
+  animation: send-stop-arc-close 960ms;
+}
+@keyframes send-stop-return {
+  0% {
+    background-color: color-mix(in oklab, var(--destructive) 8%, transparent);
+    border-color: color-mix(in oklab, var(--destructive) 40%, transparent);
+    color: var(--destructive);
+    opacity: 1;
+  }
+  70% {
+    background-color: color-mix(in oklab, var(--accent) 15%, transparent);
+    border-color: color-mix(in oklab, var(--accent) 25%, transparent);
+    color: var(--accent);
+  }
+  85% {
+    opacity: 1;
+  }
+}
+@keyframes send-stop-square-out {
+  0% {
+    transform: rotate(0deg) scale(1);
+    opacity: 1;
+    animation-timing-function: ease-in;
+  }
+  35% {
+    transform: rotate(0deg) scale(0.4);
+    opacity: 1;
+    animation-timing-function: ease-out;
+  }
+  55%,
+  100% {
+    transform: rotate(120deg) scale(0.6);
+    opacity: 0;
+  }
+}
+@keyframes send-stop-plane-in {
+  0%,
+  35% {
+    transform: rotate(0deg) scale(0.4);
+    opacity: 0;
+    animation-timing-function: cubic-bezier(0.3, 1.5, 0.5, 1);
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+    opacity: 1;
+  }
+}
+@keyframes send-stop-whip {
+  0% {
+    transform: rotate(0deg) scale(1);
+    animation-timing-function: ease-in;
+  }
+  40% {
+    transform: rotate(360deg) scale(1);
+    animation-timing-function: ease-out;
+  }
+  100% {
+    transform: rotate(400deg) scale(1.28);
+  }
+}
+@keyframes send-stop-arc-close {
+  0% {
+    stroke-dasharray: 22 79;
+    opacity: 1;
+    animation-timing-function: ease-in;
+  }
+  40% {
+    stroke-dasharray: 101 0;
+    opacity: 1;
+    animation-timing-function: ease-out;
+  }
+  100% {
+    stroke-dasharray: 101 0;
+    opacity: 0;
+  }
+}
+
 /* A copy control's icon (`CopyStateIcon`): Copy shrinks away and the tick draws itself in, short
    stroke first. Lucide's Check path starts at the long stroke's tip, so the dash is revealed from
    the path's end with a negative offset; 24 covers its ~22.6 user units. Transitions rather than
