@@ -57,6 +57,13 @@ vi.mock("@/store/navigationStore", () => ({
   useActiveTaskId: vi.fn(() => null),
 }));
 
+vi.mock("@/components/execution/side-panel/WorkspaceFilesPanel", () => ({
+  WorkspaceFilesPanel: ({ workspacePath }: { workspacePath: string }) => (
+    <div data-testid="files-panel">{workspacePath}</div>
+  ),
+}));
+
+import { useFileSessionStore } from "@/store/fileSessionStore";
 import {
   useAgentDiscoveryQuery,
   useSpawnAcpSessionMutation,
@@ -144,6 +151,48 @@ describe("New Session dialog — agent type selector", () => {
 
     expect(screen.getByRole("heading", { name: /new session/i })).toBeInTheDocument();
     expect(screen.getByText("Terminal")).toBeInTheDocument();
+  });
+});
+
+describe("files session", () => {
+  function seedFileSession(dirty: boolean) {
+    useFileSessionStore.setState({ sessions: [] });
+    const id = useFileSessionStore
+      .getState()
+      .add({ projectId: 1, name: "browse", cwd: "/tmp/repo", branchName: "main" });
+    useFileSessionStore.getState().setDirty(id, dirty);
+  }
+
+  it("lists a session and shows its files, only for its own project", () => {
+    seedFileSession(false);
+    useFileSessionStore
+      .getState()
+      .add({ projectId: 2, name: "elsewhere", cwd: "/tmp/other", branchName: "main" });
+    renderView();
+
+    expect(screen.getByTestId("files-panel")).toHaveTextContent("/tmp/repo");
+    expect(screen.queryByText("elsewhere")).not.toBeInTheDocument();
+  });
+
+  it("closes a clean session straight away", async () => {
+    seedFileSession(false);
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(screen.getByRole("button", { name: /close session/i }));
+    expect(useFileSessionStore.getState().sessions).toHaveLength(0);
+  });
+
+  it("asks before closing a session holding an unsaved draft", async () => {
+    seedFileSession(true);
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(screen.getByRole("button", { name: /close session/i }));
+    expect(useFileSessionStore.getState().sessions).toHaveLength(1);
+
+    await user.click(await screen.findByRole("button", { name: /discard and close/i }));
+    expect(useFileSessionStore.getState().sessions).toHaveLength(0);
   });
 });
 

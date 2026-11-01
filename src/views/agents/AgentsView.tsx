@@ -24,8 +24,23 @@ import {
 } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
-import type { ActiveSessionInfo, ConnectionKey } from "@/types/bindings";
+import type { ConnectionKey } from "@/types/bindings";
 import { useBoardStore, useBoardActions } from "@/store/boardStore";
+import {
+  useFileSessionStore,
+  type FileSession,
+  type MonitorSession,
+} from "@/store/fileSessionStore";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/ui/alert-dialog";
 import { api } from "@/lib/tauri-utils";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Button } from "@/ui/button";
@@ -111,7 +126,13 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
 
   const { data: worktrees = [] } = useWorktreesQuery(projectId, repoPath);
   const { data: discovery } = useAgentDiscoveryQuery(connection);
-  const visibleSessions = sessions.filter((s) => s.session_name !== "__embedded__");
+  const fileSessions = useFileSessionStore((s) => s.sessions);
+  const removeFileSession = useFileSessionStore((s) => s.remove);
+  const [closePrompt, setClosePrompt] = useState<FileSession | null>(null);
+  const visibleSessions: MonitorSession[] = [
+    ...sessions.filter((s) => s.session_name !== "__embedded__"),
+    ...fileSessions.filter((s) => s.project_id === projectId),
+  ];
 
   useShortcuts("agents", {
     "agents-new": () => setShowSpawnDialog(true),
@@ -307,15 +328,28 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
     [projectId, repoPath, worktrees, spawnMutation],
   );
 
-  function handleCloseSession(session: ActiveSessionInfo) {
+  function selectAfterClosing(sessionId: string) {
+    if (selectedSessionId !== sessionId) return;
+    const remaining = visibleSessions.filter((s) => s.session_id !== sessionId);
+    setSelectedSessionId(remaining.length > 0 ? remaining[0].session_id : null);
+  }
+
+  function closeFileSession(sessionId: string) {
+    selectAfterClosing(sessionId);
+    removeFileSession(sessionId);
+  }
+
+  function handleCloseSession(session: MonitorSession) {
+    if (session.execution_mode === "files") {
+      if (session.dirty) setClosePrompt(session);
+      else closeFileSession(session.session_id);
+      return;
+    }
     cancelMutation.mutate(
       { sessionId: session.session_id, executionMode: session.execution_mode },
       {
         onSuccess: () => {
-          if (selectedSessionId === session.session_id) {
-            const remaining = visibleSessions.filter((s) => s.session_id !== session.session_id);
-            setSelectedSessionId(remaining.length > 0 ? remaining[0].session_id : null);
-          }
+          selectAfterClosing(session.session_id);
           const auto = autoWorktrees.current.get(session.session_id);
           if (!auto) {
             console.debug(
@@ -529,6 +563,34 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           if (createdWorktree) autoWorktrees.current.set(key, createdWorktree);
         }}
       />
+
+      <AlertDialog
+        open={closePrompt !== null}
+        onOpenChange={(open) => {
+          if (!open) setClosePrompt(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Close this session and discard your edits?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This Files session has changes that have not been written to disk. Closing it loses
+              them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (closePrompt) closeFileSession(closePrompt.session_id);
+                setClosePrompt(null);
+              }}
+            >
+              Discard and close
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SidebarProvider>
   );
 };

@@ -8,7 +8,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { motion } from "framer-motion";
-import { BotOff, GitBranch, RotateCw, Terminal, X } from "lucide-react";
+import { BotOff, FolderOpen, GitBranch, RotateCw, Terminal, X } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
@@ -17,8 +17,10 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
 import { SidebarContent, SidebarMenu, SidebarMenuItem, useSidebar } from "@/ui/sidebar";
 import { TerminalComponent } from "@/components/execution/terminal/Terminal";
 import { AgentActivityPanel } from "@/components/execution/agent-activity-panel/AgentActivityPanel";
+import { FileSessionPanel } from "./FileSessionPanel";
 import { SessionUsageMeters } from "./SessionUsageMeters";
-import type { ActiveSessionInfo, ConnectionKey } from "@/types/bindings";
+import type { ConnectionKey } from "@/types/bindings";
+import type { FileSession, MonitorSession } from "@/store/fileSessionStore";
 import {
   useSessionActivity,
   type SessionActivityStatus,
@@ -49,7 +51,7 @@ const STATUS_FALLBACK: Record<SessionActivityStatus, string> = {
 };
 
 function getStatusDot(
-  session: ActiveSessionInfo,
+  session: MonitorSession,
   activityInfo: SessionActivityInfo | undefined,
 ): string {
   if (session.execution_mode !== "acp") return "";
@@ -146,7 +148,7 @@ function RoleChip({
   profileNames,
   tooltip = true,
 }: {
-  session: ActiveSessionInfo;
+  session: MonitorSession;
   profileNames: Record<string, string>;
   /**
    * Off inside the sidebar row, which is itself one big tooltip trigger for names too long to
@@ -181,10 +183,10 @@ function RoleChip({
 const SESSION_ROW_HEIGHT = 56;
 
 interface SessionRowProps {
-  session: ActiveSessionInfo;
+  session: MonitorSession;
   isSelected: boolean;
   onSelect: (sessionId: string) => void;
-  onClose?: (session: ActiveSessionInfo) => void;
+  onClose?: (session: MonitorSession) => void;
   agentIcons?: Record<string, string>;
   agentNames?: Record<string, string>;
   profileNames: Record<string, string>;
@@ -242,7 +244,11 @@ const SessionRow = memo(function SessionRow({
                     />
                   ) : (
                     <div className="w-8 h-8 rounded-md bg-muted/40 border border-border flex items-center justify-center">
-                      <Terminal className="w-4 h-4 text-accent" />
+                      {session.execution_mode === "files" ? (
+                        <FolderOpen className="w-4 h-4 text-accent" />
+                      ) : (
+                        <Terminal className="w-4 h-4 text-accent" />
+                      )}
                     </div>
                   )}
                 </div>
@@ -363,11 +369,11 @@ function ReloadSessionButton({
 }
 
 interface AgentMonitorProps {
-  sessions: ActiveSessionInfo[];
+  sessions: MonitorSession[];
   selectedSessionId: string | null;
   onSelect: (sessionId: string) => void;
   search: string;
-  onClose?: (session: ActiveSessionInfo) => void;
+  onClose?: (session: MonitorSession) => void;
   agentIcons?: Record<string, string>;
   agentNames?: Record<string, string>;
   projectId?: number;
@@ -427,7 +433,7 @@ export function AgentMonitor({
   );
 
   const commitRename = useCallback(
-    (session: ActiveSessionInfo) => {
+    (session: MonitorSession) => {
       if (renameCanceledRef.current) {
         renameCanceledRef.current = false;
         setRenamingSessionId(null);
@@ -467,7 +473,7 @@ export function AgentMonitor({
 
   const selectedSession = sessions.find((s) => s.session_id === selectedSessionId);
 
-  const renderSessionHeader = (session: ActiveSessionInfo) => (
+  const renderSessionHeader = (session: MonitorSession) => (
     <div className="px-4 py-3 border-b border-accent/10 shrink-0">
       <div className="flex items-center justify-between gap-2">
         {session.execution_mode === "acp" && session.agent_id ? (
@@ -488,9 +494,15 @@ export function AgentMonitor({
                 <span className="w-10 h-10 rounded-sm shrink-0 bg-muted/40 border border-border flex items-center justify-center" />
               }
             >
-              <Terminal className="w-5 h-5 text-accent" />
+              {session.execution_mode === "files" ? (
+                <FolderOpen className="w-5 h-5 text-accent" />
+              ) : (
+                <Terminal className="w-5 h-5 text-accent" />
+              )}
             </TooltipTrigger>
-            <TooltipContent>Terminal session</TooltipContent>
+            <TooltipContent>
+              {session.execution_mode === "files" ? "Files session" : "Terminal session"}
+            </TooltipContent>
           </Tooltip>
         )}
         <div className="flex-1 min-w-0">
@@ -542,7 +554,7 @@ export function AgentMonitor({
           </div>
           <div className="flex items-center gap-2 mt-0.5">
             <RoleChip session={session} profileNames={profileNames} />
-            {selectedActivityInfo?.status === "stale" ? (
+            {session.execution_mode !== "files" && selectedActivityInfo?.status === "stale" ? (
               <>
                 <span className="text-xs text-destructive truncate">
                   Connection lost, agent may be stuck
@@ -700,7 +712,31 @@ export function AgentMonitor({
             </div>
           ))}
 
-        {selectedSession?.execution_mode !== "acp" && selectedSession != null && (
+        {/* Always mounted for the same reason, and here that state includes an unsaved draft. */}
+        {sessions
+          .filter((s): s is FileSession => s.execution_mode === "files")
+          .map((s) => (
+            <div
+              key={s.session_id}
+              className={cn(
+                "flex-1 flex flex-col min-h-0 p-[8px_7px_0]",
+                s.session_id !== selectedSessionId && "hidden",
+              )}
+            >
+              <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r inner-glass overflow-hidden">
+                {s.session_id === selectedSessionId && renderSessionHeader(s)}
+                <div className="relative flex-1 min-h-0">
+                  <FileSessionPanel
+                    session={s}
+                    connection={connection}
+                    isActive={s.session_id === selectedSessionId}
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+
+        {selectedSession?.execution_mode === "pty" && (
           <div className="flex-1 flex flex-col min-h-0">
             <div className="flex flex-col flex-1 min-h-0 p-[8px_7px_0]">
               <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r inner-glass overflow-hidden">
