@@ -787,6 +787,12 @@
   animation: arc-spin-cw 0.9s linear infinite;
 }
 
+/* Turned as one finished layer, not redrawn at each angle, which makes thin strokes shimmer. */
+.send-stop[data-play] > .send-stop-plane,
+.send-stop[data-play] > .send-stop-square {
+  will-change: transform;
+}
+
 /* Send to Stop: the plane dips, then flies off the way it points. The arc grows as it leaves and the
    square turns in behind it. */
 .send-stop[data-play="start"] {
@@ -919,12 +925,14 @@
   35% {
     transform: rotate(0deg) scale(0.4);
     opacity: 0;
-    /* No overshoot: past 360 and back, on an icon this small, reads as the plane shaking. */
-    animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+    /* No overshoot and no long tail: on an icon this small, turning back or crawling the last few
+       degrees reads as the plane shaking. */
+    animation-timing-function: cubic-bezier(0.3, 0.6, 0.5, 1);
   }
   55% {
     opacity: 1;
   }
+  78%,
   100% {
     transform: rotate(360deg) scale(1);
     opacity: 1;
