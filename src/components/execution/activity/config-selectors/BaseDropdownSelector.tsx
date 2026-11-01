@@ -17,11 +17,9 @@ export const TRIGGER_CLASS =
 export const ITEM_CLASS =
   "group relative flex w-full cursor-default items-start gap-2 rounded-[10px] py-2 pl-2 pr-2 outline-hidden select-none data-highlighted:bg-foreground/7 data-disabled:pointer-events-none data-disabled:opacity-50";
 
-export const ITEM_TEXT_CLASS =
-  "text-xs font-medium leading-none group-data-selected:text-accent";
+export const ITEM_TEXT_CLASS = "text-xs font-medium leading-none group-data-[selected]:text-accent";
 
-export const DESC_CLASS =
-  "text-[11px] text-muted-foreground leading-snug";
+export const DESC_CLASS = "text-[11px] text-muted-foreground leading-snug";
 
 export const GLASS_CONTENT_CLASS =
   "bg-card/75 dark:bg-card/25 backdrop-blur-[24px] backdrop-saturate-150 border border-foreground/9 shadow-pop ring-0";
