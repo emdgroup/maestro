@@ -1316,7 +1316,8 @@
 /* Opening a project from Home: its tile and the project's window share `project-zoom`, so the
    browser grows one into the other (projectTransition.ts). The snapshots keep their top-left
    corner and are cropped, not stretched, while the box between them changes shape. */
-::view-transition-group(project-zoom) {
+::view-transition-group(project-zoom),
+::view-transition-group(task-zoom) {
   animation-duration: 0.4s;
   animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -1330,6 +1331,37 @@
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation-duration: 0.4s;
+}
+/* A card and a dialog are too different in size to scale into each other, the card's text would
+   grow to headline size. So neither scales: the box grows and clips both at their real size. */
+::view-transition-group(task-zoom) {
+  overflow: clip;
+  border-radius: 18px;
+}
+::view-transition-old(task-zoom),
+::view-transition-new(task-zoom) {
+  width: auto;
+  height: auto;
+  object-fit: none;
+  object-position: left top;
+  animation-duration: 0.2s;
+}
+/* The new theme spreads over the old one from the toggle (ThemeToggle.tsx), so neither fades. */
+.theme-reveal::view-transition-old(root),
+.theme-reveal::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+/* Once, when the Usage chart first draws. */
+.usage-bar-in {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: usage-bar-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+@keyframes usage-bar-in {
+  from {
+    transform: scaleY(0);
+  }
 }
 .home-working {
   color: var(--accent);

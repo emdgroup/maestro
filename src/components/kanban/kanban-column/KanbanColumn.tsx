@@ -1,5 +1,6 @@
 import { Task, TaskStatus } from "@/types/bindings";
 import { TaskCard } from "../task-card/TaskCard";
+import { AnimatePresence, motion } from "framer-motion";
 import { useDroppable } from "@dnd-kit/react";
 import { CollisionPriority } from "@dnd-kit/abstract";
 import { pointerIntersection } from "@dnd-kit/collision";
@@ -97,16 +98,30 @@ export function KanbanColumn({
         </h3>
         <span
           className={cn(
-            "text-[22px] leading-none font-semibold tracking-[-0.025em] tabular-nums",
+            "relative overflow-hidden text-[22px] leading-none font-semibold tracking-[-0.025em] tabular-nums",
             tasks.length ? "text-(--column-color)" : "text-muted-foreground/40",
           )}
         >
-          {tasks.length}
+          <AnimatePresence mode="popLayout" initial={false}>
+            <motion.span
+              key={tasks.length}
+              className="inline-block"
+              initial={{ y: "100%", opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: "-100%", opacity: 0 }}
+              transition={{ duration: 0.25, ease: [0.2, 0.8, 0.2, 1] }}
+            >
+              {tasks.length}
+            </motion.span>
+          </AnimatePresence>
         </span>
       </div>
       <div
         ref={ref}
-        className={cn("flex-1 overflow-y-auto px-2.5 pt-0.5 pb-2.5 transition-all duration-150")}
+        data-column-scroll={status}
+        className={cn(
+          "relative flex-1 overflow-y-auto px-2.5 pt-0.5 pb-2.5 transition-all duration-150",
+        )}
       >
         {tasks.length === 0 && COLUMN_EMPTY_STATE[status] && (
           <div className="border-[1.5px] border-dashed border-foreground/18 rounded-[14px] p-5 flex flex-col items-center gap-2 text-center w-full text-muted-foreground">
