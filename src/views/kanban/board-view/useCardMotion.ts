@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { useLayoutEffect, useRef, type RefObject } from "react";
 
 const EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
 /** dnd-kit is still placing the dropped card this long after the drop. */
@@ -98,17 +98,18 @@ export function useCardMotion(
   const spots = useRef(new Map<number, CardSpot>());
   const seen = useRef(new Set<number>());
   const project = useRef<number | null>(null);
+  const wasDragging = useRef(false);
   const settleUntil = useRef(0);
-
-  useEffect(() => {
-    if (!dragging) settleUntil.current = performance.now() + DROP_SETTLE_MS;
-  }, [dragging]);
 
   // No dependencies: every commit can have moved a card, and this reads only offsets.
   useLayoutEffect(() => {
     const root = rootRef.current;
     const layer = layerRef.current;
     if (!root || !layer) return;
+    // Here and not in an effect, which would run after the commit of the drop itself: the cards the
+    // drag already swapped would slide into place a second time.
+    if (wasDragging.current && !dragging) settleUntil.current = performance.now() + DROP_SETTLE_MS;
+    wasDragging.current = dragging;
     const quiet =
       dragging ||
       performance.now() < settleUntil.current ||
