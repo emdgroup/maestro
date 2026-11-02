@@ -2,7 +2,7 @@
 
 Hold **Ctrl** for about a second to see the shortcuts drawn over the buttons they trigger.
 
-<img src="../../docs/assets/shortcut-hints.webp" alt="The board toolbar with Ctrl+F and Ctrl+N hints drawn over the search box and New Task" width="960" />
+<img src="../../docs/assets/shortcut-hints.webp" alt="The board toolbar with Ctrl+F, Ctrl+1 to Ctrl+4, Ctrl+, and Ctrl+N hints drawn over the controls they trigger" width="960" />
 
 | Where                     | Keys            | Action                                 |
 | ------------------------- | --------------- | -------------------------------------- |
@@ -16,5 +16,8 @@ Hold **Ctrl** for about a second to see the shortcuts drawn over the buttons the
 | Agents                    | Ctrl+N          | New session                            |
 | Agents                    | Ctrl+W          | Close the selected session             |
 | Agents                    | Ctrl+H          | Session history                        |
+| Agents                    | Shift+Tab       | Next agent mode                        |
+| Agents                    | Esc             | Cancel the agent's turn                |
+| Files editor              | Ctrl+S          | Save the file                          |
 | Workspaces                | Ctrl+N          | New worktree                           |
 | Workspaces                | Ctrl+R          | Refresh                                |

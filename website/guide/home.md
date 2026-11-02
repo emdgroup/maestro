@@ -2,9 +2,11 @@
 
 Maestro opens on Home, a board of every machine your agents run on and every project they work in. Projects keep running in the background server whether or not a window has them open, so Home shows their live state without opening any of them.
 
-<img src="../../docs/assets/connections.webp" alt="Maestro's Home dashboard with the scoreboard, the Add a connection and Integrations panels, and This computer's project tiles" width="960" />
+<img src="../../docs/assets/connections.webp" alt="Maestro's Home dashboard with the week's cost, the scoreboard, the Add a connection and Integrations panels, This computer's project tiles, and an SSH host and a WSL distro not connected" width="960" />
 
-At the top, three counts add up every connected machine: agents **working**, things that **need you**, and tasks **to review**. The cog in the corner opens the application settings, and the version in the bottom right corner shows when an update is ready.
+At the top, three counts add up every connected machine: agents **working**, things that **need you**, and tasks **to review**. Beside them, the week's cost opens [Usage](#usage).
+
+The corner holds the global accent colour, the light and dark theme toggle, and the cog for the application settings. The version in the bottom right corner opens the update card: **Check for updates**, **Install** when an update is ready, and the **Auto-update** switch. The version number itself links to its release notes on GitHub.
 
 ## Connections
 
@@ -88,6 +90,16 @@ Integrations connect Maestro to issue trackers and code hosts. You add credentia
 
 The **Integrations** panel shows one tile per provider, with a count when you have several accounts on it. Hover a tile, or click it to keep it open, to see its accounts; click an account for its details, **Edit credentials** and **Disconnect**. An account the `gh` CLI provides is managed there instead. **+** adds an integration, and **Add another account** adds one more of the same provider.
 
-<img src="../../docs/assets/integrations.webp" alt="The Integrations panel with a provider's hover card listing its account" width="960" />
+<img src="../../docs/assets/integrations.webp" alt="The Integrations panel with GitHub's hover card listing its account" width="960" />
 
 Import is one way: an issue becomes a task, but Maestro does not write status back to the tracker. Each project picks its provider under [Settings, Issue tracking](./settings#issue-tracking) and [Git](./settings#git). Tokens are kept in your operating system's keychain.
+
+## Usage
+
+**Usage** shows what your agents cost and how many tokens they used, across every connection and project. Open it from the week's cost at the top of Home, and go back with **‹ Home**.
+
+<img src="../../docs/assets/usage.webp" alt="The Usage view zoomed into one day, with the cost and token tiles, tokens per hour split by model, and the projects and models breakdowns" width="960" />
+
+The range menu in the title picks the last hour, 24 hours, 7 days, 30 days, 12 months, all time, or days you choose. **Filter** narrows it to some projects or models. The **Cost** and **Tokens** tiles switch the chart between the two, shown **Over time** or **Cumulative** and split by connection or agent, and tokens also by model or kind of token. Click a day or month in the chart to zoom into it, and click a model in the legend to filter by it.
+
+Below, a heatmap shows when your agents work, by hour and weekday for a week or by day for longer ranges, and the breakdowns list the cost and tokens per project and the tokens per model. Cost is what the agent reports: on a subscription it is the API-price equivalent, not a charge. A connection that is not connected shows its usage up to the last time it was, until you **Connect** it again.

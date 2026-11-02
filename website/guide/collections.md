@@ -51,9 +51,11 @@ The **Templates** tab starts an automation from a ready-made prompt. Twelve are 
 
 ## Prompts
 
-A prompt is text you hand to agents again and again. Click a card to copy it. Star it to keep it at the top, and share it to list it in every project rather than this one alone; deleting a shared prompt removes it everywhere. Filter by **Favorites**, **Shared**, **This project** or by tag.
+A prompt is text you hand to agents again and again. Prompts sit in two columns: **This project**, stored with the project, and **Shared**, listed in every project. Click a card to copy its text. Star it to keep it at the top, and filter by **All**, **Favorites**, a tag, or **Search prompts…**.
 
-<img src="../../docs/assets/prompts.webp" alt="The Prompts section with two favorite prompts, tag filters and shared markers" width="960" />
+To use a prompt in the other column too, press and hold its card, then drag it across, or pick **Copy to shared** or **Copy to this project** from its **⋯** menu. The copy is independent of the original, and deleting a shared prompt removes it from every project.
+
+<img src="../../docs/assets/prompts.webp" alt="The Prompts section with This project and Shared columns, starred prompts and tag filters" width="960" />
 
 ## Skills
 
