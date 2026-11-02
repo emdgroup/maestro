@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.44.0](https://github.com/emdgroup/maestro/compare/v0.43.1...v0.44.0) (2026-11-02)
+
+
+### Features
+
+* **agents:** add a Files session for browsing a checkout on its own ([df535b7](https://github.com/emdgroup/maestro/commit/df535b7939247fb03ed8a207e2e2396aaa9117c3))
+* animate cards moving on the board and into the task dialog ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* animate list rows, file tree folders, pills, ticks and the Usage total ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* animate the favorite star, Usage bars and the theme toggle ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* animate the remaining expand and collapse sections ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* copy a prompt on click and drag it on a long press ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* make the accent the primary colour ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* open tool call rows by height so the stream below does not jump ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* play the change between Send and Stop ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* put tooltips and toasts on the app's glass ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* slide the active indicator on the filter, tabs and Collections nav ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* slide the thumb of every segmented switch ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+
+
+### Bug Fixes
+
+* do not offer Execute on a queued loop with unsaved edits ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* do not replay the swap when a dragged card is dropped ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* keep the session panel in place when switching to a terminal ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* match ScrollArea's scrollbar to the app's and clear it in History ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* match the compose bar dropdown hover to the other dropdowns ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* remove the line around a file card's corners ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* seat task cards on the column surface until hovered ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* separate the session history sections with space, not lines ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* show the selected option in the compose bar dropdowns ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+* spread the theme change over the whole window ([7ad6b3a](https://github.com/emdgroup/maestro/commit/7ad6b3a97b214778964d3a4f86a500ad99b6070f))
+
 ## [0.43.1](https://github.com/emdgroup/maestro/compare/v0.43.0...v0.43.1) (2026-10-30)
 
 
