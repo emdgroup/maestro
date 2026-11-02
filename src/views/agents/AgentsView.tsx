@@ -580,6 +580,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           <AlertDialogFooter>
             <AlertDialogCancel>Keep editing</AlertDialogCancel>
             <AlertDialogAction
+              variant="destructive"
               onClick={() => {
                 if (closePrompt) closeFileSession(closePrompt.session_id);
                 setClosePrompt(null);

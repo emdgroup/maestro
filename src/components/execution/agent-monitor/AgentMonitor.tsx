@@ -719,7 +719,7 @@ export function AgentMonitor({
             <div
               key={s.session_id}
               className={cn(
-                "flex-1 flex flex-col min-h-0 p-[8px_7px_0]",
+                "flex-1 flex flex-col min-h-0",
                 s.session_id !== selectedSessionId && "hidden",
               )}
             >
