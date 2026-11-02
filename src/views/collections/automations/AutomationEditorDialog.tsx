@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
 import { Ban, CalendarClock, ChevronDown, Webhook, type LucideIcon } from "lucide-react";
 import {
@@ -9,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
-import { Button, buttonVariants } from "@/ui/button";
+import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { MarkdownEditor } from "@/components/kanban/shared/MarkdownEditor";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
@@ -198,6 +199,7 @@ function TriggerSection({
         spacing={1}
         className={`w-full ${SEGMENT_GROUP}`}
       >
+        <SegmentThumb />
         {TRIGGERS.map((option) => (
           <ToggleGroupItem
             key={option.value}
@@ -522,7 +524,6 @@ export function AutomationEditorDialog({
             Cancel
           </Button>
           <Button
-            className={buttonVariants({ variant: "accent" })}
             disabled={!canSave}
             onClick={() => {
               onSave({

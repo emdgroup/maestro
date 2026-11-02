@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
 import {
   PanelLeft,
   ExternalLink,
@@ -593,6 +594,7 @@ export function WorkspaceFilesPanel({
                       "flex items-center gap-0.5 shrink-0 @max-[280px]:hidden",
                     )}
                   >
+                    <SegmentThumb />
                     {MARKDOWN_LAYOUTS.map(({ value, Icon, label }) => {
                       const unavailable = layoutUnavailable(value);
                       return (
@@ -605,9 +607,9 @@ export function WorkspaceFilesPanel({
                               aria-label={label}
                               aria-pressed={effectiveLayout === value}
                               className={cn(
-                                "inline-flex items-center justify-center size-6 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none",
+                                "relative inline-flex items-center justify-center size-6 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none",
                                 effectiveLayout === value
-                                  ? "text-foreground bg-card/90 shadow-sm"
+                                  ? "text-foreground"
                                   : "text-muted-foreground hover:text-foreground",
                               )}
                             >
@@ -736,10 +738,15 @@ export function WorkspaceFilesPanel({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => conflict && handleReloadFromDisk(conflict.onDisk)}>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => conflict && handleReloadFromDisk(conflict.onDisk)}
+            >
               Reload, discarding mine
             </AlertDialogAction>
-            <AlertDialogAction onClick={() => void handleOverwrite()}>Overwrite</AlertDialogAction>
+            <AlertDialogAction variant="destructive" onClick={() => void handleOverwrite()}>
+              Overwrite
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -760,6 +767,7 @@ export function WorkspaceFilesPanel({
           <AlertDialogFooter>
             <AlertDialogCancel>Keep editing</AlertDialogCancel>
             <AlertDialogAction
+              variant="destructive"
               onClick={() => {
                 const prompt = discardPrompt;
                 discardDraft();
@@ -821,7 +829,11 @@ export function WorkspaceFilesPanel({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deletePending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction disabled={deletePending} onClick={() => void handleDeleteConfirm()}>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deletePending}
+              onClick={() => void handleDeleteConfirm()}
+            >
               {deletePending && <Spinner className="w-3.5 h-3.5" />}
               Delete
             </AlertDialogAction>

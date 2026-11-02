@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 
 // An expanded command label reaches for the theme to pick a syntax palette.
@@ -50,13 +50,13 @@ describe("tool call output is built only when open", () => {
     expect(container.textContent).not.toContain(`${BODY} c`);
   });
 
-  it("tears the body back down on collapse", () => {
+  it("tears the body back down on collapse", async () => {
     const { container } = render(<ToolCallTimeline items={items} />);
     fireEvent.click(screen.getByText(/two\.ts/));
     expect(container.querySelectorAll("pre").length).toBe(1);
 
-    fireEvent.click(screen.getByText(/two\.ts/));
-    expect(container.querySelectorAll("pre").length).toBe(0);
+    fireEvent.click(screen.getByText(/two.ts/));
+    await waitFor(() => expect(container.querySelectorAll("pre").length).toBe(0));
     expect(container.textContent).not.toContain(BODY);
   });
 

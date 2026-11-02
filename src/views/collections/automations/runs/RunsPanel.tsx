@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { AnimatePresence } from "framer-motion";
 import { History, Settings2 } from "lucide-react";
+import { RevealRow } from "@/components/common/Reveal";
 import { Button, buttonVariants } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Input } from "@/ui/input";
@@ -218,24 +220,31 @@ export function RunsPanel({
             </p>
           </div>
         ) : (
-          days.map(([day, runs]) => (
-            <div key={day} className="space-y-1.5">
-              <div className="text-[9.5px] font-medium uppercase tracking-wide text-muted-foreground/70">
-                {day}
-              </div>
-              {runs.map((entry) => (
-                <RunCard
-                  key={entry.run.id}
-                  entry={entry}
-                  layout="card"
-                  now={now}
-                  onJoin={() => onJoin(entry)}
-                  onShow={() => onShow(entry)}
-                  onDelete={() => onDelete(entry)}
-                />
-              ))}
-            </div>
-          ))
+          <AnimatePresence initial={false}>
+            {days.map(([day, runs]) => (
+              <RevealRow key={day}>
+                <div className="space-y-1.5">
+                  <div className="text-[9.5px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                    {day}
+                  </div>
+                  <AnimatePresence initial={false}>
+                    {runs.map((entry) => (
+                      <RevealRow key={entry.run.id}>
+                        <RunCard
+                          entry={entry}
+                          layout="card"
+                          now={now}
+                          onJoin={() => onJoin(entry)}
+                          onShow={() => onShow(entry)}
+                          onDelete={() => onDelete(entry)}
+                        />
+                      </RevealRow>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </RevealRow>
+            ))}
+          </AnimatePresence>
         )}
       </div>
     </div>

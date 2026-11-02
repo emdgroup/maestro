@@ -1,10 +1,10 @@
 import { useContext, useState } from "react";
+import { Reveal } from "@/components/common/Reveal";
 import {
   ArrowRightLeft,
   Bot,
   Box,
   Brain,
-  ChevronDown,
   ChevronRight,
   FileText,
   FilePlus,
@@ -557,21 +557,21 @@ export function ToolCallTimeline({ items, inline }: { items: ToolCallItem[]; inl
                     />
                   )}
                   <StatusWord tc={tc} />
-                  {hasContent &&
-                    (isExpanded ? (
-                      <ChevronDown
-                        className={cn(
-                          "size-3 shrink-0 text-muted-foreground",
-                          showCommand && "mt-1",
-                        )}
-                      />
-                    ) : (
-                      <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
-                    ))}
+                  {hasContent && (
+                    <ChevronRight
+                      className={cn(
+                        "size-3 shrink-0 text-muted-foreground transition-transform duration-200",
+                        isExpanded && "rotate-90",
+                        showCommand && "mt-1",
+                      )}
+                    />
+                  )}
                 </div>
                 <RowMeta tc={tc} prefix={isFileRow ? titleSuffix(tc) : null} />
               </div>
-              {isExpanded && <RowBody tc={tc} />}
+              <Reveal open={isExpanded}>
+                <RowBody tc={tc} />
+              </Reveal>
             </div>
           </div>
         );

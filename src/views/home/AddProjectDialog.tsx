@@ -12,6 +12,7 @@ import { ProviderRepoPicker } from "@/views/home/provider-repo-picker/ProviderRe
 import type { HomeConnection } from "./ConnectionPanel";
 import { HomeSheet } from "./HomeSheet";
 import { Segmented } from "./Segmented";
+import { Button } from "@/ui/button";
 
 type Choice = "open" | "clone" | "create";
 
@@ -38,8 +39,7 @@ const CHOICES: { choice: Choice; title: string; line: string; Icon: typeof Plus 
   { choice: "create", title: "Start fresh", line: "A new, empty repository", Icon: Plus },
 ];
 
-const BUTTON =
-  "h-9 shrink-0 cursor-pointer rounded-xl bg-primary px-4 text-xs text-primary-foreground disabled:opacity-50";
+const BUTTON = "h-9 cursor-pointer rounded-xl px-4 text-xs";
 const FIELD = "home-field h-9 rounded-xl px-3 font-mono text-xs";
 
 /** The connection's home folder, where a new project starts out. */
@@ -167,7 +167,7 @@ function AddProjectSheet({
               >
                 Browse…
               </button>
-              <button
+              <Button
                 type="button"
                 disabled={busy || !folder.trim()}
                 onClick={() => {
@@ -178,7 +178,7 @@ function AddProjectSheet({
                 className={BUTTON}
               >
                 Open
-              </button>
+              </Button>
             </div>
           )}
           {choice === "clone" && (
@@ -227,7 +227,7 @@ function AddProjectSheet({
                   onChange={(event) => setInto(event.target.value)}
                   className={cn(FIELD, "flex-1")}
                 />
-                <button
+                <Button
                   type="button"
                   disabled={busy || !repoName || !into.trim()}
                   onClick={() =>
@@ -245,7 +245,7 @@ function AddProjectSheet({
                   className={BUTTON}
                 >
                   Clone
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -274,7 +274,7 @@ function AddProjectSheet({
                 >
                   Browse…
                 </button>
-                <button
+                <Button
                   type="button"
                   disabled={busy || !name.trim() || !into.trim()}
                   onClick={() =>
@@ -291,7 +291,7 @@ function AddProjectSheet({
                   className={BUTTON}
                 >
                   Create
-                </button>
+                </Button>
               </div>
             </div>
           )}

@@ -467,7 +467,7 @@ export function TaskReviewPanel({
                 <TooltipTrigger
                   render={
                     <Button
-                      variant={defaultAction === "approve" ? "accent" : "outline"}
+                      variant={defaultAction === "approve" ? "default" : "outline"}
                       size="sm"
                       aria-disabled={approveBlocked || undefined}
                       className={cn(approveBlocked && "opacity-50")}
@@ -487,7 +487,7 @@ export function TaskReviewPanel({
                 <DropdownMenuTrigger
                   render={
                     <Button
-                      variant={defaultAction === "approve" ? "accent" : "outline"}
+                      variant={defaultAction === "approve" ? "default" : "outline"}
                       size="sm"
                       className="px-1.5!"
                     >

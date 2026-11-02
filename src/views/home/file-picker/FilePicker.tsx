@@ -21,6 +21,7 @@ import {
   useDockerDirectories,
   useDockerHome,
 } from "@/services/connection.service";
+import { Button } from "@/ui/button";
 
 interface FilePickerProps {
   connection?: SshConnection | null;
@@ -388,15 +389,15 @@ export function FilePicker({
             </p>
           </div>
 
-          <button
+          <Button
             type="button"
             onClick={handleSelectCurrentDirectory}
             disabled={loading || externalLoading || navigation.isDrivesRoot}
-            className="flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl bg-primary px-4 text-xs text-primary-foreground disabled:opacity-50"
+            className="h-9 cursor-pointer rounded-xl px-4 text-xs"
           >
             <FolderOpen className="size-3.5" />
             {externalLoading ? "Opening…" : "Choose"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

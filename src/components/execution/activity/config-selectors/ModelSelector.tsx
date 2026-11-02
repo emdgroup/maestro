@@ -53,7 +53,7 @@ export function ModelSelector({ option, value, onChange, disabled }: SelectorPro
                   {opt.name}
                 </SelectPrimitive.ItemText>
                 {cost && (
-                  <span className="ml-auto text-[10px] text-muted-foreground/60 group-data-highlighted:text-accent-foreground/60 shrink-0">
+                  <span className="ml-auto text-[10px] text-muted-foreground/60 shrink-0">
                     {cost}
                   </span>
                 )}

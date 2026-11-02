@@ -299,7 +299,11 @@ function App() {
   }
 
   if (!currentProject) {
-    return <HomeView />;
+    return (
+      <TooltipProvider>
+        <HomeView />
+      </TooltipProvider>
+    );
   }
 
   const fallback = (

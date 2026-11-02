@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
 import {
   PanelLeft,
   ChevronRight,
@@ -220,15 +221,17 @@ export function ReviewChangesPanelCompact({
           sendDisabled={annotationSendDisabled}
         />
         <div className="w-px h-4 bg-border shrink-0 mx-1" />
-        <div className="flex items-center gap-0.5 shrink-0 rounded-xl border border-foreground/10 bg-background/45 p-[3px]">
+        <div className="relative flex items-center gap-0.5 shrink-0 rounded-xl border border-foreground/10 bg-background/45 p-[3px]">
+          <SegmentThumb />
           <Tooltip>
             <TooltipTrigger
               type="button"
               onClick={() => setDiffViewMode(DiffModeEnum.Unified)}
+              aria-pressed={diffViewMode === DiffModeEnum.Unified}
               className={cn(
-                "p-1 rounded-lg transition-colors",
+                "relative p-1 rounded-lg transition-colors",
                 diffViewMode === DiffModeEnum.Unified
-                  ? "text-foreground bg-card/90 shadow-sm"
+                  ? "text-foreground"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -240,10 +243,11 @@ export function ReviewChangesPanelCompact({
             <TooltipTrigger
               type="button"
               onClick={() => setDiffViewMode(DiffModeEnum.SplitGitHub)}
+              aria-pressed={diffViewMode !== DiffModeEnum.Unified}
               className={cn(
-                "p-1 rounded-lg transition-colors",
+                "relative p-1 rounded-lg transition-colors",
                 diffViewMode !== DiffModeEnum.Unified
-                  ? "text-foreground bg-card/90 shadow-sm"
+                  ? "text-foreground"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >

@@ -254,6 +254,7 @@ export function WorktreeSyncActions({
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setConfirmPull(false)}>Cancel</AlertDialogCancel>
             <AlertDialogAction
+              variant="outline"
               onClick={() => {
                 setConfirmPull(false);
                 runPull();

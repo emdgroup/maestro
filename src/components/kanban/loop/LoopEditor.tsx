@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { DragDropProvider } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { move } from "@dnd-kit/helpers";
@@ -200,7 +201,8 @@ export function CheckEditor({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <div className="flex gap-1 rounded-xl border border-foreground/10 bg-background/45 p-[3px] text-xs">
+        <div className="relative flex gap-1 rounded-xl border border-foreground/10 bg-background/45 p-[3px] text-xs">
+          <SegmentThumb />
           {PICKED_KINDS.map((kind) => {
             const { icon: Icon, name } = CHECK_KINDS[kind];
             return (
@@ -210,9 +212,9 @@ export function CheckEditor({
                 aria-pressed={check.kind === kind}
                 onClick={() => onChange({ kind })}
                 className={cn(
-                  "flex items-center gap-1 rounded-lg px-2 py-1",
+                  "relative flex items-center gap-1 rounded-lg px-2 py-1",
                   check.kind === kind
-                    ? "bg-card/90 font-medium text-accent shadow-sm"
+                    ? "font-medium text-accent"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >

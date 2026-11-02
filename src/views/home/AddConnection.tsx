@@ -19,6 +19,7 @@ import { connectionKeyId, useHomeStore } from "@/store/homeStore";
 import { HomeSheet } from "./HomeSheet";
 import { Segmented } from "./Segmented";
 import { attach } from "./useConnectionActions";
+import { Button } from "@/ui/button";
 
 type Kind = "ssh" | "wsl" | "docker";
 type Auth = "agent" | "key" | "password";
@@ -29,7 +30,7 @@ const KINDS: { kind: Kind; label: string; Icon: typeof Server }[] = [
   { kind: "docker", label: "Container", Icon: Container },
 ];
 
-const BUTTON = "h-9 cursor-pointer rounded-xl bg-primary px-4 text-xs text-primary-foreground";
+const BUTTON = "h-9 cursor-pointer rounded-xl px-4 text-xs";
 
 /** The checklist an added connection goes through, read from its phase on Home. */
 function Checklist({
@@ -185,14 +186,14 @@ function SshForm({
         <span className="text-[11px] text-muted-foreground">
           Maestro installs its server on the host the first time.
         </span>
-        <button
+        <Button
           type="button"
           disabled={!address.trim()}
           onClick={submit}
-          className={cn(BUTTON, "ml-auto disabled:opacity-50")}
+          className={cn(BUTTON, "ml-auto")}
         >
           Connect
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -379,9 +380,9 @@ export function AddConnectionPanel() {
             <Checklist target={connecting.target ?? ""} host={connecting.host} error={error} />
             {error && (
               <div className="mt-4 flex justify-end">
-                <button type="button" className={BUTTON} onClick={() => setConnecting(null)}>
+                <Button type="button" className={BUTTON} onClick={() => setConnecting(null)}>
                   Back
-                </button>
+                </Button>
               </div>
             )}
           </div>

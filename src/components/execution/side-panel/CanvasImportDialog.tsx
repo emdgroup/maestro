@@ -66,7 +66,9 @@ export function CanvasImportDialog({
               <AlertDialogAction variant="outline" onClick={() => onChoice("keepBoth")}>
                 Keep both
               </AlertDialogAction>
-              <AlertDialogAction onClick={() => onChoice("replace")}>Replace</AlertDialogAction>
+              <AlertDialogAction variant="destructive" onClick={() => onChoice("replace")}>
+                Replace
+              </AlertDialogAction>
             </AlertDialogFooter>
           </>
         )}

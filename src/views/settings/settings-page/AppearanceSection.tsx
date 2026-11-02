@@ -154,7 +154,6 @@ export function AppearanceSection() {
             </div>
           </div>
           <Switch
-            tone="accent"
             checked={appSettings?.native_window_frame ?? false}
             onCheckedChange={handleNativeWindowFrameChange}
             className="data-unchecked:bg-muted data-unchecked:border-border/50"
@@ -173,7 +172,6 @@ export function AppearanceSection() {
           </div>
         </div>
         <Switch
-          tone="accent"
           checked={reduceMotion}
           onCheckedChange={(checked) => void setReduceMotion(checked)}
           className="data-unchecked:bg-muted data-unchecked:border-border/50"
@@ -191,7 +189,6 @@ export function AppearanceSection() {
         {/* Named explicitly: the row's title is a sibling `div`, so nothing associates it with
             the control and a screen reader would announce an unlabelled switch. */}
         <Switch
-          tone="accent"
           aria-label="Terminal follows app theme"
           checked={terminalColorMode === "follow_theme"}
           onCheckedChange={handleTerminalFollowsThemeChange}

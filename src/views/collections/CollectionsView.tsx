@@ -1,5 +1,6 @@
 import { useState, type ComponentType } from "react";
 import { BookOpen, ChevronDown, Cog, LayoutTemplate, MessageSquareText, Plus } from "lucide-react";
+import { motion } from "framer-motion";
 import { McpIcon } from "@/components/common/icons/McpIcon";
 import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
@@ -44,12 +45,19 @@ function NavItem({
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-left",
-        active ? "bg-accent/10 text-foreground" : "text-muted-foreground hover:bg-foreground/7",
+        "relative flex items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-left",
+        active ? "text-foreground" : "text-muted-foreground hover:bg-foreground/7",
       )}
     >
-      <Icon className={cn("size-3.5 shrink-0", active && "text-accent")} />
-      <span className="truncate text-xs font-medium">{label}</span>
+      {active && (
+        <motion.span
+          layoutId="collections-nav-pill"
+          className="absolute inset-0 rounded-[10px] bg-accent/10"
+          transition={{ type: "spring", stiffness: 400, damping: 35 }}
+        />
+      )}
+      <Icon className={cn("relative size-3.5 shrink-0", active && "text-accent")} />
+      <span className="relative truncate text-xs font-medium">{label}</span>
     </button>
   );
 }
@@ -122,7 +130,6 @@ export function CollectionsView({
         <span className="text-sm font-medium">{TITLES[section]}</span>
         {section === "skills" ? (
           <Button
-            variant="accent"
             size="sm"
             className="h-8 rounded-xl px-4 bg-clip-border text-xs"
             onClick={() => openSkillEditor(null)}
@@ -132,7 +139,6 @@ export function CollectionsView({
           </Button>
         ) : section === "mcp" ? (
           <Button
-            variant="accent"
             size="sm"
             className="h-8 rounded-xl px-4 bg-clip-border text-xs"
             onClick={() => setMcpDraft({ editing: null, seed: null })}
@@ -142,7 +148,6 @@ export function CollectionsView({
           </Button>
         ) : section === "prompts" ? (
           <Button
-            variant="accent"
             size="sm"
             className="h-8 rounded-xl px-4 bg-clip-border text-xs"
             onClick={() => openPromptEditor(null)}
@@ -153,7 +158,6 @@ export function CollectionsView({
         ) : (
           <ButtonGroup>
             <Button
-              variant="accent"
               size="sm"
               className="h-8 rounded-xl px-4 bg-clip-border text-xs"
               onClick={() => openEditor(null)}
@@ -164,13 +168,7 @@ export function CollectionsView({
             <DropdownMenu>
               <DropdownMenuTrigger
                 aria-label="New automation from a template"
-                render={
-                  <Button
-                    variant="accent"
-                    size="sm"
-                    className="h-8 rounded-r-xl! bg-clip-border px-1.5!"
-                  />
-                }
+                render={<Button size="sm" className="h-8 rounded-r-xl! bg-clip-border px-1.5!" />}
               >
                 <ChevronDown className="size-3.5" />
               </DropdownMenuTrigger>

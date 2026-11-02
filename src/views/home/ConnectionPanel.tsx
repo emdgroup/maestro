@@ -23,6 +23,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { AddProjectTile, ProjectChip, ProjectTile, projectStatus } from "./ProjectTile";
 import type { ProjectCard } from "./ProjectTile";
 import { attach, connect, signIn } from "./useConnectionActions";
+import { Button } from "@/ui/button";
 
 /** A connection as Home lists it. */
 export interface HomeConnection {
@@ -132,12 +133,9 @@ function SignInForm({
           aria-label={`Password for ${host}`}
           className="home-field h-10 flex-1 rounded-xl px-3.5 text-sm"
         />
-        <button
-          type="submit"
-          className="h-10 cursor-pointer rounded-xl bg-primary px-4 text-xs text-primary-foreground"
-        >
+        <Button type="submit" className="h-10 cursor-pointer rounded-xl px-4 text-xs">
           Sign in
-        </button>
+        </Button>
         <button
           type="button"
           onClick={() => setPhase(connection.id, { kind: "idle" })}

@@ -8,6 +8,7 @@ import { KanbanColumn } from "@/components/kanban/kanban-column/KanbanColumn";
 import { ExecutionTerminal } from "@/components/execution/terminal/ExecutionTerminal";
 import { useUpdateTask } from "@/services/task.service";
 import { priorityAfterDrop } from "@/lib/queue-priority";
+import { useCardMotion } from "./useCardMotion";
 
 const BOARD_STATUSES: Array<TaskStatus> = ["Planning", "Queue", "InProgress", "Review", "Done"];
 
@@ -86,8 +87,13 @@ export function BoardView({ tasks }: BoardViewProps) {
     return tasks.filter((t) => t.status === status);
   };
 
+  const rootRef = useRef<HTMLDivElement>(null);
+  const flightsRef = useRef<HTMLDivElement>(null);
+  useCardMotion(rootRef, flightsRef, tasks[0]?.project_id ?? null, isDragActive);
+
   return (
-    <div className="h-full flex flex-col">
+    <div ref={rootRef} className="relative h-full flex flex-col">
+      <div ref={flightsRef} className="absolute inset-0 z-10 overflow-hidden pointer-events-none" />
       <DragDropProvider
         onDragStart={(event) => {
           const taskId = event.operation.source?.id as number;
@@ -177,7 +183,7 @@ export function BoardView({ tasks }: BoardViewProps) {
         </div>
         <DragOverlay>
           {draggingTask && (
-            <div className="home-pane glass-volume rounded-[14px] border-accent/50! p-3 rotate-[-1.5deg] scale-[1.03] pointer-events-none">
+            <div className="home-pane glass-volume glass-volume-lifted rounded-[14px] border-accent/50! p-3 rotate-[-1.5deg] scale-[1.03] pointer-events-none">
               <p className="text-sm font-medium text-foreground line-clamp-2">
                 {draggingTask.title}
               </p>

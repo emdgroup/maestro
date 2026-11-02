@@ -101,7 +101,6 @@ export function BackgroundServerSection({ connection }: { connection: Connection
             </p>
           </div>
           <Switch
-            tone="accent"
             id="server-autostart"
             checked={server.autostart !== "off"}
             disabled={autostart.isPending}

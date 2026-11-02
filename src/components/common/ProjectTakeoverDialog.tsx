@@ -77,7 +77,9 @@ export function ProjectTakeoverDialog() {
           <Button variant="outline" onClick={() => respond(false)}>
             Keep
           </Button>
-          <AlertDialogAction onClick={() => respond(true)}>Give up</AlertDialogAction>
+          <AlertDialogAction variant="destructive" onClick={() => respond(true)}>
+            Give up
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

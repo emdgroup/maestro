@@ -1,5 +1,6 @@
 import { useContext, useState } from "react";
-import { ChevronDown, ChevronRight, Wrench } from "lucide-react";
+import { ChevronRight, Wrench } from "lucide-react";
+import { Reveal } from "@/components/common/Reveal";
 import { cn } from "@/lib/utils";
 import { DynamicIcon } from "@/ui/dynamic-icon";
 import { CommandLabel } from "./CommandLabel";
@@ -187,20 +188,23 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
           )}
         >
           {fileLine || line}
-          {expandable &&
-            (open ? (
-              <ChevronDown className={cn("size-3 shrink-0", showCommand && "mt-1")} />
-            ) : (
-              <ChevronRight className="size-3 shrink-0" />
-            ))}
+          {expandable && (
+            <ChevronRight
+              className={cn(
+                "size-3 shrink-0 transition-transform duration-200",
+                open && "rotate-90",
+                showCommand && "mt-1",
+              )}
+            />
+          )}
         </div>
         {detail}
       </div>
-      {open && (
+      <Reveal open={open}>
         <div className="mt-1 ml-1.5">
           <ToolCallTimeline items={items} inline={isSingle} />
         </div>
-      )}
+      </Reveal>
     </div>
   );
 }

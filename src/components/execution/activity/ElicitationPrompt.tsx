@@ -483,7 +483,7 @@ export function ElicitationPrompt({
               Decline
             </Button>
             <Button
-              variant={submitAttempted && unansweredCount > 0 ? "outline" : "accent"}
+              variant={submitAttempted && unansweredCount > 0 ? "outline" : "default"}
               size="sm"
               onClick={handleSubmit}
               className={

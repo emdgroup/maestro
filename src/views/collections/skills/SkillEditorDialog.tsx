@@ -245,7 +245,7 @@ export function SkillEditorDialog({
           <Button variant="ghost" className="ml-auto" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button variant="accent" disabled={issue !== null || save.isPending} onClick={submit}>
+          <Button disabled={issue !== null || save.isPending} onClick={submit}>
             {save.isPending ? "Saving…" : editing ? "Save" : "Create"}
           </Button>
         </div>

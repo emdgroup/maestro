@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { CopyPlus, Ellipsis, Pencil, Plus, Search, Star, Trash2 } from "lucide-react";
 import {
   DragDropProvider,
@@ -7,6 +9,7 @@ import {
   useDraggable,
   useDroppable,
 } from "@dnd-kit/react";
+import { PointerActivationConstraints } from "@dnd-kit/dom";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/ui/button";
@@ -31,6 +34,7 @@ import {
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { CopyStateIcon, useCopyToClipboard } from "@/components/execution/activity/HighlightedCode";
 import {
   useCopyPromptMutation,
   useDeletePromptMutation,
@@ -69,11 +73,29 @@ const COLLECTIONS: Record<
   },
 };
 
-function copy(prompt: Prompt) {
-  navigator.clipboard.writeText(prompt.body).then(
-    () => toast.success(`Copied “${prompt.title}”`),
-    () => toast.error("Could not copy to the clipboard"),
+// By default a mouse on a drag handle starts the drag on press, which would take the click that
+// copies. A press has to be held instead, and moving away early leaves it a click.
+const LONG_PRESS_SENSOR = PointerSensor.configure({
+  activationConstraints: [new PointerActivationConstraints.Delay({ value: 250, tolerance: 5 })],
+});
+
+/** Confirms the click, with a ring as well when the star was just turned on. */
+function popStar(button: HTMLElement, turnedOn: boolean) {
+  if (document.documentElement.classList.contains("reduce-motion")) return;
+  button.querySelector("svg")?.animate(
+    {
+      transform: ["scale(1)", "scale(1.4) rotate(-10deg)", "scale(0.92)", "scale(1)"],
+      offset: [0, 0.35, 0.7, 1],
+    },
+    { duration: 380, easing: "ease-out" },
   );
+  if (!turnedOn) return;
+  button
+    .querySelector("[data-star-burst]")
+    ?.animate(
+      { transform: ["scale(0.5)", "scale(1.9)"], opacity: [0.8, 0] },
+      { duration: 440, easing: "ease-out" },
+    );
 }
 
 function PromptCard({
@@ -90,6 +112,7 @@ function PromptCard({
   onDelete: () => void;
 }) {
   const collection = collectionOf(prompt.shared);
+  const { copied, copy } = useCopyToClipboard(prompt.body);
   // Dragged by the button laid over the card: the pointer sensor will not start on any other
   // control inside it, which keeps the star and the menu clickable.
   const { ref, handleRef, isDragging } = useDraggable({
@@ -110,14 +133,17 @@ function PromptCard({
       <button
         ref={handleRef}
         type="button"
-        onClick={() => copy(prompt)}
-        aria-label={`Copy “${prompt.title}”`}
-        className="absolute inset-0 cursor-pointer rounded-xl focus-visible:outline-2 focus-visible:outline-accent"
+        onClick={copy}
+        aria-label={copied ? "Copied" : `Copy “${prompt.title}”`}
+        className="peer absolute inset-0 cursor-pointer rounded-xl focus-visible:outline-2 focus-visible:outline-accent"
       />
       <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={onFavorite}
+          onClick={(e) => {
+            popStar(e.currentTarget, !prompt.favorite);
+            onFavorite();
+          }}
           aria-label={prompt.favorite ? "Remove from favorites" : "Add to favorites"}
           aria-pressed={prompt.favorite}
           className={cn(
@@ -127,6 +153,10 @@ function PromptCard({
               : "text-muted-foreground/40 hover:text-muted-foreground",
           )}
         >
+          <span
+            data-star-burst
+            className="pointer-events-none absolute inset-0 rounded-full border-2 border-amber-500 opacity-0"
+          />
           <Star className={cn("size-4", prompt.favorite && "fill-current")} />
         </button>
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">{prompt.title}</span>
@@ -164,8 +194,8 @@ function PromptCard({
       <p className="line-clamp-4 flex-1 whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-muted-foreground">
         {prompt.body}
       </p>
-      {prompt.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+      <div className="flex items-end gap-1.5">
+        <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
           {prompt.tags.map((tag) => (
             <span
               key={tag}
@@ -175,7 +205,15 @@ function PromptCard({
             </span>
           ))}
         </div>
-      )}
+        {/* Stays through the check, so a click that leaves the card still sees it land. */}
+        <CopyStateIcon
+          copied={copied}
+          className={cn(
+            "size-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 peer-focus-visible:opacity-100",
+            copied && "opacity-100",
+          )}
+        />
+      </div>
     </div>
   );
 }
@@ -280,7 +318,20 @@ function PromptColumn({
           </div>
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3">
-            {prompts.map(card)}
+            <AnimatePresence mode="popLayout" initial={false}>
+              {prompts.map((prompt) => (
+                <motion.div
+                  key={prompt.id}
+                  layout="position"
+                  initial={{ opacity: 0, scale: 0.96 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.96 }}
+                  transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
+                >
+                  {card(prompt)}
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
         )}
       </div>
@@ -372,6 +423,7 @@ export function PromptsPanel({
           spacing={1}
           className={SEGMENT_GROUP}
         >
+          <SegmentThumb />
           {FILTERS.map((option) => (
             <ToggleGroupItem
               key={option.value}
@@ -407,7 +459,7 @@ export function PromptsPanel({
 
       {/* Pointer only: Enter on a card copies its text, and the menu is the keyboard's copy. */}
       <DragDropProvider
-        sensors={[PointerSensor]}
+        sensors={[LONG_PRESS_SENSOR]}
         onDragStart={(event) => setDragging((event.operation.source?.data as Prompt) ?? null)}
         onDragEnd={(event) => {
           setDragging(null);
@@ -436,7 +488,7 @@ export function PromptsPanel({
         </div>
         <DragOverlay>
           {dragging && (
-            <div className="home-pane glass-volume pointer-events-none rotate-[-1.5deg] scale-[1.03] rounded-[14px] border-accent/50! p-3">
+            <div className="home-pane glass-volume glass-volume-lifted pointer-events-none rotate-[-1.5deg] scale-[1.03] rounded-[14px] border-accent/50! p-3">
               <p className="line-clamp-2 text-sm font-semibold">{dragging.title}</p>
             </div>
           )}

@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import {
   Loader2,
-  ChevronDown,
   ChevronRight,
   Search,
   X,
@@ -16,6 +15,7 @@ import {
 } from "lucide-react";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { cn } from "@/lib/utils";
+import { Reveal } from "@/components/common/Reveal";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from "@/ui/context-menu";
 import { useListDirContents, useListWorkspaceFiles } from "@/services/connection.service";
@@ -367,8 +367,9 @@ function DirContents({
     );
   }
 
+  // A folder slow to list has already opened by now, so its rows fade in rather than land.
   return (
-    <>
+    <div className="animate-in fade-in-0 duration-200">
       {entries.map((entry) => {
         const childAbsolute = `${absolutePath}/${entry.name}`;
         const childRelative = relativePrefix ? `${relativePrefix}/${entry.name}` : entry.name;
@@ -411,11 +412,12 @@ function DirContents({
                 )}
                 style={{ paddingLeft: indentFor(depth) }}
               >
-                {isExpanded ? (
-                  <ChevronDown className="size-3 shrink-0" />
-                ) : (
-                  <ChevronRight className="size-3 shrink-0" />
-                )}
+                <ChevronRight
+                  className={cn(
+                    "size-3 shrink-0 transition-transform duration-200",
+                    isExpanded && "rotate-90",
+                  )}
+                />
                 {isExpanded ? (
                   <FolderOpen className="size-3 shrink-0" />
                 ) : (
@@ -423,7 +425,7 @@ function DirContents({
                 )}
                 <span className="font-mono truncate">{entry.name}</span>
               </button>
-              {isExpanded && (
+              <Reveal open={isExpanded}>
                 <DirContents
                   absolutePath={childAbsolute}
                   relativePrefix={childRelative}
@@ -438,7 +440,7 @@ function DirContents({
                   selectedFolder={selectedFolder}
                   onSelectFolder={onSelectFolder}
                 />
-              )}
+              </Reveal>
             </div>
           );
         }
@@ -471,6 +473,6 @@ function DirContents({
           </button>
         );
       })}
-    </>
+    </div>
   );
 }

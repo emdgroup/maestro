@@ -3,6 +3,7 @@ import { useState } from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { PointerActivationConstraints } from "@dnd-kit/dom";
 import { PromptsPanel } from "./PromptsPanel";
 import type { Prompt, PromptInput } from "@/types/bindings";
 
@@ -20,6 +21,7 @@ vi.mock("@/lib/tauri-utils", () => ({ api }));
 const dnd = vi.hoisted(() => ({
   droppables: [] as Array<{ id: string; accept: unknown }>,
   onDragEnd: null as null | ((event: unknown) => void),
+  sensors: null as unknown,
 }));
 vi.mock("@dnd-kit/react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@dnd-kit/react")>();
@@ -33,6 +35,7 @@ vi.mock("@dnd-kit/react", async (importOriginal) => {
     },
     DragDropProvider: (props: Parameters<typeof actual.DragDropProvider>[0]) => {
       dnd.onDragEnd = props.onDragEnd as (event: unknown) => void;
+      dnd.sensors = props.sensors;
       return <actual.DragDropProvider {...props} />;
     },
   };
@@ -160,8 +163,20 @@ describe("PromptsPanel", () => {
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
     renderPanel();
     await screen.findByText("Local only");
-    await user.click(screen.getByRole("button", { name: "Copy “Local only”" }));
+    const card = screen.getByRole("button", { name: "Copy “Local only”" });
+    await user.click(card);
     expect(writeText).toHaveBeenCalledWith("Body 2");
+    expect(card).toHaveAccessibleName("Copied");
+    expect(card.parentElement!.querySelector(".copy-state")).toHaveAttribute("data-copied", "true");
+  });
+
+  it("starts a drag only on a held press, so a click still copies", async () => {
+    renderPanel();
+    await screen.findByText("Local only");
+    const [sensor] = dnd.sensors as unknown as [{ options: { activationConstraints: unknown[] } }];
+    expect(sensor.options.activationConstraints).toEqual([
+      expect.any(PointerActivationConstraints.Delay),
+    ]);
   });
 
   it("stars without an edit", async () => {

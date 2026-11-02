@@ -1,4 +1,5 @@
 import { Loader2, WifiOff, AlertTriangle, LogOut } from "lucide-react";
+import { Button } from "@/ui/button";
 import type { ConnectionHealthState } from "@/hooks/useConnectionHealth";
 import type { ConnectionKey } from "@/types/bindings";
 
@@ -76,13 +77,10 @@ export function DisconnectBackdrop({
             ? detail
             : "Attempting to restore the connection"}
       </p>
-      <button
-        onClick={onLeaveConnection}
-        className="mt-2 px-3 py-1.5 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-      >
-        <LogOut className="h-3.5 w-3.5 mr-1.5 inline" />
+      <Button onClick={onLeaveConnection} size="sm" className="mt-2 text-xs">
+        <LogOut className="size-3.5" />
         Leave Connection
-      </button>
+      </Button>
     </div>
   );
 }
