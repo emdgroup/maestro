@@ -20,6 +20,7 @@ Notes for working in this directory. The repository-wide rules are in the root `
 | `sessionActivityStore` | Per-execution live status (`spawning` / `thinking` / `acting` / `awaiting`) shown in `AgentActivityPanel`                                                     |
 | `configStore`          | App-wide settings (theme, model defaults) cached from Tauri                                                                                                   |
 | `homeStore`            | Each connection's phase on Home (idle, signing in, connecting, up, failed, stopped, unreachable), attach order, minimized panels                              |
+| `fileSessionStore`     | Files sessions, which have no process behind them and so are not in the backend's session list; `AgentsView` merges them into the rows it shows               |
 
 ## Contexts
 

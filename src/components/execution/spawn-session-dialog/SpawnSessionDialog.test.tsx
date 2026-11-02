@@ -56,6 +56,7 @@ vi.mock("@/store/projectStore", () => ({
 }));
 
 const { SpawnSessionDialog } = await import("./SpawnSessionDialog");
+const { useFileSessionStore } = await import("@/store/fileSessionStore");
 
 function worktree(): WorktreeWithStatus {
   return {
@@ -105,6 +106,43 @@ function renderDialog(
     </QueryClientProvider>,
   );
 }
+
+describe("SpawnSessionDialog files session", () => {
+  it("opens in the chosen worktree, with no process and no new worktree", async () => {
+    useFileSessionStore.setState({ sessions: [] });
+    renderDialog({ workspaceMode: "ReuseWorkspace", worktree: worktree() });
+
+    fireEvent.click(screen.getByRole("button", { name: /files/i }));
+    fireEvent.click(screen.getByRole("button", { name: /start session/i }));
+
+    await waitFor(() => expect(useFileSessionStore.getState().sessions).toHaveLength(1));
+    expect(useFileSessionStore.getState().sessions[0]).toMatchObject({
+      execution_mode: "files",
+      cwd: "C:/repo/.maestro/worktrees/session-42",
+      branch_name: "maestro/other-42",
+      project_id: 1,
+    });
+    expect(spawnAcp).not.toHaveBeenCalled();
+    expect(resolveWorktree).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the repository rather than creating a worktree", async () => {
+    useFileSessionStore.setState({ sessions: [] });
+    renderDialog();
+
+    fireEvent.click(screen.getByRole("button", { name: /files/i }));
+    fireEvent.click(screen.getByRole("button", { name: /start session/i }));
+
+    await waitFor(() => expect(useFileSessionStore.getState().sessions).toHaveLength(1));
+    expect(useFileSessionStore.getState().sessions[0].cwd).toBe("C:/repo");
+    expect(resolveWorktree).not.toHaveBeenCalled();
+  });
+
+  it("is not offered when resuming a conversation", () => {
+    renderDialog(undefined, { agentId: "claude-acp", acpSessionId: "abc" });
+    expect(screen.queryByRole("button", { name: /files/i })).not.toBeInTheDocument();
+  });
+});
 
 describe("SpawnSessionDialog seeding", () => {
   /**

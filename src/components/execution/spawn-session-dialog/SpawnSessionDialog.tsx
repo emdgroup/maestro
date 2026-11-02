@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { GitPullRequest, Terminal as TerminalIcon } from "lucide-react";
+import { FolderOpen, GitPullRequest, Terminal as TerminalIcon } from "lucide-react";
 import { pullRequestBranch } from "@/components/execution/pull-request-panel/pullRequestFilters";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import {
@@ -28,6 +28,7 @@ import { useDeletingWorktreePaths } from "@/services/worktree.service";
 import { useDefaultBaseBranch } from "@/hooks/useDefaultBaseBranch";
 import { useResolveWorktree, type CreatedWorktree } from "@/hooks/useResolveWorktree";
 import { usePreflightToolChecks } from "@/store/configStore";
+import { useFileSessionStore } from "@/store/fileSessionStore";
 import { useIsGitRepo } from "@/store/projectStore";
 import type {
   BranchMode,
@@ -118,6 +119,7 @@ export function SpawnSessionDialog({
   const spawnAcpMutation = useSpawnAcpSessionMutation();
   const loadAcpMutation = useLoadAcpSessionMutation();
   const { resolveWorktree, isCreatingWorktree } = useResolveWorktree();
+  const addFileSession = useFileSessionStore((s) => s.add);
 
   const isGitRepo = useIsGitRepo();
   // Not state, unlike every other seeded field: a pull request is not something this dialog offers
@@ -174,10 +176,12 @@ export function SpawnSessionDialog({
   }, [open, defaultBaseBranch]);
 
   // A terminal attaches to an existing checkout only — the backend refuses to create one for it,
-  // so the option is offered disabled and never honoured here.
+  // so the option is offered disabled and never honoured here. Browsing files has the same limit,
+  // since a fresh worktree has nothing in it to browse that the base branch does not.
   const isTerminal = sessionType === "terminal";
+  const existingCheckoutOnly = isTerminal || sessionType === "files";
   const effectiveMode: WorkspaceMode =
-    isTerminal && workspaceMode === "NewWorktree" ? "RepositoryDirectory" : workspaceMode;
+    existingCheckoutOnly && workspaceMode === "NewWorktree" ? "RepositoryDirectory" : workspaceMode;
   const creatingWorktree = isGitRepo && effectiveMode === "NewWorktree";
 
   async function handleSpawn() {
@@ -232,7 +236,16 @@ export function SpawnSessionDialog({
       };
     }
 
-    if (sessionType === "terminal") {
+    if (sessionType === "files") {
+      const sessionId = addFileSession({
+        projectId,
+        name: resolvedName,
+        cwd: worktree.path,
+        branchName: worktree.branchName,
+      });
+      onOpenChange(false);
+      onSuccess(sessionId, null);
+    } else if (sessionType === "terminal") {
       if (worktree.branchName === null) return;
       spawnMutation.mutate(
         {
@@ -374,6 +387,36 @@ export function SpawnSessionDialog({
                   </Button>
                 )}
 
+                {/* Not for a fork's pull request: that seed promises a new worktree, which browsing
+                    files would not create. */}
+                {!resume && pullRequestNumber === null && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setSessionType("files");
+                    }}
+                    className={cn(
+                      "home-pane flex items-center gap-2.5 px-3 py-2.5 h-auto rounded-xl text-left justify-start",
+                    )}
+                    data-selected={sessionType === "files"}
+                  >
+                    <div className="w-7 h-7 rounded-lg border border-foreground/10 bg-background/45 flex items-center justify-center shrink-0">
+                      <FolderOpen className="w-3.5 h-3.5 text-accent" />
+                    </div>
+                    <div className="min-w-0">
+                      <p
+                        className={cn(
+                          "text-xs font-medium",
+                          sessionType === "files" && "text-accent",
+                        )}
+                      >
+                        Files
+                      </p>
+                      <p className="text-[10px] text-muted-foreground/60">Browse and edit</p>
+                    </div>
+                  </Button>
+                )}
+
                 {discoveryLoading && (
                   <div className="home-pane flex items-center gap-2.5 px-3 py-2.5 rounded-xl opacity-50">
                     <div className="w-7 h-7 rounded-lg bg-foreground/8 animate-pulse shrink-0" />
@@ -454,7 +497,7 @@ export function SpawnSessionDialog({
 
               {!discoveryLoading && !discovery?.maestro_server_available && (
                 <p className="text-[10px] text-muted-foreground/60">
-                  maestro-server not found, only Terminal available
+                  maestro-server not found, only Terminal and Files available
                 </p>
               )}
               {!discoveryLoading && discovery?.error && (
@@ -503,7 +546,7 @@ export function SpawnSessionDialog({
                 repoPath={repoPath}
                 selectedWorktreePath={selectedWorktree?.path ?? null}
                 onSelectedWorktreeChange={setSelectedWorktree}
-                allowNewWorktree={!isTerminal}
+                allowNewWorktree={!existingCheckoutOnly}
               />
             )}
 
