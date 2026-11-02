@@ -1,4 +1,5 @@
 import { useContext, useState, useMemo } from "react";
+import { Reveal } from "@/components/common/Reveal";
 import { Bot, ChevronRight, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatElapsed, humanizeTokenCount } from "@/lib/format-utils";
@@ -225,7 +226,7 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
         />
       </div>
 
-      {expanded && (
+      <Reveal open={expanded}>
         <div className="border-t border-accent/20">
           {prompt && (
             <div className="border-b border-border/40">
@@ -242,11 +243,11 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
                 />
                 Prompt
               </button>
-              {promptOpen && (
+              <Reveal open={promptOpen}>
                 <div className="px-3.5 py-2.5 bg-accent/[0.06] text-[11px] border-t border-accent/10">
                   <MarkdownBlock text={prompt} />
                 </div>
-              )}
+              </Reveal>
             </div>
           )}
 
@@ -265,11 +266,11 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
                 />
                 Tool Calls ({childToolCalls.length})
               </button>
-              {toolCallsOpen && (
+              <Reveal open={toolCallsOpen}>
                 <div className="px-2 py-2 bg-accent/[0.03] border-t border-accent/10">
                   <ToolCallTimeline items={childToolCalls} />
                 </div>
-              )}
+              </Reveal>
             </div>
           )}
 
@@ -290,7 +291,7 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
             )}
           </div>
         </div>
-      )}
+      </Reveal>
     </div>
   );
 }

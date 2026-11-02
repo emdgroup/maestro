@@ -40,6 +40,7 @@ import { api } from "@/lib/tauri-utils";
 import { commands } from "@/types/bindings";
 import { Flame, ArrowUp, Minus, ArrowDown, GitBranch, ExternalLink } from "lucide-react";
 import { useSortable } from "@dnd-kit/react/sortable";
+import { zoomCardToDialog } from "@/components/kanban/taskZoom";
 import { pointerIntersection } from "@dnd-kit/collision";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
@@ -513,18 +514,19 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
     <>
       <div
         ref={ref}
+        data-task-card={task.id}
         className={cn(
           "home-pane glass-volume rounded-[14px] px-3 py-[11px] mb-2 flex flex-col",
           stateLine?.ring ?? (task.phase_status && PHASE_STATUS_RING[task.phase_status]),
           isDragging && "opacity-30 border-dashed!",
           isDraggable && !isDragging ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
         )}
-        onClick={() => {
+        onClick={(e) => {
           if (dragOccurredRef.current) {
             dragOccurredRef.current = false;
             return;
           }
-          setActiveTaskId(task.id);
+          zoomCardToDialog(e.currentTarget, () => setActiveTaskId(task.id));
         }}
       >
         {/* Header: title + agent avatar right */}

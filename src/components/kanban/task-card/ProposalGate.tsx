@@ -7,7 +7,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/ui/dialog";
-import { Button, buttonVariants } from "@/ui/button";
+import { Button } from "@/ui/button";
 import { useCloseRefinementMutation, useTaskCommentsQuery } from "@/services/task.service";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { useSelectedProject } from "@/store/projectStore";
@@ -87,11 +87,7 @@ export function ProposalGate({
 
         <DialogFooter>
           {preparing ? (
-            <Button
-              className={buttonVariants({ variant: "accent" })}
-              onClick={() => settle(false)}
-              disabled={closeRefinement.isPending}
-            >
+            <Button onClick={() => settle(false)} disabled={closeRefinement.isPending}>
               Done preparing
             </Button>
           ) : (
@@ -103,11 +99,7 @@ export function ProposalGate({
               >
                 Discard
               </Button>
-              <Button
-                className={buttonVariants({ variant: "accent" })}
-                onClick={() => settle(true)}
-                disabled={closeRefinement.isPending || !body}
-              >
+              <Button onClick={() => settle(true)} disabled={closeRefinement.isPending || !body}>
                 Use this description
               </Button>
             </>

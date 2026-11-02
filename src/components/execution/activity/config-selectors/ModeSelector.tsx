@@ -39,7 +39,7 @@ export function ModeSelector({ option, value, onChange, disabled }: SelectorProp
         const ItemIcon = MODE_ICONS[opt.value] ?? Shield;
         return (
           <SelectPrimitive.Item key={opt.value} value={opt.value} className={ITEM_CLASS}>
-            <ItemIcon className="size-4 shrink-0 mt-0.5 group-data-selected:text-accent group-data-highlighted:!text-accent-foreground" />
+            <ItemIcon className="size-4 shrink-0 mt-0.5 group-data-[selected]:text-accent" />
             <div className="flex flex-col gap-0.5 min-w-0 flex-1">
               <SelectPrimitive.ItemText className={ITEM_TEXT_CLASS}>
                 {opt.name}

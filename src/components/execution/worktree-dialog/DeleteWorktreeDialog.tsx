@@ -62,6 +62,7 @@ export function DeleteWorktreeDialog({ worktree, projectId, onClose }: DeleteWor
           {/* Fired and closed rather than awaited: removing a checkout can take a while, and the
               card says it is going until it has gone. */}
           <AlertDialogAction
+            variant="destructive"
             onClick={() => {
               if (worktree == null) return;
               deleteMutation.mutate({

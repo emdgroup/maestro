@@ -3,7 +3,6 @@ import type { DateRange } from "react-day-picker";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
-import { Separator } from "@/ui/separator";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Calendar } from "@/ui/calendar";
 import { useNow } from "@/hooks/useNow";
@@ -40,8 +39,8 @@ export function SessionHistorySidebar({
 }: Props) {
   const now = useNow();
   return (
-    <div className="w-44 border-r border-accent/10 flex flex-col shrink-0 py-2">
-      <div className="flex flex-col gap-0.5 px-2">
+    <div className="w-40 flex flex-col gap-4 shrink-0">
+      <div className="flex flex-col gap-0.5">
         {(Object.keys(PRESET_LABELS) as Exclude<Preset, "custom">[]).map((p) => (
           <button
             key={p}
@@ -59,9 +58,7 @@ export function SessionHistorySidebar({
         ))}
       </div>
 
-      <Separator className="my-2" />
-
-      <div className="px-2 flex flex-col gap-2">
+      <div className="flex flex-col gap-2">
         <p className="text-[10px] text-muted-foreground/70 px-0.5">Custom range</p>
         <Popover
           open={calendarOpen}
@@ -98,22 +95,13 @@ export function SessionHistorySidebar({
             )}
           </div>
           <PopoverContent className="w-auto p-0" side="right" align="start">
-            <div
-              style={
-                {
-                  "--primary": "var(--accent)",
-                  "--primary-foreground": "var(--accent-foreground)",
-                } as React.CSSProperties
-              }
-            >
-              <Calendar
-                mode="range"
-                selected={stagingRange}
-                onSelect={(range) => onStagingRangeChange(range ?? { from: undefined })}
-                disabled={{ after: new Date(now) }}
-                numberOfMonths={1}
-              />
-            </div>
+            <Calendar
+              mode="range"
+              selected={stagingRange}
+              onSelect={(range) => onStagingRangeChange(range ?? { from: undefined })}
+              disabled={{ after: new Date(now) }}
+              numberOfMonths={1}
+            />
             <div className="flex justify-between px-3 pb-3">
               <Button
                 variant="ghost"

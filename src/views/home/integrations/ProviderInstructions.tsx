@@ -1,5 +1,7 @@
+import { cn } from "@/lib/utils";
 import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { Reveal } from "@/components/common/Reveal";
+import { ChevronDown } from "lucide-react";
 import { getProviderInstructions, BITBUCKET_INSTRUCTIONS } from "./integration-provider-config";
 
 export function ProviderInstructions({
@@ -25,10 +27,12 @@ export function ProviderInstructions({
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
-        {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        <ChevronDown
+          className={cn("w-3 h-3 transition-transform duration-200", open && "rotate-180")}
+        />
         Instructions to get token
       </button>
-      {open && (
+      <Reveal open={open}>
         <div className="rounded-lg border border-border bg-muted/40 p-3">
           <ol className="space-y-1.5 text-xs text-muted-foreground list-decimal list-inside">
             {instructions.map((line, i) =>
@@ -47,7 +51,7 @@ export function ProviderInstructions({
             )}
           </ol>
         </div>
-      )}
+      </Reveal>
     </div>
   );
 }

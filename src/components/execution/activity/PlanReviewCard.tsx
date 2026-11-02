@@ -134,14 +134,14 @@ export function PendingPlanCard({
         </Button>
         {primary ? (
           <ButtonGroup>
-            <Button variant="accent" size="sm" onClick={() => respondAccept(primary.optionId)}>
+            <Button size="sm" onClick={() => respondAccept(primary.optionId)}>
               {primary.name}
             </Button>
             {acceptOptions.length > 1 && (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   aria-label="More accept options"
-                  render={<Button variant="accent" size="sm" className="px-1.5!" />}
+                  render={<Button size="sm" className="px-1.5!" />}
                 >
                   <ChevronDown className="size-3.5" />
                 </DropdownMenuTrigger>
@@ -164,7 +164,7 @@ export function PendingPlanCard({
           </ButtonGroup>
         ) : (
           // No options at all: a legacy payload, answered the way `PermissionPrompt` answers one.
-          <Button variant="accent" size="sm" onClick={() => onRespond(requestId, "allow")}>
+          <Button size="sm" onClick={() => onRespond(requestId, "allow")}>
             Allow
           </Button>
         )}

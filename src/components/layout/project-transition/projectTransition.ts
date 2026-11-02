@@ -28,7 +28,10 @@ function tileOf(project: Project): HTMLElement | null {
  * animates between them, the project's tile and window morphing into each other. Without the API
  * (an older WebKitGTK) or with Reduce motion on, the switch is immediate.
  */
-function morph(update: () => void, drawn?: () => void): ViewTransition | null {
+export function morph(
+  update: () => void,
+  drawn?: () => void | Promise<void>,
+): ViewTransition | null {
   if (
     !document.startViewTransition ||
     document.documentElement.classList.contains("reduce-motion")
@@ -39,7 +42,7 @@ function morph(update: () => void, drawn?: () => void): ViewTransition | null {
   // `flushSync` renders when its callback returns, so the new page exists only after it.
   return document.startViewTransition(() => {
     flushSync(update);
-    drawn?.();
+    return drawn?.();
   });
 }
 

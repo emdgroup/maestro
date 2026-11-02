@@ -115,7 +115,7 @@ export function IntegrationDetailsDialog({
               >
                 Disconnect
               </Button>
-              <Button className="ml-auto" onClick={startEditing}>
+              <Button variant="outline" className="ml-auto" onClick={startEditing}>
                 Edit credentials
               </Button>
             </div>

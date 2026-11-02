@@ -265,6 +265,7 @@ export function ExecutionSidePanel({
           <AlertDialogFooter>
             <AlertDialogCancel>Keep editing</AlertDialogCancel>
             <AlertDialogAction
+              variant="destructive"
               onClick={() => {
                 if (closePrompt !== null) {
                   forgetTab(closePrompt);

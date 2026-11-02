@@ -1,5 +1,7 @@
+import { cn } from "@/lib/utils";
 import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { Reveal } from "@/components/common/Reveal";
+import { ChevronDown } from "lucide-react";
 import type { UsageTokenSplit } from "@/types/bindings";
 import { formatTokens } from "./format";
 
@@ -62,7 +64,9 @@ export function UsageBreakdown({ rows, format }: UsageBreakdownProps) {
                   {((row.value / total) * 100).toFixed(1)}%
                 </span>
                 <span className="grid size-7 place-items-center rounded-md text-muted-foreground [&>svg]:size-4">
-                  {expanded ? <ChevronUp /> : <ChevronDown />}
+                  <ChevronDown
+                    className={cn("transition-transform duration-200", expanded && "rotate-180")}
+                  />
                 </span>
               </div>
               <div className="mt-1 mr-9 h-1.5 rounded-full bg-foreground/10">
@@ -77,13 +81,14 @@ export function UsageBreakdown({ rows, format }: UsageBreakdownProps) {
                 />
               </div>
             </div>
-            {expanded &&
-              TYPES.map(([key, label]) => (
+            <Reveal open={expanded}>
+              {TYPES.map(([key, label]) => (
                 <div key={key} className="flex py-0.5 pr-[6rem] pl-8 text-xs text-muted-foreground">
                   <span>{label}</span>
                   <span className="ml-auto tabular-nums">{formatTokens(row.byType[key])}</span>
                 </div>
               ))}
+            </Reveal>
           </div>
         );
       })}

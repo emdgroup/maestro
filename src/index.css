@@ -43,8 +43,8 @@
   --popover-foreground: oklch(45% 0.01 250);
 
   /* Primary colors */
-  --primary: oklch(0% 0 0);
-  --primary-foreground: oklch(100% 0 0);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-foreground);
 
   /* Secondary colors */
   --secondary: oklch(50% 0.15 250);
@@ -108,8 +108,8 @@
   --popover: oklch(32% 0.01 250);
   --popover-foreground: oklch(90% 0.01 250);
 
-  --primary: oklch(100% 0 0);
-  --primary-foreground: oklch(25% 0.01 250);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-foreground);
 
   --secondary: oklch(75% 0.15 250);
   --secondary-foreground: oklch(25% 0.01 250);
@@ -161,6 +161,7 @@
      caller's own classes still win. */
   --shadow-pop: inset 0 1px 0 rgb(255 255 255 / 0.2), 0 20px 50px -18px rgb(0 0 0 / 0.35);
   --shadow-pop-strong: inset 0 1px 0 rgb(255 255 255 / 0.2), 0 20px 50px -18px rgb(0 0 0 / 0.45);
+  --shadow-tip: inset 0 1px 0 rgb(255 255 255 / 0.2), 0 10px 24px -12px rgb(0 0 0 / 0.4);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -748,6 +749,225 @@
   }
 }
 
+/* The compose bar's Send and Stop, one button changing between them (SendStopButton). A state each
+   part rests in, then the two changes. A keyframe list that stops short of 100% finishes on the
+   resting value, which is how a disabled Send lands dim and Stop lands at its own opacity. */
+.send-stop > .send-stop-plane,
+.send-stop > .send-stop-square {
+  grid-area: 1 / 1;
+}
+.send-stop[data-stop="true"] > .send-stop-plane,
+.send-stop[data-stop="false"] > .send-stop-square {
+  opacity: 0;
+}
+.send-stop-whip {
+  position: absolute;
+  inset: -5px;
+  width: 42px;
+  height: 42px;
+  pointer-events: none;
+  transform-origin: 20px 20px;
+}
+.send-stop[data-stop="false"]:not([data-play]) .send-stop-whip {
+  visibility: hidden;
+}
+/* Animate the svg root, not the circle: transform animations on SVG child elements run on the
+   renderer main thread and freeze under load, while the root element composites. Origin matches the
+   circle's center so the arc traces the same path. Stays on through the return, which closes the
+   ring while it is still turning. */
+.send-stop-arc {
+  display: block;
+  width: 42px;
+  height: 42px;
+  overflow: visible;
+  transform-origin: 20px 20px;
+}
+.send-stop[data-stop="true"] .send-stop-arc,
+.send-stop[data-play="return"] .send-stop-arc {
+  animation: arc-spin-cw 0.9s linear infinite;
+}
+
+/* Turned as one finished layer, not redrawn at each angle, which makes thin strokes shimmer. */
+.send-stop[data-play] > .send-stop-plane,
+.send-stop[data-play] > .send-stop-square {
+  will-change: transform;
+}
+
+/* Send to Stop: the plane dips, then flies off the way it points. The arc grows as it leaves and the
+   square turns in behind it. */
+.send-stop[data-play="start"] {
+  animation: send-stop-start 1150ms linear;
+}
+.send-stop[data-play="start"] > .send-stop-plane {
+  animation: send-stop-plane-out 1150ms;
+}
+.send-stop[data-play="start"] > .send-stop-square {
+  animation: send-stop-square-in 1150ms;
+}
+.send-stop[data-play="start"] .send-stop-arc circle {
+  animation: send-stop-arc-grow 1150ms;
+}
+@keyframes send-stop-start {
+  0%,
+  29% {
+    background-color: color-mix(in oklab, var(--accent) 15%, transparent);
+    border-color: color-mix(in oklab, var(--accent) 25%, transparent);
+    color: var(--accent);
+    opacity: 1;
+  }
+  83% {
+    background-color: color-mix(in oklab, var(--destructive) 8%, transparent);
+    border-color: color-mix(in oklab, var(--destructive) 40%, transparent);
+    color: var(--destructive);
+    opacity: 1;
+  }
+}
+@keyframes send-stop-plane-out {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+    animation-timing-function: ease-out;
+  }
+  10% {
+    transform: translate(-1.5px, 1.5px) scale(1);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.5, 0, 0.8, 0.4);
+  }
+  42%,
+  100% {
+    transform: translate(20px, -20px) scale(0.85);
+    opacity: 0;
+  }
+}
+@keyframes send-stop-square-in {
+  0%,
+  42% {
+    transform: rotate(-90deg) scale(0.3);
+    opacity: 0;
+    animation-timing-function: cubic-bezier(0.3, 1.4, 0.5, 1);
+  }
+  92%,
+  100% {
+    transform: rotate(0deg) scale(1);
+    opacity: 1;
+  }
+}
+@keyframes send-stop-arc-grow {
+  0%,
+  21% {
+    stroke-dasharray: 0 101;
+    opacity: 0;
+  }
+  25% {
+    stroke-dasharray: 0 101;
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.3, 0.7, 0.2, 1);
+  }
+  100% {
+    stroke-dasharray: 22 79;
+    opacity: 1;
+  }
+}
+
+/* Stop to Send: the arc whips round into a full ring that opens out and fades, while the square
+   shrinks and the plane pops back from it, still turning clockwise. A crossfade rather than a morph
+   of one path, because WebKit, which runs the app on macOS and Linux, cannot animate `d`. */
+.send-stop[data-play="return"] {
+  animation: send-stop-return 960ms linear;
+}
+.send-stop[data-play="return"] > .send-stop-plane {
+  animation: send-stop-plane-in 960ms;
+}
+.send-stop[data-play="return"] > .send-stop-square {
+  animation: send-stop-square-out 960ms;
+}
+.send-stop[data-play="return"] .send-stop-whip {
+  animation: send-stop-whip 960ms;
+}
+.send-stop[data-play="return"] .send-stop-arc circle {
+  animation: send-stop-arc-close 960ms;
+}
+@keyframes send-stop-return {
+  0% {
+    background-color: color-mix(in oklab, var(--destructive) 8%, transparent);
+    border-color: color-mix(in oklab, var(--destructive) 40%, transparent);
+    color: var(--destructive);
+    opacity: 1;
+  }
+  70% {
+    background-color: color-mix(in oklab, var(--accent) 15%, transparent);
+    border-color: color-mix(in oklab, var(--accent) 25%, transparent);
+    color: var(--accent);
+  }
+  85% {
+    opacity: 1;
+  }
+}
+@keyframes send-stop-square-out {
+  0% {
+    transform: rotate(0deg) scale(1);
+    opacity: 1;
+    animation-timing-function: ease-in;
+  }
+  35% {
+    transform: rotate(0deg) scale(0.4);
+    opacity: 1;
+    animation-timing-function: ease-out;
+  }
+  55%,
+  100% {
+    transform: rotate(120deg) scale(0.6);
+    opacity: 0;
+  }
+}
+@keyframes send-stop-plane-in {
+  0%,
+  35% {
+    transform: rotate(0deg) scale(0.4);
+    opacity: 0;
+    /* No overshoot and no long tail: on an icon this small, turning back or crawling the last few
+       degrees reads as the plane shaking. */
+    animation-timing-function: cubic-bezier(0.3, 0.6, 0.5, 1);
+  }
+  55% {
+    opacity: 1;
+  }
+  78%,
+  100% {
+    transform: rotate(360deg) scale(1);
+    opacity: 1;
+  }
+}
+@keyframes send-stop-whip {
+  0% {
+    transform: rotate(0deg) scale(1);
+    animation-timing-function: ease-in;
+  }
+  40% {
+    transform: rotate(360deg) scale(1);
+    animation-timing-function: ease-out;
+  }
+  100% {
+    transform: rotate(400deg) scale(1.28);
+  }
+}
+@keyframes send-stop-arc-close {
+  0% {
+    stroke-dasharray: 22 79;
+    opacity: 1;
+    animation-timing-function: ease-in;
+  }
+  40% {
+    stroke-dasharray: 101 0;
+    opacity: 1;
+    animation-timing-function: ease-out;
+  }
+  100% {
+    stroke-dasharray: 101 0;
+    opacity: 0;
+  }
+}
+
 /* A copy control's icon (`CopyStateIcon`): Copy shrinks away and the tick draws itself in, short
    stroke first. Lucide's Check path starts at the long stroke's tip, so the dash is revealed from
    the path's end with a negative offset; 24 covers its ~22.6 user units. Transitions rather than
@@ -1099,7 +1319,8 @@
 }
 /* A project that needs the user: tinted amber all over, never an edge stripe. `needs-you` is the
    same state on a task card, where it arrives as a class from the card's state line. */
-/* A home-pane with body: lit from the top, shaded along the bottom, and lifted off the page. */
+/* A home-pane with body: lit from the top, shaded along the bottom, and resting on the surface with
+   only a contact shadow. It lifts off on hover, and `glass-volume-lifted` holds a dragged copy up. */
 .glass-volume {
   -webkit-backdrop-filter: blur(16px) saturate(160%);
   backdrop-filter: blur(16px) saturate(160%);
@@ -1107,15 +1328,15 @@
     var(--tw-ring-shadow, 0 0 #0000),
     inset 0 1px 0 color-mix(in oklab, white 75%, transparent),
     inset 0 -1px 0 color-mix(in oklab, var(--foreground) 6%, transparent),
-    0 1px 2px rgb(0 0 0 / 0.06),
-    0 12px 24px -12px rgb(0 0 0 / 0.22);
+    0 1px 1px rgb(0 0 0 / 0.06);
   transition:
     background 0.18s,
     transform 0.18s,
     border-color 0.18s,
     box-shadow 0.18s;
 }
-.glass-volume:hover {
+.glass-volume:hover,
+.glass-volume-lifted {
   box-shadow:
     var(--tw-ring-shadow, 0 0 #0000),
     inset 0 1px 0 color-mix(in oklab, white 85%, transparent),
@@ -1135,10 +1356,10 @@
     var(--tw-ring-shadow, 0 0 #0000),
     inset 0 1px 0 color-mix(in oklab, white 16%, transparent),
     inset 0 -1px 0 rgb(0 0 0 / 0.25),
-    0 1px 2px rgb(0 0 0 / 0.25),
-    0 14px 28px -12px rgb(0 0 0 / 0.55);
+    0 1px 1px rgb(0 0 0 / 0.25);
 }
-.dark .glass-volume:hover {
+.dark .glass-volume:hover,
+.dark .glass-volume-lifted {
   box-shadow:
     var(--tw-ring-shadow, 0 0 #0000),
     inset 0 1px 0 color-mix(in oklab, white 22%, transparent),
@@ -1315,7 +1536,8 @@
 /* Opening a project from Home: its tile and the project's window share `project-zoom`, so the
    browser grows one into the other (projectTransition.ts). The snapshots keep their top-left
    corner and are cropped, not stretched, while the box between them changes shape. */
-::view-transition-group(project-zoom) {
+::view-transition-group(project-zoom),
+::view-transition-group(task-zoom) {
   animation-duration: 0.4s;
   animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -1329,6 +1551,42 @@
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation-duration: 0.4s;
+}
+/* A card and a dialog are too different in size to scale into each other, the card's text would
+   grow to headline size. So neither scales: the box grows and clips both at their real size. */
+::view-transition-group(task-zoom) {
+  overflow: clip;
+  border-radius: 18px;
+}
+::view-transition-old(task-zoom),
+::view-transition-new(task-zoom) {
+  width: auto;
+  height: auto;
+  object-fit: none;
+  object-position: left top;
+  animation-duration: 0.2s;
+}
+/* The new theme spreads over the old one from the toggle (ThemeToggle.tsx), so neither fades. */
+.theme-reveal::view-transition-old(root),
+.theme-reveal::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+/* The window keeps `project-zoom` for opening a project, which would draw it as its own layer above
+   the root being revealed, cross-fading instead of spreading. */
+.theme-reveal .app {
+  view-transition-name: none;
+}
+/* Once, when the Usage chart first draws. */
+.usage-bar-in {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: usage-bar-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+@keyframes usage-bar-in {
+  from {
+    transform: scaleY(0);
+  }
 }
 .home-working {
   color: var(--accent);

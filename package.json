@@ -33,6 +33,7 @@
     "@codemirror/view": "6.43.15",
     "@dnd-kit/abstract": "^0.5.1",
     "@dnd-kit/collision": "^0.5.1",
+    "@dnd-kit/dom": "^0.5.1",
     "@dnd-kit/helpers": "^0.5.1",
     "@dnd-kit/react": "^0.5.1",
     "@fabianlars/tauri-plugin-oauth": "^2.1.0",

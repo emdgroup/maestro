@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef } from "react";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { Plus, Archive, Search, BellDot, Repeat } from "lucide-react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
@@ -242,6 +243,7 @@ export const KanbanView: React.FC = () => {
             if (picked) setRunMode(picked === "All" ? null : (picked as RunMode));
           }}
         >
+          <SegmentThumb />
           <ToggleGroupItem value="All" size="sm" className={SEGMENT_ITEM}>
             All
           </ToggleGroupItem>
@@ -294,7 +296,6 @@ export const KanbanView: React.FC = () => {
         <div className="ml-auto">
           <ShortcutHint shortcutId="board-new">
             <Button
-              variant="accent"
               size="sm"
               className="h-8 rounded-xl px-4 text-xs bg-clip-border"
               onClick={() => setIsCreateModalOpen(true)}

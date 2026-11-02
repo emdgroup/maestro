@@ -105,7 +105,6 @@ export function UpdateStrip({ padEnd = false }: { padEnd?: boolean }) {
                       ? () => void downloadPackage(status.version)
                       : () => void install()
                   }
-                  variant="accent"
                   className="h-7 gap-1.5 text-xs"
                 />
               }

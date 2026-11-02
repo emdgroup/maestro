@@ -506,7 +506,6 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           </Popover>
           <ShortcutHint shortcutId="agents-new">
             <Button
-              variant="accent"
               size="sm"
               className="h-8 rounded-xl px-4 text-xs bg-clip-border"
               onClick={() => setShowSpawnDialog(true)}

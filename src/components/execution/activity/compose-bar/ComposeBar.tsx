@@ -7,7 +7,7 @@ import React, {
   useLayoutEffect,
 } from "react";
 import { flushSync } from "react-dom";
-import { Send, Paperclip } from "lucide-react";
+import { Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri-utils";
 import type { JsonValue } from "@/types/bindings";
@@ -23,6 +23,7 @@ import { useCommandAutocomplete } from "./useCommandAutocomplete";
 import { useAttachments } from "./useAttachments";
 import { usePanelPositioner } from "./usePanelPositioner";
 import { AttachmentPills } from "./AttachmentPills";
+import { SendStopButton } from "./SendStopButton";
 import { AttachmentShelf } from "./AttachmentShelf";
 import { MentionSuggestionsPanel } from "./MentionSuggestionsPanel";
 import { CommandSuggestionsPanel } from "./CommandSuggestionsPanel";
@@ -488,61 +489,12 @@ export function ComposeBar({
               />
             ))}
             <div className="ml-auto">
-              {showStop ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    type="button"
-                    onClick={onCancel}
-                    className="w-8 h-8 rounded-full border border-destructive/40 bg-destructive/8 text-destructive flex items-center justify-center shrink-0 opacity-60 hover:opacity-100 hover:bg-destructive/15 transition-colors relative"
-                  >
-                    <svg
-                      viewBox="0 0 42 42"
-                      // `busy-arc` is the hook reduce-motion uses to turn this arc into a
-                      // complete static ring rather than freezing it mid-rotation.
-                      className="busy-arc absolute pointer-events-none"
-                      style={{
-                        inset: "-5px",
-                        width: "42px",
-                        height: "42px",
-                        overflow: "visible",
-                        // Animate the svg root, not the circle: transform animations on
-                        // SVG child elements run on the renderer main thread and freeze
-                        // under load, while the root element composites. Origin matches
-                        // the circle's center so the arc traces the same path.
-                        animation: "arc-spin-cw 0.9s linear infinite",
-                        transformOrigin: "20px 20px",
-                      }}
-                    >
-                      <circle
-                        cx="20"
-                        cy="20"
-                        r="16"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeOpacity={1}
-                        strokeWidth={1.8}
-                        strokeLinecap="round"
-                        strokeDasharray="22 79"
-                      />
-                    </svg>
-                    <svg className="w-3.5 h-3.5 relative" viewBox="0 0 24 24" fill="currentColor">
-                      <rect x="4" y="4" width="16" height="16" rx="2.5" />
-                    </svg>
-                  </TooltipTrigger>
-                  <TooltipContent>Cancel</TooltipContent>
-                </Tooltip>
-              ) : (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={<button type="button" disabled={sendDisabled} />}
-                    onClick={() => void handleSend()}
-                    className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-accent/15 text-accent border border-accent/25 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)] hover:bg-accent/30 hover:border-accent/40 hover:scale-105 active:scale-95 disabled:opacity-20 disabled:cursor-not-allowed disabled:hover:scale-100 transition-all duration-150"
-                  >
-                    <Send className="w-4 h-4 translate-x-[-0.5px] translate-y-[0.5px]" />
-                  </TooltipTrigger>
-                  <TooltipContent>Send (Enter)</TooltipContent>
-                </Tooltip>
-              )}
+              <SendStopButton
+                stop={showStop}
+                disabled={sendDisabled}
+                onSend={() => void handleSend()}
+                onCancel={onCancel}
+              />
             </div>
           </div>
         </div>

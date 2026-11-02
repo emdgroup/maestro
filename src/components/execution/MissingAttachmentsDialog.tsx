@@ -67,7 +67,7 @@ export function MissingAttachmentsDialog({
         </ul>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
-          <Button size="sm" onClick={onContinue}>
+          <Button variant="outline" size="sm" onClick={onContinue}>
             Continue without them
           </Button>
         </AlertDialogFooter>

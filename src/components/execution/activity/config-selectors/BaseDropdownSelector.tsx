@@ -15,13 +15,11 @@ export const TRIGGER_CLASS =
   "inline-flex items-center gap-1 py-0.5 pl-1.5 pr-1.5 text-[11px] rounded border border-transparent bg-transparent text-muted-foreground hover:border-border hover:bg-foreground/7 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus:outline-none select-none";
 
 export const ITEM_CLASS =
-  "group relative flex w-full cursor-default items-start gap-2 rounded-sm py-2 pl-2 pr-2 outline-hidden select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50";
+  "group relative flex w-full cursor-default items-start gap-2 rounded-[10px] py-2 pl-2 pr-2 outline-hidden select-none data-highlighted:bg-foreground/7 data-disabled:pointer-events-none data-disabled:opacity-50";
 
-export const ITEM_TEXT_CLASS =
-  "text-xs font-medium leading-none group-data-selected:text-accent group-data-highlighted:!text-accent-foreground";
+export const ITEM_TEXT_CLASS = "text-xs font-medium leading-none group-data-[selected]:text-accent";
 
-export const DESC_CLASS =
-  "text-[11px] text-muted-foreground leading-snug group-data-highlighted:text-accent-foreground/70";
+export const DESC_CLASS = "text-[11px] text-muted-foreground leading-snug";
 
 export const GLASS_CONTENT_CLASS =
   "bg-card/75 dark:bg-card/25 backdrop-blur-[24px] backdrop-saturate-150 border border-foreground/9 shadow-pop ring-0";

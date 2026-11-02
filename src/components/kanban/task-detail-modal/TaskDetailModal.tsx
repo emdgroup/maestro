@@ -1,4 +1,7 @@
 import { useState, useRef, useEffect, type SetStateAction } from "react";
+import { SegmentThumb } from "@/components/common/SegmentThumb";
+import { AnimatePresence, motion } from "framer-motion";
+import { zoomDialogToCard } from "@/components/kanban/taskZoom";
 import {
   Ban,
   Bot,
@@ -64,6 +67,14 @@ import { useWorktreesQuery } from "@/services/worktree.service";
 import { OutcomeThread } from "./OutcomeThread";
 import { TaskStatusChip } from "./TaskStatusChip";
 import { StartOverDialog, runControls } from "./StartOverDialog";
+
+/** Execute and Save take each other's place, so one is seen replacing the other. */
+const FOOTER_SWAP = {
+  initial: { opacity: 0, y: 8 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -8 },
+  transition: { duration: 0.2, ease: [0.2, 0.8, 0.2, 1] },
+} as const;
 
 interface TaskDraft {
   title: string;
@@ -204,7 +215,13 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
       setDiscardOpen(true);
       return;
     }
-    setActiveTaskId(null);
+    closeToCard();
+  }
+
+  /** Back into the card the dialog grew out of, for the closes that leave that card on the board. */
+  function closeToCard() {
+    if (taskId === null) return;
+    zoomDialogToCard(taskId, () => setActiveTaskId(null));
   }
 
   useShortcuts("taskDetail", {
@@ -230,7 +247,8 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
       return;
     }
     if (!isEditable) {
-      setActiveTaskId(null);
+      // A queued loop stays open: saving is what brings Execute back, and that is the next move.
+      if (task.status !== "Queue") closeToCard();
       return;
     }
     updateTask.mutate(
@@ -255,7 +273,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
       {
         onSuccess: () => {
           isDirty.current = false;
-          setActiveTaskId(null);
+          closeToCard();
         },
       },
     );
@@ -273,6 +291,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
       disablePointerDismissal={isEditable ?? false}
     >
       <DialogContent
+        data-task-dialog
         showCloseButton={false}
         // Fixed rather than sized to content: with the body in tabs, `w-fit`/`max-h` resized and
         // re-centred the whole dialog on every tab click, because the two panels do not measure
@@ -323,6 +342,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                 className="flex-1 min-w-0 min-h-0 px-6 py-4 gap-4"
               >
                 <TabsList className={cn("shrink-0", SEGMENT_LIST)}>
+                  <SegmentThumb />
                   {isLoop && (
                     <TabsTrigger value="loop" className={SEGMENT_TRIGGER}>
                       Loop
@@ -525,7 +545,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                           Keep Task
                         </AlertDialogCancel>
                         <AlertDialogAction
-                          className="bg-rose-600 text-white hover:bg-rose-600/90"
+                          variant="destructive"
                           onClick={() => {
                             setDeleteOpen(false);
                             deleteTask.mutate(
@@ -572,6 +592,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                           Keep task
                         </AlertDialogCancel>
                         <AlertDialogAction
+                          variant="destructive"
                           onClick={() => {
                             setCancelOpen(false);
                             cancelTask.mutate(
@@ -614,6 +635,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                       Keep editing
                     </AlertDialogCancel>
                     <AlertDialogAction
+                      variant="destructive"
                       onClick={() => {
                         setDiscardOpen(false);
                         setActiveTaskId(null);
@@ -627,18 +649,25 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
               <div className="flex-1" />
 
-              {task.status === "Queue" && (
-                <Button
-                  size="sm"
-                  disabled={executingTaskId === task.id || task.phase === "Spawning"}
-                  onClick={() => void execute(task, { respectCapacity: true, canPickAgent: true })}
-                >
-                  <Play className="size-3 fill-current" />
-                  {executingTaskId === task.id || task.phase === "Spawning"
-                    ? "Starting…"
-                    : "Execute"}
-                </Button>
-              )}
+              {/* Starting now would run what is stored, not the edits on screen. Save takes its place. */}
+              <AnimatePresence mode="popLayout" initial={false}>
+                {task.status === "Queue" && !loopDirty && (
+                  <motion.div key="execute" {...FOOTER_SWAP}>
+                    <Button
+                      size="sm"
+                      disabled={executingTaskId === task.id || task.phase === "Spawning"}
+                      onClick={() =>
+                        void execute(task, { respectCapacity: true, canPickAgent: true })
+                      }
+                    >
+                      <Play className="size-3 fill-current" />
+                      {executingTaskId === task.id || task.phase === "Spawning"
+                        ? "Starting…"
+                        : "Execute"}
+                    </Button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
               {isLoop ? (
                 <LoopActions
                   task={task}
@@ -679,21 +708,25 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
               {/* A loop at sign-off waits on this review: it is the move to make. */}
               {isLoop && task.phase === "Approval" && (
-                <Button size="sm" variant="accent" onClick={() => openReview(task.id)}>
+                <Button size="sm" onClick={() => openReview(task.id)}>
                   <ScanEye className="size-3" />
                   Review
                 </Button>
               )}
 
-              {(isEditable || loopDirty) && (
-                <Button
-                  size="sm"
-                  onClick={() => void handleSave()}
-                  disabled={updateTask.isPending || draft.title.trim().length < 3}
-                >
-                  {updateTask.isPending ? "Saving..." : "Save"}
-                </Button>
-              )}
+              <AnimatePresence mode="popLayout" initial={false}>
+                {(isEditable || loopDirty) && (
+                  <motion.div key="save" {...FOOTER_SWAP}>
+                    <Button
+                      size="sm"
+                      onClick={() => void handleSave()}
+                      disabled={updateTask.isPending || draft.title.trim().length < 3}
+                    >
+                      {updateTask.isPending ? "Saving..." : "Save"}
+                    </Button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </>
         )}
