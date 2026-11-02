@@ -359,64 +359,6 @@ export function SpawnSessionDialog({
             <div className="space-y-2">
               <p className="field-label">Agent</p>
               <div className="grid grid-cols-2 gap-1.5">
-                {!resume && (
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      setSessionType("terminal");
-                    }}
-                    className={cn(
-                      "home-pane flex items-center gap-2.5 px-3 py-2.5 h-auto rounded-xl text-left justify-start",
-                    )}
-                    data-selected={sessionType === "terminal"}
-                  >
-                    <div className="w-7 h-7 rounded-lg border border-foreground/10 bg-background/45 flex items-center justify-center shrink-0">
-                      <TerminalIcon className="w-3.5 h-3.5 text-accent" />
-                    </div>
-                    <div className="min-w-0">
-                      <p
-                        className={cn(
-                          "text-xs font-medium",
-                          sessionType === "terminal" && "text-accent",
-                        )}
-                      >
-                        Terminal
-                      </p>
-                      <p className="text-[10px] text-muted-foreground/60">Shell session</p>
-                    </div>
-                  </Button>
-                )}
-
-                {/* Not for a fork's pull request: that seed promises a new worktree, which browsing
-                    files would not create. */}
-                {!resume && pullRequestNumber === null && (
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      setSessionType("files");
-                    }}
-                    className={cn(
-                      "home-pane flex items-center gap-2.5 px-3 py-2.5 h-auto rounded-xl text-left justify-start",
-                    )}
-                    data-selected={sessionType === "files"}
-                  >
-                    <div className="w-7 h-7 rounded-lg border border-foreground/10 bg-background/45 flex items-center justify-center shrink-0">
-                      <FolderOpen className="w-3.5 h-3.5 text-accent" />
-                    </div>
-                    <div className="min-w-0">
-                      <p
-                        className={cn(
-                          "text-xs font-medium",
-                          sessionType === "files" && "text-accent",
-                        )}
-                      >
-                        Files
-                      </p>
-                      <p className="text-[10px] text-muted-foreground/60">Browse and edit</p>
-                    </div>
-                  </Button>
-                )}
-
                 {discoveryLoading && (
                   <div className="home-pane flex items-center gap-2.5 px-3 py-2.5 rounded-xl opacity-50">
                     <div className="w-7 h-7 rounded-lg bg-foreground/8 animate-pulse shrink-0" />
@@ -494,6 +436,48 @@ export function SpawnSessionDialog({
                   );
                 })}
               </div>
+
+              {/* Terminal and Files are not agents, so they sit under the grid as a quieter row
+                  rather than as tiles beside the agents. */}
+              {!resume && (
+                <div className="flex items-center gap-1.5 pt-1">
+                  <span className="text-[11px] text-muted-foreground/70 mr-1">
+                    {visibleAgents.length > 0 ? "Or open" : "Open"}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setSessionType("terminal");
+                    }}
+                    className={cn(
+                      "home-pane h-auto gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium",
+                      sessionType === "terminal" && "text-accent",
+                    )}
+                    data-selected={sessionType === "terminal"}
+                  >
+                    <TerminalIcon className="w-3.5 h-3.5 text-accent" />
+                    Terminal
+                  </Button>
+                  {/* Not for a fork's pull request: that seed promises a new worktree, which
+                      browsing files would not create. */}
+                  {pullRequestNumber === null && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setSessionType("files");
+                      }}
+                      className={cn(
+                        "home-pane h-auto gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium",
+                        sessionType === "files" && "text-accent",
+                      )}
+                      data-selected={sessionType === "files"}
+                    >
+                      <FolderOpen className="w-3.5 h-3.5 text-accent" />
+                      Files
+                    </Button>
+                  )}
+                </div>
+              )}
 
               {!discoveryLoading && !discovery?.maestro_server_available && (
                 <p className="text-[10px] text-muted-foreground/60">
