@@ -15,7 +15,7 @@
 > [!WARNING]
 > Maestro is under active development. Features may be heavily modified or removed without notice, and the UI changes frequently between releases.
 
-<p align="center"><img src="docs/assets/workflow.webp" alt="Running a task from the Kanban board, watching the agent work, and reviewing its diff in Maestro" width="960" /></p>
+<p align="center"><img src="docs/assets/workflow.webp" alt="Approving an agent's plan from the Kanban board, watching the review session, and reading the task's diff in Maestro" width="960" /></p>
 
 ---
 
@@ -47,6 +47,7 @@ The `.dmg`, `.AppImage` and `-setup.exe` builds update themselves in-app. The `.
 | Feature             | What it gives you                                                                             |
 | ------------------- | --------------------------------------------------------------------------------------------- |
 | Kanban pipeline     | Tasks move through refine, plan, code and review, with a different agent for each stage       |
+| Loops               | Agents iterate in fresh sessions until your tests and checks pass                             |
 | Parallel worktrees  | Every task works on its own branch, so several agents run at once without conflicts           |
 | Live sessions       | Every tool call, permission prompt and question as it happens, with files, diff and terminals |
 | Diff review         | Comment on lines, send the work back, then merge, push or open a pull request                 |

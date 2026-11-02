@@ -4,14 +4,15 @@ The Tasks tab (**Ctrl+1**) is the Kanban board. Every task crosses it from left 
 
 ## The board
 
-<img src="../../docs/assets/board.webp" alt="Maestro Kanban board with two agents running on isolated tasks and more waiting in Queue and Review" width="960" />
+<img src="../../docs/assets/board.webp" alt="Maestro Kanban board with two agents in progress, a loop and several tasks waiting in Review, and one task queued" width="960" />
 
 The toolbar above the columns:
 
 - **Search tasks...** (**Ctrl+F**) filters by title, and **Priority** and **Label** filter by those.
+- **All**, **Pipeline** and **Loops** filter by how tasks run.
 - The agent slots badge, such as `2/4`, shows how many agents are running against how many the connection allows. A session waiting in Review still holds its slot.
 - **Manual** or **Auto** decides whether tasks in Queue start on their own.
-- **Needs me** shows only the tasks waiting on you.
+- **Needs me**, with a count, shows only the tasks waiting on you.
 - **Archive** lists finished and cancelled tasks, searchable, and reopens any of them.
 - **New Task** (**Ctrl+N**).
 
@@ -19,6 +20,7 @@ The toolbar above the columns:
 
 **New Task** opens the task dialog. A task is a title and a description, and everything else has a default:
 
+- **How it runs** (git projects): **Pipeline** for work you will judge by reading it, the stages below, or **Loop** for work a command can verify. A loop runs in fresh sessions until its checks pass; see [Loops](./loops).
 - **Description**: Markdown, with a small toolbar, rendered when you are not editing it.
 - **Attachments**: drop files on the dialog, paste an image, or browse. They are handed to the agent with the task.
 - **Workspace** (git projects): where the agent will work. **Create new worktree** gives the task a branch of its own, cut from the base branch you pick; you can also check out an existing branch, **Use the repository directory**, or **Reuse an existing workspace** another task left behind.
@@ -66,18 +68,20 @@ The running card has **Join**, which opens the session in the [Agents tab](./age
 
 When the Coder's turn ends with changes, the task moves to Review. If the project has a Reviewer profile, that agent goes first: read-only, with your project's review instructions, and it may send the work back to the Coder for rework up to three times without you.
 
-Then it is your turn. The diff opens unified or split, expands context from any hunk header, and takes comments on a line or a range of lines. **Rework** sends those comments back to the Coder as one prompt. **Approve** asks how the work should land. The push and pull-request choices appear once the project has a remote:
+Then it is your turn. The diff opens unified or split, expands context from any hunk header, and takes comments on a line or a range of lines. **Rework** sends those comments back to the Coder as one prompt. **Approve** asks how the work should land, under **When this task is approved**, and with which commit message; uncommitted changes are committed first. The push and pull-request choices need a remote:
 
-| Choice                     | Result                                                                   |
-| -------------------------- | ------------------------------------------------------------------------ |
-| Commit + Merge             | Merged into the base branch, worktree removed, task Done                 |
-| Commit only                | Committed on its branch, task Done                                       |
-| Commit + Push              | Pushed to the remote unmerged, task Done                                 |
-| Commit + Open pull request | Pushed and opened on the forge; the task stays in Review until it merges |
+| Choice              | Result                                                                   |
+| ------------------- | ------------------------------------------------------------------------ |
+| Merge locally       | Merged into the base branch, worktree removed, task Done                 |
+| Commit only         | Committed on its branch, worktree kept, task Done                        |
+| Push only           | Pushed to the remote unmerged, task Done                                 |
+| Open a pull request | Pushed and opened on the forge; the task stays in Review until it merges |
+
+The project's default choice is set under [Settings, Git](./settings#git).
 
 A reviewer that can write is not a reviewer, so every role except the Coder runs under a permission mode that refuses writes. That is enforced by the agent's session mode, not by a prompt asking nicely.
 
-<img src="../../docs/assets/review.webp" alt="Maestro diff viewer showing two hunks of an agent's change" width="960" />
+<img src="../../docs/assets/review.webp" alt="Maestro diff viewer showing an agent's change to store.ts, its new test and the README, with Approve in the corner" width="960" />
 
 ### Done
 
@@ -85,6 +89,6 @@ A task is Done with a record of how: merged, merged through a pull request, comm
 
 ## The task screen
 
-Click a card to open it. **Details** edits the title, description, attachments, labels, workspace and priority while the task has not started. **Outcome** is the task's thread: each agent's closing message when its phase ends (the proposal, the plan, the review verdict, the outcome), and notes you add yourself. Agents can read and comment on this thread too.
+Click a card to open it. A loop opens on its **Loop** tab, described in [Loops](./loops). **Details** edits the title, description, attachments, labels, workspace and priority while the task has not started. **Outcome** is the task's thread: each agent's closing message when its phase ends (the proposal, the plan, the review verdict, the outcome), and notes you add yourself. Agents can read and comment on this thread too.
 
-**Cancel task** moves it to the archive and keeps its worktree and branch. **Delete task** (**Ctrl+D**) removes it.
+**Start over** throws away the work of a task that has run and is not running now, and puts it back in Planning or Queue to begin again from the base branch. **Cancel task** moves it to the archive and keeps its worktree and branch. **Delete task** (**Ctrl+D**) removes it.

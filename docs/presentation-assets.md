@@ -17,17 +17,16 @@ docs/assets/
 ├── connections.webp
 ├── integrations.webp
 ├── settings-agents.webp
-└── issue-import.webp       # not captured yet
+└── issue-import.webp
 ```
 
 Assets live under `docs/` rather than `public/`, because `public/` is Vite's
 `publicDir` — anything placed there is copied into the app bundle and ships
 inside every installer.
 
-`issue-import.webp` is the one entry that is still missing: it needs a
-configured GitHub or Jira connection, which the capture fixture deliberately
-does not have. The README carries a comment where that image belongs. Do not
-enable an image reference before its asset exists.
+`issue-import.webp` needs a configured GitHub or Jira integration, and the
+project's issue tracking pointed at a public repository. Mask account names and
+host names in the DOM before capturing anything that shows them.
 
 ## Capture fixture
 

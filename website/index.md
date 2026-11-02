@@ -23,6 +23,9 @@ features:
   - title: Kanban pipeline
     details: Tasks move through refine, plan, code and review, with a different agent for each stage.
     link: /guide/tasks
+  - title: Loops
+    details: An agent iterates in fresh sessions until your tests and checks pass.
+    link: /guide/loops
   - title: Parallel worktrees
     details: Every task works on its own branch, so several agents run at once without conflicts.
     link: /guide/workspaces

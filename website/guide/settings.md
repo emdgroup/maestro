@@ -2,7 +2,7 @@
 
 Settings open as a dialog over any tab, from the cog in the header or with **Ctrl+,**. **Search settings…** finds a control by name. Everything saves as you change it.
 
-The top strip shows the version, **Check for updates**, and **Install** when an update is ready (installing stops running agent sessions). Its menu turns **Auto-update** on or off.
+The top strip shows the version, which links to its release notes, **Check for updates**, and **Install** when an update is ready (installing stops running agent sessions). Its menu turns **Auto-update** on or off. A `.deb` or `.msi` install offers **Download** instead, and cannot update itself.
 
 Pages come in three groups. **Project** pages appear only with a project open. On [Home](./home), the cog opens the **Application** pages, and **Settings** in a connection's **⋯** menu opens that connection's pages too.
 
@@ -15,6 +15,8 @@ Pages come in three groups. **Project** pages appear only with a project open. O
 **Agents & sign-in** lists the agents installed on the project's connection. Click one to make it the project's default, which runs new sessions and any task stage with no profile of its own. **Logout** signs you out of an agent.
 
 **Task workflow stages** sets up the agent for each stage, on two tabs. **Pipeline** holds a [task](./tasks)'s stages, **Refine**, **Plan**, **Implement** and **Review**. **Loops** holds a loop's, **Prepare**, then **Build** and **Judge** for each iteration. Click a stage to see its profiles. **Add profile** creates one, with its own agent, model, permission mode, effort and instructions. A project opened for the first time starts with one profile per stage on the default agent. Without a profile, Refine, Plan and Review are skipped, Implement, Prepare and Build run on the default agent, and Judge runs on Build's agent. Profiles are saved in `.maestro/profiles.json`.
+
+**Waiting on you**, on the Loops tab, sets how many [loops](./loops) may wait on you at once before auto mode starts no more of them. 0 means no limit.
 
 ### Git
 
@@ -61,7 +63,13 @@ Where [webhook automations](./collections#webhooks) listen: the address and port
 
 ### Appearance
 
-Theme (Light, Dark or System), the global accent colour and whether new projects get one of their own, UI scale (100%, 115% or 130%), reduced motion, whether the terminal follows the app theme, the system title bar (not on macOS), and whether **Enter** sends a message or adds a new line.
+- **System title bar** (not on macOS).
+- **Reduce motion**: turns off the background animation and the transitions between views. It is on by default when the system asks for less motion or the machine has no graphics acceleration.
+- **Terminal follows app theme**.
+- **Theme**: Light, Dark or System.
+- **Global Default Color**: the accent colour, or **Auto** to follow the system's. **New Projects** either get a colour of their own or use this one.
+- **UI Scale**: Default, Comfortable or Large (100%, 115% or 130%).
+- **Enter Key Behavior**: whether **Enter** sends a message or adds a new line.
 
 <img src="../../docs/assets/settings-appearance.webp" alt="The application Appearance page" width="960" />
 

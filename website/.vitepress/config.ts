@@ -50,6 +50,7 @@ export default defineConfig({
         text: "Tabs",
         items: [
           { text: "Tasks", link: "/guide/tasks" },
+          { text: "Loops", link: "/guide/loops" },
           { text: "Agents", link: "/guide/agents" },
           { text: "Collections", link: "/guide/collections" },
           { text: "Workspaces", link: "/guide/workspaces" },

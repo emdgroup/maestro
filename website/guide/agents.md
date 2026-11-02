@@ -1,8 +1,8 @@
 # Agents
 
-The Agents tab (**Ctrl+2**) is where you work with agents. It lists every live session of the project: the ones tasks started, the ones automations started, and the ones you start yourself. Pick one on the left, and the right side shows its stream and a side panel of everything it produced.
+The Agents tab (**Ctrl+2**) is where you work with agents. It lists every live session of the project: the ones tasks started, the ones automations started, and the ones you start yourself, including terminals and file browsers. Pick one on the left, and the right side shows its stream and a side panel of everything it produced.
 
-<img src="../../docs/assets/canvas-controls.webp" alt="A session with its stream on the left and, in the side panel, a canvas dashboard the agent redrew after the user clicked one of its buttons" width="960" />
+<img src="../../docs/assets/canvas-controls.webp" alt="A session with its stream on the left and, in the side panel, a canvas dashboard the agent changed after the user clicked its Show only untested files button" width="960" />
 
 ## The session list
 
@@ -12,17 +12,26 @@ Hover a row and press the **X**, or press **Ctrl+W**, to close a session. If the
 
 ## Starting a session
 
-**New Session** (**Ctrl+N**) starts an agent, or a plain terminal, with no task attached. Pick:
+**New Session** (**Ctrl+N**) starts an agent with no task attached. Pick:
 
-- **Agent**: any agent installed on the connection, or **Terminal** for a shell. An agent that needs a missing tool is greyed out and says which.
-- **Workspace** (git projects): **Create new worktree** on a new or existing branch, **Use the repository directory**, or **Reuse an existing workspace**.
+- **Agent**: any agent installed on the connection, with the project's default marked **Default**. An agent that needs a missing tool is greyed out and says which.
+- **Or open**: **Terminal** for a shell, or **Files** for the file browser on its own, to read or edit a checkout without an agent.
+- **Workspace** (git projects): **Create new worktree** on a new or existing branch, **Use the repository directory**, or **Reuse an existing workspace**. A terminal or a file browser opens on an existing checkout, never a new worktree.
 - **Session name**: optional, generated when blank.
 
-<img src="../../docs/assets/agents-new-session.webp" alt="The New Session dialog with Terminal, Claude Code and OpenCode, and a new worktree from main" width="960" />
+<img src="../../docs/assets/agents-new-session.webp" alt="The New Session dialog with Claude Code, Codex and OpenCode, the Or open row with Terminal and Files, and a new worktree from main" width="960" />
+
+Terminals and file browsers last until Maestro closes. Closing a file browser with unsaved edits asks first.
+
+## The session header
+
+The header above the stream names the session; click the name to rename it. Beside it are the stage a task session runs (such as **Implement**), its status, and its branch.
+
+On the right, **Reload session** reattaches the window to the session without ending it, for when the stream looks stuck. The cost pill shows what the session has cost and how many tokens it used; hover it for each turn, each model and each kind of token. For agents that report a plan limit, such as Claude Code, a meter shows how much of the 5-hour window is used and when it resets, and its hover card adds the weekly limit.
 
 ## Talking to the agent
 
-The composer at the bottom is where you write. Type **@** to attach files from the workspace, and **/** for the commands the agent offers. Attach files with the paperclip or paste an image, when the agent accepts images. The row beneath it switches the agent's model, mode (**Shift+Tab** cycles it), effort and any other option the agent exposes, and a gauge shows how full its context is, with **Compact context** when it gets tight. While the agent works the send button becomes **Cancel**, and **Esc** does the same.
+The composer at the bottom is where you write. Type **@** to attach files from the workspace, and **/** for the commands the agent offers. Attach files with the paperclip or paste an image, when the agent accepts images. The row beneath it switches the agent's model, mode (**Shift+Tab** cycles it), effort and any other option the agent exposes, and a gauge shows how full its context is, with **Compact context** to shrink it (**Compact now** once it is nearly full). While the agent works the send button becomes **Cancel**, and **Esc** does the same.
 
 When the agent needs you, the composer is replaced by the question:
 
@@ -52,7 +61,7 @@ A summary of the session in cards, each opening its tab: the plan's progress, th
 
 The changes card also ships the work. **Commit and push** drafts the request to the agent in the composer, for you to send; **Open pull request** opens one on your forge once the branch is pushed. When the pull request's checks fail, **Send failing checks to the agent** drafts the fix request.
 
-<img src="../../docs/assets/side-panel-overview.webp" alt="The Overview tab with a Changes card showing two insertions and one deletion, and a Canvas card with one surface" width="960" />
+<img src="../../docs/assets/side-panel-overview.webp" alt="The Overview tab with a Changes card for three uncommitted files, a Canvas card with one surface and an Artifacts card with a generated PNG" width="960" />
 
 ### Plan
 
@@ -60,15 +69,15 @@ The plan, when the agent wrote one. Select any passage to comment on it, and **R
 
 ### Changes
 
-Every change the session made, as a diff, unified or split, with a file list you can filter or show as a tree. Drag across lines to comment on them, comment on a whole file, and mark files as viewed as you go. **Send annotations** hands all the comments to the agent as one prompt, the same way a review works on the board.
+Every change the session made, as a diff, unified or split, with a file list you can filter or show as a tree. The scope menu in its header narrows it to **All changes**, the **Uncommitted** ones, one commit, or a range of commits. Drag across lines to comment on them, comment on a whole file, and mark files as viewed as you go. **Send annotations** hands all the comments to the agent as one prompt, the same way a review works on the board.
 
-<img src="../../docs/assets/side-panel-changes.webp" alt="The Changes tab showing a new test file and the edited lines of cli.ts, with two lines selected" width="960" />
+<img src="../../docs/assets/side-panel-changes.webp" alt="The Changes tab scoped to All changes, showing the edited lines of cli.ts and a new test file" width="960" />
 
 ### Files
 
-The workspace as a tree, with an editor. Open any file, edit it, create or rename files and folders, show hidden files, and open a file in its default application. Images, PDFs, audio and video show in place, and Markdown can be edited side by side with its preview. If the agent writes to a file while you are editing it, Maestro asks before overwriting either version.
+The workspace as a tree, with an editor. Open any file, edit it, create or rename files and folders, show hidden files, and open a file in its default application. Images, PDFs, audio and video show in place, and Markdown can be edited side by side with its preview. Click the file name in the header to copy its full path. On a remote connection, **Download and open** and **Download to…** fetch a copy to this computer. If the agent writes to a file while you are editing it, Maestro asks before overwriting either version.
 
-<img src="../../docs/assets/side-panel-files.webp" alt="The Files tab of the side panel with store.ts open in the editor next to the agent stream" width="960" />
+<img src="../../docs/assets/side-panel-files.webp" alt="The Files tab maximized over the session, with the file tree and store.ts open in the editor" width="960" />
 
 ### Terminal
 
@@ -76,7 +85,7 @@ A shell in the workspace, as many as you want. The agent's own long-running comm
 
 ### Artifacts and subagents
 
-**Artifacts** collects the documents the agent wrote, such as reports, Markdown, JSON or HTML, with a zoomable preview and a button to open each one. **Subagents** lists the helper agents the session spawned, each with its prompt, tool calls, output and status.
+**Artifacts** collects the documents the agent wrote during the session in `.maestro/artifacts/`, `.planning/` or `.claude/plans/`, such as reports, plans, Markdown, JSON or HTML, with a zoomable preview and a button to open each one. **Subagents** lists the helper agents the session spawned, each with its prompt, tool calls, output and status, and a button to stop it.
 
 ## Canvas
 
@@ -98,7 +107,7 @@ In the screenshot at the top of this page, the agent drew a **Show only untested
 
 **Annotate this canvas** (the icon in the tab's header) switches to annotation mode. Click an element to attach a note to it, or drag a rectangle to cover several; a rectangle also sends a screenshot of that region when the agent accepts images. Notes collect in a bar, across every canvas of the session, and **Send annotations** sends them together. The agent receives each note with the exact element it is about, so "make this one red" is unambiguous.
 
-<img src="../../docs/assets/canvas-annotate.webp" alt="Annotation mode on a canvas: the bar chart card outlined, with a comment box asking the agent to sort the bars" width="960" />
+<img src="../../docs/assets/canvas-annotate.webp" alt="Annotation mode on a canvas: the CLI commands table outlined, with a note asking the agent to sort the commands" width="960" />
 
 ### Keeping and sharing canvases
 
@@ -112,13 +121,13 @@ A canvas runs in a sandbox: it cannot reach Maestro, your files, or the rest of 
 
 ## Session history
 
-**History** (**Ctrl+H**) browses an agent's past sessions, by date or by search, and reopens one where it left off. You can rename sessions there, and delete them when the agent supports it.
+**History** (**Ctrl+H**) browses an agent's past sessions, by date or by search. Click one to resume it: **Resume Session** asks where the conversation continues, already set to the worktree it ran in when that still exists. You can rename sessions there, and delete them when the agent supports it.
 
 <img src="../../docs/assets/agents-history.webp" alt="The Session History dialog listing past Claude Code sessions with date filters on the left" width="960" />
 
 ## Sessions outlive the window
 
-Agents run in a background Maestro server on each connection, not inside the window. Close Maestro, or go back to [Home](./home), and a running session finishes its turn; come back and you pick the session up where it is, including any question the agent was waiting on. A session nobody is watching is closed a minute or two after its turn ends, and reopened from history when you need it.
+Agents run in a background Maestro server on each connection, not inside the window. Close Maestro, or go back to [Home](./home), and a running session finishes its turn; come back and you pick the session up where it is, including any question the agent was waiting on. A session nobody is watching is closed a minute or two after its turn ends, and resumed from history when you need it.
 
 Tasks live in the same server, so the [task pipeline](./tasks#how-a-task-moves) keeps going with every window closed: queued tasks start, plans and reviews run, and Home shows what is waiting on you when you return. Only a task waiting on its pull request needs a window open, since checking the forge uses your keychain token.
 
