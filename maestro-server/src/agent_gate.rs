@@ -118,7 +118,7 @@ pub(crate) fn turn_ended(
                 conn.execute(
                     "UPDATE tasks SET gated_agent_id = ?3 WHERE project_path = ?1 AND id = ?2",
                     params![
-                        crate::automations::canonical_project_path(path),
+                        crate::project_path::canonical_project_path(path),
                         task_id,
                         agent_id
                     ],

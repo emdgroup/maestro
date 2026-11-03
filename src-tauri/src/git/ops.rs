@@ -353,11 +353,11 @@ async fn remove_dir_with_retries(absolute: &str) -> Result<(), std::io::Error> {
 /// worktree list that cannot be read answers "yes", so an unknown state falls on the side of
 /// reporting the failure rather than silently continuing.
 async fn still_registered(conn: &GitConnection, absolute: &str) -> bool {
-    let target = absolute.trim_end_matches('/');
+    let target = maestro_protocol::paths::tidy_path(absolute);
     match list_worktrees(conn).await {
         Ok(worktrees) => worktrees
             .iter()
-            .any(|worktree| worktree.path.replace('\\', "/").trim_end_matches('/') == target),
+            .any(|worktree| maestro_protocol::paths::tidy_path(&worktree.path) == target),
         Err(e) => {
             log::warn!("[git] could not read the worktree list to classify a removal failure: {e}");
             true
@@ -369,9 +369,8 @@ async fn still_registered(conn: &GitConnection, absolute: &str) -> bool {
 /// which is the only case where deleting the directory outright is safe. `worktree_name` may be
 /// relative to the repository or absolute, with either separator.
 fn removable_worktree_dir(repo_path: &str, worktree_name: &str) -> Option<String> {
-    let repo = repo_path.replace('\\', "/");
-    let repo = repo.trim_end_matches('/');
-    let worktree = worktree_name.replace('\\', "/");
+    let repo = maestro_protocol::paths::tidy_path(repo_path);
+    let worktree = maestro_protocol::paths::tidy_path(worktree_name);
 
     let absolute = if worktree.starts_with(&format!("{repo}/")) {
         worktree

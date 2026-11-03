@@ -22,7 +22,7 @@ pub(crate) async fn restart(
     store: &Store,
     request: RestartTaskRequest,
 ) -> Result<Vec<ServerResponse>, String> {
-    let path = crate::automations::canonical_project_path(&request.project_path);
+    let path = crate::project_path::canonical_project_path(&request.project_path);
     let task_id = request.task_id;
     if !matches!(request.status, TaskStatus::Planning | TaskStatus::Queue) {
         return Err("A task starts over in Planning or Queue".to_string());

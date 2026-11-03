@@ -202,33 +202,6 @@ fn add_column_if_missing(
     .map_err(|e| format!("cannot add {table}.{column}: {e}"))
 }
 
-/// The name a project is filed under, resolved on the machine the path exists on.
-///
-/// Falls back to tidying the given path when it does not resolve, so a project on a disconnected
-/// drive still matches the rows it wrote — being unable to reach a directory is not a reason to
-/// forget the automations pointing at it.
-pub fn canonical_project_path(path: &str) -> String {
-    let resolved = std::fs::canonicalize(path)
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| path.to_string());
-    let resolved = strip_verbatim(&resolved).replace('\\', "/");
-    let trimmed = resolved.trim_end_matches('/');
-    if trimmed.is_empty() {
-        resolved
-    } else {
-        trimmed.to_string()
-    }
-}
-
-/// Windows hands back a verbatim path, which no other part of Maestro ever shows or stores. A share
-/// comes back as `\\?\UNC\server\share`, whose plain spelling is `\\server\share`.
-fn strip_verbatim(path: &str) -> String {
-    match path.strip_prefix(r"\\?\UNC\") {
-        Some(share) => format!(r"\\{share}"),
-        None => path.strip_prefix(r"\\?\").unwrap_or(path).to_string(),
-    }
-}
-
 /// The IANA zone this machine is set to, or `UTC` when it will not say.
 ///
 /// `UTC` rather than an error: a machine with no readable zone still has to be able to run an
@@ -1038,16 +1011,6 @@ pub fn fail_interrupted_runs(conn: &Connection) -> Result<usize, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_verbatim_share_keeps_its_two_slashes() {
-        assert_eq!(
-            strip_verbatim(r"\\?\UNC\server\share\p").replace('\\', "/"),
-            "//server/share/p"
-        );
-        assert_eq!(strip_verbatim(r"\\?\C:\p"), r"C:\p");
-        assert_eq!(strip_verbatim("/home/p"), "/home/p");
-    }
 
     fn store() -> Connection {
         let conn = Connection::open_in_memory().expect("in-memory database");

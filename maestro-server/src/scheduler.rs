@@ -27,8 +27,8 @@ use rusqlite::Connection;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::agent::registry::DiscoveredAgentWithSpawn;
-use crate::automations::canonical_project_path;
 use crate::helpers::{broadcast, send_diag};
+use crate::project_path::canonical_project_path;
 
 /// Long enough to collapse the burst of pushes one transition makes.
 const DEBOUNCE: Duration = Duration::from_millis(400);
