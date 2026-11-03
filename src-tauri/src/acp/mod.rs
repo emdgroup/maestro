@@ -39,7 +39,6 @@ pub(crate) const HOST_TRIPLE: &str = "x86_64-pc-windows-msvc";
     Debug, Clone, Copy, Hash, Eq, PartialEq, serde::Serialize, serde::Deserialize, specta::Type,
 )]
 #[serde(tag = "type")]
-#[specta(export)]
 pub enum ConnectionKey {
     #[serde(rename = "local")]
     Local,

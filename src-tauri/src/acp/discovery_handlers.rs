@@ -14,7 +14,6 @@ use maestro_protocol::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct ToolCheckEntry {
     pub tool: String,
     pub available: bool,
@@ -28,7 +27,6 @@ pub struct ToolCheckEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 /// Only produced once the server is up: every way of failing to reach it returns `Err` instead,
 /// so there is no "server is broken" variant to report here.
 pub struct PreflightResult {

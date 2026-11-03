@@ -3,7 +3,6 @@ use specta::Type;
 
 /// Returned to frontend via IPC — NEVER includes raw token (per D-01 security constraint)
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct IntegrationStatus {
     pub id: String,
     pub provider: String,
@@ -17,7 +16,6 @@ pub struct IntegrationStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
-#[specta(export)]
 pub enum CredentialSource {
     Manual,
     GhCli,

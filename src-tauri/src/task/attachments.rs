@@ -179,7 +179,6 @@ pub async fn delete_task_attachment(
 /// otherwise `rejection` says why a file that is there cannot be, and neither is set for a file
 /// that is not on the project's machine at all.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct PreparedTaskAttachment {
     pub content_block: Option<serde_json::Value>,
     pub rejection: Option<String>,

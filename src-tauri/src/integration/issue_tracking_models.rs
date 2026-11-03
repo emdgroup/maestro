@@ -3,7 +3,6 @@ use specta::Type;
 
 /// What `detect_project_issue_tracking` worked out from the project's git remote.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct DetectedIssueTracking {
     /// Provider the remote host belongs to.
     pub provider: String,
@@ -21,7 +20,6 @@ pub struct DetectedIssueTracking {
 /// Ticketing integration configuration stored in .maestro/issue_tracking.json
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
 #[serde(default)]
-#[specta(export)]
 pub struct IssueTrackingConfig {
     pub provider: Option<ProviderConfig>,
     pub updated_at: String,
@@ -31,7 +29,6 @@ pub struct IssueTrackingConfig {
 /// Serialized as an externally-tagged enum: `{"github": {...}}` (serde default for enums).
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "lowercase")]
-#[specta(export)]
 pub enum ProviderConfig {
     Github(GitHubConfig),
     Gitlab(GitLabConfig),
@@ -116,7 +113,6 @@ pub struct BitbucketConfig {
 
 /// A repository option returned by provider lookup commands for combobox display.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct RepoOption {
     pub name: String,
     pub description: Option<String>,
@@ -125,7 +121,6 @@ pub struct RepoOption {
 
 /// A Jira Cloud project option for combobox display.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct JiraProjectOption {
     pub key: String,
     pub name: String,
@@ -135,7 +130,6 @@ pub struct JiraProjectOption {
 
 /// A GitLab project option for combobox display.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct GitLabProjectOption {
     #[specta(type = i32)]
     pub id: i64,
@@ -146,7 +140,6 @@ pub struct GitLabProjectOption {
 
 /// An Azure DevOps project option for combobox display.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct AzureDevOpsProjectOption {
     pub id: String,
     pub name: String,
@@ -155,7 +148,6 @@ pub struct AzureDevOpsProjectOption {
 
 /// An Azure DevOps git repository option for clone combobox display.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct AzureDevOpsRepoOption {
     pub id: String,
     pub name: String,
@@ -165,7 +157,6 @@ pub struct AzureDevOpsRepoOption {
 
 /// A Bitbucket repository option for clone combobox display.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct BitbucketRepoOption {
     pub slug: String,
     pub name: String,
@@ -175,7 +166,6 @@ pub struct BitbucketRepoOption {
 
 /// A Bitbucket Server/DC project option for project key dropdown.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct BitbucketProjectOption {
     pub key: String,
     pub name: String,
@@ -183,7 +173,6 @@ pub struct BitbucketProjectOption {
 
 /// A remote issue fetched from a ticketing provider, ready for import as a Task.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct RemoteIssue {
     pub external_id: String,
     pub title: String,

@@ -63,7 +63,6 @@ impl GitConnection {
 
 /// Represents the status of a remote SSH connection for a project
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct ConnectionStatus {
     pub connection_id: i32,
     pub connected: bool,

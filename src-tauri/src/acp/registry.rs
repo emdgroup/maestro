@@ -5,7 +5,6 @@ use std::time::Instant;
 /// Agent discovered by maestro-server's CDN registry check.
 /// Returned by the `discover_agents` IPC command for both local and remote connections.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct DiscoveredAgent {
     pub id: String,
     pub name: String,
@@ -17,7 +16,6 @@ pub struct DiscoveredAgent {
 /// Unified discovery result returned to the frontend via IPC.
 /// Works for both local (`connection_id = None`) and remote (`connection_id = Some(id)`).
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct AgentDiscoveryResult {
     pub maestro_server_available: bool,
     pub agents: Vec<DiscoveredAgent>,

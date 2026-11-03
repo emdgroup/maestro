@@ -30,7 +30,6 @@ pub use maestro_protocol::AgentRole;
 /// profile id says nothing without the role that picked it, and it is absent whenever the role
 /// ran on the project's default agent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct SessionRole {
     pub role: AgentRole,
     pub profile_id: Option<String>,

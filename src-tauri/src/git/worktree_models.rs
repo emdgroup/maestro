@@ -8,7 +8,6 @@ use specta::Type;
 /// here, versus how much of it has reached the remote. `None` means there is no upstream at all,
 /// which `DeleteWorktreeDialog` reads as "this branch exists only locally".
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct AheadBehind {
     pub ahead: u32,
     pub behind: u32,
@@ -16,7 +15,6 @@ pub struct AheadBehind {
 
 /// Worktree record from database (schema v6)
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct Worktree {
     pub id: i32,
     pub project_id: i32,
@@ -46,7 +44,6 @@ impl Worktree {
 
 /// View model for the Worktrees view — enriched with task info and derived status fields
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct WorktreeWithStatus {
     pub id: Option<i32>, // None if orphan (on-disk but no DB row)
     pub project_id: Option<i32>,

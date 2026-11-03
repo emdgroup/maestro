@@ -20,14 +20,12 @@ fn prepare_image_bytes(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct ExternalFileRequest {
     pub path: String,
     pub is_image: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct AttachmentValidation {
     pub size_bytes: u64,
     /// `None` when the file can be attached. Otherwise the reason to show the user, phrased for
@@ -62,7 +60,6 @@ pub async fn validate_attachment(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct PreparedAttachment {
     pub display_name: String,
     pub local_path: String,

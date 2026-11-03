@@ -4,7 +4,6 @@ use specta::Type;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub enum ContainerCli {
     Docker,
     Podman,
@@ -35,7 +34,6 @@ impl ContainerCli {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct DockerConnection {
     pub id: i32,
     pub container_name: String,
@@ -59,14 +57,12 @@ impl DockerConnection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub enum DockerContainerState {
     Running,
     Stopped,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct DockerContainer {
     pub id: String,
     pub name: String,

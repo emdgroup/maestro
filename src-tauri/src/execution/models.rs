@@ -5,7 +5,6 @@ use specta::Type;
 ///
 /// The serialized `pty` name is retained for IPC compatibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[specta(export)]
 #[serde(rename_all = "lowercase")]
 pub enum ExecutionMode {
     Acp,
@@ -14,7 +13,6 @@ pub enum ExecutionMode {
 
 /// Active session info — in-memory only, returned by get_active_sessions
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct ActiveSessionInfo {
     pub session_id: String,
     pub session_name: Option<String>,
@@ -41,7 +39,6 @@ pub struct ActiveSessionInfo {
 
 /// Return type for `list_acp_sessions` — includes capability flags from the live agent connection.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct SessionListResult {
     pub sessions: Vec<SessionListEntryDto>,
     pub supports_session_delete: bool,
@@ -49,7 +46,6 @@ pub struct SessionListResult {
 
 /// TS-exportable version of maestro_protocol::SessionListEntry (protocol crate doesn't derive Type)
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct SessionListEntryDto {
     pub session_id: String,
     pub title: Option<String>,

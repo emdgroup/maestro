@@ -7,7 +7,6 @@ use crate::acp::{SessionRequest, TaskKey, TaskMetadata};
 use crate::core::AppState;
 
 #[derive(Debug, Clone, Serialize, Type)]
-#[specta(export)]
 pub struct SpawnSessionResult {
     pub session_id: String,
 }

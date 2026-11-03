@@ -8,7 +8,6 @@ pub use maestro_protocol::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct Task {
     pub id: i32,
     pub project_id: i32,

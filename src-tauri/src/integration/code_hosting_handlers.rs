@@ -21,7 +21,6 @@ use crate::project::settings::{mutate_project_config, SETTINGS_FILE};
 /// — merge locally — is always available and is not represented here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "PascalCase")]
-#[specta(export)]
 pub enum CodeHostingRung {
     /// No remote at all. Nothing to push to.
     NoRemote,
@@ -38,7 +37,6 @@ pub enum CodeHostingRung {
 
 /// The answer to "what can this project do with its remote", as of this moment.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct CodeHostingStatus {
     pub rung: CodeHostingRung,
     /// What the user has chosen, not what is possible — `Merge` unless they said otherwise.

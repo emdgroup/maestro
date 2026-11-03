@@ -11,7 +11,6 @@ use crate::execution::models::{
 use maestro_protocol::{ServerRequest, ServerResponse, SessionDeleteRequest, SessionListRequest};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct AcpSessionMeta {
     pub cwd: String,
     pub project_id: Option<i32>,

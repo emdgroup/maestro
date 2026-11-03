@@ -5,7 +5,6 @@ use specta::Type;
 use crate::task::models::WorkspaceMode;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct Project {
     pub id: i32,
     pub name: String,
@@ -46,7 +45,6 @@ impl Project {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 #[serde(rename_all = "PascalCase")]
 pub enum ProjectStatus {
     Active,
@@ -56,7 +54,6 @@ pub enum ProjectStatus {
 /// Project-specific configuration stored in .maestro/settings.json
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(default)]
-#[specta(export)]
 pub struct ProjectConfig {
     pub default_agent: Option<String>,
     pub updated_at: String,
@@ -169,7 +166,6 @@ impl ProjectConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct ProjectIssueTrackingConfig {
     pub provider: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -196,7 +192,6 @@ pub struct ProjectIssueTrackingConfig {
 /// at approve time and deliberately not stored — a connected teammate must not be able to
 /// commit a file telling an unconnected one that a PR is available.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
-#[specta(export)]
 pub struct ProjectCodeHostingConfig {
     pub provider: String,
     /// Host of the remote URL, so a self-hosted instance stays distinguishable.
@@ -214,7 +209,6 @@ pub struct ProjectCodeHostingConfig {
 /// How approved work leaves Review.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
 #[serde(rename_all = "PascalCase")]
-#[specta(export)]
 pub enum LandingMode {
     /// Merge into the target branch locally. The default, and what shipped before PRs existed.
     #[default]
@@ -352,7 +346,6 @@ mod tests {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct ProjectConfigResponse {
     pub default_agent: Option<String>,
     pub startup_tab: Option<String>,
@@ -373,7 +366,6 @@ pub struct ProjectConfigResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct ProjectConfigRequest {
     pub default_agent: Option<String>,
     pub startup_tab: Option<String>,
