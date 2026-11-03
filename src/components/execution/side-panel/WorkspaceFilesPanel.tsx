@@ -70,7 +70,8 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/ui/resiz
 import { ReviewLayout } from "@/components/execution/diff/ReviewLayout";
 import { useReviewPanelLayout } from "@/components/execution/diff/useReviewPanelLayout";
 import { isAbsolutePath, basename } from "@/lib/path-utils";
-import { CopyStateIcon, useCopyToClipboard } from "@/components/execution/activity/HighlightedCode";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+import { CopyStateIcon } from "@/components/common/CopyStateIcon";
 import { TransferIcon } from "./TransferIcon";
 import { transferTooltip, useFileTransfer } from "./useFileTransfer";
 

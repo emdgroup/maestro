@@ -33,7 +33,8 @@ import {
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { CopyStateIcon, useCopyToClipboard } from "@/components/execution/activity/HighlightedCode";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+import { CopyStateIcon } from "@/components/common/CopyStateIcon";
 import {
   useCopyPromptMutation,
   useDeletePromptMutation,

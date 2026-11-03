@@ -3,7 +3,8 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { computeFileStats } from "@/lib/diff-utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { CopyStateIcon, useCopyToClipboard } from "@/components/execution/activity/HighlightedCode";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+import { CopyStateIcon } from "@/components/common/CopyStateIcon";
 import { ReviewFileComment, type FileCommentApi } from "./ReviewFileComment";
 import type { DiffFileWithName } from "@/types/review";
 

@@ -1,40 +1,9 @@
-import { useState, useEffect, useRef, useCallback, memo } from "react";
-import { Copy, Check } from "lucide-react";
+import { useState, useEffect, memo } from "react";
 import { highlightToHtml } from "@/lib/diff-highlighter";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/providers/ThemeProvider";
-
-export function useCopyToClipboard(text: string) {
-  const [copied, setCopied] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    },
-    [],
-  );
-  const copy = useCallback(() => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setCopied(false), 2000);
-  }, [text]);
-  return { copied, copy };
-}
-
-/**
- * The icon for a copy control: Copy, then a Check drawing itself in while `copied` holds. Both are
- * always mounted so the swap animates each way; `.copy-state` in `index.css` drives it, and
- * `className` sizes the box.
- */
-export function CopyStateIcon({ copied, className }: { copied: boolean; className?: string }) {
-  return (
-    <span data-copied={copied} className={cn("copy-state grid shrink-0", className)}>
-      <Copy className="size-full" />
-      <Check className="size-full text-success" />
-    </span>
-  );
-}
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+import { CopyStateIcon } from "@/components/common/CopyStateIcon";
 
 export const HighlightedCode = memo(function HighlightedCode({
   code,
