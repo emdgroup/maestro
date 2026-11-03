@@ -31,7 +31,7 @@ import { Checkbox } from "@/ui/checkbox";
 import { Textarea } from "@/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useNow } from "@/hooks/useNow";
-import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
+import { MarkdownBlock } from "@/components/common/markdown/MarkdownBlock";
 
 import type { SessionActivityStatus } from "@/store/sessionActivityStore";
 import {

@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { cn } from "@/lib/utils";
-import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
+import { MarkdownBlock } from "@/components/common/markdown/MarkdownBlock";
 import { relativeAge } from "@/lib/format-utils";
 import { TRIGGER_LABEL, keptWorkspace, runDuration, type RunEntry } from "./runs";
 import { basename } from "@/lib/path-utils";

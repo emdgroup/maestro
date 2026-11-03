@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { MarkdownBlock, SvgBlock, MermaidBlock, HighlightedCode } from "./MarkdownBlock";
+import {
+  MarkdownBlock,
+  SvgBlock,
+  MermaidBlock,
+  HighlightedCode,
+} from "@/components/common/markdown/MarkdownBlock";
 import { imageMimeForExtension, langForExtension } from "./fileTypeUtils";
 import { type FileViewType, getFileViewType, injectScrollbarCSS } from "./fileViewUtils";
 import { useAcpSessionMeta, useSessionFileQuery } from "@/services/execution.service";

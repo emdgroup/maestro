@@ -4,7 +4,7 @@ import { Reveal } from "@/components/common/Reveal";
 import { cn } from "@/lib/utils";
 import { DynamicIcon } from "@/ui/dynamic-icon";
 import { CommandLabel } from "./CommandLabel";
-import { OpenFileContext } from "./MarkdownBlock";
+import { OpenFileContext } from "@/components/common/markdown/MarkdownBlock";
 import {
   FileLabel,
   hasRowContent,

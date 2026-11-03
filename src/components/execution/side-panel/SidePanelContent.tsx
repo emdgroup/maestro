@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { open as openFilePicker } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
+import { MarkdownBlock } from "@/components/common/markdown/MarkdownBlock";
 import { ChevronLeft, ChevronRight, Download, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDraggableFileInput } from "@/components/kanban/shared/useFileInput";

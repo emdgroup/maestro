@@ -16,7 +16,7 @@ import type { LoopCheck, LoopCheckKind, Task, TaskComment } from "@/types/bindin
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
-import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
+import { MarkdownBlock } from "@/components/common/markdown/MarkdownBlock";
 import { useTaskCommentsQuery } from "@/services/task.service";
 import {
   useAddLoopNoteMutation,

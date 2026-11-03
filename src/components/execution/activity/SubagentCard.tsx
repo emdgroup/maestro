@@ -3,7 +3,7 @@ import { Reveal } from "@/components/common/Reveal";
 import { Bot, ChevronRight, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatElapsed, formatTokens } from "@/lib/format-utils";
-import { MarkdownBlock } from "./MarkdownBlock";
+import { MarkdownBlock } from "@/components/common/markdown/MarkdownBlock";
 import { TypingDots } from "./ActivityMessageItem";
 import { ToolCallTimeline } from "./ToolCallTimeline";
 import { subagentName } from "./utils";

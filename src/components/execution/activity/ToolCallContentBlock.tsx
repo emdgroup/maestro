@@ -1,6 +1,6 @@
 import { Component } from "react";
 import type { ReactNode } from "react";
-import { MarkdownBlock } from "./MarkdownBlock";
+import { MarkdownBlock } from "@/components/common/markdown/MarkdownBlock";
 import type { ToolCallContent } from "./types";
 
 export class ContentErrorBoundary extends Component<

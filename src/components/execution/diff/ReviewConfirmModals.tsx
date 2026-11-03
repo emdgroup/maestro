@@ -10,7 +10,7 @@ import {
   Upload,
   GitPullRequest,
 } from "lucide-react";
-import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
+import { MarkdownBlock } from "@/components/common/markdown/MarkdownBlock";
 import {
   AlertDialog,
   AlertDialogContent,

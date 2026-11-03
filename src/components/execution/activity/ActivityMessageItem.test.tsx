@@ -16,7 +16,7 @@ vi.mock("@/services/task.service", () => ({
 
 import { ActivityMessageItem } from "./ActivityMessageItem";
 import { getCompleteBlocksText } from "./markdown-stream-utils";
-import { ImageProxyContext } from "./MarkdownBlock";
+import { ImageProxyContext } from "@/components/common/markdown/MarkdownBlock";
 import { splitAtSectionStarts } from "./markdown-stream-utils";
 import type { MessageItem } from "./types";
 

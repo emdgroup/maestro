@@ -2,7 +2,7 @@ import { User, MousePointerClick } from "lucide-react";
 import type { UserMessageItem } from "./types";
 import { parseCanvasPrompt } from "./canvas/canvas-prompt";
 import type { CanvasPrompt } from "./canvas/canvas-prompt";
-import { MarkdownBlock } from "./MarkdownBlock";
+import { MarkdownBlock } from "@/components/common/markdown/MarkdownBlock";
 import { ZoomableContent } from "@/ui/zoomable-content";
 import { Message, MessageContent } from "@/ui/message";
 import {

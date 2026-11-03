@@ -25,7 +25,7 @@ import { useProxyImageQuery } from "@/services/task.service";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { sanitizeSchema } from "./markdown-sanitize";
 import { COMMAND_TAG, rehypeSlashCommands } from "./markdown-commands";
-import type { AvailableCommand } from "./types";
+import type { AvailableCommand } from "@/components/execution/activity/types";
 import { InteractiveTable, InteractiveTh, InteractiveTbody } from "./MarkdownTableSort";
 import { FrontmatterTable, splitFrontmatter } from "./MarkdownFrontmatter";
 import { CodeBlockWrapper } from "./HighlightedCode";
@@ -33,7 +33,7 @@ import { MermaidBlock } from "./MermaidBlock";
 import { SvgBlock } from "./SvgBlock";
 import { SmilesBlock } from "./SmilesBlock";
 
-export { getCompleteBlocksText } from "./markdown-stream-utils";
+export { getCompleteBlocksText } from "@/components/execution/activity/markdown-stream-utils";
 export { HighlightedCode } from "./HighlightedCode";
 export { MermaidBlock } from "./MermaidBlock";
 export { SvgBlock } from "./SvgBlock";

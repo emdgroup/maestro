@@ -25,7 +25,7 @@ import { formatTokens, plural } from "@/lib/format-utils";
 import { basename } from "@/lib/path-utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { CommandLabel } from "./CommandLabel";
-import { MarkdownBlock, OpenFileContext } from "./MarkdownBlock";
+import { MarkdownBlock, OpenFileContext } from "@/components/common/markdown/MarkdownBlock";
 import { ContentErrorBoundary, ToolCallContentBlock } from "./ToolCallContentBlock";
 import { isGitCommand, isMcpToolName, isTerminalKind, rowLabel } from "./tool-call-labels";
 import type { ToolCallItem } from "./types";

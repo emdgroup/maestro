@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import type { LoopCheck, LoopIteration, Task, TaskComment } from "@/types/bindings";
 import { LoopIterations, type CurrentState, type HeadActions } from "./LoopIterations";
 
-vi.mock("@/components/execution/activity/MarkdownBlock", () => ({
+vi.mock("@/components/common/markdown/MarkdownBlock", () => ({
   MarkdownBlock: ({ text }: { text: string }) => <div>{text}</div>,
 }));
 

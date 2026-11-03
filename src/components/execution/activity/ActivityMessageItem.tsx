@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useContext } from "react";
 import { ListPlus } from "lucide-react";
 import type { MessageItem } from "./types";
-import { MarkdownBlock, getCompleteBlocksText } from "./MarkdownBlock";
+import { MarkdownBlock, getCompleteBlocksText } from "@/components/common/markdown/MarkdownBlock";
 import { MessageActionBar } from "./MessageActionBar";
 import { splitAtSectionStarts } from "./markdown-stream-utils";
 import { CreateTaskFromTextContext } from "./task-draft";

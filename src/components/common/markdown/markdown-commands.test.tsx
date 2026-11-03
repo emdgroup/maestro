@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { COMMAND_TAG, splitCommandText, rehypeSlashCommands } from "./markdown-commands";
 import { MarkdownBlock, CommandsContext } from "./MarkdownBlock";
-import type { AvailableCommand } from "./types";
+import type { AvailableCommand } from "@/components/execution/activity/types";
 
 type Node = { type: string; tagName?: string; value?: string; children?: Node[] };
 

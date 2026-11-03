@@ -3,7 +3,7 @@ import { Pencil, Trash2, Send, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
+import { MarkdownBlock } from "@/components/common/markdown/MarkdownBlock";
 import { AnnotationComposer } from "@/components/execution/side-panel/annotations/AnnotationComposer";
 import { CaptureChip } from "@/components/execution/side-panel/annotations/CaptureChip";
 

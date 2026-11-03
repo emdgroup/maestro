@@ -11,7 +11,7 @@ import {
 import { Button } from "@/ui/button";
 import { Textarea } from "@/ui/textarea";
 import { useTaskCommentsQuery } from "@/services/task.service";
-import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
+import { MarkdownBlock } from "@/components/common/markdown/MarkdownBlock";
 import { useSelectedProject } from "@/store/projectStore";
 import type { Task } from "@/types/bindings";
 
