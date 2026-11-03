@@ -1350,7 +1350,6 @@ mod tests {
         crate::helpers::TurnEnd {
             session_id: session_id.to_string(),
             stop_reason: "refusal".to_string(),
-            final_message: None,
             facts: Default::default(),
             usage: None,
             model_usage: None,

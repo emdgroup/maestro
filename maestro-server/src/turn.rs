@@ -8,9 +8,6 @@
 //! A port of the app's `acp/completion.rs`, which still does the same on its own side until the
 //! pipeline moves here. Detection only: the marker is not stripped from what windows are sent,
 //! because the app still strips it itself and has to see it to do so.
-// ponytail: the classifiers have no caller until the daemon drives the pipeline.
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
@@ -19,7 +16,15 @@ use std::sync::{LazyLock, Mutex};
 /// A fixed tag rather than a phrase because a phrase gets paraphrased, quoted back, and written
 /// into commit messages. The agent is asked for it by a one-line instruction appended to the
 /// initial prompt in `useExecuteTask`.
-pub const COMPLETION_MARKER: &str = "<maestro-task-complete/>";
+pub const COMPLETION_MARKER: &str = completion_marker!();
+
+/// [`COMPLETION_MARKER`] as a literal, for a prompt that `concat!`s it into its wording.
+macro_rules! completion_marker {
+    () => {
+        "<maestro-task-complete/>"
+    };
+}
+pub(crate) use completion_marker;
 
 /// How many times the review agent may send a task back before the user has to look at it.
 ///
@@ -204,10 +209,6 @@ pub struct CompletionMarkerFilter {
 }
 
 impl CompletionMarkerFilter {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Feed a chunk of agent text. Returns the text to forward and whether a marker completed.
     pub fn process_chunk(&mut self, chunk: &str) -> (String, bool) {
         self.buffer.push_str(chunk);
@@ -270,8 +271,9 @@ pub struct ClosingMessage {
 
 impl ClosingMessage {
     /// Beyond this the entry stops being a summary and starts being a transcript. Agents that end
-    /// a turn with a wall of text get the head of it, where the conclusion is.
-    const MAX_BYTES: usize = 16 * 1024;
+    /// a turn with a wall of text get the head of it, where the conclusion is. Generous because an
+    /// automation's result is this message, read whole in its run's dialog.
+    const MAX_BYTES: usize = 64 * 1024;
 
     pub fn push(&mut self, chunk: &str) {
         if self.text.len() >= Self::MAX_BYTES {
@@ -386,13 +388,15 @@ pub(crate) fn note_usage_limited(session_id: &str) {
 
 /// Read and forget what the session's current turn produced.
 pub(crate) fn take_turn_facts(session_id: &str) -> TurnFacts {
-    let state = TURNS
+    let mut state = TURNS
         .lock()
         .ok()
         .and_then(|mut turns| turns.remove(session_id))
         .unwrap_or_default();
-    let mut closing = state.closing;
-    let message = closing.take();
+    // What the filter held back as a possible marker never became one.
+    let held = state.filter.flush();
+    state.closing.push(&held);
+    let message = state.closing.take();
     TurnFacts {
         declared_complete: state.declared_complete,
         user_interrupted: state.user_interrupted,
@@ -527,6 +531,19 @@ mod tests {
             );
             assert!(facts.declared_complete);
             assert_eq!(facts.closing_message.as_deref(), Some("Work is done.  bye"));
+        }
+
+        #[test]
+        fn text_that_only_looked_like_a_marker_is_kept() {
+            let facts = run(
+                "marker-3",
+                &[("agent_message_chunk", Some("a < b and c <maestro"))],
+            );
+            assert!(!facts.declared_complete);
+            assert_eq!(
+                facts.closing_message.as_deref(),
+                Some("a < b and c <maestro")
+            );
         }
 
         #[test]
@@ -702,7 +719,7 @@ mod tests {
 
         #[test]
         fn ordinary_text_passes_through_untouched() {
-            let mut filter = CompletionMarkerFilter::new();
+            let mut filter = CompletionMarkerFilter::default();
             let (text, found) = filter.process_chunk("All done, the tests pass.");
             assert_eq!(text, "All done, the tests pass.");
             assert!(!found);
@@ -710,7 +727,7 @@ mod tests {
 
         #[test]
         fn a_marker_is_stripped_and_reported() {
-            let mut filter = CompletionMarkerFilter::new();
+            let mut filter = CompletionMarkerFilter::default();
             let (text, found) = filter.process_chunk("Finished.<maestro-task-complete/>");
             assert_eq!(text, "Finished.");
             assert!(found);
@@ -718,7 +735,7 @@ mod tests {
 
         #[test]
         fn text_around_a_marker_survives() {
-            let mut filter = CompletionMarkerFilter::new();
+            let mut filter = CompletionMarkerFilter::default();
             let (text, found) = filter.process_chunk("before<maestro-task-complete/>after");
             assert_eq!(text, "beforeafter");
             assert!(found);
@@ -727,7 +744,7 @@ mod tests {
         /// The reason this is a stateful filter rather than a `contains` call.
         #[test]
         fn a_marker_split_across_chunks_is_still_caught() {
-            let mut filter = CompletionMarkerFilter::new();
+            let mut filter = CompletionMarkerFilter::default();
 
             let (first, found_first) = filter.process_chunk("Work is done. <maestro-task");
             assert_eq!(first, "Work is done. ");
@@ -740,7 +757,7 @@ mod tests {
 
         #[test]
         fn a_marker_split_one_byte_at_a_time_is_still_caught() {
-            let mut filter = CompletionMarkerFilter::new();
+            let mut filter = CompletionMarkerFilter::default();
             let mut forwarded = String::new();
             let mut found = false;
 
@@ -758,7 +775,7 @@ mod tests {
         /// Text that merely starts like the marker must not be swallowed for ever.
         #[test]
         fn a_false_start_is_released_on_flush() {
-            let mut filter = CompletionMarkerFilter::new();
+            let mut filter = CompletionMarkerFilter::default();
             let (text, found) = filter.process_chunk("see <maestro-task");
             assert_eq!(text, "see ");
             assert!(!found);
@@ -767,7 +784,7 @@ mod tests {
 
         #[test]
         fn two_markers_in_one_chunk_both_strip() {
-            let mut filter = CompletionMarkerFilter::new();
+            let mut filter = CompletionMarkerFilter::default();
             let (text, found) =
                 filter.process_chunk("a<maestro-task-complete/>b<maestro-task-complete/>c");
             assert_eq!(text, "abc");
@@ -777,7 +794,7 @@ mod tests {
         /// Holding back a partial match must not slice a multi-byte character.
         #[test]
         fn multibyte_text_is_not_split_mid_character() {
-            let mut filter = CompletionMarkerFilter::new();
+            let mut filter = CompletionMarkerFilter::default();
             let (text, _) = filter.process_chunk("résumé ✅ <");
             assert_eq!(text, "résumé ✅ ");
             assert_eq!(filter.flush(), "<");

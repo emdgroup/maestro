@@ -16,7 +16,11 @@ use crate::task_store;
 
 /// Tells the agent how to signal that the task is finished. See `COMPLETION_PROTOCOL` in
 /// `useExecuteTask.ts` for why it is worded as it is.
-const COMPLETION_PROTOCOL: &str = "When the task is complete and needs no further work, end your final message with `<maestro-task-complete/>` — it moves the task to review, so omit it if you are asking a question or reporting a blocker.";
+const COMPLETION_PROTOCOL: &str = concat!(
+    "When the task is complete and needs no further work, end your final message with `",
+    crate::turn::completion_marker!(),
+    "` — it moves the task to review, so omit it if you are asking a question or reporting a blocker."
+);
 
 /// The refiner's final message is the proposal, so it is asked for the description and nothing else.
 const REFINER_PROTOCOL: &str = "Read whatever you need from the repository, then reply with the improved task description and nothing else — no preamble, no summary of your changes, no code fences around the whole reply. Your reply is what will replace the description if the user accepts it. The task keeps its existing title, so do not restate it as a heading — start with the description itself. Do not modify any files.";
