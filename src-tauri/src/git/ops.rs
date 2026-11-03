@@ -380,7 +380,7 @@ fn removable_worktree_dir(repo_path: &str, worktree_name: &str) -> Option<String
     };
     let is_maestro_created = absolute
         .strip_prefix(&format!("{repo}/"))
-        .is_some_and(crate::models::is_maestro_created_worktree);
+        .is_some_and(maestro_protocol::worktree_names::is_maestro_created_worktree);
     is_maestro_created.then_some(absolute)
 }
 

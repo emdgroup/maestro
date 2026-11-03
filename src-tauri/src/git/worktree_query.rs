@@ -4,8 +4,8 @@ use tauri::State;
 
 use crate::core::AppState;
 use crate::models::{
-    is_maestro_created_worktree, AheadBehind, BinaryFileInfo, CommitInfo, DiffTarget, DirtyStatus,
-    WorktreeDiffResult, WorktreeDiffStats, WorktreeWithStatus,
+    AheadBehind, BinaryFileInfo, CommitInfo, DiffTarget, DirtyStatus, WorktreeDiffResult,
+    WorktreeDiffStats, WorktreeWithStatus,
 };
 
 /// Everything one worktree's git state contributes to its card, gathered in a single round trip.
@@ -230,7 +230,7 @@ pub async fn list_worktrees_with_status(
     // Unfiltered on purpose: the main worktree at the repo root is included so it can be picked
     // in the spawn dialog.
     let mut disk_worktrees = crate::git::list_worktrees(&git_conn).await?;
-    disk_worktrees.retain(|wt| !crate::models::is_loop_sandbox(&wt.path));
+    disk_worktrees.retain(|wt| !maestro_protocol::worktree_names::is_loop_sandbox(&wt.path));
 
     struct DbWorktreeRow {
         id: i32,
@@ -359,8 +359,9 @@ pub async fn list_worktrees_with_status(
                     .iter()
                     .any(|cwd| crate::git::worktree_lifecycle::path_is_within(cwd, &wt.path))
             });
-            let is_zombie =
-                db_row.task_id.is_none() && is_maestro_created_worktree(&db_row.path) && !in_use;
+            let is_zombie = db_row.task_id.is_none()
+                && maestro_protocol::worktree_names::is_maestro_created_worktree(&db_row.path)
+                && !in_use;
             result.push(WorktreeWithStatus {
                 id: Some(db_row.id),
                 project_id: Some(project_id),

@@ -433,7 +433,7 @@ what makes a merged branch and a pushed branch both safe to delete, and a branch
 nowhere else — including in a repository with no remote — kept.
 
 `runs.worktree_path` is a live pointer, cleared on removal, so a value in it means a directory
-somebody still has to deal with. `runs.worktree_kept` is why. `is_maestro_created_worktree` does not
+somebody still has to deal with. `runs.worktree_kept` is why. `is_maestro_created_worktree` (`maestro_protocol::worktree_names`, where every worktree and branch name is built) does not
 match this naming, which is deliberate: the app's zombie sweep must not reap a worktree the daemon
 owns. The app adopts a `worktrees` row for each one in `adopt_automation_worktrees`, so a kept
 workspace appears on the Workspaces screen like any other; `list_worktrees_with_status` prunes that

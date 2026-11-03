@@ -4,6 +4,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub mod completion;
 pub mod exec;
+pub mod worktree_names;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
