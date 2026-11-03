@@ -31,6 +31,31 @@ fn generate_id() -> String {
     buf.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+/// Promote legacy provider-keyed entries into the registry.
+fn migrate_legacy_integrations(app_data_dir: &std::path::Path) {
+    let registry = KeychainStore::read_registry(app_data_dir);
+    for &provider in KNOWN_PROVIDERS {
+        if provider == "github" {
+            continue; // gh CLI is ephemeral, no legacy keyring key to migrate
+        }
+        if !registry.contains_key(provider) || registry[provider].is_empty() {
+            if let Ok(Some(mut creds)) =
+                KeychainStore::get_legacy_integration(provider, app_data_dir)
+            {
+                let new_id = generate_id();
+                creds.id = new_id.clone();
+                // The outcome is ignored: a "keyring unavailable" event here would only be spam.
+                if let Err(e) =
+                    KeychainStore::store_integration_by_id(provider, &new_id, &creds, app_data_dir)
+                {
+                    log::warn!("[integrations] migrating the legacy {provider} entry failed: {e}");
+                }
+                KeychainStore::delete_legacy_integration(provider, app_data_dir);
+            }
+        }
+    }
+}
+
 /// List all connected integrations from the registry.
 /// Runs a silent one-time migration: if the registry is empty for a known provider
 /// but a legacy key exists, moves it to the new keyed format.
@@ -42,33 +67,11 @@ pub async fn list_integrations(
     app_state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<IntegrationStatus>, String> {
     let app_data_dir = &app_state.app_data_dir;
-    let mut registry = KeychainStore::read_registry(app_data_dir);
-
-    // One-time migration: promote legacy provider-keyed entries into the registry.
-    for &provider in KNOWN_PROVIDERS {
-        if provider == "github" {
-            continue; // gh CLI is ephemeral, no legacy keyring key to migrate
-        }
-        if !registry.contains_key(provider) || registry[provider].is_empty() {
-            if let Ok(Some(mut creds)) =
-                KeychainStore::get_legacy_integration(provider, app_data_dir)
-            {
-                let new_id = generate_id();
-                creds.id = new_id.clone();
-                if let Ok(outcome) =
-                    KeychainStore::store_integration_by_id(provider, &new_id, &creds, app_data_dir)
-                {
-                    registry
-                        .entry(provider.to_string())
-                        .or_default()
-                        .push(new_id);
-                    // Suppress "keyring unavailable" event during migration to avoid spam.
-                    let _ = outcome;
-                }
-                KeychainStore::delete_legacy_integration(provider, app_data_dir);
-            }
-        }
-    }
+    // Once per run: what it promotes is written to the registry file, so a later call finds it
+    // there, and a keychain that refused this time is asked again at the next launch.
+    static MIGRATED: std::sync::Once = std::sync::Once::new();
+    MIGRATED.call_once(|| migrate_legacy_integrations(app_data_dir));
+    let registry = KeychainStore::read_registry(app_data_dir);
 
     let mut statuses: Vec<IntegrationStatus> = Vec::new();
 
