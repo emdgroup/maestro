@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub mod attachments;
@@ -348,24 +347,6 @@ pub struct HostToolResult {
     pub error: Option<String>,
 }
 
-/// What the MCP shim writes to the gateway, framed with [`write_frame`]. The reply is a bare
-/// [`HostToolResult`].
-///
-/// The token is checked before anything else is read from the call: the listener is on loopback,
-/// which any local process can reach.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct GatewayRequest {
-    pub token: String,
-    pub call: HostToolCall,
-}
-
-/// Environment variables the `McpServerStdio` entry carries to the shim.
-pub const MCP_GATEWAY_PORT_ENV: &str = "MAESTRO_MCP_PORT";
-pub const MCP_GATEWAY_TOKEN_ENV: &str = "MAESTRO_MCP_TOKEN";
-pub const MCP_GATEWAY_SESSION_ENV: &str = "MAESTRO_MCP_SESSION";
-/// Name of the MCP server Maestro injects. A `.mcp.json` entry using it is skipped.
-pub const MCP_SERVER_NAME: &str = "maestro";
-
 /// Directory holding the resident server's lock and runtime files.
 ///
 /// Set by the host for a local connection, so a development build pointed at its own
@@ -373,45 +354,6 @@ pub const MCP_SERVER_NAME: &str = "maestro";
 /// a remote machine, where there is no such directory and the daemon falls back to
 /// `~/.maestro/daemon`.
 pub const DAEMON_DIR_ENV: &str = "MAESTRO_DAEMON_DIR";
-/// Fallback daemon directory, relative to the home directory of the user the server runs as.
-pub const DAEMON_DIR_DEFAULT: &str = ".maestro/daemon";
-/// Held open by the running daemon for as long as it lives.
-///
-/// The lock, not the runtime file, is what answers "is a daemon alive here": a killed process
-/// leaves its runtime file behind pointing at a dead port, but the OS releases its lock.
-pub const DAEMON_LOCK_FILE: &str = "lock";
-/// Where a running daemon publishes how to reach it. See [`DaemonRuntime`].
-pub const DAEMON_RUNTIME_FILE: &str = "runtime.json";
-
-/// What a running daemon publishes about itself, written once at startup.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DaemonRuntime {
-    /// Loopback port the daemon accepts client connections on.
-    pub port: u16,
-    /// Secret a client must present as its first line. Any local process can reach the port, so
-    /// this is the only thing deciding whether a connection is answered.
-    pub token: String,
-    /// `CARGO_PKG_VERSION` of the daemon binary.
-    pub version: String,
-    /// Protocol the daemon speaks. A client of a different one kills it and starts its own.
-    pub protocol_version: u32,
-    pub pid: u32,
-}
-
-/// What a daemon answers to a `STATUS` line: whether retiring it would cost anybody anything.
-///
-/// Asked by an `attach` from another build before it replaces the daemon, so it is read as one
-/// JSON line before any framing and must stay readable across protocol versions. Add fields with
-/// `#[serde(default)]` only.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub struct DaemonActivity {
-    /// A Maestro window is connected to it right now.
-    pub client_attached: bool,
-    /// A session is mid-turn, which includes one waiting on a permission prompt and every
-    /// automation run still going.
-    pub turn_active: bool,
-}
-
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SpawnRequest {
     pub agent_id: String,
@@ -3375,73 +3317,6 @@ pub fn read_message_with_id_sync<M: Message, R: std::io::Read>(
     Ok(M::decode(&read_body_sync(stream)?)?)
 }
 
-// --- CDN registry types — used by maestro-server for agent discovery ---
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AcpRegistry {
-    pub version: String,
-    pub agents: Vec<AgentRegistryEntry>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AgentRegistryEntry {
-    pub id: String,
-    pub name: String,
-    /// Absent in hand-written `custom-agents.json` entries; the CDN registry always sets it.
-    #[serde(default)]
-    pub version: String,
-    #[serde(default)]
-    pub description: Option<String>,
-    pub distribution: AgentDistribution,
-    #[serde(default)]
-    pub repository: Option<String>,
-    #[serde(default)]
-    pub authors: Option<Vec<String>>,
-    #[serde(default)]
-    pub license: Option<String>,
-    #[serde(default)]
-    pub icon: Option<String>,
-    #[serde(default)]
-    pub website: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-pub struct AgentDistribution {
-    #[serde(default)]
-    pub npx: Option<NpxDistribution>,
-    #[serde(default)]
-    pub binary: Option<HashMap<String, BinaryTarget>>,
-    #[serde(default)]
-    pub uvx: Option<UvxDistribution>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct NpxDistribution {
-    pub package: String,
-    #[serde(default)]
-    pub args: Option<Vec<String>>,
-    #[serde(default)]
-    pub env: Option<HashMap<String, String>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct BinaryTarget {
-    /// Where the CDN registry says the binary can be downloaded. Maestro never fetches it — it
-    /// spawns what is already on the host — so a hand-written entry can leave it out.
-    #[serde(default)]
-    pub archive: Option<String>,
-    pub cmd: String,
-    #[serde(default)]
-    pub args: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct UvxDistribution {
-    pub package: String,
-    #[serde(default)]
-    pub args: Option<Vec<String>>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4567,24 +4442,6 @@ mod tests {
         let resp_back: AnyMessage = serde_json::from_str(&resp_json).unwrap();
         assert!(matches!(req_back, AnyMessage::Request(_)));
         assert!(matches!(resp_back, AnyMessage::Response(_)));
-    }
-
-    #[tokio::test]
-    async fn framing_gateway_request_roundtrip() {
-        let req = GatewayRequest {
-            token: "1cb1f3c8-0000-4000-8000-000000000000".to_string(),
-            call: HostToolCall {
-                session_id: "session-3".to_string(),
-                request_id: "shim".to_string(),
-                name: "canvas_await".to_string(),
-                arguments: serde_json::json!({"surfaceId": "s1", "timeoutSeconds": 30}),
-            },
-        };
-        let mut buf: Vec<u8> = Vec::new();
-        write_frame(&mut buf, &req).await.unwrap();
-        let mut cursor = std::io::Cursor::new(buf);
-        let back: GatewayRequest = read_frame(&mut cursor).await.unwrap();
-        assert_eq!(req, back);
     }
 }
 

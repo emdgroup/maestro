@@ -16,12 +16,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use maestro_protocol::{
-    CreateTaskRequest, GatewayRequest, HostToolCall, HostToolResult, LoopCheck, LoopCheckEntry,
-    LoopCheckKind, LoopCheckSpec, LoopCheckState, LoopConfig, NewTaskComment, ProjectRef, RunMode,
-    ServerRequest, ServerResponse, SessionUpdate, TaskDraft, TaskPriority, TaskRef, TaskStatus,
-    TaskUpdate, UpdateTaskRequest, WorkspaceMode,
+    CreateTaskRequest, HostToolCall, HostToolResult, LoopCheck, LoopCheckEntry, LoopCheckKind,
+    LoopCheckSpec, LoopCheckState, LoopConfig, NewTaskComment, ProjectRef, RunMode, ServerRequest,
+    ServerResponse, SessionUpdate, TaskDraft, TaskPriority, TaskRef, TaskStatus, TaskUpdate,
+    UpdateTaskRequest, WorkspaceMode,
 };
 use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
 
@@ -33,6 +34,25 @@ use crate::task_store::requests::answer_into;
 use maestro_protocol::mcp_args::{
     bool_argument, enum_argument, required_text, string_argument, string_list_argument,
 };
+
+/// What the MCP shim writes to the gateway, framed with `write_frame`. The reply is a bare
+/// [`HostToolResult`].
+///
+/// The token is checked before anything else is read from the call: the listener is on loopback,
+/// which any local process can reach.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GatewayRequest {
+    pub token: String,
+    pub call: HostToolCall,
+}
+
+/// Environment variables the `McpServerStdio` entry carries to the shim.
+pub const MCP_GATEWAY_PORT_ENV: &str = "MAESTRO_MCP_PORT";
+pub const MCP_GATEWAY_TOKEN_ENV: &str = "MAESTRO_MCP_TOKEN";
+pub const MCP_GATEWAY_SESSION_ENV: &str = "MAESTRO_MCP_SESSION";
+
+/// Name of the MCP server Maestro injects. A `.mcp.json` entry using it is skipped.
+pub const MCP_SERVER_NAME: &str = "maestro";
 
 /// A call waiting for an answer, and where to send it.
 pub(crate) type GatewayItem = (HostToolCall, oneshot::Sender<HostToolResult>);
@@ -1417,6 +1437,24 @@ pub(crate) fn cancel_session(pending_host_tools: &mut PendingHostTools, session_
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn framing_gateway_request_roundtrip() {
+        let req = GatewayRequest {
+            token: "1cb1f3c8-0000-4000-8000-000000000000".to_string(),
+            call: HostToolCall {
+                session_id: "session-3".to_string(),
+                request_id: "shim".to_string(),
+                name: "canvas_await".to_string(),
+                arguments: serde_json::json!({"surfaceId": "s1", "timeoutSeconds": 30}),
+            },
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        maestro_protocol::write_frame(&mut buf, &req).await.unwrap();
+        let mut cursor = std::io::Cursor::new(buf);
+        let back: GatewayRequest = maestro_protocol::read_frame(&mut cursor).await.unwrap();
+        assert_eq!(req, back);
+    }
 
     fn pending_with(
         entries: &[(&str, &str)],

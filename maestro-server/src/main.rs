@@ -63,8 +63,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use maestro_protocol::{
-    AcpRegistry, DiagnosticPayload, ErrorResponse, HandshakeResponse, ServerRequest,
-    ServerResponse, PROTOCOL_VERSION,
+    DiagnosticPayload, ErrorResponse, HandshakeResponse, ServerRequest, ServerResponse,
+    PROTOCOL_VERSION,
 };
 
 use agent_restart::handle_agent_restart;
@@ -544,7 +544,7 @@ async fn run_server(
 
     // Agent discovery (which::which PATH scanning) runs after the handshake so the client does not
     // time out waiting on slow PATH scans on Windows.
-    let registry: AcpRegistry = tokio::task::spawn_blocking(agent::load_registry)
+    let registry: agent::registry::AcpRegistry = tokio::task::spawn_blocking(agent::load_registry)
         .await
         .unwrap_or_else(|_| agent::load_registry());
 

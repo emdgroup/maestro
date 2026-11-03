@@ -62,7 +62,7 @@ fn write_to(path: &Path, mut servers: Vec<ManagedMcpServer>) -> Result<(), Strin
         if server.name.trim().is_empty() {
             return Err("An MCP server needs a name".to_string());
         }
-        if server.name == maestro_protocol::MCP_SERVER_NAME {
+        if server.name == crate::mcp_gateway::MCP_SERVER_NAME {
             return Err(format!(
                 "\"{}\" is reserved for Maestro's own server",
                 server.name
@@ -169,7 +169,7 @@ fn convert_for(
             continue;
         }
         let name = server.name.clone();
-        if name == maestro_protocol::MCP_SERVER_NAME {
+        if name == crate::mcp_gateway::MCP_SERVER_NAME {
             out.skipped.push(format!(
                 "{name}: reserved — Maestro provides its own server under this name"
             ));
@@ -581,7 +581,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("dir");
         let path = dir.path().join("mcp-servers.json");
         assert!(write_to(&path, vec![stdio("a", &[]), stdio("a", &[])]).is_err());
-        assert!(write_to(&path, vec![stdio(maestro_protocol::MCP_SERVER_NAME, &[])]).is_err());
+        assert!(write_to(&path, vec![stdio(crate::mcp_gateway::MCP_SERVER_NAME, &[])]).is_err());
         assert!(read_from(&path).expect("missing is empty").is_empty());
     }
 

@@ -17,14 +17,51 @@
 //! at a dead port, and only the lock can tell that apart from a live one.
 
 use fs2::FileExt;
-use maestro_protocol::{
-    DaemonActivity, DaemonRuntime, DAEMON_DIR_DEFAULT, DAEMON_DIR_ENV, DAEMON_LOCK_FILE,
-    DAEMON_RUNTIME_FILE, PROTOCOL_VERSION, SERVER_BUSY_ERROR,
-};
+use maestro_protocol::{DAEMON_DIR_ENV, PROTOCOL_VERSION, SERVER_BUSY_ERROR};
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
+
+/// Fallback daemon directory, relative to the home directory of the user the server runs as.
+pub const DAEMON_DIR_DEFAULT: &str = ".maestro/daemon";
+/// Held open by the running daemon for as long as it lives.
+///
+/// The lock, not the runtime file, is what answers "is a daemon alive here": a killed process
+/// leaves its runtime file behind pointing at a dead port, but the OS releases its lock.
+pub const DAEMON_LOCK_FILE: &str = "lock";
+/// Where a running daemon publishes how to reach it. See [`DaemonRuntime`].
+pub const DAEMON_RUNTIME_FILE: &str = "runtime.json";
+
+/// What a running daemon publishes about itself, written once at startup.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DaemonRuntime {
+    /// Loopback port the daemon accepts client connections on.
+    pub port: u16,
+    /// Secret a client must present as its first line. Any local process can reach the port, so
+    /// this is the only thing deciding whether a connection is answered.
+    pub token: String,
+    /// `CARGO_PKG_VERSION` of the daemon binary.
+    pub version: String,
+    /// Protocol the daemon speaks. A client of a different one kills it and starts its own.
+    pub protocol_version: u32,
+    pub pid: u32,
+}
+
+/// What a daemon answers to a `STATUS` line: whether retiring it would cost anybody anything.
+///
+/// Asked by an `attach` from another build before it replaces the daemon, so it is read as one
+/// JSON line before any framing and must stay readable across protocol versions. Add fields with
+/// `#[serde(default)]` only.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DaemonActivity {
+    /// A Maestro window is connected to it right now.
+    pub client_attached: bool,
+    /// A session is mid-turn, which includes one waiting on a permission prompt and every
+    /// automation run still going.
+    pub turn_active: bool,
+}
 
 /// Sent by a client after its token to say what it wants. Read as plain lines before any framing,
 /// so it keeps working against a daemon speaking a protocol version this binary does not.
