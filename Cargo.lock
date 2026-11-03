@@ -3585,7 +3585,6 @@ dependencies = [
  "fix-path-env",
  "graphql_client",
  "htmd",
- "image",
  "jc-adf",
  "jsonwebtoken",
  "keyring",
@@ -3628,6 +3627,7 @@ name = "maestro-protocol"
 version = "0.44.0"
 dependencies = [
  "base64 0.23.1",
+ "image",
  "serde",
  "serde_json",
  "tokio",
@@ -3653,7 +3653,6 @@ dependencies = [
  "hyper-util",
  "iana-time-zone",
  "ignore",
- "image",
  "maestro-protocol",
  "reqwest",
  "rusqlite",

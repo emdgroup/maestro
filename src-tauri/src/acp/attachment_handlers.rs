@@ -8,95 +8,15 @@ use specta::Type;
 use std::sync::Arc;
 use tauri::State;
 
-const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
-const SCALE_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
+use maestro_protocol::attachments::{
+    image_too_large, is_image_extension, is_pdf_extension, mime_for_extension, scale_image,
+};
 
 fn prepare_image_bytes(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
-    let size = bytes.len() as u64;
-    if size > MAX_IMAGE_BYTES {
-        return Err(format!(
-            "Image too large ({} MB, max {} MB)",
-            size / 1_048_576,
-            MAX_IMAGE_BYTES / 1_048_576
-        ));
+    if let Some(reason) = image_too_large(bytes.len() as u64) {
+        return Err(reason);
     }
-    if size <= SCALE_THRESHOLD_BYTES {
-        return Ok(bytes);
-    }
-
-    let ratio = (SCALE_THRESHOLD_BYTES as f64 / size as f64).sqrt();
-    if ratio >= 0.9 {
-        return Ok(bytes);
-    }
-
-    let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
-    let new_w = (img.width() as f64 * ratio) as u32;
-    let new_h = (img.height() as f64 * ratio) as u32;
-    let resized = img.resize(new_w, new_h, image::imageops::FilterType::Triangle);
-
-    let mut output = Vec::new();
-    resized
-        .write_to(
-            &mut std::io::Cursor::new(&mut output),
-            image::ImageFormat::Png,
-        )
-        .map_err(|e| e.to_string())?;
-    Ok(output)
-}
-
-fn mime_for_extension(path: &str) -> Option<&'static str> {
-    let ext = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    match ext.as_str() {
-        "rs" => Some("text/x-rust"),
-        "ts" | "tsx" => Some("text/typescript"),
-        "js" | "jsx" => Some("text/javascript"),
-        "py" => Some("text/x-python"),
-        "go" => Some("text/x-go"),
-        "rb" => Some("text/x-ruby"),
-        "java" => Some("text/x-java"),
-        "c" | "h" => Some("text/x-c"),
-        "cpp" => Some("text/x-c++"),
-        "toml" => Some("text/x-toml"),
-        "json" => Some("application/json"),
-        "md" => Some("text/markdown"),
-        "yaml" | "yml" => Some("text/yaml"),
-        "sh" => Some("text/x-sh"),
-        "html" => Some("text/html"),
-        "css" => Some("text/css"),
-        "sql" => Some("text/x-sql"),
-        "graphql" => Some("text/x-graphql"),
-        "png" => Some("image/png"),
-        "jpg" | "jpeg" => Some("image/jpeg"),
-        "gif" => Some("image/gif"),
-        "webp" => Some("image/webp"),
-        "svg" => Some("image/svg+xml"),
-        "pdf" => Some("application/pdf"),
-        _ => None,
-    }
-}
-
-fn is_image_extension(path: &str) -> bool {
-    let ext = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    matches!(
-        ext.as_str(),
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "tiff" | "bmp" | "ico" | "svg"
-    )
-}
-
-fn is_pdf_extension(path: &str) -> bool {
-    std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.eq_ignore_ascii_case("pdf"))
-        .unwrap_or(false)
+    scale_image(bytes)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -129,12 +49,8 @@ pub async fn validate_attachment(
         .map_err(|e| format!("Cannot read '{path}': {e}"))?;
     let size_bytes = metadata.len();
 
-    let rejection = if (is_image || is_image_extension(&path)) && size_bytes > MAX_IMAGE_BYTES {
-        Some(format!(
-            "Image too large ({} MB, max {} MB)",
-            size_bytes / 1_048_576,
-            MAX_IMAGE_BYTES / 1_048_576
-        ))
+    let rejection = if is_image || is_image_extension(&path) {
+        image_too_large(size_bytes)
     } else {
         None
     };
@@ -248,12 +164,8 @@ pub(crate) async fn task_attachment_block(
 
     if is_image_extension(path) {
         let size = u64::try_from(size_bytes).unwrap_or(0);
-        if size > MAX_IMAGE_BYTES {
-            return Err(format!(
-                "Image too large ({} MB, max {} MB)",
-                size / 1_048_576,
-                MAX_IMAGE_BYTES / 1_048_576
-            ));
+        if let Some(reason) = image_too_large(size) {
+            return Err(reason);
         }
         let prepared = prepare_image_bytes(read_bytes(conn, path).await?)?;
         let mime = mime_for_extension(path).unwrap_or("image/png");
