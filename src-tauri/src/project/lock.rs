@@ -14,9 +14,9 @@ use crate::acp::connection_server::{
 use crate::acp::discovery_handlers::ensure_connection_server;
 use crate::acp::transport::ServerRequest;
 use crate::acp::ConnectionKey;
-use crate::command_ext::NoConsoleWindow;
 use crate::core::AppState;
 use crate::project::Project;
+use maestro_protocol::command_ext::NoConsoleWindow;
 
 /// Marks the one error the frontend branches on rather than just displaying.
 /// `isProjectLockedError` in `src/utils/helpers/error-utils.ts` matches this prefix, so the

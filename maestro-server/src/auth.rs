@@ -14,9 +14,9 @@ use std::sync::Arc;
 use maestro_protocol::{AuthTerminalExitResponse, ErrorResponse, ServerResponse};
 
 use crate::agent;
-use crate::command_ext::NoConsoleWindow;
 use crate::helpers::{resolve_agent_spawn_params, send_diag, send_response};
 use crate::sessions::SharedAgentConnections;
+use maestro_protocol::command_ext::NoConsoleWindow;
 
 /// How long the user has to finish signing in before the attempt is abandoned.
 const AUTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);

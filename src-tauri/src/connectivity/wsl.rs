@@ -36,7 +36,7 @@ pub struct WslConnection {
 pub async fn list_distros() -> Result<Vec<WslDistro>, String> {
     #[cfg(windows)]
     {
-        use crate::command_ext::NoConsoleWindow;
+        use maestro_protocol::command_ext::NoConsoleWindow;
         let output = tokio::process::Command::new("wsl.exe")
             .args(["--list", "--verbose"])
             .no_console_window()
@@ -67,7 +67,7 @@ const START_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 /// it is what keeps a sleeping distro from being reported as a broken connection.
 #[cfg(windows)]
 pub async fn ensure_running(distro: &str) -> Result<(), String> {
-    use crate::command_ext::NoConsoleWindow;
+    use maestro_protocol::command_ext::NoConsoleWindow;
 
     match list_distros()
         .await?

@@ -17,12 +17,12 @@ use maestro_protocol::{
     ServerResponse, Task, TaskBall, TaskPhase, TaskRef, TaskTransition, TransitionGuard,
 };
 
-use crate::command_ext::NoConsoleWindow;
 use crate::helpers::{broadcast, send_diag};
 use crate::project_store::Store;
 use crate::task_store::loops::{self, Committed};
 use crate::turn::TurnFacts;
 use crate::worktree::git;
+use maestro_protocol::command_ext::NoConsoleWindow;
 
 /// How much of a command's output is kept, from the end.
 const TAIL_LINES: usize = 200;

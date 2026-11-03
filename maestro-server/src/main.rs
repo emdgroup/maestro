@@ -19,7 +19,6 @@ mod automation_runner;
 mod automations;
 mod autostart;
 mod client_sink;
-mod command_ext;
 mod daemon;
 mod dispatch;
 mod exec_channel;

@@ -119,7 +119,7 @@ fn remote_autostart(status: &maestro_protocol::ServerStatus) -> Autostart {
 /// Returns the process exit code. Nothing is logged, because the logger is set up from a database
 /// this path never opens; a server that fails to start here is started by the next connection.
 pub fn start_server_at_login(args: &[std::ffi::OsString]) -> i32 {
-    use crate::command_ext::NoConsoleWindow;
+    use maestro_protocol::command_ext::NoConsoleWindow;
     let [server, daemon_dir] = args else {
         return 2;
     };
@@ -168,7 +168,7 @@ const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 
 #[cfg(windows)]
 fn reg(args: &[&str]) -> Result<std::process::Output, String> {
-    use crate::command_ext::NoConsoleWindow;
+    use maestro_protocol::command_ext::NoConsoleWindow;
     std::process::Command::new("reg")
         .args(args)
         .no_console_window()
