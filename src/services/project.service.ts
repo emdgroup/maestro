@@ -162,13 +162,9 @@ export function useCreateProject() {
     mutationFn: ({ path, connection }: { path: string; connection: ConnectionKey }) =>
       api.createProject(path, connection),
     onSuccess: (_data, { connection }) => {
-      const key =
-        connection.type === "wsl"
-          ? projectQueryKeys.listByConnection(`wsl-${connection.id}`)
-          : connection.type === "ssh"
-            ? projectQueryKeys.listByConnection(connection.id)
-            : projectQueryKeys.listByConnection("local");
-      void queryClient.invalidateQueries({ queryKey: key });
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.homeFor(connectionQueryKey(connection)),
+      });
     },
     onError: createErrorToastHandler("Failed to create project"),
   });
@@ -351,14 +347,8 @@ export function useCloneProject() {
         dockerConnectionId,
         provider ?? null,
       ),
-    onSuccess: (_, { connectionId, wslConnectionId, dockerConnectionId }) => {
-      const key =
-        dockerConnectionId != null
-          ? projectQueryKeys.listByConnection(`docker-${dockerConnectionId}`)
-          : wslConnectionId != null
-            ? projectQueryKeys.listByConnection(`wsl-${wslConnectionId}`)
-            : projectQueryKeys.listByConnection(connectionId ?? "local");
-      void queryClient.invalidateQueries({ queryKey: key });
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.home() });
       toast.success("Project cloned successfully");
     },
     onError: createErrorToastHandler("Clone failed"),
@@ -393,14 +383,8 @@ export function useCreateNewProject() {
         wslConnectionId,
         dockerConnectionId,
       ),
-    onSuccess: (_, { connectionId, wslConnectionId, dockerConnectionId }) => {
-      const key =
-        dockerConnectionId != null
-          ? projectQueryKeys.listByConnection(`docker-${dockerConnectionId}`)
-          : wslConnectionId != null
-            ? projectQueryKeys.listByConnection(`wsl-${wslConnectionId}`)
-            : projectQueryKeys.listByConnection(connectionId ?? "local");
-      void queryClient.invalidateQueries({ queryKey: key });
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.home() });
       toast.success("Project created successfully");
     },
     onError: (error) => {
