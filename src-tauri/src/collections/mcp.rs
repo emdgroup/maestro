@@ -38,8 +38,9 @@ pub struct McpKeyValue {
     pub secret: bool,
 }
 
-/// An MCP server the user manages, as the editor and the cards see it. Same shape as
-/// `maestro_protocol::ManagedMcpServer`, which cannot derive `Type`.
+/// An MCP server the user manages, as the editor and the cards see it. The same fields as
+/// `maestro_protocol::ManagedMcpServer`, except that `oauth` is typed here: the daemon carries it
+/// as opaque JSON it never reads.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 pub struct McpServerConfig {
     pub name: String,
@@ -79,13 +80,6 @@ pub struct McpOAuthSettings {
     pub client_secret: String,
     /// A PEM private key, same as `client_secret`.
     pub private_key: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-pub struct McpTestResult {
-    pub ok: bool,
-    pub tools: Vec<String>,
-    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
@@ -333,7 +327,7 @@ pub async fn test_mcp_server(
     server: McpServerConfig,
     previous_name: Option<String>,
     oauth: Option<String>,
-) -> Result<McpTestResult, String> {
+) -> Result<maestro_protocol::McpTestResult, String> {
     let mut server = server;
     let stored_under = previous_name.unwrap_or_else(|| server.name.clone());
     mcp_oauth::refresh_if_due(connection, &stored_under, &app_state).await;
@@ -352,7 +346,7 @@ pub async fn test_mcp_server(
             }
         }
     }
-    convert(query_test_mcp_server_via_server(connection, convert(server)?, &app_state).await?)
+    query_test_mcp_server_via_server(connection, convert(server)?, &app_state).await
 }
 
 /// The whole GitHub MCP Registry, star-ranked: a few hundred servers, read 100 at a time, the

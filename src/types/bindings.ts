@@ -3521,17 +3521,20 @@ export type CommitInfo = { sha: string; message: string;
  * the author date, so an agent's rebased commit would otherwise read as days old.
  */
 committed_at: string }
+/**
+ * How the machine's agent limit is decided.
+ */
 export type ConcurrencyMode = 
 /**
- * The number the user set, regardless of what the host is doing.
+ * The number the user set, regardless of what the machine is doing.
  */
 "Hard" | 
 /**
- * Derived from the host's free memory, recomputed whenever the queue is drained.
+ * Derived from the machine's free memory, `max_concurrent_agents` when it cannot be read.
  * 
  * The default, because the limit exists to stop auto-mode starting agents a host has no
- * memory for — and a fixed number chosen before anyone knew what the machine looks like
- * cannot do that. A host that cannot be measured falls back to the fixed number.
+ * memory for, and a fixed number chosen before anyone knew what the machine looks like
+ * cannot do that.
  */
 "Auto"
 /**
@@ -4034,8 +4037,9 @@ client_secret: string;
  */
 private_key: string }
 /**
- * An MCP server the user manages, as the editor and the cards see it. Same shape as
- * `maestro_protocol::ManagedMcpServer`, which cannot derive `Type`.
+ * An MCP server the user manages, as the editor and the cards see it. The same fields as
+ * `maestro_protocol::ManagedMcpServer`, except that `oauth` is typed here: the daemon carries it
+ * as opaque JSON it never reads.
  */
 export type McpServerConfig = { name: string; 
 /**

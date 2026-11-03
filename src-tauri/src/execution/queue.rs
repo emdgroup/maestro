@@ -32,7 +32,7 @@ pub async fn get_queue_capacity(
     Ok(QueueCapacity {
         slots: status.slots,
         used: status.used as i32,
-        mode: status.settings.concurrency_mode.into(),
+        mode: status.settings.concurrency_mode,
         reason: status.reason,
     })
 }

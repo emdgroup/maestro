@@ -208,6 +208,18 @@ test run rewrites `src/types/bindings.ts`. `.oxfmtrc.json` lists the file under 
 the committed copy is the generator's own output and a test run leaves it alone unless the bindings
 genuinely changed — a diff there means a model changed and should be committed.
 
+**A wire type the frontend sees is the protocol's own, not a copy.** `maestro-protocol` has an
+optional `specta` feature, turned on only by `src-tauri`, and a type the app hands its frontend
+derives `#[cfg_attr(feature = "specta", derive(specta::Type))]` where it is defined. Re-export it
+from the app's domain module rather than writing a twin. The feature must stay off in
+`maestro-server`, which is deployed to every remote host: `cargo tree -p maestro-server -e normal |
+grep -c specta` is 0. Two specta habits to know: a field with `#[serde(default)]` comes out optional
+(`?:`) even when it is not an `Option`, and a doc comment is copied into a TypeScript block comment,
+so it must never contain a star followed by a slash. The app keeps its own struct only where the
+shape differs: `Task` and `Worktree` carry `project_id` for the wire's `project_path`, `Prompt` adds
+`shared`, `McpServerConfig` types the `oauth` the wire carries as opaque JSON, and `UsageTurn`
+flattens the wire's nested token counts.
+
 ## Project Conventions
 
 ### File Organization
