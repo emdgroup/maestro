@@ -167,35 +167,35 @@ pub fn open(dir: &Path) -> Result<Connection, String> {
         .map_err(|e| format!("cannot set busy_timeout on {path:?}: {e}"))?;
     conn.pragma_update(None, "foreign_keys", "ON")
         .map_err(|e| format!("cannot enable foreign keys on {path:?}: {e}"))?;
-    migrate(&mut conn)?;
+    migrate(&mut conn, "projects.db", MIGRATIONS)?;
     Ok(conn)
 }
 
-/// Bring the schema up to date, each step in a transaction of its own with the version it reaches.
-fn migrate(conn: &mut Connection) -> Result<(), String> {
-    let version: i64 = conn
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .map_err(|e| format!("cannot read the project schema version: {e}"))?;
-    if version > MIGRATIONS.len() as i64 {
+/// The schema version `PRAGMA user_version` records, 0 for a file that never set one.
+pub(crate) fn schema_version(conn: &Connection, file: &str) -> Result<i64, String> {
+    conn.query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|e| format!("cannot read the schema version of {file}: {e}"))
+}
+
+/// Bring `file`'s schema up to date through the append-only `steps`, each in a transaction of its
+/// own with the version it reaches. A file newer than this binary knows is refused, not opened.
+pub(crate) fn migrate(conn: &mut Connection, file: &str, steps: &[&str]) -> Result<(), String> {
+    let version = schema_version(conn, file)?;
+    if version > steps.len() as i64 {
         return Err(format!(
-            "projects.db is at schema version {version}, newer than this maestro-server knows \
+            "{file} is at schema version {version}, newer than this maestro-server knows \
              ({}); update Maestro",
-            MIGRATIONS.len()
+            steps.len()
         ));
     }
-    for (index, step) in MIGRATIONS.iter().enumerate().skip(version as usize) {
+    for (index, step) in steps.iter().enumerate().skip(version as usize) {
         let tx = conn
             .transaction()
-            .map_err(|e| format!("cannot migrate the project schema: {e}"))?;
+            .map_err(|e| format!("cannot migrate {file}: {e}"))?;
         tx.execute_batch(step)
             .and_then(|()| tx.pragma_update(None, "user_version", index as i64 + 1))
             .and_then(|()| tx.commit())
-            .map_err(|e| {
-                format!(
-                    "cannot migrate the project schema to version {}: {e}",
-                    index + 1
-                )
-            })?;
+            .map_err(|e| format!("cannot migrate {file} to version {}: {e}", index + 1))?;
     }
     Ok(())
 }
@@ -206,7 +206,7 @@ pub fn open_in_memory() -> Connection {
     let mut conn = Connection::open_in_memory().expect("in-memory database");
     conn.pragma_update(None, "foreign_keys", "ON")
         .expect("foreign keys");
-    migrate(&mut conn).expect("schema");
+    migrate(&mut conn, "projects.db", MIGRATIONS).expect("schema");
     conn
 }
 
