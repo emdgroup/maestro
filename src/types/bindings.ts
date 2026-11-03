@@ -3381,7 +3381,7 @@ export type AgentStreamWidth = "full" | "compact"
  * which `DeleteWorktreeDialog` reads as "this branch exists only locally".
  */
 export type AheadBehind = { ahead: number; behind: number }
-export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; 
+export type AppSettings = { theme_preference: string | null; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; 
 /**
  * Global default accent hue in degrees, as a string. Projects without their own
  * `accent_color` follow this; `None` follows the OS accent colour.

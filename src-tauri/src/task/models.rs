@@ -232,16 +232,6 @@ pub enum TaskPriority {
     None,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct CreateTaskRequest {
-    pub project_id: i32,
-    pub title: String,
-    #[specta(optional)]
-    pub description: Option<String>,
-    pub skills: Vec<String>,
-}
-
 /// Where an agent works: a worktree of its own, the project directory, or a worktree that already
 /// exists. Shared by tasks and by the project default that seeds them.
 ///

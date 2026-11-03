@@ -195,8 +195,6 @@ pub struct LogLocation {
 pub struct AppSettings {
     pub theme_preference: Option<String>,
     #[serde(default)]
-    pub auto_mode: bool,
-    #[serde(default)]
     pub thinking_visibility: ActivityVisibility,
     #[serde(default)]
     pub tool_call_visibility: ActivityVisibility,
@@ -263,7 +261,6 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             theme_preference: Some("system".to_string()),
-            auto_mode: false,
             thinking_visibility: ActivityVisibility::Auto,
             tool_call_visibility: ActivityVisibility::Auto,
             accent_color: None,

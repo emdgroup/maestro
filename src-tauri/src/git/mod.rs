@@ -15,9 +15,7 @@ pub mod worktree_sync;
 pub use diff_models::{
     BinaryFileInfo, CommitInfo, DiffTarget, DirtyStatus, WorktreeDiffResult, WorktreeDiffStats,
 };
-pub use review_models::{
-    MergeResult, ReviewComment, ReviewDecision, ReviewFeedback, ReviewResult, SaveReviewRequest,
-};
+pub use review_models::{MergeResult, ReviewResult};
 
 pub use exec::{run_git_commands_lossy, run_git_in_dir, run_git_in_dir_lossy};
 pub use merge::squash_merge_to_base;

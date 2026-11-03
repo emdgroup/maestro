@@ -22,10 +22,9 @@ pub use execution::{spawn_agent_cli_pty, PtySession};
 pub use models::{
     worktree_path_for_task, ActiveSessionInfo, AppSettings, CredentialSource, GitConnection,
     IntegrationStatus, IssueTrackingConfig, Project, ProjectConfig, ProjectConfigRequest,
-    ProjectConfigResponse, ProjectStatus, RemoteIssue, ReviewComment, ReviewDecision,
-    ReviewFeedback, SessionListEntryDto, Task, TaskAttachment, TaskConfigRequest, TaskInstruction,
-    TaskPriority, TaskRelationship, TaskStatus, Worktree, WorktreeWithStatus, WORKTREE_DIR,
-    WORKTREE_PATH_PREFIX,
+    ProjectConfigResponse, ProjectStatus, RemoteIssue, SessionListEntryDto, Task, TaskAttachment,
+    TaskConfigRequest, TaskInstruction, TaskPriority, TaskRelationship, TaskStatus, Worktree,
+    WorktreeWithStatus, WORKTREE_DIR, WORKTREE_PATH_PREFIX,
 };
 
 use tauri_specta::{collect_commands, Builder};
