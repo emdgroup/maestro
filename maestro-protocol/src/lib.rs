@@ -712,11 +712,10 @@ pub struct TestMcpServerRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct McpTestResult {
     pub ok: bool,
-    #[serde(default)]
     pub tools: Vec<String>,
-    #[serde(default)]
     pub error: Option<String>,
 }
 
@@ -2113,12 +2112,17 @@ pub struct RequestTaskExecutionResponse {
     pub deferred: bool,
 }
 
-/// How the machine's agent limit is decided. Serialized as the app's `ConcurrencyMode` is.
+/// How the machine's agent limit is decided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum ConcurrencyMode {
     /// The number the user set, regardless of what the machine is doing.
     Hard,
     /// Derived from the machine's free memory, `max_concurrent_agents` when it cannot be read.
+    ///
+    /// The default, because the limit exists to stop auto-mode starting agents a host has no
+    /// memory for, and a fixed number chosen before anyone knew what the machine looks like
+    /// cannot do that.
     #[default]
     Auto,
 }

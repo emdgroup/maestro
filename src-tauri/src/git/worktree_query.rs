@@ -232,16 +232,6 @@ pub async fn list_worktrees_with_status(
     let mut disk_worktrees = crate::git::list_worktrees(&git_conn).await?;
     disk_worktrees.retain(|wt| !maestro_protocol::worktree_names::is_loop_sandbox(&wt.path));
 
-    struct DbWorktreeRow {
-        id: i32,
-        task_id: Option<i32>,
-        branch_name: String,
-        path: String,
-        created_at: String,
-        base_branch: Option<String>,
-        task_name: Option<String>,
-    }
-
     // Two reads joined here, where the app's own tables once joined in SQL: the rows and the
     // tasks they name live in the daemon.
     let worktrees =
@@ -266,24 +256,11 @@ pub async fn list_worktrees_with_status(
     } else {
         HashMap::new()
     };
-    let db_rows: Vec<DbWorktreeRow> = worktrees
-        .into_iter()
-        .map(|row| DbWorktreeRow {
-            id: row.id,
-            task_name: row
-                .task_id
-                .and_then(|task_id| task_titles.get(&task_id).cloned()),
-            task_id: row.task_id,
-            branch_name: row.branch_name,
-            path: row.path,
-            created_at: row.created_at,
-            base_branch: row.base_branch,
-        })
-        .collect();
+    let db_rows = worktrees;
 
     // Keyed by absolute path because that is what git reports; the rows store a path relative to
     // the repo root, so it is the row that has to be rewritten to match, not the other way round.
-    let db_map: HashMap<String, &DbWorktreeRow> = db_rows
+    let db_map: HashMap<String, &maestro_protocol::Worktree> = db_rows
         .iter()
         .map(|row| {
             let abs_path = format!("{}/{}", repo_path, row.path);
@@ -375,7 +352,9 @@ pub async fn list_worktrees_with_status(
                 path: format!("{}/{}", repo_path, db_row.path),
                 changed_files_count,
                 created_at: Some(db_row.created_at.clone()),
-                task_name: db_row.task_name.clone(),
+                task_name: db_row
+                    .task_id
+                    .and_then(|task_id| task_titles.get(&task_id).cloned()),
                 is_zombie,
                 is_orphan: false,
                 diff_stat,

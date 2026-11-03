@@ -111,7 +111,7 @@ pub async fn get_connection_capacity(
     )
     .await?;
     Ok(ConnectionCapacitySettings {
-        concurrency_mode: status.settings.concurrency_mode.into(),
+        concurrency_mode: status.settings.concurrency_mode,
         max_concurrent_agents: status.settings.max_concurrent_agents,
     })
 }
@@ -130,7 +130,7 @@ pub async fn save_connection_capacity(
         &app_state,
         &format!("No connection server for connection {connection:?}"),
         ServerRequest::SetCapacity(maestro_protocol::CapacitySettings {
-            concurrency_mode: settings.concurrency_mode.into(),
+            concurrency_mode: settings.concurrency_mode,
             max_concurrent_agents: settings.max_concurrent_agents,
         }),
         reply!(ServerResponse::SetCapacityOk => ()),
