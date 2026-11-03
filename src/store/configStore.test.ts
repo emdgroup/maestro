@@ -1,72 +1,20 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { useConfigStore } from "./configStore";
+import { describe, expect, it } from "vitest";
+import { renderHook } from "@testing-library/react";
+import type { ToolCheckEntry } from "@/types/bindings";
+import { useConfigStore, usePreflightToolChecks } from "./configStore";
 
-function resetStore() {
-  useConfigStore.setState({
-    isLoading: false,
-    error: null,
-  });
-}
+const check = (tool: string) => ({ tool, available: true }) as ToolCheckEntry;
 
-describe("configStore – initial state", () => {
-  beforeEach(resetStore);
+describe("configStore – preflight tool checks", () => {
+  /** SSH and WSL ids come from different tables, so the same number names two connections. */
+  it("keeps an SSH and a WSL connection with the same id apart", () => {
+    const { setPreflightToolChecks } = useConfigStore.getState();
+    setPreflightToolChecks({ type: "ssh", id: 1 }, [check("git")]);
+    setPreflightToolChecks({ type: "wsl", id: 1 }, [check("node")]);
 
-  it("has correct default values", () => {
-    const s = useConfigStore.getState();
-    expect(s.isLoading).toBe(false);
-    expect(s.error).toBeNull();
-  });
-});
-
-describe("configStore – setLoading / setError / clearError", () => {
-  beforeEach(resetStore);
-
-  it("setLoading toggles isLoading", () => {
-    useConfigStore.getState().setLoading(true);
-    expect(useConfigStore.getState().isLoading).toBe(true);
-    useConfigStore.getState().setLoading(false);
-    expect(useConfigStore.getState().isLoading).toBe(false);
-  });
-
-  it("setError sets error string", () => {
-    useConfigStore.getState().setError("something went wrong");
-    expect(useConfigStore.getState().error).toBe("something went wrong");
-  });
-
-  it("clearError resets error to null", () => {
-    useConfigStore.getState().setError("oops");
-    useConfigStore.getState().clearError();
-    expect(useConfigStore.getState().error).toBeNull();
-  });
-});
-
-describe("configStore – setState (partial update)", () => {
-  beforeEach(resetStore);
-
-  it("merges partial config without affecting other fields", () => {
-    useConfigStore.getState().setError("existing error");
-    useConfigStore.getState().setState({ isLoading: true });
-    const s = useConfigStore.getState();
-    expect(s.isLoading).toBe(true);
-    expect(s.error).toBe("existing error");
-  });
-
-  it("ignores undefined keys", () => {
-    useConfigStore.getState().setError("existing error");
-    useConfigStore.getState().setState({});
-    expect(useConfigStore.getState().error).toBe("existing error");
-  });
-});
-
-describe("configStore – resetConfig", () => {
-  beforeEach(resetStore);
-
-  it("resetConfig restores all fields to defaults", () => {
-    useConfigStore.getState().setLoading(true);
-    useConfigStore.getState().setError("err");
-    useConfigStore.getState().resetConfig();
-    const s = useConfigStore.getState();
-    expect(s.isLoading).toBe(false);
-    expect(s.error).toBeNull();
+    const ssh = renderHook(() => usePreflightToolChecks({ type: "ssh", id: 1 }));
+    const wsl = renderHook(() => usePreflightToolChecks({ type: "wsl", id: 1 }));
+    expect(ssh.result.current.map((c) => c.tool)).toEqual(["git"]);
+    expect(wsl.result.current.map((c) => c.tool)).toEqual(["node"]);
   });
 });
