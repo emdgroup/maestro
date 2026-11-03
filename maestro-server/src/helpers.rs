@@ -242,36 +242,44 @@ pub(crate) async fn broadcast(stdout: &crate::ClientOut, response: ServerRespons
     }
 }
 
-/// Forward a command to an active session. Returns `Err` only if stdout write fails.
-/// Sends an error response to stdout if the session is not found or its channel is closed.
+/// Answer a request. A write never fails, since a client that has gone just drops the bytes, so
+/// the one failure left is a reply that cannot be encoded: over `MAX_MESSAGE_SIZE`, or a serde
+/// error. That request is answered with an `Error` instead, so it fails rather than hangs and
+/// nothing else is affected.
+pub(crate) async fn reply(stdout: &crate::ClientOut, response: &ServerResponse) {
+    // As a string: the boxed error is not `Send`, and this awaits again while holding it.
+    let Err(e) = send_response(stdout, response)
+        .await
+        .map_err(|e| e.to_string())
+    else {
+        return;
+    };
+    send_diag("warn", format!("[server] could not encode a reply: {e}"));
+    let fallback = error_response(format!("The reply could not be sent: {e}"));
+    if let Err(e) = send_response(stdout, &fallback).await {
+        send_diag(
+            "error",
+            format!("[server] could not send an error reply: {e}"),
+        );
+    }
+}
+
+/// Forward a command to an active session, answering with an error when the session is not found
+/// or its channel is closed.
 pub(crate) async fn forward_to_session(
     sessions: &SessionMap,
     session_id: &str,
     cmd: SessionCommand,
     stdout: &crate::ClientOut,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if let Some(session) = sessions.get(session_id) {
-        if session.cmd_tx.send(cmd).await.is_err() {
-            send_response(
-                stdout,
-                &ServerResponse::Error(ErrorResponse {
-                    message: format!("session {} connection closed", session_id),
-                    session_id: None,
-                }),
-            )
-            .await?;
-        }
-    } else {
-        send_response(
-            stdout,
-            &ServerResponse::Error(ErrorResponse {
-                message: format!("unknown session: {}", session_id),
-                session_id: None,
-            }),
-        )
-        .await?;
-    }
-    Ok(())
+) {
+    let message = match sessions.get(session_id) {
+        Some(session) => match session.cmd_tx.send(cmd).await {
+            Ok(()) => return,
+            Err(_) => format!("session {session_id} connection closed"),
+        },
+        None => format!("unknown session: {session_id}"),
+    };
+    reply(stdout, &error_response(message)).await;
 }
 
 #[cfg(test)]
@@ -305,5 +313,31 @@ mod final_message_tests {
             Some("All four tests pass.")
         );
         assert_eq!(take_final_message(session), None);
+    }
+}
+
+#[cfg(test)]
+mod reply_tests {
+    use super::*;
+    use crate::client_sink::ClientSink;
+
+    /// A reply too large to encode fails its request, rather than going unanswered.
+    #[tokio::test]
+    async fn a_reply_that_cannot_be_encoded_is_answered_with_an_error() {
+        let root = ClientSink::detached();
+        let (ours, mut theirs) = tokio::io::duplex(1 << 16);
+        let client = root.lock().await.attach(Box::new(ours)).await;
+        let to_client = ClientSink::for_client(&root, client).await;
+
+        let huge = error_response("x".repeat(maestro_protocol::MAX_MESSAGE_SIZE));
+        reply(&to_client, &huge).await;
+
+        let back: ServerResponse = maestro_protocol::read_message(&mut theirs)
+            .await
+            .expect("an answer");
+        assert!(
+            matches!(&back, ServerResponse::Error(e) if e.message.starts_with("The reply could not be sent")),
+            "{back:?}"
+        );
     }
 }
