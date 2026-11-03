@@ -85,11 +85,21 @@ impl ConnectionKey {
         }
     }
 
+    /// Identifier for auth terminal ids and event names. Free to change format, unlike
+    /// [`Self::storage_id`], which is written to the database.
+    pub fn event_id(&self) -> String {
+        match self {
+            ConnectionKey::Local => "local".to_string(),
+            ConnectionKey::Ssh { id } => format!("ssh-{id}"),
+            ConnectionKey::Wsl { id } => format!("wsl-{id}"),
+            ConnectionKey::Docker { id } => format!("docker-{id}"),
+        }
+    }
+
     /// Stable identifier for persisting a value against this connection.
     ///
-    /// Separate from the identically-shaped helpers in `auth_handlers` and `reader_task`, which
-    /// mint auth-cache keys and event names: those may change format freely, this one is written
-    /// to the database and cannot.
+    /// Separate from the identically-shaped [`Self::event_id`]: that one may change format
+    /// freely, this one is written to the database and cannot.
     pub fn storage_id(&self) -> String {
         match self {
             ConnectionKey::Local => "local".to_string(),

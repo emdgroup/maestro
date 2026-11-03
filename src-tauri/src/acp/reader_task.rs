@@ -892,7 +892,7 @@ pub(crate) async fn handle_shared_server_message(
             // session that triggered auth was discarded before the modal opened.
             crate::core::emit_or_log(
                 app_handle,
-                &format!("acp://auth-output/{}", connection_key_id(&connection_key)),
+                &format!("acp://auth-output/{}", connection_key.event_id()),
                 &diag,
             );
         }
@@ -1176,15 +1176,6 @@ pub(crate) fn spawn_shared_reader_task(
 
         crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
     });
-}
-
-fn connection_key_id(key: &crate::acp::ConnectionKey) -> String {
-    match key {
-        crate::acp::ConnectionKey::Local => "local".to_string(),
-        crate::acp::ConnectionKey::Ssh { id } => format!("ssh-{id}"),
-        crate::acp::ConnectionKey::Wsl { id } => format!("wsl-{id}"),
-        crate::acp::ConnectionKey::Docker { id } => format!("docker-{id}"),
-    }
 }
 
 /// Whether an error response means the session it names is gone, rather than merely that

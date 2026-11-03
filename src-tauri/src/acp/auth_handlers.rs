@@ -9,15 +9,6 @@ use maestro_protocol::{
 use std::sync::Arc;
 use tauri::State;
 
-fn connection_key_id(key: &crate::acp::ConnectionKey) -> String {
-    match key {
-        crate::acp::ConnectionKey::Local => "local".to_string(),
-        crate::acp::ConnectionKey::Ssh { id } => format!("ssh-{id}"),
-        crate::acp::ConnectionKey::Wsl { id } => format!("wsl-{id}"),
-        crate::acp::ConnectionKey::Docker { id } => format!("docker-{id}"),
-    }
-}
-
 /// Remove a session that never completed spawn (e.g., auth_required) from in-memory state
 /// without sending a Cancel to maestro-server and without tearing down the connection server.
 /// This preserves the connection server so that Authenticate can be called afterward.
@@ -119,7 +110,7 @@ pub async fn acp_start_auth_terminal(
         server.writer_tx.clone()
     };
 
-    let terminal_id = format!("auth-terminal-{}", connection_key_id(&connection));
+    let terminal_id = format!("auth-terminal-{}", connection.event_id());
 
     let req = ServerRequest::SpawnAuthTerminal(SpawnAuthTerminalRequest {
         agent_id,
@@ -158,7 +149,7 @@ pub async fn acp_send_auth_pty_input(
             .writer_tx
             .clone()
     };
-    let terminal_id = format!("auth-terminal-{}", connection_key_id(&connection));
+    let terminal_id = format!("auth-terminal-{}", connection.event_id());
     let req = ServerRequest::AuthTerminalInput(AuthTerminalInputRequest { terminal_id, data });
     let bytes = serialize_message(&req)?;
     writer_tx
@@ -181,7 +172,7 @@ pub async fn acp_abort_auth_terminal(
             .writer_tx
             .clone()
     };
-    let terminal_id = format!("auth-terminal-{}", connection_key_id(&connection));
+    let terminal_id = format!("auth-terminal-{}", connection.event_id());
     let req = ServerRequest::KillAuthTerminal(KillAuthTerminalRequest { terminal_id });
     let bytes = serialize_message(&req)?;
     writer_tx
