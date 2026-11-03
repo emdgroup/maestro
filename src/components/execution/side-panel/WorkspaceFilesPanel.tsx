@@ -43,7 +43,13 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
 } from "@/ui/dropdown-menu";
-import { useReadFile, useReadFileBinary } from "@/services/connection.service";
+import {
+  useReadFile,
+  useReadFileBinary,
+  openFileWithConnection,
+  downloadFileToFolder,
+  opensViaHostCopy,
+} from "@/services/connection.service";
 import { binaryMimeForExtension } from "@/components/execution/activity/fileTypeUtils";
 import { LazyFileTree } from "./LazyFileTree";
 import type { ConnectionKey } from "@/types/bindings";
@@ -64,7 +70,6 @@ import { ToolbarButton } from "./ToolbarButton";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/ui/resizable";
 import { ReviewLayout } from "@/components/execution/diff/ReviewLayout";
 import { useReviewPanelLayout } from "@/components/execution/diff/useReviewPanelLayout";
-import { openFileWithConnection, downloadFileToFolder, opensViaHostCopy } from "@/lib/file-opener";
 import { isAbsolutePath } from "@/lib/path-utils";
 import { CopyStateIcon, useCopyToClipboard } from "@/components/execution/activity/HighlightedCode";
 import { TransferIcon } from "./TransferIcon";

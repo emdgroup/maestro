@@ -17,7 +17,7 @@ import { displayPath, HeldLock, projectStatus } from "@/views/home/ProjectTile";
 import type { ProjectCard } from "@/views/home/ProjectTile";
 import { SshAuthModal } from "@/views/home/ssh-auth-modal/SshAuthModal";
 import type { AuthSubmission } from "@/views/home/ssh-auth-modal/ssh-auth-utils";
-import { attach, connect, signInWith } from "@/views/home/useConnectionActions";
+import { attach, connect, signInWith } from "@/services/connection.service";
 import { useHomeConnections } from "@/views/home/useHomeConnections";
 import { useHomeSummaries } from "@/views/home/useHomeSummaries";
 import { useOpenProject } from "@/views/home/useOpenProject";

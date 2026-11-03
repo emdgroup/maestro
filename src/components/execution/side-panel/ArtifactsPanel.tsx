@@ -8,7 +8,11 @@ import { ReviewLayout } from "@/components/execution/diff/ReviewLayout";
 import { useReviewPanelLayout } from "@/components/execution/diff/useReviewPanelLayout";
 import { WorkingFileContentView } from "@/components/execution/activity/WorkingFileContentView";
 import { useAcpSessionMeta } from "@/services/execution.service";
-import { openFileWithConnection, downloadFileToFolder, opensViaHostCopy } from "@/lib/file-opener";
+import {
+  openFileWithConnection,
+  downloadFileToFolder,
+  opensViaHostCopy,
+} from "@/services/connection.service";
 import type { ConnectionKey } from "@/types/bindings";
 import { ToolbarButton } from "./ToolbarButton";
 import { TransferIcon } from "./TransferIcon";

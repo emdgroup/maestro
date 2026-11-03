@@ -36,16 +36,18 @@ import {
   isSubagentToolCall,
 } from "../activity/utils";
 import type { UsageState, ToolCallItem, UserMessageItem } from "../activity/types";
-import { api } from "@/lib/tauri-utils";
 import { cn } from "@/lib/utils";
 import { fileUriToPath, toPosixPath } from "@/lib/path-utils";
-import { openFileWithConnection } from "@/lib/file-opener";
+import {
+  openFileWithConnection,
+  useArtifactFiles,
+  useWslConnections,
+} from "@/services/connection.service";
 import { opensExternally } from "../activity/fileTypeUtils";
-import { useArtifactFiles, useWslConnections } from "@/services/connection.service";
 import { useSessionActivity, useSessionActivityActions } from "@/store/sessionActivityStore";
 import { useActiveTab } from "@/store/navigationStore";
 import { useBoardActions, useBoardStore } from "@/store/boardStore";
-import { commands } from "@/types/bindings";
+import { abortAuthTerminal } from "@/services/acp-auth.service";
 import type { ArtifactFile, JsonValue, ConnectionKey } from "@/types/bindings";
 import { ExecutionSidePanel } from "@/components/execution/side-panel/ExecutionSidePanel";
 import { useSidePanelTabs } from "@/components/execution/side-panel/useSidePanelTabs";
@@ -65,7 +67,12 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/ui/resiz
 
 import { useActivityStatusManager } from "./useActivityStatusManager";
 import { useSidePanelState } from "./useSidePanelState";
-import { useAcpSessionMeta, useActiveSessionsQuery } from "@/services/execution.service";
+import {
+  respondHostTool,
+  setAcpConfigOption,
+  useAcpSessionMeta,
+  useActiveSessionsQuery,
+} from "@/services/execution.service";
 import { usePermissionHandlers } from "./usePermissionHandlers";
 import { useMessageSender } from "./useMessageSender";
 import { AgentLoadingSkeleton } from "./AgentLoadingSkeleton";
@@ -484,7 +491,7 @@ export function AgentActivityPanel({
 
   const handleConfigChange = useCallback(
     async (optionId: string, value: string) => {
-      await api.setAcpConfigOption(sessionId, optionId, value).catch(() => {
+      await setAcpConfigOption(sessionId, optionId, value).catch(() => {
         toast.error("Failed to save config option");
       });
     },
@@ -523,7 +530,7 @@ export function AgentActivityPanel({
   const handleCanvasEvent = useCallback(
     (requestId: string | null, event: unknown) => {
       if (requestId) {
-        void api.respondHostTool(sessionId, requestId, event as JsonValue).catch(() => {
+        void respondHostTool(sessionId, requestId, event as JsonValue).catch(() => {
           toast.error("Could not send your answer to the agent");
         });
         setActivity(sessionId, "thinking");
@@ -553,9 +560,9 @@ export function AgentActivityPanel({
     const waiting = awaitForSurface(pendingCanvasAwaits, next.surfaceId);
     if (waiting) {
       queuedCanvasEventsRef.current = rest;
-      void api
-        .respondHostTool(sessionId, waiting.requestId, next as unknown as JsonValue)
-        .catch(() => toast.error("Could not send your answer to the agent"));
+      void respondHostTool(sessionId, waiting.requestId, next as unknown as JsonValue).catch(() =>
+        toast.error("Could not send your answer to the agent"),
+      );
       setActivity(sessionId, "thinking");
       return;
     }
@@ -913,7 +920,7 @@ export function AgentActivityPanel({
             }}
             onRetry={() => {
               const entry = authRequiredTasks[effectiveAuthKey];
-              if (entry?.terminalId) void commands.acpAbortAuthTerminal(connection);
+              if (entry?.terminalId) abortAuthTerminal(connection);
               setAuthTerminalIdle(effectiveAuthKey);
             }}
             onClose={() => setIsAuthModalOpen(false)}

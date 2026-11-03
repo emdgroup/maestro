@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { openFileWithConnection } from "@/lib/file-opener";
+import { openFileWithConnection } from "@/services/connection.service";
 import { formatBytes, formatTimeAgoCompact } from "@/lib/format-utils";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState } from "react";

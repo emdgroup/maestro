@@ -6,7 +6,6 @@ import { createErrorToastHandler } from "@/lib/error-utils";
 import type { ProfileOverrides } from "@/lib/profile-overrides";
 import { toast } from "sonner";
 
-import { commands } from "@/types/bindings";
 import type {
   Task,
   TaskAttachment,
@@ -176,6 +175,10 @@ export function useSaveTaskReviewMutation() {
     onError: createErrorToastHandler("Failed to save review"),
   });
 }
+
+/** Drop a saved review once its feedback has reached the agent some other way. */
+export const clearTaskReview = (projectId: number, taskId: number) =>
+  api.clearTaskReview(projectId, taskId);
 
 /**
  * Mutation hook for approving task and performing synchronous merge
@@ -630,11 +633,9 @@ export function useCancelTaskMutation() {
 export function useProxyImageQuery(projectId: number, filePath: string) {
   return useQuery({
     queryKey: taskQueryKeys.proxyImage(projectId, filePath),
-    queryFn: async () => {
-      const result = await commands.proxyImage(projectId, filePath);
-      if (result.status === "ok") return result.data;
-      return null;
-    },
+    // A file moved or deleted since it was linked answers null, which callers draw as missing
+    // rather than retrying into a long spinner.
+    queryFn: () => api.proxyImage(projectId, filePath).catch(() => null),
     staleTime: Infinity,
   });
 }

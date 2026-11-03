@@ -3,22 +3,22 @@ import { useQueryClient } from "@tanstack/react-query";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Check, Container, Loader2, Server, SquareTerminal } from "lucide-react";
 import type { ConnectionKey, SshAuthMethod } from "@/types/bindings";
-import { api } from "@/lib/tauri-utils";
 import { getErrorMessage } from "@/lib/error-utils";
 import { cn } from "@/lib/utils";
 import {
-  connectionQueryKeys,
-  dockerQueryKeys,
+  addDockerConnection,
+  addSshConnection,
+  addWslConnection,
+  attach,
+  invalidateConnections,
   useDockerConnections,
   useDockerContainers,
   useWslConnections,
   useWslDistros,
-  wslQueryKeys,
 } from "@/services/connection.service";
 import { connectionKeyId, useHomeStore } from "@/store/homeStore";
 import { HomeSheet } from "./HomeSheet";
 import { Segmented } from "./Segmented";
-import { attach } from "./useConnectionActions";
 import { Button } from "@/ui/button";
 
 type Kind = "ssh" | "wsl" | "docker";
@@ -91,20 +91,10 @@ function SshForm({
         : { Password: { save_password: remember } };
 
   const submit = () =>
-    onConnect(async () => {
-      const id = await api.createSshConnection(address.trim(), authMethod);
-      try {
-        if (auth === "agent") await api.connectSshWithAgent(id);
-        if (auth === "key") await api.connectSshWithKey(id, keyPath, null, false);
-        if (auth === "password") await api.connectSshWithPassword(id, password, remember);
-      } catch (error) {
-        // Never confirmed, so it is not kept.
-        await api.deleteSshConnection(id).catch(console.error);
-        throw error;
-      }
-      if (name.trim()) await api.renameSshConnection(id, name.trim());
-      return { type: "ssh", id };
-    }, address.trim());
+    onConnect(
+      () => addSshConnection(address.trim(), authMethod, password, name.trim()),
+      address.trim(),
+    );
 
   return (
     <div className="mt-5">
@@ -217,12 +207,7 @@ function WslList({
               key={distro.name}
               type="button"
               disabled={taken}
-              onClick={() =>
-                onConnect(async () => {
-                  const connection = await api.saveWslConnection(distro.name, null);
-                  return { type: "wsl", id: connection.id };
-                }, distro.name)
-              }
+              onClick={() => onConnect(() => addWslConnection(distro.name), distro.name)}
               className={cn(
                 "home-pane flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left",
                 taken ? "cursor-default opacity-50" : "cursor-pointer",
@@ -263,14 +248,10 @@ function ContainerList({
               type="button"
               disabled={!usable}
               onClick={() =>
-                onConnect(async () => {
-                  const connection = await api.saveDockerConnection(
-                    container.name,
-                    container.image,
-                    null,
-                  );
-                  return { type: "docker", id: connection.id };
-                }, container.name)
+                onConnect(
+                  () => addDockerConnection(container.name, container.image),
+                  container.name,
+                )
               }
               className={cn(
                 "home-pane flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left",
@@ -334,11 +315,7 @@ export function AddConnectionPanel() {
     setConnecting({ host, target: null });
     try {
       const key = await add();
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() }),
-        queryClient.invalidateQueries({ queryKey: wslQueryKeys.connections() }),
-        queryClient.invalidateQueries({ queryKey: dockerQueryKeys.connections() }),
-      ]);
+      await invalidateConnections(queryClient);
       setConnecting({ host, target: connectionKeyId(key) });
       await attach(key);
     } catch (failure) {

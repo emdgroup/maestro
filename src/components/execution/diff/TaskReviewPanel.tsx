@@ -29,13 +29,17 @@ import {
   useWorktreeDiffStatsQuery,
   useWorktreeCommitsQuery,
 } from "@/services/worktree.service";
-import { useCancelActiveSessionMutation } from "@/services/execution.service";
+import {
+  useCancelActiveSessionMutation,
+  sendAcpPromptStructured,
+} from "@/services/execution.service";
 import {
   useRequestChangesMutation,
   useApproveTaskAndMergeMutation,
   useRejectReviewMutation,
   useSaveTaskReviewMutation,
   useResolveCommitMessageQuery,
+  clearTaskReview,
 } from "@/services/task.service";
 import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
@@ -45,7 +49,6 @@ import { useCodeHostingStatus } from "@/services/integration.service";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 import { useReviewStore } from "@/store/reviewStore";
-import { api } from "@/lib/tauri-utils";
 import { displayItemPath, canApprove } from "@/types/review";
 import { useLoopChecksQuery } from "@/services/loop.service";
 import { canSignOff } from "@/components/kanban/loop/loop-state";
@@ -325,8 +328,8 @@ export function TaskReviewPanel({
             setReworkModalOpen(false);
             if (activeSession) {
               const blocks = buildReviewFeedbackBlocks(data);
-              await api.sendAcpPromptStructured(activeSession.session_id, blocks);
-              api.clearTaskReview(task.project_id, task.id).catch(() => {});
+              await sendAcpPromptStructured(activeSession.session_id, blocks);
+              clearTaskReview(task.project_id, task.id).catch(() => {});
             } else {
               // The daemon puts the review in the coder's prompt and clears it then.
               void execute(task);

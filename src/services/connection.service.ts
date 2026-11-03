@@ -1,8 +1,16 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { join, tempDir } from "@tauri-apps/api/path";
+import { open as openDirPicker } from "@tauri-apps/plugin-dialog";
+import { useQuery, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
-import { createErrorToastHandler } from "@/lib/error-utils";
+import { createErrorToastHandler, getErrorMessage } from "@/lib/error-utils";
 import { toast } from "sonner";
-import type { ConnectionKey } from "@/types/bindings";
+import { useConfigStore } from "@/store/configStore";
+import { connectionKeyId, useHomeStore } from "@/store/homeStore";
+import type { ConnectionPhase } from "@/store/homeStore";
+import type { ConnectionKey, SshAuthMethod } from "@/types/bindings";
+import type { AuthSubmission } from "@/views/home/ssh-auth-modal/ssh-auth-utils";
 
 /**
  * Query key factory for SSH connection-related queries
@@ -373,4 +381,274 @@ export function useDockerHome(containerName: string) {
     enabled: !!containerName,
     staleTime: Infinity,
   });
+}
+
+/** Every saved-connection list Home reads: SSH, WSL and Docker. */
+export function invalidateConnections(queryClient: QueryClient) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() }),
+    queryClient.invalidateQueries({ queryKey: wslQueryKeys.connections() }),
+    queryClient.invalidateQueries({ queryKey: dockerQueryKeys.connections() }),
+  ]);
+}
+
+/**
+ * Forget a saved connection, whatever its kind, and put its Home panel back to idle. No `onError`:
+ * the connection menu that runs it shows the failure itself.
+ */
+export function useDeleteConnectionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (connection: ConnectionKey) => {
+      if (connection.type === "ssh") await api.deleteSshConnection(connection.id);
+      if (connection.type === "wsl") await api.deleteWslConnection(connection.id);
+      if (connection.type === "docker") await api.deleteDockerConnection(connection.id);
+    },
+    onSuccess: (_data, connection) => {
+      useHomeStore.getState().setPhase(connectionKeyId(connection), { kind: "idle" });
+      return invalidateConnections(queryClient);
+    },
+  });
+}
+
+/**
+ * Save an SSH host and sign in to it the way `authMethod` says. A host that refuses the sign-in was
+ * never confirmed, so it is not kept.
+ */
+export async function addSshConnection(
+  address: string,
+  authMethod: SshAuthMethod,
+  password: string,
+  name: string,
+): Promise<ConnectionKey> {
+  const id = await api.createSshConnection(address, authMethod);
+  try {
+    if (authMethod === "Agent") await api.connectSshWithAgent(id);
+    else if ("KeyFile" in authMethod)
+      await api.connectSshWithKey(id, authMethod.KeyFile.path, null, false);
+    else if ("Password" in authMethod)
+      await api.connectSshWithPassword(id, password, authMethod.Password.save_password);
+  } catch (error) {
+    await api.deleteSshConnection(id).catch(console.error);
+    throw error;
+  }
+  if (name) await api.renameSshConnection(id, name);
+  return { type: "ssh", id };
+}
+
+export async function addWslConnection(distro: string): Promise<ConnectionKey> {
+  const connection = await api.saveWslConnection(distro, null);
+  return { type: "wsl", id: connection.id };
+}
+
+export async function addDockerConnection(name: string, image: string): Promise<ConnectionKey> {
+  const connection = await api.saveDockerConnection(name, image, null);
+  return { type: "docker", id: connection.id };
+}
+
+const setPhase = (id: string, phase: ConnectionPhase) =>
+  useHomeStore.getState().setPhase(id, phase);
+
+/**
+ * Attach to the connection's Maestro server: deploy it when needed, start the relay to it and
+ * check the tools agents need. `replace` updates a server from another build that is in use.
+ */
+export async function attach(connection: ConnectionKey, replace = false) {
+  const id = connectionKeyId(connection);
+  const before = useHomeStore.getState().phases[id]?.kind;
+  setPhase(id, {
+    kind: "connecting",
+    step: 1,
+    starting: before === "stopped" || before === "stopping",
+  });
+  let result;
+  try {
+    result = await api.preflightConnection(connection, replace);
+  } catch (error) {
+    setPhase(id, { kind: "failed", error: getErrorMessage(error), result: null });
+    return;
+  }
+  useConfigStore.getState().setPreflightToolChecks(connection, result.tool_checks);
+  // Once per attach; the Usage view syncs again while it is open.
+  void api
+    .syncUsage(connection)
+    .catch((error: unknown) => console.warn("could not sync usage", getErrorMessage(error)));
+  setPhase(
+    id,
+    result.tool_checks.some((tool) => !tool.available)
+      ? { kind: "failed", error: null, result }
+      : { kind: "up" },
+  );
+}
+
+/**
+ * Connect: sign in to an SSH host with what it already has (agent, key, saved password) and fall
+ * back to the inline password form; every other kind of connection attaches straight away.
+ */
+export async function connect(connection: ConnectionKey) {
+  if (connection.type === "ssh") {
+    setPhase(connectionKeyId(connection), { kind: "connecting", step: 0 });
+    try {
+      await api.connectSshWithoutCredentials(connection.id);
+    } catch {
+      setPhase(connectionKeyId(connection), { kind: "signin", error: null });
+      return;
+    }
+  }
+  await attach(connection);
+}
+
+export async function signIn(
+  connection: Extract<ConnectionKey, { type: "ssh" }>,
+  password: string,
+  remember: boolean,
+  host: string,
+) {
+  const id = connectionKeyId(connection);
+  if (!password) {
+    setPhase(id, { kind: "signin", error: `Enter the password for ${host}.` });
+    return;
+  }
+  setPhase(id, { kind: "connecting", step: 0 });
+  try {
+    await api.connectSshWithPassword(connection.id, password, remember);
+  } catch (error) {
+    setPhase(id, { kind: "signin", error: getErrorMessage(error) });
+    return;
+  }
+  await attach(connection);
+}
+
+/** Sign in to an SSH host with what the sign-in dialog collected. The caller attaches after. */
+export async function signInWith(
+  connection: Extract<ConnectionKey, { type: "ssh" }>,
+  submission: AuthSubmission,
+) {
+  if (submission.method === "password")
+    await api.connectSshWithPassword(connection.id, submission.password, submission.savePassword);
+  if (submission.method === "key-file")
+    await api.connectSshWithKey(
+      connection.id,
+      submission.keyPath,
+      submission.passphrase ?? null,
+      submission.savePassphrase,
+    );
+  if (submission.method === "agent") await api.connectSshWithAgent(connection.id);
+}
+
+/** A relay that ends, or an SSH host that gives up reconnecting, leaves its panel unreachable. */
+export function useConnectionLossEvents() {
+  useEffect(() => {
+    const markUnreachable = (connection: ConnectionKey) => {
+      const id = connectionKeyId(connection);
+      if (useHomeStore.getState().phases[id]?.kind === "up") {
+        setPhase(id, { kind: "unreachable" });
+      }
+    };
+    const unlisteners = Promise.all([
+      listen<{ connection: ConnectionKey }>("acp://connection-lost", (event) =>
+        markUnreachable(event.payload.connection),
+      ),
+      listen<number>("ssh-connection-failed", (event) =>
+        markUnreachable({ type: "ssh", id: event.payload }),
+      ),
+    ]);
+    return () => {
+      void unlisteners.then((stops) => stops.forEach((stop) => stop()));
+    };
+  }, []);
+}
+
+/** Open a path on this machine with whatever the OS opens it with. */
+export const openLocalPath = (path: string) => api.openPathNative(path);
+
+/** A file's text as it is on disk now, for a caller comparing it before a write. */
+export const readFile = (connection: ConnectionKey, path: string) => api.readFile(connection, path);
+
+/** A local image as a `data:` URL, for a preview of a file that is not uploaded yet. */
+export function useLocalImageDataUrl(localAbsPath: string, mime: string) {
+  return useQuery({
+    queryKey: [...connectionQueryKeys.base, "localImage", localAbsPath],
+    queryFn: async () => `data:${mime};base64,${await api.readLocalFileBinary(localAbsPath)}`,
+    staleTime: Infinity,
+  });
+}
+
+/**
+ * Where a remote file is staged so a host application can open it. The file is a copy: edits made
+ * in whatever opens it do not travel back.
+ */
+async function hostCopyPath(absolutePath: string): Promise<string> {
+  const basename = absolutePath.split("/").pop() ?? "file";
+  return join(await tempDir(), "maestro", basename);
+}
+
+/**
+ * Whether [openFileWithConnection] stages a copy on the host before opening it, rather than
+ * opening the file where it already lives. Lives here rather than in the callers so the answer
+ * cannot drift from the branches below that decide it.
+ */
+export function opensViaHostCopy(connection: ConnectionKey): boolean {
+  return connection.type === "ssh" || connection.type === "docker";
+}
+
+export async function openFileWithConnection(
+  connection: ConnectionKey,
+  absolutePath: string,
+  opts?: { sshConnectionId?: number; wslDistroName?: string; transferId?: string },
+): Promise<void> {
+  if (connection.type === "local") {
+    await api.openPathNative(absolutePath);
+  } else if (connection.type === "ssh" && opts?.sshConnectionId != null) {
+    const basename = absolutePath.split("/").pop() ?? "file";
+    const localPath = await hostCopyPath(absolutePath);
+    const transferId = opts.transferId ?? `open-${basename}`;
+    await api.sftpDownload(opts.sshConnectionId, absolutePath, localPath, transferId);
+    await api.openPathNative(localPath);
+  } else if (connection.type === "wsl" && opts?.wslDistroName) {
+    // The distro is asked rather than prefixing \\wsl.localhost\ here, because a path under /mnt
+    // is a file on this machine's own disk and should open from there, not through the share.
+    const winPath = await api.wslToWindowsPath(opts.wslDistroName, absolutePath);
+    await api.openPathNative(winPath);
+  } else if (connection.type === "docker") {
+    const localPath = await hostCopyPath(absolutePath);
+    await api.dockerDownloadFile(connection.id, absolutePath, localPath);
+    await api.openPathNative(localPath);
+  } else {
+    // Falling through used to resolve successfully having done nothing, which is indistinguishable
+    // from a working open to every caller here. Reached when a WSL distro name has not loaded yet.
+    throw new Error(`Cannot open '${absolutePath}' over this ${connection.type} connection yet`);
+  }
+}
+
+/**
+ * Copy a file off whichever machine the connection names into a folder the user picks.
+ *
+ * `transferId` names the channel `sftp://transfer-progress/` reports on, and only SSH reports:
+ * the distro copy and `docker cp` are each one opaque call with no byte counts to forward.
+ *
+ * Returns where the file landed, or null when the folder picker was dismissed — the caller needs
+ * to tell those apart to avoid confirming a copy that never happened.
+ */
+export async function downloadFileToFolder(
+  connection: ConnectionKey,
+  absolutePath: string,
+  transferId: string,
+): Promise<string | null> {
+  const chosen = await openDirPicker({ directory: true });
+  if (!chosen) return null;
+  const basename = absolutePath.split("/").pop() ?? "file";
+  const destPath = await join(chosen as string, basename);
+
+  if (connection.type === "ssh") {
+    await api.sftpDownload(connection.id, absolutePath, destPath, transferId);
+  } else if (connection.type === "wsl") {
+    await api.wslDownloadFile(connection.id, absolutePath, destPath);
+  } else if (connection.type === "docker") {
+    await api.dockerDownloadFile(connection.id, absolutePath, destPath);
+  } else {
+    // Local has nothing to copy from — callers hide the action rather than reaching this.
+    throw new Error(`Cannot download '${absolutePath}' over this ${connection.type} connection`);
+  }
+  return destPath;
 }

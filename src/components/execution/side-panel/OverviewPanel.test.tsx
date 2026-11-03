@@ -9,7 +9,10 @@ vi.mock("@/services/task.service", () => ({
 }));
 
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
-vi.mock("@/lib/file-opener", () => ({ openFileWithConnection: vi.fn() }));
+vi.mock("@/services/connection.service", async (importOriginal) => ({
+  ...(await importOriginal()),
+  openFileWithConnection: vi.fn(),
+}));
 vi.mock("./OpenPullRequestDialog", () => ({ OpenPullRequestDialog: () => null }));
 
 const { OverviewPanel } = await import("./OverviewPanel");

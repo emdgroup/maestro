@@ -16,7 +16,8 @@ import type { ConnectionPhase } from "@/store/homeStore";
 import type { HomeConnection } from "./ConnectionPanel";
 import type { ProjectCard } from "./ProjectTile";
 import { HomeSheet } from "./HomeSheet";
-import { attach, connect, restartServer, stopServer } from "./useConnectionActions";
+import { attach, connect } from "@/services/connection.service";
+import { useStopBackgroundServerMutation } from "@/services/automation.service";
 
 /** `3d 6h`, `4h 12m`, `9m`. */
 export function formatUptime(startedAt: string, now = Date.now()) {
@@ -78,6 +79,7 @@ export function ConnectionMenu({
   onRemove,
 }: ConnectionMenuProps) {
   const [confirm, setConfirm] = useState<Confirm | null>(null);
+  const stopServer = useStopBackgroundServerMutation();
   const up = phase.kind === "up";
 
   const state =
@@ -144,8 +146,15 @@ export function ConnectionMenu({
     const action = confirm;
     setConfirm(null);
     try {
-      if (action === "stop") await stopServer(connection.key);
-      if (action === "restart") await restartServer(connection.key);
+      // The stop mutation shows its own failure, and a server that did not stop is not restarted.
+      if (action === "stop") stopServer.mutate(connection.key);
+      if (action === "restart") {
+        const stopped = await stopServer.mutateAsync(connection.key).then(
+          () => true,
+          () => false,
+        );
+        if (stopped) await attach(connection.key);
+      }
       if (action === "remove") await onRemove?.();
     } catch (error) {
       toast.error(getErrorMessage(error));

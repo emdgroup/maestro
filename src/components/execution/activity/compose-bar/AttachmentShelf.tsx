@@ -8,8 +8,7 @@ import {
   XIcon,
   AlertCircleIcon,
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/tauri-utils";
+import { useLocalImageDataUrl } from "@/services/connection.service";
 import { useHorizontalScrollFade } from "@/hooks/useHorizontalScrollFade";
 import { DynamicIcon } from "@/ui/dynamic-icon";
 import {
@@ -78,17 +77,6 @@ export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function useLocalImageDataUrl(localAbsPath: string, mime: string) {
-  return useQuery({
-    queryKey: ["local-image", localAbsPath],
-    queryFn: async () => {
-      const b64 = await api.readLocalFileBinary(localAbsPath);
-      return `data:${mime};base64,${b64}`;
-    },
-    staleTime: Infinity,
-  });
 }
 
 function ImageCard({

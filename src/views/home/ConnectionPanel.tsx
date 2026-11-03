@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { AddProjectTile, ProjectChip, ProjectTile, projectStatus } from "./ProjectTile";
 import type { ProjectCard } from "./ProjectTile";
-import { attach, connect, signIn } from "./useConnectionActions";
+import { attach, connect, signIn } from "@/services/connection.service";
 import { Button } from "@/ui/button";
 
 /** A connection as Home lists it. */
