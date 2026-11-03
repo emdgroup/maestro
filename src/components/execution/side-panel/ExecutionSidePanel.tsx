@@ -232,7 +232,6 @@ export function ExecutionSidePanel({
                 connection={connection}
                 planEntries={planEntries}
                 planTitle={planTitle}
-                onCollapsedChange={onCollapsedChange}
                 onOpenTabKind={onOpenTabKind}
                 onOpenFile={onOpenFile}
                 onSpawnShell={onSpawnShell}

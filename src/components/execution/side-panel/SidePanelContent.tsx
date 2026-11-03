@@ -73,7 +73,6 @@ interface SidePanelContentProps {
   connection: ConnectionKey;
   planEntries?: PlanEntry[] | null;
   planTitle?: string | null;
-  onCollapsedChange: (c: boolean) => void;
   onOpenTabKind: (kind: TabKind) => void;
   /** Opens a path (absolute, or project-relative) in a Files tab. */
   onOpenFile: (path: string) => void;
@@ -112,7 +111,6 @@ export function SidePanelContent({
   connection,
   planEntries,
   planTitle,
-  onCollapsedChange,
   onOpenTabKind,
   onOpenFile,
   onSpawnShell,
@@ -610,7 +608,6 @@ export function SidePanelContent({
             {kind === "review" && (
               <ReviewChangesPanel
                 sessionId={sessionId}
-                onClose={() => onCollapsedChange(true)}
                 compact
                 isActive={isActive}
                 baseBranch={ship.baseBranch}

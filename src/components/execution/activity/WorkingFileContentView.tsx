@@ -1,6 +1,5 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { Slider } from "@/ui/slider";
 import { MarkdownBlock, SvgBlock, MermaidBlock, HighlightedCode } from "./MarkdownBlock";
 import { imageMimeForExtension, langForExtension } from "./fileTypeUtils";
 import { type FileViewType, getFileViewType, injectScrollbarCSS } from "./fileViewUtils";
@@ -86,8 +85,8 @@ interface WorkingFileContentViewProps {
   connection: ConnectionKey;
   filePath: string | null;
   isActive?: boolean;
-  zoom?: number;
-  onZoomChange?: (z: number) => void;
+  zoom: number;
+  onZoomChange: (z: number) => void;
 }
 
 export function WorkingFileContentView({
@@ -95,8 +94,8 @@ export function WorkingFileContentView({
   connection,
   filePath,
   isActive = true,
-  zoom: zoomProp,
-  onZoomChange,
+  zoom,
+  onZoomChange: setZoom,
 }: WorkingFileContentViewProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -104,11 +103,6 @@ export function WorkingFileContentView({
   const cwd = sessionMeta?.cwd.replace(/\/+$/, "") ?? null;
   const project = useSelectedProject();
 
-  // Zoom: track { file, zoom } so selecting a new file automatically reads as 100
-  // without needing a reset effect.
-  const [zoomState, setZoomState] = useState({ file: "", zoom: 100 });
-  const zoom = zoomProp ?? (zoomState.file === filePath ? zoomState.zoom : 100);
-  const setZoom = onZoomChange ?? ((z: number) => setZoomState({ file: filePath ?? "", zoom: z }));
   // Mirrored from an effect rather than assigned during render — only the
   // keyboard handler below reads them, and it runs after commit.
   const zoomRef = useRef(zoom);
@@ -202,25 +196,6 @@ export function WorkingFileContentView({
 
   return (
     <div ref={panelRef} className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
-      {content !== null && viewType !== null && !onZoomChange && (
-        <div className="flex items-center gap-2 px-3 py-1 border-b border-border bg-card/30 shrink-0">
-          <div className="flex-1" />
-          <Slider
-            min={50}
-            max={200}
-            value={[zoom]}
-            onValueChange={(val) => setZoom(Array.isArray(val) ? val[0] : (val as number))}
-            className="zoom-slider w-16 shrink-0"
-          />
-          <button
-            type="button"
-            onClick={() => setZoom(100)}
-            className="px-1 py-0.5 rounded text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-foreground/7 transition-colors min-w-10 text-center shrink-0"
-          >
-            {zoom}%
-          </button>
-        </div>
-      )}
       <div
         className={cn(
           "flex-1 overflow-auto text-sm",

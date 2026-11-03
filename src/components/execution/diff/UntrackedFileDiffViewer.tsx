@@ -16,7 +16,6 @@ interface UntrackedFileDiffViewerProps {
   // Review mode props
   reviewMode?: boolean;
   comments?: PendingComment[];
-  activeCommentLine?: { lineNumber: number; side: "old" | "new" } | null;
   onAddComment?: (lineNumber: number, fromLineNumber: number, side: "old" | "new") => void;
   onRemoveComment?: (commentId: string) => void;
   onEditComment?: (commentId: string, newText: string) => void;
@@ -36,7 +35,6 @@ export function UntrackedFileDiffViewer({
   showHeader = true,
   reviewMode,
   comments,
-  activeCommentLine,
   onAddComment,
   onRemoveComment,
   onEditComment,
@@ -115,7 +113,6 @@ export function UntrackedFileDiffViewer({
             diffViewMode={DiffModeEnum.Unified}
             reviewMode={reviewMode}
             comments={comments}
-            activeCommentLine={activeCommentLine}
             onAddComment={onAddComment}
             onRemoveComment={onRemoveComment}
             onEditComment={onEditComment}
