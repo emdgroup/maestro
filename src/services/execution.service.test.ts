@@ -1,5 +1,12 @@
-import { describe, it, expect } from "vitest";
-import { executionQueryKeys } from "./execution.service";
+import { describe, it, expect, vi } from "vitest";
+import { createElement, type ReactNode } from "react";
+import { act, renderHook } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useAnnotationStore } from "@/store/annotationStore";
+
+vi.mock("@/lib/tauri-utils", () => ({ api: { cancelAcpSession: vi.fn(async () => {}) } }));
+
+import { executionQueryKeys, useCancelActiveSessionMutation } from "./execution.service";
 
 describe("executionQueryKeys.agentConfig", () => {
   /**
@@ -27,5 +34,24 @@ describe("executionQueryKeys.agentConfig", () => {
     expect(executionQueryKeys.agentConfig("codex", "/repo", { type: "local" }, "")).not.toEqual(
       executionQueryKeys.agentConfig("codex", "/repo", { type: "local" }, "gpt-5-codex"),
     );
+  });
+});
+
+describe("useCancelActiveSessionMutation", () => {
+  /** Notes are kept per session id, so a closed session's would otherwise stay in memory for good. */
+  it("drops the closed session's annotations", async () => {
+    const note = { id: "n1", kind: "plan", quote: "q", occurrence: 0, text: "t" } as const;
+    useAnnotationStore.getState().addAnnotation("s1", note);
+    useAnnotationStore.getState().addAnnotation("s2", { ...note, id: "n2" });
+    const client = new QueryClient();
+    const { result } = renderHook(() => useCancelActiveSessionMutation(), {
+      wrapper: ({ children }: { children: ReactNode }) =>
+        createElement(QueryClientProvider, { client }, children),
+    });
+
+    await act(() => result.current.mutateAsync({ sessionId: "s1", executionMode: "acp" }));
+
+    expect(useAnnotationStore.getState().bySession.s1).toBeUndefined();
+    expect(useAnnotationStore.getState().bySession.s2).toHaveLength(1);
   });
 });

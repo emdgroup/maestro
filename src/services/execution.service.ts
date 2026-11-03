@@ -6,6 +6,7 @@ import { createErrorToastHandler } from "@/lib/error-utils";
 import { Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
 import { taskQueryKeys } from "@/services/task.service";
 import { findEffortOption } from "@/lib/effort-option";
+import { useAnnotationStore } from "@/store/annotationStore";
 import type { ConfigOption } from "@/components/execution/activity/types";
 import type { ConnectionKey, SessionRole } from "@/types/bindings";
 import { commands } from "@/types/bindings";
@@ -660,7 +661,8 @@ export function useCancelActiveSessionMutation() {
         return await api.closePtySession(sessionId);
       }
     },
-    onSuccess: () => {
+    onSuccess: (_result, { sessionId }) => {
+      useAnnotationStore.getState().clearSession(sessionId);
       // projectId not available here; prefix match intentionally invalidates all projects.
       void queryClient.invalidateQueries({ queryKey: ["activeSessions"] });
     },
@@ -727,7 +729,9 @@ export function useReloadAcpSessionMutation() {
       if (result.status === "error") throw new Error(result.error);
       return result.data;
     },
-    onSuccess: (_sessionId, { projectId }) => {
+    onSuccess: (reloaded, { sessionId, projectId }) => {
+      // A reload that comes back under a new id leaves the old one with nothing to send to.
+      if (reloaded !== sessionId) useAnnotationStore.getState().clearSession(sessionId);
       void queryClient.invalidateQueries({
         queryKey: executionQueryKeys.activeSessions(projectId),
       });
