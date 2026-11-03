@@ -362,8 +362,12 @@ async fn resume(
         for warning in &settings.warnings {
             send_diag("warn", format!("[task] task {task_id}: {warning}"));
         }
-        let mut commands =
-            crate::task_runner::settings_commands(&settings, config_options.as_ref());
+        let mut commands = crate::sessions::settings_commands(
+            settings.model.clone(),
+            settings.effort.clone(),
+            settings.permission_mode.clone(),
+            config_options.as_ref(),
+        );
         commands.push(SessionCommand::Prompt(RESUME.to_string()));
         Ok::<_, String>(commands)
     }

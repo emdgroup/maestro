@@ -736,33 +736,8 @@ pub(crate) fn capabilities(
                     .collect()
             })
             .unwrap_or_default(),
-        supports_effort: crate::automation_runner::effort_option_id(config_options).is_some(),
+        supports_effort: crate::sessions::effort_option_id(config_options).is_some(),
     }
-}
-
-/// The stage's model, effort and permission mode as commands, sent ahead of a prompt. Each is a
-/// request the agent answers in order, and the prompt behind them cannot overtake them on one
-/// command channel, so none is waited on.
-pub(crate) fn settings_commands(
-    settings: &profiles::StageSettings,
-    config_options: Option<&Vec<serde_json::Value>>,
-) -> Vec<SessionCommand> {
-    let effort = settings
-        .effort
-        .clone()
-        .zip(crate::automation_runner::effort_option_id(config_options))
-        .map(|(value, config_id)| SessionCommand::SetConfigOption { config_id, value });
-    [
-        settings.model.clone().map(SessionCommand::SetModel),
-        effort,
-        settings
-            .permission_mode
-            .clone()
-            .map(SessionCommand::SetMode),
-    ]
-    .into_iter()
-    .flatten()
-    .collect()
 }
 
 /// Steps seven to ten on a session that is up: settings, prompt, review cleared, task moved on.
@@ -852,7 +827,12 @@ async fn prepare(
         );
     }
 
-    let mut commands = settings_commands(&settings, config_options);
+    let mut commands = crate::sessions::settings_commands(
+        settings.model.clone(),
+        settings.effort.clone(),
+        settings.permission_mode.clone(),
+        config_options,
+    );
     commands.push(SessionCommand::PromptStructured(composed.blocks));
     for command in commands {
         if session.cmd_tx.send(command).await.is_err() {

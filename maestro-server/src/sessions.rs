@@ -44,6 +44,51 @@ pub enum SessionCommand {
     CloseSession,
 }
 
+/// The ACP config-option categories that mean "how hard should the model think about this".
+///
+/// Mirrors `findEffortOption` in the frontend, and for the same reason: effort is addressed by the
+/// agent's own option id, which is only known once a session has been opened.
+const EFFORT_CATEGORIES: [&str; 2] = ["effort", "thought_level"];
+
+/// The id of the agent's effort config option, if it offers one.
+pub(crate) fn effort_option_id(config_options: Option<&Vec<serde_json::Value>>) -> Option<String> {
+    config_options?
+        .iter()
+        .find(|option| {
+            option
+                .get("category")
+                .and_then(|category| category.as_str())
+                .is_some_and(|category| EFFORT_CATEGORIES.contains(&category))
+        })
+        .and_then(|option| option.get("id"))
+        .and_then(|id| id.as_str())
+        .map(str::to_string)
+}
+
+/// A session's model, effort and permission mode as commands, for a task stage or an automation
+/// run alike, sent ahead of a prompt. Each is a request the agent answers in order, and the prompt
+/// behind them cannot overtake them on one command channel, so none is waited on. The model goes
+/// first, so the effort and the mode are set on the model the session ends up on. Effort is
+/// dropped when the agent has no option for it.
+pub(crate) fn settings_commands(
+    model: Option<String>,
+    effort: Option<String>,
+    permission_mode: Option<String>,
+    config_options: Option<&Vec<serde_json::Value>>,
+) -> Vec<SessionCommand> {
+    let effort = effort
+        .zip(effort_option_id(config_options))
+        .map(|(value, config_id)| SessionCommand::SetConfigOption { config_id, value });
+    [
+        model.map(SessionCommand::SetModel),
+        effort,
+        permission_mode.map(SessionCommand::SetMode),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
 pub struct TerminalHandle {
     pub output_buf: Arc<Mutex<crate::file_ops::OutputBuffer>>,
     pub truncated: Arc<AtomicBool>,
@@ -243,3 +288,49 @@ pub struct ActiveSession {
 pub type SessionMap = HashMap<String, ActiveSession>;
 pub type AgentConnectionMap = HashMap<String, AgentConnection>;
 pub type SharedAgentConnections = Arc<tokio::sync::Mutex<AgentConnectionMap>>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn effort_is_addressed_by_the_agent_s_own_option_id() {
+        let options = vec![
+            serde_json::json!({"id": "verbosity", "category": "output"}),
+            serde_json::json!({"id": "reasoningEffort", "category": "thought_level"}),
+        ];
+        assert_eq!(
+            effort_option_id(Some(&options)).as_deref(),
+            Some("reasoningEffort")
+        );
+        assert_eq!(effort_option_id(None), None);
+        assert_eq!(effort_option_id(Some(&vec![])), None);
+    }
+
+    /// Automations used to send the mode before the effort while tasks sent it after; both send
+    /// model, effort, mode now.
+    #[test]
+    fn settings_go_model_then_effort_then_mode() {
+        let options = vec![serde_json::json!({"id": "effort", "category": "effort"})];
+        let commands = settings_commands(
+            Some("opus".to_string()),
+            Some("high".to_string()),
+            Some("plan".to_string()),
+            Some(&options),
+        );
+        assert!(matches!(
+            commands.as_slice(),
+            [
+                SessionCommand::SetModel(model),
+                SessionCommand::SetConfigOption { config_id, value },
+                SessionCommand::SetMode(mode),
+            ] if model == "opus" && config_id == "effort" && value == "high" && mode == "plan"
+        ));
+    }
+
+    #[test]
+    fn effort_is_dropped_when_the_agent_offers_no_option_for_it() {
+        let commands = settings_commands(None, Some("high".to_string()), None, None);
+        assert!(commands.is_empty());
+    }
+}
