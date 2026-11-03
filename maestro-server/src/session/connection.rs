@@ -157,7 +157,9 @@ fn maestro_mcp_server(maestro_session_id: &str) -> Option<McpServer> {
 
 /// Resolve the project's extra workspace roots and report what was dropped and why.
 async fn additional_directories_for(raw: &[String], supported: bool) -> Vec<std::path::PathBuf> {
-    let home = crate::workspace_roots::home_dir();
+    let home = maestro_protocol::paths::home_dir()
+        .ok()
+        .map(|home| home.to_string_lossy().into_owned());
     let (dirs, skipped) =
         crate::workspace_roots::resolve_additional_directories(raw, supported, home.as_deref());
     for reason in &skipped {

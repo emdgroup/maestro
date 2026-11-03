@@ -163,14 +163,6 @@ static DETECTION_TABLE: &[AgentDetectionEntry] = &[
     },
 ];
 
-fn home_dir() -> Option<PathBuf> {
-    #[cfg(target_os = "windows")]
-    let key = "USERPROFILE";
-    #[cfg(not(target_os = "windows"))]
-    let key = "HOME";
-    std::env::var(key).ok().map(PathBuf::from)
-}
-
 /// Returns the set of agent IDs that have their tool installed on this host.
 pub async fn detect_installed_agents() -> DetectInstalledAgentsResponse {
     let binaries: Vec<&'static str> = DETECTION_TABLE.iter().filter_map(|e| e.binary).collect();
@@ -178,7 +170,7 @@ pub async fn detect_installed_agents() -> DetectInstalledAgentsResponse {
     // Batch all `which` calls in one shell invocation to minimize fork overhead.
     let binary_results = batch_which(&binaries).await;
 
-    let home = home_dir();
+    let home = maestro_protocol::paths::home_dir().ok();
 
     let checks: Vec<_> = DETECTION_TABLE
         .iter()
@@ -243,7 +235,7 @@ async fn batch_which(
         return result;
     }
 
-    let home = home_dir();
+    let home = maestro_protocol::paths::home_dir().ok();
 
     let handles: Vec<_> = binaries
         .iter()

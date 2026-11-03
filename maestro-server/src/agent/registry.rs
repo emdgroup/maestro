@@ -155,9 +155,7 @@ pub fn discover_agents(registry: &AcpRegistry) -> Vec<DiscoveredAgentWithSpawn> 
 }
 
 fn custom_agents_path() -> Result<std::path::PathBuf, String> {
-    Ok(crate::tool_config::home_dir()?
-        .join(".maestro")
-        .join("custom-agents.json"))
+    Ok(maestro_protocol::paths::maestro_home()?.join("custom-agents.json"))
 }
 
 fn read_custom_agents() -> Result<Vec<AgentRegistryEntry>, String> {

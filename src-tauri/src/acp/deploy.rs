@@ -461,15 +461,7 @@ pub async fn ensure_local_server(app_handle: &AppHandle) -> Result<std::path::Pa
 /// On Unix: symlink. On Windows: rename-old + copy + delete-old.
 /// Non-fatal — callers log the error and continue.
 async fn install_local_link(src: &std::path::Path) -> Result<(), String> {
-    let home = {
-        #[cfg(windows)]
-        let var = "USERPROFILE";
-        #[cfg(not(windows))]
-        let var = "HOME";
-        std::env::var(var)
-            .map(std::path::PathBuf::from)
-            .map_err(|_| "Cannot resolve home directory".to_string())?
-    };
+    let home = maestro_protocol::paths::home_dir()?;
     let bin_dir = home.join(".local").join("bin");
     tokio::fs::create_dir_all(&bin_dir)
         .await

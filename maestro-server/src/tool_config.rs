@@ -12,17 +12,8 @@ struct ToolConfig {
     tools: BTreeMap<String, String>,
 }
 
-pub(crate) fn home_dir() -> Result<PathBuf, String> {
-    #[cfg(windows)]
-    let home = std::env::var_os("USERPROFILE");
-    #[cfg(not(windows))]
-    let home = std::env::var_os("HOME");
-    home.map(PathBuf::from)
-        .ok_or_else(|| "Could not determine the target user's home directory".to_string())
-}
-
 fn config_path() -> Result<PathBuf, String> {
-    Ok(home_dir()?.join(".maestro").join("tools.json"))
+    Ok(maestro_protocol::paths::maestro_home()?.join("tools.json"))
 }
 
 fn read() -> Result<ToolConfig, String> {
