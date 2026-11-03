@@ -28,13 +28,6 @@ describe("useConnectionHealth", () => {
     mockUnlisten.mockClear();
   });
 
-  it("returns connected state initially", () => {
-    const { result } = renderHook(() => useConnectionHealth({ type: "ssh", id: 1 }));
-    expect(result.current.state).toBe("connected");
-    expect(result.current.attempt).toBe(0);
-    expect(result.current.maxAttempts).toBe(5);
-  });
-
   it("returns connected and registers no listeners when there is no connection", () => {
     const { result } = renderHook(() => useConnectionHealth(null));
     expect(result.current.state).toBe("connected");

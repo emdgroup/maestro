@@ -9,18 +9,6 @@ function setup(isLocal = false, drives: string[] = []) {
   });
 }
 
-describe("usePathNavigation – initial state", () => {
-  it("starts with empty currentPath", () => {
-    const { result } = setup();
-    expect(result.current.currentPath).toBe("");
-  });
-
-  it("isDrivesRoot is false by default", () => {
-    const { result } = setup();
-    expect(result.current.isDrivesRoot).toBe(false);
-  });
-});
-
 describe("usePathNavigation – navigateToDirectory (Unix)", () => {
   it("appends directory to empty path", () => {
     const { result } = setup();

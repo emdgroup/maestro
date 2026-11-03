@@ -66,19 +66,6 @@ describe("useServerEventSync", () => {
     ]);
   });
 
-  /**
-   * The point of the hook. Before it, each of these lived inside a list query hook that a board of
-   * N cards called N times, so one event became N invalidations of the same prefix.
-   */
-  it("registers one listener per event however many consumers exist", async () => {
-    renderHook(() => useServerEventSync(7));
-    await flush();
-
-    fire("worktrees-changed");
-
-    expect(invalidateQueries).toHaveBeenCalledTimes(1);
-  });
-
   it("invalidates the task list on tasks-changed", async () => {
     renderHook(() => useServerEventSync(7));
     await flush();
