@@ -1,15 +1,12 @@
-import { useState, useEffect, useReducer } from "react";
 import { RefreshCw, CircleCheck, CircleX, ArrowDownToLine, ChevronDown } from "lucide-react";
-import { getVersion } from "@tauri-apps/api/app";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Progress, ProgressTrack, ProgressIndicator } from "@/ui/progress";
-import { useUpdater } from "@/hooks/useUpdater";
-import { useSettings, useSaveSettings } from "@/services/settings.service";
 import { cn } from "@/lib/utils";
-import { formatLastChecked, VersionLink } from "./UpdateCard";
+import { VersionLink } from "./UpdateCard";
+import { useUpdatePanel } from "./useUpdatePanel";
 import appIconUrl from "../../../src-tauri/icons/32x32.png?url";
 
 /**
@@ -22,37 +19,18 @@ import appIconUrl from "../../../src-tauri/icons/32x32.png?url";
  * the tall form.
  */
 export function UpdateStrip({ padEnd = false }: { padEnd?: boolean }) {
-  const { status, lastChecked, isPackageInstall, checkForUpdates, install, downloadPackage } =
-    useUpdater();
-  const { data: appSettings } = useSettings();
-  const saveAppSettings = useSaveSettings({ successToast: false });
-  const [appVersion, setAppVersion] = useState<string>("…");
-
-  const autoUpdate = appSettings?.auto_update ?? false;
-
-  useEffect(() => {
-    getVersion()
-      .then(setAppVersion)
-      .catch(() => {});
-  }, []);
-
-  // The label is relative to the wall clock, so what goes stale is the current time, not
-  // `lastChecked`. The timer re-renders every 30s and the label is derived below.
-  const [, relabel] = useReducer((n: number) => n + 1, 0);
-  useEffect(() => {
-    const id = setInterval(relabel, 30_000);
-    return () => clearInterval(id);
-  }, []);
-
-  function handleAutoUpdateToggle(checked: boolean) {
-    if (!appSettings) return;
-    saveAppSettings.mutate({
-      ...appSettings,
-      auto_update: checked,
-    });
-  }
-
-  const isChecking = status.phase === "checking";
+  const {
+    status,
+    isPackageInstall,
+    checkForUpdates,
+    install,
+    downloadPackage,
+    appVersion,
+    autoUpdate,
+    setAutoUpdate,
+    lastCheckedLabel,
+    isChecking,
+  } = useUpdatePanel();
 
   return (
     <div
@@ -149,9 +127,7 @@ export function UpdateStrip({ padEnd = false }: { padEnd?: boolean }) {
                 </>
               )}
             </TooltipTrigger>
-            <TooltipContent side="bottom">
-              Last checked: {formatLastChecked(lastChecked)}
-            </TooltipContent>
+            <TooltipContent side="bottom">Last checked: {lastCheckedLabel}</TooltipContent>
           </Tooltip>
         )}
 
@@ -192,16 +168,14 @@ export function UpdateStrip({ padEnd = false }: { padEnd?: boolean }) {
               <Switch
                 checked={autoUpdate}
                 disabled={isPackageInstall}
-                onCheckedChange={handleAutoUpdateToggle}
+                onCheckedChange={setAutoUpdate}
                 className={cn(
                   "data-unchecked:border-border/50 data-unchecked:bg-muted",
                   isPackageInstall && "pointer-events-none opacity-50",
                 )}
               />
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              Last checked: {formatLastChecked(lastChecked)}
-            </p>
+            <p className="text-[11px] text-muted-foreground">Last checked: {lastCheckedLabel}</p>
           </PopoverContent>
         </Popover>
       </div>

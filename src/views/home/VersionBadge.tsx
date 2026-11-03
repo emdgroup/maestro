@@ -1,19 +1,13 @@
-import { useEffect, useState } from "react";
 import { CircleFadingArrowUp, LoaderCircle } from "lucide-react";
-import { getVersion } from "@tauri-apps/api/app";
 import { useUpdater } from "@/hooks/useUpdater";
+import { useAppVersion } from "@/components/settings/useUpdatePanel";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { UpdateCard } from "@/components/settings/UpdateCard";
 
 /** The app's version bottom-right, opening the update card. */
 export function VersionBadge() {
-  const [appVersion, setAppVersion] = useState("…");
+  const appVersion = useAppVersion();
   const { status } = useUpdater();
-  useEffect(() => {
-    getVersion()
-      .then(setAppVersion)
-      .catch(() => {});
-  }, []);
 
   const icon =
     status.phase === "available" ? (
