@@ -98,7 +98,7 @@ describe("ThemeProvider — reduce motion", () => {
   });
 });
 
-describe("ThemeProvider — saving a setting", () => {
+describe("ThemeProvider, saving a setting", () => {
   beforeEach(() => {
     stored.current = null;
     detected.current = false;

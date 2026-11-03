@@ -88,15 +88,15 @@
             "patterns": [
               {
                 "group": ["@/utils/helpers", "@/utils/helpers/**"],
-                "message": "Use the @/lib/ alias — it points at the same directory."
+                "message": "Use the @/lib/ alias: it points at the same directory."
               },
               {
                 "group": ["@/components/ui", "@/components/ui/**"],
-                "message": "Use the @/ui/ alias — it points at the same directory."
+                "message": "Use the @/ui/ alias: it points at the same directory."
               },
               {
                 "group": ["@/utils/hooks", "@/utils/hooks/**"],
-                "message": "Use the @/hooks/ alias — it points at the same directory."
+                "message": "Use the @/hooks/ alias: it points at the same directory."
               },
               {
                 "group": ["@/**/*.ts", "@/**/*.tsx", "@/*.ts", "@/*.tsx"],
