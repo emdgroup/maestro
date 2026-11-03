@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { LoopCheck, LoopIteration, Task, TaskComment } from "@/types/bindings";
-import { LoopIterations, type CurrentState, type HeadActions } from "./LoopIterations";
+import { LoopIterations } from "./LoopIterations";
+import type { CurrentState } from "./loop-state";
+import type { HeadActions } from "./HeadIteration";
 
 vi.mock("@/components/common/markdown/MarkdownBlock", () => ({
   MarkdownBlock: ({ text }: { text: string }) => <div>{text}</div>,

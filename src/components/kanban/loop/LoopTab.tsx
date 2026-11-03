@@ -46,7 +46,8 @@ import {
   prefillHidden,
 } from "./LoopEditor";
 import { HiddenFilesCard } from "./HiddenFilesCard";
-import { LoopIterations, type CurrentState, type Head } from "./LoopIterations";
+import { LoopIterations } from "./LoopIterations";
+import type { CurrentState, Head } from "./loop-state";
 import {
   blankCheck,
   doneWhenRows,

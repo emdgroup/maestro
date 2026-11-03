@@ -22,6 +22,13 @@ import {
   formatDuration,
   pathsInCommand,
   showsCheckBar,
+  heldLook,
+  heldReason,
+  heldTiles,
+  lasted,
+  plainFirstLine,
+  sideNote,
+  workingCard,
 } from "./loop-state";
 
 const summary = (overrides: Partial<LoopSummary> = {}): LoopSummary => ({
@@ -346,5 +353,135 @@ describe("an iteration's checks", () => {
       note(4, "2026-10-19T10:50:00Z"),
     ];
     expect(notesGiven(comments, all, it6).map((c) => c.id)).toEqual([2]);
+  });
+});
+
+describe("the head card", () => {
+  const check = (id: number, kind: LoopCheck["kind"] = "Command", state = "Pending") =>
+    ({
+      id,
+      position: id,
+      kind,
+      label: `Check ${id}`,
+      proposed: false,
+      accepted: false,
+      state,
+    }) as LoopCheck;
+  const iteration = (overrides: Partial<LoopIteration> = {}) =>
+    ({
+      n: 3,
+      attempt: 1,
+      started_at: "2026-10-19T10:00:00Z",
+      ended_at: "2026-10-19T10:45:00Z",
+      outcome: "Checked",
+      results: [],
+      files: 2,
+      added: 10,
+      removed: 4,
+      ...overrides,
+    }) as unknown as LoopIteration;
+  const checks = [check(1), check(2), check(3, "Judge")];
+  const passed = iteration({
+    results: [
+      { check_id: 1, state: "Pass", detail: "ok" },
+      { check_id: 2, state: "Pass", detail: "ok" },
+    ] as LoopIteration["results"],
+  });
+
+  it("times a finished iteration from its start to its end", () => {
+    expect(lasted(passed)).toBe(45 * 60);
+    expect(lasted(iteration({ ended_at: null }))).toBe(0);
+  });
+
+  it("walks a held iteration through Build, Checks, Judge and the user", () => {
+    const tiles = heldTiles({ kind: "halted", halt: "Paused" }, passed, checks);
+    expect(tiles.map((t) => [t.label, t.sub, t.state])).toEqual([
+      ["Build", "done in 45m", "done"],
+      ["Checks", "2 of 2 commands pass", "done"],
+      ["Judge", "not reached", "todo"],
+      ["You", "resume when ready", "waiting"],
+    ]);
+  });
+
+  it("puts the merge back in place of the checks after a conflict", () => {
+    const tiles = heldTiles({ kind: "halted", halt: "Conflict" }, passed, checks);
+    expect(tiles.map((t) => t.label)).toEqual(["Build", "Merge back", "You"]);
+  });
+
+  it("names a flaky check and waits on it", () => {
+    const flaky = iteration({
+      results: [{ check_id: 1, state: "Flaky", detail: "" }] as LoopIteration["results"],
+    });
+    const checksTile = heldTiles({ kind: "halted", halt: "Flaky" }, flaky, checks)[1];
+    expect([checksTile.sub, checksTile.state]).toEqual(['"Check 1" is flaky', "waiting"]);
+  });
+
+  it("says why it is held and how it looks", () => {
+    const task = loop();
+    const out = { kind: "halted", halt: "OutOfIterations" } as const;
+    expect(heldLook(task, out, passed)).toMatchObject({
+      tone: "warning",
+      word: "Out of iterations",
+      ring: { big: 3, small: "of 12 used" },
+    });
+    expect(heldReason(task, out, passed)).toMatch(/^It used all 12 iterations/);
+    expect(heldLook(task, { kind: "signoff" }, passed).word).toBe("Ready for you");
+  });
+
+  it("shows a building iteration's live ring and what its agent is doing", () => {
+    const card = workingCard(
+      loop(),
+      {
+        iteration: iteration({ ended_at: null }),
+        head: { kind: "live", step: 0, activity: { status: "thinking", since: 1 } },
+      },
+      checks,
+      2,
+      true,
+    );
+    expect(card.word).toBe("Thinking");
+    expect(card.ring).toEqual({ live: true, building: true, limitSecs: 10800, amber: false });
+    expect(card.tiles.map((t) => [t.label, t.sub, t.since])).toEqual([
+      ["Build", "Thinking", 1],
+      ["Checks", "2 commands", undefined],
+      ["Judge", "if every command passes", undefined],
+    ]);
+  });
+
+  it("turns amber when the agent waits on the user, and stops the clock when blocked", () => {
+    const live = (status: "awaiting_input") =>
+      workingCard(
+        loop(),
+        {
+          iteration: iteration({ ended_at: null }),
+          head: { kind: "live", step: 0, activity: { status, since: 1 } },
+        },
+        checks,
+        2,
+        false,
+      );
+    expect(live("awaiting_input")).toMatchObject({ tone: "warning", asking: true });
+    const blocked = workingCard(
+      loop(),
+      { iteration: passed, head: { kind: "blocked" } },
+      checks,
+      2,
+      false,
+    );
+    expect(blocked.word).toBe("Blocked");
+    expect(blocked.ring).toMatchObject({ tone: "warning", small: "stopped", big: "45m" });
+  });
+
+  it("notes why an iteration's checks did not run", () => {
+    expect(sideNote(iteration({ outcome: "Empty" }))).toBe("changed nothing");
+    expect(
+      sideNote(iteration({ outcome: "Failed", check_output: "x could not be merged y" })),
+    ).toBe("merge failed");
+    expect(sideNote(passed)).toBeNull();
+  });
+
+  it("reads a markdown text's first real line", () => {
+    expect(plainFirstLine("\n## Moved the parser\n- more")).toBe("Moved the parser");
+    expect(plainFirstLine(null)).toBe("");
   });
 });
