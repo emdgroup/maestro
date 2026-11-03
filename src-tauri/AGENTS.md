@@ -60,7 +60,7 @@ and expect to delete `.maestro/dev-data/` on any machine that ran the intermedia
 
 Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `task_comments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`, `connection_settings`, `templates`, `prompts`, and the usage mirror (`usage_stores`, `usage_turns`, `usage_turn_models`, `usage_hourly`, `usage_hourly_models`, with the views `usage_facts` and `usage_model_facts`; see `usage/mirror.rs` and `docs/usage-view/design.md`)
 
-The app reads and writes `projects`, `settings`, `known_hosts`, the three connection tables,
+The app reads and writes `projects`, `settings`, the three connection tables,
 `templates` and the shared rows of `prompts`. It reads `connection_settings` only to carry a
 connection's agent limit into its daemon once (see "The daemon drives the task pipeline" in
 `maestro-server/AGENTS.md`). The rest are no longer read or written: tasks and everything hanging

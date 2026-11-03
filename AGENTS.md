@@ -14,8 +14,6 @@ This file provides guidance to harness such as Claude Code (claude.ai/code) when
 
 **Maestro** - Tauri desktop app orchestrating autonomous AI coding agents. Users manage tasks on Kanban board, agents execute in isolated git worktrees with real-time monitoring. React + TypeScript frontend, Rust backend.
 
-See `.planning/PROJECT.md` for project goals, milestone progress, requirements.
-
 `docs/automations-plan.md` is the working plan for the Automations feature and the resident
 `maestro-server` it runs on. It is phased, and each phase records the decisions already locked, so
 read it before touching the daemon, session lifetime, or automation storage.
@@ -114,8 +112,7 @@ The same failure takes out `bun run tauri:gen`, which goes through
 **Frontend (`src/`):**
 
 - `views/` — top-level route views (KanbanView, AgentsView, WorktreesView, SettingsView, HomeView)
-- `components/` — reusable UI components organized by domain (kanban/, execution/, task/, common/, ui/, views/)
-  - `components/views/` — sub-view components rendered inside route views (BoardView, ArchiveView); distinct from top-level `src/views/`
+- `components/` — reusable UI components organized by domain (kanban/, execution/, common/, layout/, settings/, ui/)
 - `services/` — IPC service layer with co-located TanStack Query hooks (task.service, worktree.service, execution.service, project.service, connection.service, settings.service, integration.service, integration-lookup.service, acp-auth.service, canvas.service)
 - `store/` — Zustand stores (boardStore, configStore, navigationStore, projectStore, reviewStore, sessionActivityStore, shortcutStore)
 - `contexts/` — React contexts (KanbanContext)
@@ -137,7 +134,6 @@ and logic, so a feature touches one directory rather than three.
 - `connectivity/` — SSH (`ssh/`), WSL, Docker, SFTP, filesystem handlers, connection models
 - `integration/` — issue-tracking providers (`providers/`), `lookup/`, `issue_sync.rs`, `keychain.rs`, `token_manager.rs`
 - `settings/` — app settings handlers and models
-- `error.rs` — shared `MaestroError` type
 - `ipc/mod.rs`, `models/mod.rs` — thin re-export shims only (no code), kept so `lib.rs`'s `collect_commands![]` and older `crate::models::*` paths keep resolving. New code should import from the owning domain module directly.
 
 **maestro-server (`maestro-server/src/`):**
@@ -190,7 +186,7 @@ Service functions in `src/services/` wrap `invoke()` and export TanStack Query h
 
 ### Error Handling
 
-- Rust functions return `Result<T, String>` for IPC commands
+- Rust functions return `Result<T, String>` for IPC commands (there is no shared error type)
 - DB errors mapped to strings for Tauri serialization
 - Frontend shows errors in console (consider user-facing error UI)
 
