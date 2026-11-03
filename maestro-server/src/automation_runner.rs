@@ -25,12 +25,6 @@ use crate::sessions::{ActiveSession, SessionCommand};
 /// loop. A tokio mutex rather than a std one: the writes sit inside async paths either side.
 pub type Store = Arc<tokio::sync::Mutex<Connection>>;
 
-/// The ACP config-option categories that mean "how hard should the model think about this".
-///
-/// Mirrors `findEffortOption` in the frontend, and for the same reason: effort is addressed by the
-/// agent's own option id, which is only known once a session has been opened.
-const EFFORT_CATEGORIES: [&str; 2] = ["effort", "thought_level"];
-
 /// Everything the runner needs to put an agent on a prompt. The same pieces the `Spawn` arm holds,
 /// passed as one so the clock's tick does not grow a five-argument tail.
 pub struct Spawner<'a> {
@@ -307,20 +301,6 @@ pub async fn apply_all_retention(store: &Store) {
     }
 }
 
-pub(crate) fn effort_option_id(config_options: Option<&Vec<serde_json::Value>>) -> Option<String> {
-    config_options?
-        .iter()
-        .find(|option| {
-            option
-                .get("category")
-                .and_then(|category| category.as_str())
-                .is_some_and(|category| EFFORT_CATEGORIES.contains(&category))
-        })
-        .and_then(|option| option.get("id"))
-        .and_then(|id| id.as_str())
-        .map(str::to_string)
-}
-
 async fn announce(stdout: &crate::ClientOut, run: &AutomationRun) {
     if let Err(e) = send_response(stdout, &ServerResponse::AutomationRunChanged(run.clone())).await
     {
@@ -468,19 +448,13 @@ pub async fn start(
 
         // Applied before the prompt and not waited on: each is a request the agent answers in
         // order, and the prompt queued behind them cannot overtake them on one command channel.
-        let automation_settings = [
-            automation.model.clone().map(SessionCommand::SetModel),
-            automation
-                .permission_mode
-                .clone()
-                .map(SessionCommand::SetMode),
-            automation
-                .effort
-                .clone()
-                .zip(effort_option_id(result.config_options.as_ref()))
-                .map(|(value, config_id)| SessionCommand::SetConfigOption { config_id, value }),
-        ];
-        for command in automation_settings.into_iter().flatten() {
+        let automation_settings = crate::sessions::settings_commands(
+            automation.model.clone(),
+            automation.effort.clone(),
+            automation.permission_mode.clone(),
+            result.config_options.as_ref(),
+        );
+        for command in automation_settings {
             if result.session.cmd_tx.send(command).await.is_err() {
                 fail(
                     &store,
@@ -778,19 +752,5 @@ mod tests {
             .expect("the project itself"),
             "/project"
         );
-    }
-
-    #[test]
-    fn effort_is_addressed_by_the_agent_s_own_option_id() {
-        let options = vec![
-            serde_json::json!({"id": "verbosity", "category": "output"}),
-            serde_json::json!({"id": "reasoningEffort", "category": "thought_level"}),
-        ];
-        assert_eq!(
-            effort_option_id(Some(&options)).as_deref(),
-            Some("reasoningEffort")
-        );
-        assert_eq!(effort_option_id(None), None);
-        assert_eq!(effort_option_id(Some(&vec![])), None);
     }
 }
