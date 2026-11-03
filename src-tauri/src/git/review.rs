@@ -2,13 +2,13 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::acp::connection_server::{query_project_store, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 use crate::git;
 use crate::models::{ReviewResult, Task};
 use maestro_protocol::{
     ReviewCommentInput, SaveTaskReviewRequest, TaskRef, TaskTransition, TransitionGuard,
 };
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 /// Replace a task's review, and every per-file comment it had, with this one.
 async fn replace_review(

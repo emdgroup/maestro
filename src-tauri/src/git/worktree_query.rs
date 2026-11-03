@@ -241,12 +241,12 @@ pub async fn list_worktrees_with_status(
             &app_state,
             project_id,
             |project_path| {
-                crate::acp::transport::ServerRequest::ListTasks(maestro_protocol::ProjectRef {
+                maestro_protocol::ServerRequest::ListTasks(maestro_protocol::ProjectRef {
                     project_path,
                 })
             },
             crate::acp::connection_server::reply!(
-                crate::acp::transport::ServerResponse::ListTasksOk(list) => list.tasks
+                maestro_protocol::ServerResponse::ListTasksOk(list) => list.tasks
             ),
         )
         .await?

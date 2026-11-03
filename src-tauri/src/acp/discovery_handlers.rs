@@ -6,9 +6,9 @@ use std::time::Duration;
 use tauri::State;
 
 use crate::acp::registry::{AgentDiscoveryCacheEntry, AgentDiscoveryResult, DiscoveredAgent};
-use crate::acp::transport::CheckToolsResponse;
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
+use maestro_protocol::CheckToolsResponse;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]

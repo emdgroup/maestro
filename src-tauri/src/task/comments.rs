@@ -8,9 +8,9 @@ use maestro_protocol::{AddTaskCommentRequest, NewTaskComment, TaskRef};
 use tauri::State;
 
 use crate::acp::connection_server::{query_project_store, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 use crate::models::TaskComment;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 /// Read a task's thread, oldest first.
 #[tauri::command]

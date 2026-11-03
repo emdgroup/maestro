@@ -10,8 +10,8 @@ use maestro_protocol::{
 use tauri::State;
 
 use crate::acp::connection_server::{query_project_store, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 pub use maestro_protocol::{
     AgentGateState, LoopCheck, LoopCheckEntry, LoopCheckKind, LoopCheckResult, LoopCheckSpec,

@@ -6,12 +6,12 @@ use crate::acp::replay::{emit_or_buffer_payload, push_config_init_to_buffer};
 use crate::acp::session_types::{
     PendingReply, PendingRequests, ReaderTaskContext, RestorableSession,
 };
-use crate::acp::transport::{
+use crate::acp::transport_types::{serialize_message, AcpReadSource};
+use crate::acp::TaskKey;
+use maestro_protocol::{
     FileReadResponse, FileSearchResponse, PromptCapabilitiesInfo, ServerRequest, ServerResponse,
     SessionModeState, SessionModelState,
 };
-use crate::acp::transport_types::{serialize_message, AcpReadSource};
-use crate::acp::TaskKey;
 use maestro_protocol::{TaskTransition, TransitionGuard};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -1432,7 +1432,7 @@ mod tests {
 
     mod fatal_session_errors {
         use super::*;
-        use crate::acp::transport::ErrorResponse;
+        use maestro_protocol::ErrorResponse;
 
         fn error(message: &str, session_id: Option<&str>) -> ServerResponse {
             ServerResponse::Error(ErrorResponse {

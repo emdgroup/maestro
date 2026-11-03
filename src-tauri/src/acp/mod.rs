@@ -19,7 +19,6 @@ pub mod session_handlers;
 pub mod session_ops;
 pub mod session_types;
 pub mod skills;
-pub mod transport;
 pub mod transport_setup;
 pub mod transport_types;
 pub mod usage_handlers;

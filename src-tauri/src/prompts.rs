@@ -19,8 +19,8 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::acp::connection_server::{query_project_store, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct Prompt {

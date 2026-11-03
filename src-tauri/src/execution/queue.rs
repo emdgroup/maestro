@@ -2,8 +2,8 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::acp::connection_server::reply;
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 /// What the board shows: how many slots this host has, how many are taken, and why.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]

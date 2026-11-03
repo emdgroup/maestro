@@ -20,13 +20,13 @@ use crate::acp::connection_server::{
     query_list_automations_via_server, query_run_automation_via_server,
     query_save_automation_via_server,
 };
-use crate::acp::transport::HostToolCall;
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
 use crate::project::automations::{
     target, Automation, AutomationRun, AutomationWorkspace, WebhookOverlap,
 };
 use crate::templates::{self, AutomationTemplate, TemplateBody};
+use maestro_protocol::HostToolCall;
 
 /// How long `run_automation` waits for the user before answering that it is still waiting. Under
 /// the 90 seconds the server holds a host call open for.

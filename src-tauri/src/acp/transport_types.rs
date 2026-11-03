@@ -1,9 +1,9 @@
 //! Low-level ACP transport primitives: frame parsing, serialization, and read/write sources.
 
-use crate::acp::transport::{write_message, ServerRequest, ServerResponse};
 use maestro_protocol::{
     decode_message, encode_message, read_message_with_id, RequestId, MAX_MESSAGE_SIZE,
 };
+use maestro_protocol::{write_message, ServerRequest, ServerResponse};
 use russh::ChannelMsg;
 use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::ChildStdin;
