@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { useTauriEvent } from "@/services/tauri-events";
 import { toast } from "sonner";
 import {
   openProject as openProjectById,
@@ -77,14 +77,9 @@ export function useOpenProject(options: OpenProjectOptions = {}) {
 
   // Another window opening another project emits the same event, so only this one's counts.
   const openingId = useRef<number | null>(null);
-  useEffect(() => {
-    const unlisten = listen<number>("project-importing", ({ payload }) => {
-      if (payload === openingId.current) setImporting(true);
-    });
-    return () => {
-      void unlisten.then((stop) => stop());
-    };
-  }, []);
+  useTauriEvent<number>("project-importing", (payload) => {
+    if (payload === openingId.current) setImporting(true);
+  });
 
   // The countdown to the holder's server taking the project away by itself.
   useEffect(() => {

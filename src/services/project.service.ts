@@ -1,6 +1,4 @@
-import { useEffect } from "react";
 import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
-import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
@@ -110,23 +108,11 @@ export function useProjectRemotes(projectId: number | null) {
 /**
  * What Home shows for each connection: its server's status and every project on it.
  *
- * Refetched every 5 seconds and whenever any server says a task, an automation run or a lock
- * changed. Only ask for attached connections: the rest fail with "No connection server".
+ * Refetched every 5 seconds, and by `useServerEventSync` whenever any server says a task, an
+ * automation run or a lock changed. Only ask for attached connections: the rest fail with "No
+ * connection server".
  */
 export function useHomeSummaries(connections: ConnectionKey[]) {
-  const queryClient = useQueryClient();
-  useEffect(() => {
-    const unlistens = ["tasks-changed", "automation-run-changed", "project-locks-changed"].map(
-      (event) =>
-        listen(event, () => {
-          void queryClient.invalidateQueries({ queryKey: projectQueryKeys.home() });
-        }),
-    );
-    return () => {
-      for (const unlisten of unlistens) void unlisten.then((stop) => stop());
-    };
-  }, [queryClient]);
-
   return useQueries({
     queries: connections.map((connection) => ({
       queryKey: projectQueryKeys.homeFor(connectionQueryKey(connection)),

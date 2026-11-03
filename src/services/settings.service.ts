@@ -1,6 +1,4 @@
-import { useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
@@ -18,7 +16,7 @@ import type { AppSettings, ConnectionCapacitySettings, ConnectionKey } from "@/t
  * Query key factory for settings operations
  * Settings are global app state with stable query keys
  */
-const settingsQueryKeys = {
+export const settingsQueryKeys = {
   base: ["settings"] as const,
   lists: () => [...settingsQueryKeys.base, "list"] as const,
   logLevels: () => [...settingsQueryKeys.base, "logLevels"] as const,
@@ -104,18 +102,10 @@ export function useSaveConnectionCapacity() {
 
 /**
  * Whether the project's queued tasks start on their own. Kept by the project's daemon and shared by
- * every window on it, so it is re-read on `settings-changed`, which the daemon's push becomes.
+ * every window on it, so `useServerEventSync` re-reads it on `settings-changed`, which the daemon's
+ * push becomes.
  */
 export function useAutoMode(projectId: number | null) {
-  const queryClient = useQueryClient();
-  useEffect(() => {
-    if (projectId === null) return;
-    const unlisten = listen("settings-changed", () => {
-      void queryClient.invalidateQueries({ queryKey: settingsQueryKeys.autoMode(projectId) });
-    });
-    return () => void unlisten.then((fn) => fn());
-  }, [projectId, queryClient]);
-
   return useQuery({
     queryKey: settingsQueryKeys.autoMode(projectId),
     queryFn: () => api.getAutoMode(projectId!),
@@ -129,15 +119,6 @@ export function useAutoMode(projectId: number | null) {
  * 0 is no cap. The daemon's, re-read on `settings-changed` like auto mode.
  */
 export function useLoopWaitCap(projectId: number | null) {
-  const queryClient = useQueryClient();
-  useEffect(() => {
-    if (projectId === null) return;
-    const unlisten = listen("settings-changed", () => {
-      void queryClient.invalidateQueries({ queryKey: settingsQueryKeys.loopWaitCap(projectId) });
-    });
-    return () => void unlisten.then((fn) => fn());
-  }, [projectId, queryClient]);
-
   return useQuery({
     queryKey: settingsQueryKeys.loopWaitCap(projectId),
     queryFn: () => api.getLoopWaitCap(projectId!),

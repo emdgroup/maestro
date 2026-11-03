@@ -27,6 +27,7 @@ import {
   sendAcpPromptStructured,
 } from "@/services/execution.service";
 import { authQueryKeys } from "@/services/acp-auth.service";
+import { useTauriEvent } from "@/services/tauri-events";
 import { cleanupWorktreeIfClean, useWorktreesQuery } from "@/services/worktree.service";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import type { ConnectionKey } from "@/types/bindings";
@@ -175,56 +176,36 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   });
   const spawnAcpMutation = useSpawnAcpSessionMutation();
 
-  useEffect(() => {
-    const connId = connKeyToId(connection);
-    const unlisten = listen<{ exit_code: number | null }>(
-      `acp://auth-pty-exit/${connId}`,
-      (event) => {
-        const tasks = authRequiredTasksRef.current;
-        const found = Object.entries(tasks).find(
-          ([, e]) => e.terminalState === "running" && connIdMatches(e.connection, connId),
-        );
-        if (!found) return;
-        // A task's entry is keyed by its task id, a manual session's by its session id.
-        const authKey = found[0];
-        if (event.payload.exit_code === 0) {
-          const lastPrompt = authRequiredTasksRef.current[authKey]?.lastPrompt;
-          clearAuthRequired(authKey);
-          const isManualSession = sessionsRef.current.some(
-            (s) => s.session_id === authKey && !s.task_id,
-          );
-          if (isManualSession) {
-            setPendingSessionRetry({ sessionId: authKey, lastPrompt: lastPrompt ?? null });
-          } else {
-            setPendingAuthRetry(Number(authKey));
-          }
-        } else {
-          setAuthTerminalIdle(authKey);
-        }
-      },
-    ).catch(console.error);
-    return () => {
-      unlisten.then((fn) => fn?.());
-    };
-  }, [
-    connection,
-    clearAuthRequired,
-    setAuthTerminalIdle,
-    setPendingAuthRetry,
-    setPendingSessionRetry,
-  ]);
+  const connId = connKeyToId(connection);
+  useTauriEvent<{ exit_code: number | null }>(`acp://auth-pty-exit/${connId}`, (payload) => {
+    const tasks = authRequiredTasksRef.current;
+    const found = Object.entries(tasks).find(
+      ([, e]) => e.terminalState === "running" && connIdMatches(e.connection, connId),
+    );
+    if (!found) return;
+    // A task's entry is keyed by its task id, a manual session's by its session id.
+    const authKey = found[0];
+    if (payload.exit_code === 0) {
+      const lastPrompt = authRequiredTasksRef.current[authKey]?.lastPrompt;
+      clearAuthRequired(authKey);
+      const isManualSession = sessionsRef.current.some(
+        (s) => s.session_id === authKey && !s.task_id,
+      );
+      if (isManualSession) {
+        setPendingSessionRetry({ sessionId: authKey, lastPrompt: lastPrompt ?? null });
+      } else {
+        setPendingAuthRetry(Number(authKey));
+      }
+    } else {
+      setAuthTerminalIdle(authKey);
+    }
+  });
 
-  useEffect(() => {
-    const connId = connKeyToId(connection);
-    const unlisten = listen<{ agentId: string }>(`acp://auth-state-changed/${connId}`, (event) => {
-      void queryClient.invalidateQueries({
-        queryKey: authQueryKeys.info(event.payload.agentId, connection),
-      });
-    }).catch(console.error);
-    return () => {
-      unlisten.then((fn) => fn?.());
-    };
-  }, [connection, queryClient]);
+  useTauriEvent<{ agentId: string }>(`acp://auth-state-changed/${connId}`, (payload) => {
+    void queryClient.invalidateQueries({
+      queryKey: authQueryKeys.info(payload.agentId, connection),
+    });
+  });
 
   useEffect(() => {
     if (!pendingSessionRetry || !projectId) return;

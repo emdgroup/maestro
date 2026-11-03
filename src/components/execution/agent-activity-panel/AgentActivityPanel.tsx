@@ -7,7 +7,6 @@ import {
   useRef,
   useReducer,
 } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { useAcpActivity } from "../activity/useAcpActivity";
@@ -48,6 +47,7 @@ import { useSessionActivity, useSessionActivityActions } from "@/store/sessionAc
 import { useActiveTab } from "@/store/navigationStore";
 import { useBoardActions, useBoardStore } from "@/store/boardStore";
 import { abortAuthTerminal } from "@/services/acp-auth.service";
+import { useTauriEvent } from "@/services/tauri-events";
 import type { ArtifactFile, JsonValue, ConnectionKey } from "@/types/bindings";
 import { ExecutionSidePanel } from "@/components/execution/side-panel/ExecutionSidePanel";
 import { useSidePanelTabs } from "@/components/execution/side-panel/useSidePanelTabs";
@@ -645,30 +645,17 @@ export function AgentActivityPanel({
   }, [lastItem, effectiveAuthKey, agentId, connection, lastUserMessage, setAuthRequired]);
 
   // The output itself is buffered by the session's runtime; this only opens its tab.
-  useEffect(() => {
-    const unlisten = listen<{ terminal_id: string; output: string }>(
-      `acp://terminal-output/${sessionId}`,
-      (event) => {
-        const isAuth = event.payload.terminal_id.startsWith("auth-terminal-");
-        openAcpTerminalTab(event.payload.terminal_id, { isAuthTerminal: isAuth });
-      },
-    ).catch(console.error);
-    return () => {
-      unlisten.then((fn) => fn?.());
-    };
-  }, [sessionId, openAcpTerminalTab]);
+  useTauriEvent<{ terminal_id: string }>(`acp://terminal-output/${sessionId}`, (payload) => {
+    const isAuth = payload.terminal_id.startsWith("auth-terminal-");
+    openAcpTerminalTab(payload.terminal_id, { isAuthTerminal: isAuth });
+  });
 
-  useEffect(() => {
-    const unlisten = listen<string>(`acp://session-error/${sessionId}`, (e) => {
-      if (e.payload === "auth_required" && agentId) {
-        setAuthRequired(effectiveAuthKey, agentId, connection, null);
-        setHasPreSpawnAuthError(true);
-      }
-    }).catch(console.error);
-    return () => {
-      unlisten.then((fn) => fn?.());
-    };
-  }, [sessionId, agentId, connection, effectiveAuthKey, setAuthRequired]);
+  useTauriEvent<string>(`acp://session-error/${sessionId}`, (payload) => {
+    if (payload === "auth_required" && agentId) {
+      setAuthRequired(effectiveAuthKey, agentId, connection, null);
+      setHasPreSpawnAuthError(true);
+    }
+  });
 
   // Detect when auth terminal tab is closed before PTY exits.
   useEffect(() => {

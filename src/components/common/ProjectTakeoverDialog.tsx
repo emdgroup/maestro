@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { useTauriEvent } from "@/services/tauri-events";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,15 +36,10 @@ export function ProjectTakeoverDialog() {
   const [secondsLeft, setSecondsLeft] = useState(ANSWER_SECONDS);
   const { mutate: answer } = useAnswerProjectTakeover();
 
-  useEffect(() => {
-    const unlisten = listen<TakeoverRequest>("project-takeover-requested", ({ payload }) => {
-      setRequest(payload);
-      setSecondsLeft(ANSWER_SECONDS);
-    });
-    return () => {
-      void unlisten.then((stop) => stop());
-    };
-  }, []);
+  useTauriEvent<TakeoverRequest>("project-takeover-requested", (payload) => {
+    setRequest(payload);
+    setSecondsLeft(ANSWER_SECONDS);
+  });
 
   useEffect(() => {
     if (!request) return;

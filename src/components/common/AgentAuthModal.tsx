@@ -1,5 +1,4 @@
-import React, { useState, useEffect, Fragment } from "react";
-import { listen } from "@tauri-apps/api/event";
+import React, { useState, Fragment } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/ui/dialog";
 import { Button } from "@/ui/button";
@@ -10,6 +9,7 @@ import {
   useAgentAuthInfoQuery,
   useAcpAuthenticateMutation,
 } from "@/services/acp-auth.service";
+import { useTauriEvent } from "@/services/tauri-events";
 import { useNavigate } from "@/store/navigationStore";
 import { useBoardActions } from "@/store/boardStore";
 
@@ -87,19 +87,11 @@ export function AgentAuthModal({
     if (authenticate.isPending) setOutputLines([]);
   }
 
-  useEffect(() => {
-    if (!authenticate.isPending) return;
-    const connId = connectionKeyId(connection);
-    let unlisten: (() => void) | undefined;
-    listen<{ level: string; message: string }>(`acp://auth-output/${connId}`, (e) => {
-      setOutputLines((prev) => [...prev, e.payload.message]);
-    }).then((fn) => {
-      unlisten = fn;
-    });
-    return () => {
-      unlisten?.();
-    };
-  }, [authenticate.isPending, connection]);
+  // Only while a sign-in runs. Cancel-safe, so closing mid-sign-in cannot leak the listener.
+  useTauriEvent<{ level: string; message: string }>(
+    authenticate.isPending ? `acp://auth-output/${connectionKeyId(connection)}` : null,
+    (payload) => setOutputLines((prev) => [...prev, payload.message]),
+  );
 
   const authMethods = authInfo?.authMethods ?? [];
 

@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -7,6 +6,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { getTerminalTheme, getTerminalColorOptions } from "@/lib/terminalTheme";
 import { useSettings } from "@/services/settings.service";
 import { useTheme } from "@/providers/ThemeProvider";
+import { useTauriEvent } from "@/services/tauri-events";
 import {
   registerTerminal,
   unregisterTerminal,
@@ -37,6 +37,14 @@ export function AcpTerminalView({
   const terminalColorMode = settings?.terminal_color_mode ?? "follow_theme";
   const { theme, systemTheme, effectiveAccentHue } = useTheme();
   const effectiveTheme = theme === "system" ? systemTheme : theme;
+
+  useTauriEvent<{ terminal_id: string; output: string }>(
+    `acp://terminal-output/${sessionId}`,
+    (payload) => {
+      if (payload.terminal_id !== terminalId) return;
+      xtermRef.current?.write(toTerminalOutput(payload.output));
+    },
+  );
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -93,20 +101,11 @@ export function AcpTerminalView({
       disposeOnData = () => d.dispose();
     }
 
-    const unlisten = listen<{ terminal_id: string; output: string }>(
-      `acp://terminal-output/${sessionId}`,
-      (event) => {
-        if (event.payload.terminal_id !== terminalId) return;
-        terminal.write(toTerminalOutput(event.payload.output));
-      },
-    ).catch(console.error);
-
     return () => {
       cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
       unregisterTerminal(container);
       disposeOnData?.();
-      unlisten.then((fn) => fn?.());
       terminal.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

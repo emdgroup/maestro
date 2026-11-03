@@ -1,17 +1,8 @@
-import { useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { listen } from "@tauri-apps/api/event";
 import { Cpu } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Badge } from "@/ui/badge";
 import { cn } from "@/lib/utils";
-import { executionQueryKeys, useQueueCapacityQuery } from "@/services/execution.service";
-
-/**
- * One transition emits several events, and answering each separately means several
- * `get_queue_capacity` calls for one change. `tasks-changed` alone fires on every permission prompt and every answer to one.
- */
-const DEBOUNCE_MS = 400;
+import { useQueueCapacityQuery } from "@/services/execution.service";
 
 /**
  * How many agent slots this project's host has, and how many are taken.
@@ -22,28 +13,6 @@ const DEBOUNCE_MS = 400;
  * reviews are open is indistinguishable from one that is broken.
  */
 export function QueueCapacityBadge({ projectId }: { projectId: number | null }) {
-  const queryClient = useQueryClient();
-  const queryKey = executionQueryKeys.queueCapacity(projectId);
-
-  useEffect(() => {
-    if (projectId === null) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    // The same events that trigger a drain change the answer here.
-    const unlisteners = ["tasks-changed", "sessions-changed", "settings-changed"].map((event) =>
-      listen(event, () => {
-        clearTimeout(timer);
-        timer = setTimeout(() => void queryClient.invalidateQueries({ queryKey }), DEBOUNCE_MS);
-      }),
-    );
-    return () => {
-      clearTimeout(timer);
-      for (const unlisten of unlisteners) {
-        void unlisten.then((fn) => fn());
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, queryClient]);
-
   const { data } = useQueueCapacityQuery(projectId);
 
   if (!data) return null;

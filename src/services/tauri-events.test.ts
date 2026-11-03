@@ -31,6 +31,9 @@ import { worktreeQueryKeys } from "./worktree.service";
 import { executionQueryKeys } from "./execution.service";
 import { promptQueryKeys } from "./prompt.service";
 import { loopQueryKeys } from "./loop.service";
+import { projectQueryKeys } from "./project.service";
+import { settingsQueryKeys } from "./settings.service";
+import { useTauriEvent } from "./tauri-events";
 
 // The module is mocked above for `useQueryClient`; the key matcher is wanted for real.
 const { partialMatchKey } =
@@ -67,7 +70,10 @@ describe("useServerEventSync", () => {
       "automations-changed",
       "templates-changed",
       "prompts-changed",
+      "automation-run-changed",
+      "project-locks-changed",
       "sessions-changed",
+      "settings-changed",
     ]);
   });
 
@@ -126,7 +132,10 @@ describe("useServerEventSync", () => {
 
     fire("tasks-changed", { project_id: 8 });
     fire("worktrees-changed", { project_id: 8 });
-    expect(invalidateQueries).not.toHaveBeenCalled();
+    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: taskQueryKeys.lists() });
+    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: worktreeQueryKeys.base });
+    // Home's tiles and the host's agent slots are not this project's alone.
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: projectQueryKeys.home() });
 
     fire("tasks-changed", { project_id: 7 });
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: taskQueryKeys.lists() });
@@ -182,6 +191,8 @@ describe("useServerEventSync", () => {
       "automations-changed",
       "templates-changed",
       "prompts-changed",
+      "automation-run-changed",
+      "project-locks-changed",
     ]);
   });
 
@@ -213,7 +224,10 @@ describe("useServerEventSync", () => {
       "automations-changed",
       "templates-changed",
       "prompts-changed",
+      "automation-run-changed",
+      "project-locks-changed",
       "sessions-changed",
+      "settings-changed",
     ]);
   });
 
@@ -233,7 +247,80 @@ describe("useServerEventSync", () => {
       "automations-changed",
       "templates-changed",
       "prompts-changed",
+      "automation-run-changed",
+      "project-locks-changed",
       "sessions-changed",
+      "settings-changed",
     ]);
+  });
+});
+
+describe("useServerEventSync, project settings and capacity", () => {
+  it("re-reads the open project's auto mode and loop cap on settings-changed", async () => {
+    renderHook(() => useServerEventSync(7));
+    await flush();
+
+    fire("settings-changed");
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: settingsQueryKeys.autoMode(7) });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: settingsQueryKeys.loopWaitCap(7) });
+  });
+
+  /** One transition emits several events; the capacity is asked once for all of them. */
+  it("answers a burst of changes with one capacity refetch", async () => {
+    vi.useFakeTimers();
+    try {
+      renderHook(() => useServerEventSync(7));
+      await flush();
+
+      fire("tasks-changed", { project_id: 8 });
+      fire("sessions-changed");
+      fire("settings-changed");
+      const capacity = () =>
+        invalidateQueries.mock.calls.filter(
+          ([filter]) =>
+            JSON.stringify(filter.queryKey) === JSON.stringify(executionQueryKeys.queueCapacity(7)),
+        ).length;
+      expect(capacity()).toBe(0);
+
+      vi.advanceTimersByTime(400);
+      expect(capacity()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("useTauriEvent", () => {
+  it("hands the payload to the newest handler", async () => {
+    const seen: string[] = [];
+    const { rerender } = renderHook(
+      ({ tag }: { tag: string }) =>
+        useTauriEvent<string>("ping", (payload) => seen.push(`${tag}:${payload}`)),
+      { initialProps: { tag: "a" } },
+    );
+    await flush();
+    rerender({ tag: "b" });
+
+    fire("ping", "x");
+
+    expect(seen).toEqual(["b:x"]);
+    expect(eventsRegistered()).toEqual(["ping"]);
+  });
+
+  it("subscribes to nothing for a null name", async () => {
+    renderHook(() => useTauriEvent(null, () => {}));
+    await flush();
+
+    expect(eventsRegistered()).toEqual([]);
+  });
+
+  /** The leak `AgentAuthModal` had: closed before `listen` settled, and never unsubscribed. */
+  it("unsubscribes a listener that resolved after unmount", async () => {
+    const { unmount } = renderHook(() => useTauriEvent("ping", () => {}));
+    unmount();
+    await flush();
+
+    expect(unlistened).toEqual(["ping"]);
   });
 });
