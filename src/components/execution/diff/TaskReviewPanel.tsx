@@ -41,7 +41,8 @@ import {
   useResolveCommitMessageQuery,
   clearTaskReview,
 } from "@/services/task.service";
-import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
+import { useExecuteTask } from "@/hooks/useExecuteTask";
+import { useTaskSession } from "@/contexts/BoardActionsContext";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
 import { MissingAttachmentsDialog } from "@/components/execution/MissingAttachmentsDialog";
 import { useKanban } from "@/contexts/KanbanContext";
@@ -141,7 +142,7 @@ export function TaskReviewPanel({
     onAttachmentsContinue,
     onAttachmentsCancel,
   } = useExecuteTask(projectId, projectPath, connection);
-  const activeSession = useTaskActiveSession(task.id, projectId);
+  const activeSession = useTaskSession(task.id);
   const codeHostingQuery = useCodeHostingStatus(projectId);
   const cancelSession = useCancelActiveSessionMutation();
 

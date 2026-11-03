@@ -5,29 +5,33 @@ import { api } from "@/lib/tauri-utils";
 import { isRoleSkipped, parseProfileOverrides, profileIdFor } from "@/lib/profile-overrides";
 import type { Task, ConnectionKey, AgentRole, WorktreeWithStatus } from "@/types/bindings";
 import { worktreeListOptions } from "@/services/worktree.service";
-import { useActiveSessionsQuery, useAgentDiscoveryQuery } from "@/services/execution.service";
+import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { startTask, useDeleteTaskAttachmentMutation } from "@/services/task.service";
 import { useNavigationActions } from "@/store/navigationStore";
 import { useBoardStore } from "@/store/boardStore";
 import type { DirtyChoice } from "@/components/execution/DirtyWorktreeDialog";
 import type { UnusableAttachment } from "@/components/execution/MissingAttachmentsDialog";
 
-interface DirtyState {
-  modifiedCount: number;
-  untrackedCount: number;
-  resolve: (choice: DirtyChoice | "cancel") => void;
-}
-
-/** The attachments a start cannot send, and the promise the user's answer settles. */
-interface MissingAttachmentsState {
-  files: UnusableAttachment[];
-  resolve: (proceed: boolean) => void;
-}
-
-/** The task waiting on an agent to be chosen for it, and the promise that choice settles. */
-interface AgentPickerState {
-  task: Task;
-  resolve: (agentId: string | null) => void;
+/**
+ * A dialog that a flow awaits: `ask(data)` opens it with `data` and resolves with whatever
+ * `answer` is called with, after which `data` is null again. One question at a time.
+ */
+function usePromptDialog<TData, TAnswer>() {
+  const [data, setData] = useState<TData | null>(null);
+  const resolveRef = useRef<((answer: TAnswer) => void) | null>(null);
+  const ask = useCallback(
+    (next: TData) =>
+      new Promise<TAnswer>((resolve) => {
+        resolveRef.current = resolve;
+        setData(next);
+      }).finally(() => {
+        setData(null);
+        resolveRef.current = null;
+      }),
+    [],
+  );
+  const answer = useCallback((value: TAnswer) => resolveRef.current?.(value), []);
+  return { data, ask, answer };
 }
 
 /** The daemon's refusals for a stage with no agent it can spawn (`task_runner::begin`). */
@@ -48,13 +52,15 @@ export function useExecuteTask(
   const queryClient = useQueryClient();
   // Which task is mid-start, not merely that one is: the board shares one instance across cards.
   const [executingTaskId, setExecutingTaskId] = useState<number | null>(null);
-  const [dirtyState, setDirtyState] = useState<DirtyState | null>(null);
-  const dirtyResolveRef = useRef<((choice: DirtyChoice | "cancel") => void) | null>(null);
-  const [missingState, setMissingState] = useState<MissingAttachmentsState | null>(null);
-  const missingResolveRef = useRef<((proceed: boolean) => void) | null>(null);
+  const dirtyDialog = usePromptDialog<
+    { modifiedCount: number; untrackedCount: number },
+    DirtyChoice | "cancel"
+  >();
+  /** The attachments a start cannot send. */
+  const missingDialog = usePromptDialog<UnusableAttachment[], boolean>();
   const deleteAttachment = useDeleteTaskAttachmentMutation();
-  const [agentPickerState, setAgentPickerState] = useState<AgentPickerState | null>(null);
-  const agentPickerResolveRef = useRef<((agentId: string | null) => void) | null>(null);
+  /** The task waiting on an agent to be chosen for it. */
+  const agentPicker = usePromptDialog<Task, string | null>();
   const { data: discovery } = useAgentDiscoveryQuery(connection, projectId != null);
   const navigation = useNavigationActions();
 
@@ -85,16 +91,10 @@ export function useExecuteTask(
       if (!cwd) return true;
       const status = await api.checkWorktreeDirty(id, cwd);
       if (status.modified_count === 0 && status.untracked_count === 0) return true;
-      const choice = await new Promise<DirtyChoice | "cancel">((resolve) => {
-        dirtyResolveRef.current = resolve;
-        setDirtyState({
-          modifiedCount: status.modified_count,
-          untrackedCount: status.untracked_count,
-          resolve,
-        });
+      const choice = await dirtyDialog.ask({
+        modifiedCount: status.modified_count,
+        untrackedCount: status.untracked_count,
       });
-      setDirtyState(null);
-      dirtyResolveRef.current = null;
       if (choice === "cancel") return false;
       if (choice === "stash") await api.stashWorktree(id, cwd);
       if (choice === "discard") await api.discardAllWorktreeChanges(id, cwd);
@@ -130,13 +130,7 @@ export function useExecuteTask(
       return true;
     }
     if (unusable.length === 0) return true;
-    const proceed = await new Promise<boolean>((resolve) => {
-      missingResolveRef.current = resolve;
-      setMissingState({ files: unusable, resolve });
-    });
-    setMissingState(null);
-    missingResolveRef.current = null;
-    if (!proceed) return false;
+    if (!(await missingDialog.ask(unusable))) return false;
     // Only the rows whose copy is gone, so the next start does not ask again. A file too big to
     // send is still in the project and stays attached.
     for (const attachment of unusable.filter((entry) => entry.missing)) {
@@ -202,12 +196,7 @@ export function useExecuteTask(
         if (!isNoAgentError(message) || !canPickAgent || installed.length === 0) throw error;
         // The picker writes the choice as the project default; it is passed here as well, so this
         // start does not depend on that write.
-        const picked = await new Promise<string | null>((resolve) => {
-          agentPickerResolveRef.current = resolve;
-          setAgentPickerState({ task, resolve });
-        });
-        setAgentPickerState(null);
-        agentPickerResolveRef.current = null;
+        const picked = await agentPicker.ask(task);
         if (!picked) return;
         started = await start(picked);
       }
@@ -246,29 +235,13 @@ export function useExecuteTask(
     }
   };
 
-  const onDirtyChoice = useCallback((choice: DirtyChoice) => {
-    dirtyResolveRef.current?.(choice);
-  }, []);
-
-  const onDirtyCancel = useCallback(() => {
-    dirtyResolveRef.current?.("cancel");
-  }, []);
-
-  const onAttachmentsContinue = useCallback(() => {
-    missingResolveRef.current?.(true);
-  }, []);
-
-  const onAttachmentsCancel = useCallback(() => {
-    missingResolveRef.current?.(false);
-  }, []);
-
-  const onAgentPicked = useCallback((agentId: string) => {
-    agentPickerResolveRef.current?.(agentId);
-  }, []);
-
-  const onAgentPickerCancel = useCallback(() => {
-    agentPickerResolveRef.current?.(null);
-  }, []);
+  const answerDirty = dirtyDialog.answer;
+  const onDirtyCancel = useCallback(() => answerDirty("cancel"), [answerDirty]);
+  const answerMissing = missingDialog.answer;
+  const onAttachmentsContinue = useCallback(() => answerMissing(true), [answerMissing]);
+  const onAttachmentsCancel = useCallback(() => answerMissing(false), [answerMissing]);
+  const answerAgent = agentPicker.answer;
+  const onAgentPickerCancel = useCallback(() => answerAgent(null), [answerAgent]);
 
   return {
     execute,
@@ -276,24 +249,18 @@ export function useExecuteTask(
     executingTaskId,
     /** The same fact for the callers that only ever drive one task. */
     isExecuting: executingTaskId !== null,
-    dirtyDialogOpen: dirtyState !== null,
-    dirtyModifiedCount: dirtyState?.modifiedCount ?? 0,
-    dirtyUntrackedCount: dirtyState?.untrackedCount ?? 0,
-    onDirtyChoice,
+    dirtyDialogOpen: dirtyDialog.data !== null,
+    dirtyModifiedCount: dirtyDialog.data?.modifiedCount ?? 0,
+    dirtyUntrackedCount: dirtyDialog.data?.untrackedCount ?? 0,
+    onDirtyChoice: answerDirty,
     onDirtyCancel,
     /** The attachments this start cannot send, or `null`. Never set on an unattended start. */
-    missingAttachments: missingState?.files ?? null,
+    missingAttachments: missingDialog.data,
     onAttachmentsContinue,
     onAttachmentsCancel,
     /** Only ever set for a caller that passed `canPickAgent`. */
-    agentPickerTask: agentPickerState?.task ?? null,
-    onAgentPicked,
+    agentPickerTask: agentPicker.data,
+    onAgentPicked: answerAgent,
     onAgentPickerCancel,
   };
-}
-
-export function useTaskActiveSession(taskId: number | null, projectId: number | null) {
-  const { data: sessions = [] } = useActiveSessionsQuery(projectId ?? undefined);
-  if (taskId === null) return null;
-  return sessions.find((s) => s.task_id === taskId) ?? null;
 }
