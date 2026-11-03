@@ -14,7 +14,7 @@ use maestro_protocol::{
 };
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::automations::canonical_project_path;
+use crate::project_path::canonical_project_path;
 
 /// Version 4 of `projects.db`: the prompt collection. Frozen: a later change to this table is a
 /// new entry in `project_store::MIGRATIONS`.

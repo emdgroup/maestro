@@ -33,6 +33,7 @@ mod mcp_store;
 mod pipeline_settings;
 mod profiles;
 mod project_locks;
+mod project_path;
 mod project_store;
 mod prompt_store;
 mod scheduler;
@@ -416,7 +417,7 @@ pub(crate) async fn register_started_session(
             &project_store::Started {
                 agent_id: &session.agent_id,
                 acp_session_id: &cleanup.acp_session_id,
-                project_path: &automations::canonical_project_path(&project.project_path),
+                project_path: &project_path::canonical_project_path(&project.project_path),
                 cwd: &session.cwd,
                 meta: &project.meta,
                 can_reload: project.can_reload,

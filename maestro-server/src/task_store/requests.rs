@@ -13,7 +13,7 @@ use maestro_protocol::{
 use rusqlite::Connection;
 
 use super::{loops, reviews, transition, worktrees};
-use crate::automations::canonical_project_path;
+use crate::project_path::canonical_project_path;
 
 /// What a change to the rows of one project owes: which of the three pushes to send.
 #[derive(Default)]

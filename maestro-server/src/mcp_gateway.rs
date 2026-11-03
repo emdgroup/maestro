@@ -565,7 +565,7 @@ async fn project_prompt_tool(
     let project_path = project_path
         .ok_or_else(|| "this session is not attached to a Maestro project".to_string())?;
     let store = store.ok_or_else(|| crate::project_store::UNAVAILABLE.to_string())?;
-    let project_path = crate::automations::canonical_project_path(&project_path);
+    let project_path = crate::project_path::canonical_project_path(&project_path);
     let (result, changed) = {
         let conn = store.lock().await;
         project_prompt(&conn, &project_path, &call.name, &call.arguments)?
@@ -1250,7 +1250,7 @@ async fn loop_tool(
         return Err("this session is not a loop iteration".to_string());
     };
     let n = *n;
-    let path = crate::automations::canonical_project_path(&binding.project_path);
+    let path = crate::project_path::canonical_project_path(&binding.project_path);
     let mut conn = store.lock().await;
     let task = task_in_project(&mut conn, &path, task_id)?;
     let iterations = loops::list_iterations(&conn, &path, task_id)?;
@@ -1585,7 +1585,7 @@ mod tests {
 
         let stored = crate::task_store::list(
             &*store.lock().await,
-            &crate::automations::canonical_project_path(&project_path),
+            &crate::project_path::canonical_project_path(&project_path),
         )
         .expect("list");
         assert_eq!(stored[0].workspace_mode, WorkspaceMode::RepositoryDirectory);
@@ -1595,7 +1595,7 @@ mod tests {
     async fn a_loop_is_drafted_and_its_worker_gets_the_loop_tools_only() {
         let project = tempfile::tempdir().expect("project dir");
         let project_path = project.path().to_string_lossy().into_owned();
-        let canonical = crate::automations::canonical_project_path(&project_path);
+        let canonical = crate::project_path::canonical_project_path(&project_path);
         let store: Store = Arc::new(tokio::sync::Mutex::new(
             crate::project_store::open_in_memory(),
         ));
@@ -1800,7 +1800,7 @@ mod tests {
     async fn update_task_moves_a_task_as_the_user_would() {
         let project = tempfile::tempdir().expect("project dir");
         let project_path = project.path().to_string_lossy().into_owned();
-        let canonical = crate::automations::canonical_project_path(&project_path);
+        let canonical = crate::project_path::canonical_project_path(&project_path);
         let store: Store = Arc::new(tokio::sync::Mutex::new(
             crate::project_store::open_in_memory(),
         ));
@@ -1877,7 +1877,7 @@ mod tests {
         assert_eq!(refused.error.as_deref(), Some("no task 2 in this project"));
         let untouched = crate::task_store::list(
             &*store.lock().await,
-            &crate::automations::canonical_project_path(&other_path),
+            &crate::project_path::canonical_project_path(&other_path),
         )
         .expect("list");
         assert!(untouched

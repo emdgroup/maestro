@@ -175,27 +175,6 @@ async fn additional_directories_for(raw: &[String], supported: bool) -> Vec<std:
 /// Cap on `next_cursor` follow-ups, so a misbehaving agent cannot loop forever.
 const SESSION_LIST_MAX_PAGES: usize = 20;
 
-/// Compares strings rather than the filesystem: the paths of deleted worktrees must still match.
-fn path_is_within(root: &str, candidate: &std::path::Path) -> bool {
-    fn normalize(s: &str) -> String {
-        let s = s.replace('\\', "/");
-        let trimmed = s.trim_end_matches('/');
-        let trimmed = if trimmed.is_empty() { &s } else { trimmed };
-        if cfg!(windows) {
-            trimmed.to_lowercase()
-        } else {
-            trimmed.to_string()
-        }
-    }
-    let root = normalize(root);
-    let candidate = normalize(&candidate.to_string_lossy());
-    if !candidate.starts_with(&root) {
-        return false;
-    }
-    // `…/maestro` must not swallow `…/maestro-server`.
-    matches!(candidate[root.len()..].chars().next(), None | Some('/'))
-}
-
 /// List sessions using an already-initialized connection (fast path for `SessionList`).
 ///
 /// `cwd` is filtered here, not forwarded: the agent resolves it against a live `git worktree
@@ -221,7 +200,7 @@ pub(crate) async fn session_list_on_connection(
         entries.extend(
             resp.sessions
                 .into_iter()
-                .filter(|s| path_is_within(cwd, &s.cwd))
+                .filter(|s| maestro_protocol::paths::path_is_within(&s.cwd.to_string_lossy(), cwd))
                 .map(|s| SessionListEntry {
                     session_id: s.session_id.to_string(),
                     title: s.title,
@@ -850,24 +829,7 @@ pub(crate) async fn pre_initialize_agent(
 
 #[cfg(test)]
 mod tests {
-    use super::{path_is_within, system_prompt_for, NewSessionRequest};
-    use std::path::Path;
-
-    const ROOT: &str = r"C:\Users\me\maestro";
-
-    #[test]
-    fn root_itself_matches() {
-        assert!(path_is_within(ROOT, Path::new(r"C:\Users\me\maestro")));
-        assert!(path_is_within(ROOT, Path::new(r"C:\Users\me\maestro\")));
-    }
-
-    #[test]
-    fn worktree_child_matches() {
-        assert!(path_is_within(
-            ROOT,
-            Path::new(r"C:\Users\me\maestro\.maestro\worktrees\session-100")
-        ));
-    }
+    use super::{system_prompt_for, NewSessionRequest};
 
     #[test]
     fn system_prompt_is_appended_text_and_only_where_advertised() {
@@ -879,31 +841,5 @@ mod tests {
             serde_json::to_value(request).unwrap()["systemPrompt"],
             serde_json::json!({ "mode": "append", "content": [{ "type": "text", "text": "Be strict." }] })
         );
-    }
-
-    #[test]
-    fn sibling_with_shared_prefix_is_rejected() {
-        assert!(!path_is_within(
-            ROOT,
-            Path::new(r"C:\Users\me\maestro-server")
-        ));
-        assert!(!path_is_within(ROOT, Path::new(r"C:\Users\me\other")));
-    }
-
-    #[test]
-    fn mixed_separators_match() {
-        assert!(path_is_within(
-            "C:/Users/me/maestro",
-            Path::new(r"C:\Users\me\maestro\src")
-        ));
-    }
-
-    #[test]
-    #[cfg(windows)]
-    fn case_differing_drive_letter_matches() {
-        assert!(path_is_within(
-            ROOT,
-            Path::new(r"c:\users\me\Maestro\src-tauri")
-        ));
     }
 }

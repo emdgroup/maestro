@@ -77,7 +77,7 @@ pub async fn get_acp_session_meta(
 fn branch_for_cwd(worktrees: &[crate::git::ParsedWorktree], cwd: &str) -> Option<String> {
     worktrees
         .iter()
-        .filter(|wt| crate::git::worktree_lifecycle::path_is_within(cwd, &wt.path))
+        .filter(|wt| maestro_protocol::paths::path_is_within(cwd, &wt.path))
         .max_by_key(|wt| wt.path.len())
         .and_then(|wt| wt.branch.clone())
 }
@@ -345,9 +345,8 @@ pub async fn rename_acp_session(
 /// history modal resolves against the project it has open. `Some("")` is the project root itself;
 /// `None` means the directory lies outside the project.
 fn relative_to_project(project_path: &str, cwd: &str) -> Option<String> {
-    let normalize = |path: &str| path.replace('\\', "/").trim_end_matches('/').to_string();
-    let root = normalize(project_path);
-    let dir = normalize(cwd);
+    let root = maestro_protocol::paths::tidy_path(project_path);
+    let dir = maestro_protocol::paths::tidy_path(cwd);
     if dir == root {
         return Some(String::new());
     }

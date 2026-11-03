@@ -6,6 +6,7 @@ use crate::acp::connection_server::{query_project_store, reply};
 use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 use crate::models::Worktree;
+use maestro_protocol::paths::path_is_within;
 use maestro_protocol::worktree_names::{
     is_maestro_created_worktree, tip_contained_elsewhere, worktree_path_for_session,
     worktree_path_for_task, MAESTRO_BRANCH_PREFIX, WORKTREE_DIR,
@@ -92,16 +93,7 @@ pub fn canonicalize_repo_path(path: &str) -> Result<String, String> {
         .to_string_lossy()
         .to_string();
 
-    #[cfg(windows)]
-    if let Some(stripped) = canonical.strip_prefix(r"\\?\UNC\") {
-        return Ok(format!(r"\\{}", stripped));
-    }
-    #[cfg(windows)]
-    if let Some(stripped) = canonical.strip_prefix(r"\\?\") {
-        return Ok(stripped.to_string());
-    }
-
-    Ok(canonical)
+    Ok(maestro_protocol::paths::strip_verbatim(&canonical))
 }
 
 // ============================================================================
@@ -411,18 +403,6 @@ pub async fn delete_worktree(
     }
 
     Ok(())
-}
-
-/// True when `cwd` is the worktree root or a directory inside it. A session's working directory
-/// is usually the worktree itself, but an agent may have been pointed at a subdirectory.
-pub fn path_is_within(cwd: &str, worktree_path: &str) -> bool {
-    let cwd = cwd.trim_end_matches(['/', '\\']);
-    let root = worktree_path.trim_end_matches(['/', '\\']);
-    match cwd.strip_prefix(root) {
-        Some("") => true,
-        Some(rest) => rest.starts_with('/') || rest.starts_with('\\'),
-        None => false,
-    }
 }
 
 /// `Some(reason)` when removing this worktree would lose work, `None` when nothing would be lost:
@@ -1175,31 +1155,8 @@ mod tests {
 
     use std::collections::HashSet;
 
-    use super::{
-        canonicalize_repo_path, path_is_within, prunable_maestro_branches,
-        sweep_leftover_worktree_dirs,
-    };
+    use super::{canonicalize_repo_path, prunable_maestro_branches, sweep_leftover_worktree_dirs};
     use maestro_protocol::worktree_names::WORKTREE_DIR;
-
-    #[test]
-    fn live_session_cwd_matches_its_worktree() {
-        let worktree = "/repo/.maestro/worktrees/session-3";
-        assert!(path_is_within(worktree, worktree));
-        assert!(path_is_within(
-            "/repo/.maestro/worktrees/session-3/",
-            worktree
-        ));
-        assert!(path_is_within(
-            "/repo/.maestro/worktrees/session-3/src",
-            worktree
-        ));
-        // A prefix that is not a path boundary is a different worktree, not a child.
-        assert!(!path_is_within(
-            "/repo/.maestro/worktrees/session-30",
-            worktree
-        ));
-        assert!(!path_is_within("/repo", worktree));
-    }
 
     /// Every reason a Maestro branch must not be offered for deletion, against the real shape of
     /// `for-each-ref` output.

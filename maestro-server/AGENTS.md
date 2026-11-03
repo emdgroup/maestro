@@ -347,6 +347,8 @@ project the database that would hold it is not even on the machine the agent run
 
 - **A project is its canonicalized path**, resolved by the daemon, because it is the process on the
   machine that path exists on. The app sends the path it knows and stores whatever comes back.
+  `canonical_project_path` (`project_path.rs`) resolves it and then tidies it with
+  `maestro_protocol::paths::tidy_path`, the same tidying the app does before it compares paths.
 - **Schedules are five-field cron plus an IANA timezone, and the editor is the expression.** There
   is no preset layer above it, so nothing snaps and nothing is ever read only.
   `to_crate_expression` fixes up the two places the `cron` crate disagrees with a crontab: it wants

@@ -357,7 +357,7 @@ pub async fn list_worktrees_with_status(
             let in_use = live_cwds.as_ref().is_none_or(|live_cwds| {
                 live_cwds
                     .iter()
-                    .any(|cwd| crate::git::worktree_lifecycle::path_is_within(cwd, &wt.path))
+                    .any(|cwd| maestro_protocol::paths::path_is_within(cwd, &wt.path))
             });
             let is_zombie = db_row.task_id.is_none()
                 && maestro_protocol::worktree_names::is_maestro_created_worktree(&db_row.path)

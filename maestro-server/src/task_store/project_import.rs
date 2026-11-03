@@ -28,7 +28,7 @@ use maestro_protocol::{
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use super::{commit, json, text, transaction};
-use crate::automations::canonical_project_path;
+use crate::project_path::canonical_project_path;
 use crate::sessions::SessionMap;
 
 /// What every staged import together may hold before a begin or a chunk is refused.

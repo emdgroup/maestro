@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use maestro_protocol::{PendingSessionRequest, ProjectLockInfo, ProjectSummary};
 use rusqlite::Connection;
 
-use crate::automations::canonical_project_path;
+use crate::project_path::canonical_project_path;
 use crate::sessions::SessionMap;
 
 /// Projects by canonical path, each listed once whichever source named it first.

@@ -606,8 +606,8 @@ fn project_id_for_path(
     match_project_path(rows, connection_key, canonical_path, ignore_case)
 }
 
-/// Compared with separators and a trailing slash tidied, the part of the daemon's
-/// `canonical_project_path` this side can reproduce.
+/// Compared after `tidy_path`, the part of the daemon's `canonical_project_path` this side can
+/// reproduce.
 ///
 /// A project opened through a symlink does not match, and its pushes carry no id. That is safe:
 /// a push naming no project is refetched by every window, which costs a request and loses nothing.
@@ -617,21 +617,14 @@ fn match_project_path(
     canonical_path: &str,
     ignore_case: bool,
 ) -> Option<i32> {
-    fn tidy(path: &str) -> String {
-        let path = path
-            .strip_prefix(r"\\?\")
-            .unwrap_or(path)
-            .replace('\\', "/");
-        path.trim_end_matches('/').to_string()
-    }
-    let wanted = tidy(canonical_path);
+    let wanted = maestro_protocol::paths::tidy_path(canonical_path);
     rows.into_iter()
         .find(|(_, path, key)| {
             *key == connection_key
                 && if ignore_case {
-                    tidy(path).eq_ignore_ascii_case(&wanted)
+                    maestro_protocol::paths::tidy_path(path).eq_ignore_ascii_case(&wanted)
                 } else {
-                    tidy(path) == wanted
+                    maestro_protocol::paths::tidy_path(path) == wanted
                 }
         })
         .map(|(id, _, _)| id)
@@ -1399,6 +1392,22 @@ mod tests {
             assert_eq!(found(r"\\?\C:\users\dev\shop", true), Some(1));
             assert_eq!(found("C:/Users/Dev/Shop", false), Some(1));
             assert_eq!(found(r"C:\users\dev\shop", false), None);
+        }
+
+        /// The daemon files a share as `//server/share`; this side used to tidy the verbatim
+        /// spelling to `UNC/server/share`, so a project on a share never matched its pushes.
+        #[test]
+        fn a_project_on_a_share_matches_its_verbatim_spelling() {
+            let rows = vec![(4, "//server/share/shop".to_string(), ConnectionKey::Local)];
+            assert_eq!(
+                match_project_path(
+                    rows,
+                    ConnectionKey::Local,
+                    r"\\?\UNC\server\share\shop",
+                    false
+                ),
+                Some(4)
+            );
         }
 
         #[test]

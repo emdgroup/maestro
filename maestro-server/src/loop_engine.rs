@@ -69,7 +69,7 @@ pub(crate) struct LoopEnd {
 pub(crate) fn spawn(store: Store, stdout: crate::ClientOut, end: LoopEnd) {
     tokio::spawn(Box::pin(async move {
         let everyone = crate::client_sink::ClientSink::everyone(&stdout).await;
-        let path = crate::automations::canonical_project_path(&end.project_path);
+        let path = crate::project_path::canonical_project_path(&end.project_path);
         // The pipeline's rule: a turn the user stopped, or one cut short, ends nothing.
         let cut_short = end.facts.user_interrupted
             || matches!(end.stop_reason.as_str(), "cancelled" | "auth_required");
@@ -670,7 +670,7 @@ pub(crate) async fn answer(
             )
         }
     };
-    let path = crate::automations::canonical_project_path(&task.project_path);
+    let path = crate::project_path::canonical_project_path(&task.project_path);
     if rerun {
         // The answer says the checks started; how they went arrives as the task changes.
         return match loops::claim_recheck(&mut *store.lock().await, &path, task.task_id) {
@@ -711,7 +711,7 @@ async fn hold_loop(
     task: TaskRef,
     halt: LoopHalt,
 ) -> Result<Vec<ServerResponse>, String> {
-    let path = crate::automations::canonical_project_path(&task.project_path);
+    let path = crate::project_path::canonical_project_path(&task.project_path);
     let task_id = task.task_id;
     let (task, iteration) = {
         let conn = store.lock().await;
@@ -816,7 +816,7 @@ async fn answer_proposal(
     store: &Store,
     mut request: maestro_protocol::AnswerLoopProposalRequest,
 ) -> Result<(ServerResponse, Vec<ServerResponse>), String> {
-    let path = crate::automations::canonical_project_path(&request.project_path);
+    let path = crate::project_path::canonical_project_path(&request.project_path);
     request.project_path = path.clone();
     let task_id = request.task_id;
     let task = crate::task_store::get(&*store.lock().await, &path, task_id)?
@@ -2403,7 +2403,7 @@ mod tests {
     async fn sealed_loop(check: &str) -> (tempfile::TempDir, Store, Task) {
         let repo = tempfile::tempdir().expect("tempdir");
         // As the daemon keys tasks: by the canonical path.
-        let project = crate::automations::canonical_project_path(repo.path().to_str().unwrap());
+        let project = crate::project_path::canonical_project_path(repo.path().to_str().unwrap());
         git_in(&project, &["init", "-q", "-b", "main"]).await;
         git_in(&project, &["config", "user.name", "t"]).await;
         git_in(&project, &["config", "user.email", "t@t"]).await;

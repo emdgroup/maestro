@@ -131,7 +131,7 @@ pub(crate) async fn task_of(
     .ok()
     .map(|(path, id, role)| {
         (
-            (crate::automations::canonical_project_path(&path), id),
+            (crate::project_path::canonical_project_path(&path), id),
             parse_role(role),
         )
     })

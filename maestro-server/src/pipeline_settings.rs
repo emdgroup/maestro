@@ -16,7 +16,7 @@ use maestro_protocol::{
 };
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::automations::canonical_project_path;
+use crate::project_path::canonical_project_path;
 use crate::sessions::{ProjectBinding, SessionMap};
 
 /// Version 6 of `projects.db`: the machine's capacity and each project's auto mode. Frozen: a later

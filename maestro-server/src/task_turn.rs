@@ -199,7 +199,7 @@ pub(crate) async fn resolve(
 ) -> (Option<AgentRole>, Vec<ServerResponse>) {
     let mut pushes = Vec::new();
     // A window-loaded session's binding holds the app's spelling of the path.
-    let project_path = &crate::automations::canonical_project_path(project_path);
+    let project_path = &crate::project_path::canonical_project_path(project_path);
     let is_git_repo = crate::worktree::is_repository(project_path).await;
     let (task, worktree) = {
         let conn = store.lock().await;
@@ -473,7 +473,7 @@ pub(crate) fn role_of(session: &crate::sessions::ActiveSession) -> Option<AgentR
 pub(crate) fn task_of(session: &crate::sessions::ActiveSession) -> Option<(String, i32)> {
     let binding = session.project.as_ref()?;
     Some((
-        crate::automations::canonical_project_path(&binding.project_path),
+        crate::project_path::canonical_project_path(&binding.project_path),
         binding.meta.task_id?,
     ))
 }
@@ -633,7 +633,7 @@ mod tests {
             )
             .unwrap();
         }
-        let project = crate::automations::canonical_project_path(&dir.path().to_string_lossy());
+        let project = crate::project_path::canonical_project_path(&dir.path().to_string_lossy());
         let mut conn = crate::project_store::open_in_memory();
         let task = crate::task_store::create(
             &mut conn,

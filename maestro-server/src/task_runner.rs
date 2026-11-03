@@ -217,7 +217,7 @@ pub(crate) fn begin(
     agents: &[DiscoveredAgentWithSpawn],
     pushes: &mut Vec<ServerResponse>,
 ) -> Result<Begun, NotBegun> {
-    let project_path = crate::automations::canonical_project_path(&request.project_path);
+    let project_path = crate::project_path::canonical_project_path(&request.project_path);
     let task = crate::task_store::get(conn, &project_path, request.task_id)?
         .ok_or_else(|| format!("No task {} in this project", request.task_id))?;
 
@@ -982,7 +982,7 @@ pub(crate) async fn adopt(
             **id != session_id
                 && session.project.as_ref().is_some_and(|binding| {
                     binding.meta.task_id == Some(push.task_id)
-                        && crate::automations::canonical_project_path(&binding.project_path)
+                        && crate::project_path::canonical_project_path(&binding.project_path)
                             == push.project_path
                 })
         })
@@ -1040,7 +1040,7 @@ mod tests {
             )
             .unwrap();
         }
-        let project = crate::automations::canonical_project_path(&dir.path().to_string_lossy());
+        let project = crate::project_path::canonical_project_path(&dir.path().to_string_lossy());
         let mut conn = crate::project_store::open_in_memory();
         let task = crate::task_store::create(
             &mut conn,

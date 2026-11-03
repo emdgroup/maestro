@@ -881,12 +881,12 @@ mod tests {
     fn listing_asks_by_the_canonical_path() {
         let directory = tempfile::tempdir().expect("tempdir");
         let given = directory.path().to_string_lossy().into_owned();
-        let canonical = crate::automations::canonical_project_path(&given);
+        let canonical = crate::project_path::canonical_project_path(&given);
         let conn = store();
         start(&conn, "a", &canonical, &full_meta(), true, "live-1");
 
         let trailing = format!("{given}/");
-        let asked = crate::automations::canonical_project_path(&trailing);
+        let asked = crate::project_path::canonical_project_path(&trailing);
         assert_eq!(list(&conn, &asked, false).expect("list").len(), 1);
     }
 

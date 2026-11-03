@@ -83,7 +83,7 @@ pub(crate) fn running_project_sessions(
                 closed: false,
                 live: None,
             };
-            (crate::automations::canonical_project_path(&project.project_path) == project_path)
+            (crate::project_path::canonical_project_path(&project.project_path) == project_path)
                 .then(|| (row, Some(session_id.clone())))
         })
         .collect()
@@ -445,7 +445,7 @@ pub(crate) async fn dispatch_message(
         }
 
         ServerRequest::ListProjectSessions(req) => {
-            let project_path = crate::automations::canonical_project_path(&req.project_path);
+            let project_path = crate::project_path::canonical_project_path(&req.project_path);
             let listed = match project_store {
                 Some(store) => {
                     let conn = store.lock().await;
@@ -495,7 +495,7 @@ pub(crate) async fn dispatch_message(
                 .await;
                 return true;
             };
-            let project_path = crate::automations::canonical_project_path(&req.project_path);
+            let project_path = crate::project_path::canonical_project_path(&req.project_path);
             let renamed = {
                 let conn = store.lock().await;
                 crate::project_store::rename(&conn, &req, &project_path, chrono::Utc::now())
@@ -544,7 +544,7 @@ pub(crate) async fn dispatch_message(
                 reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
                 return true;
             };
-            let project_path = crate::automations::canonical_project_path(&req.project_path);
+            let project_path = crate::project_path::canonical_project_path(&req.project_path);
             let listed = {
                 let conn = store.lock().await;
                 crate::automations::list(&conn, &project_path).and_then(|automations| {
@@ -579,7 +579,7 @@ pub(crate) async fn dispatch_message(
             };
             // Canonicalized here rather than trusted from the client: this is the process on the
             // machine the path exists on, and every later lookup has to agree with this one.
-            let project_path = crate::automations::canonical_project_path(&req.project_path);
+            let project_path = crate::project_path::canonical_project_path(&req.project_path);
             let mut automation = req.automation;
             automation.project_path = project_path.clone();
             let saved = {
@@ -637,7 +637,7 @@ pub(crate) async fn dispatch_message(
                 reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
                 return true;
             };
-            let project_path = crate::automations::canonical_project_path(&req.project_path);
+            let project_path = crate::project_path::canonical_project_path(&req.project_path);
             let listed = {
                 let conn = store.lock().await;
                 crate::automations::list_runs(&conn, &project_path, req.limit)
@@ -713,7 +713,7 @@ pub(crate) async fn dispatch_message(
                 reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
                 return true;
             };
-            let project_path = crate::automations::canonical_project_path(&req.project_path);
+            let project_path = crate::project_path::canonical_project_path(&req.project_path);
             let saved = {
                 let conn = store.lock().await;
                 crate::automations::set_retention(&conn, &project_path, req.retention)
@@ -1397,7 +1397,7 @@ pub(crate) async fn dispatch_message(
         }
 
         ServerRequest::AcquireProjectLock(req) => {
-            let path = crate::automations::canonical_project_path(&req.project_path);
+            let path = crate::project_path::canonical_project_path(&req.project_path);
             let resp = stdout.lock().await.acquire_project(path, req.label).await;
             reply(stdout, &ServerResponse::AcquireProjectLockOk(resp)).await;
         }
@@ -1453,7 +1453,7 @@ pub(crate) async fn dispatch_message(
 
         // Answered through the sink, not here: the answer may be ten seconds away.
         ServerRequest::RequestTakeover(req) => {
-            let path = crate::automations::canonical_project_path(&req.project_path);
+            let path = crate::project_path::canonical_project_path(&req.project_path);
             stdout.lock().await.start_takeover(path, req.label).await;
         }
 
@@ -1528,7 +1528,7 @@ pub(crate) async fn dispatch_message(
                 }
                 ServerRequest::BeginImport(request) => {
                     let live = crate::task_store::project_import::live(
-                        &crate::automations::canonical_project_path(&request.project_path),
+                        &crate::project_path::canonical_project_path(&request.project_path),
                         sessions,
                     );
                     crate::task_store::project_import::begin(
