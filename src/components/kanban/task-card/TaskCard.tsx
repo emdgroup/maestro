@@ -38,7 +38,6 @@ import {
 import { useDeleteWorktreeMutation } from "@/services/worktree.service";
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
 import { useBoardStore, useBoardActions, useAuthRequiredTask } from "@/store/boardStore";
-import { abortAuthTerminal } from "@/services/acp-auth.service";
 import { Flame, ArrowUp, Minus, ArrowDown, GitBranch, ExternalLink } from "lucide-react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { zoomCardToDialog } from "@/components/kanban/taskZoom";
@@ -405,8 +404,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
   const { projectId } = useKanban();
   const { setActiveTaskId } = useNavigationActions();
   const navigate = useNavigate();
-  const { openReview, clearAuthRequired, setAuthTerminalIdle, clearPendingAuthRetry } =
-    useBoardActions();
+  const { openReview, clearAuthRequired, clearPendingAuthRetry } = useBoardActions();
   const pendingAuthRetry = useBoardStore((s) => s.pendingAuthRetry);
   const authRequired = useAuthRequiredTask(String(task.id));
   // One value rather than four booleans: only one confirmation can be up, and independent flags
@@ -711,10 +709,6 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
             } else {
               void handleExecute(task, { canPickAgent: true });
             }
-          },
-          onAuthRetry: () => {
-            if (authRequired?.terminalId) abortAuthTerminal(authRequired.connection);
-            setAuthTerminalIdle(String(task.id));
           },
         }}
       />

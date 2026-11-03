@@ -5,6 +5,7 @@ import { Button } from "@/ui/button";
 import { TerminalSquare } from "lucide-react";
 import type { ConnectionKey } from "@/types/bindings";
 import {
+  abortAuthTerminal,
   startAuthTerminal,
   useAgentAuthInfoQuery,
   useAcpAuthenticateMutation,
@@ -12,7 +13,7 @@ import {
 import { useTauriEvent } from "@/services/tauri-events";
 import { connectionChannelId } from "@/lib/connection-utils";
 import { useNavigate } from "@/store/navigationStore";
-import { useBoardActions } from "@/store/boardStore";
+import { useAuthRequiredTask, useBoardActions } from "@/store/boardStore";
 import { Spinner } from "@/ui/spinner";
 
 interface AgentAuthModalProps {
@@ -21,11 +22,12 @@ interface AgentAuthModalProps {
   open: boolean;
   onAuthSuccess: () => void;
   onClose: () => void;
-  // Optional: when provided, terminal-type auth methods open a side-panel tab instead of using the mutation.
+  /**
+   * Optional: when provided, terminal-type auth methods open a side-panel tab instead of using
+   * the mutation, and the modal follows that terminal through the board store's entry.
+   */
   authKey?: string;
   sessionId?: string | null;
-  terminalState?: "idle" | "running" | "interrupted";
-  onRetry?: () => void;
 }
 
 const URL_RE = /https?:\/\/\S+/g;
@@ -63,13 +65,20 @@ export function AgentAuthModal({
   onClose,
   authKey,
   sessionId,
-  terminalState,
-  onRetry,
 }: AgentAuthModalProps) {
   const { data: authInfo } = useAgentAuthInfoQuery(agentId, connection);
   const authenticate = useAcpAuthenticateMutation();
   const navigate = useNavigate();
-  const { setAuthTerminalRunning } = useBoardActions();
+  const { setAuthTerminalRunning, setAuthTerminalIdle } = useBoardActions();
+  const entry = useAuthRequiredTask(authKey ?? "");
+  const terminalState = entry?.terminalState ?? "idle";
+
+  /** Drops the interrupted terminal, if it is still there, so the methods can be offered again. */
+  function retry() {
+    if (authKey == null) return;
+    if (entry?.terminalId) abortAuthTerminal(entry.connection);
+    setAuthTerminalIdle(authKey);
+  }
   const [authError, setAuthError] = useState<string | null>(null);
   const [outputLines, setOutputLines] = useState<string[]>([]);
   const [isStartingTerminal, setIsStartingTerminal] = useState(false);
@@ -165,12 +174,7 @@ export function AgentAuthModal({
             <span>Authentication was interrupted. Retry to open a new terminal tab.</span>
           </div>
           <DialogFooter className="flex gap-2">
-            <Button
-              variant="ghost"
-              onClick={() => {
-                onRetry?.();
-              }}
-            >
+            <Button variant="ghost" onClick={retry}>
               Retry
             </Button>
             <Button variant="ghost" onClick={onClose}>

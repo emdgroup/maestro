@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { useQueryClient } from "@tanstack/react-query";
+
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { cn } from "@/lib/utils";
 import { AgentMonitor } from "@/components/execution/agent-monitor/AgentMonitor";
@@ -26,9 +26,7 @@ import {
   sendAcpPrompt,
   sendAcpPromptStructured,
 } from "@/services/execution.service";
-import { authQueryKeys } from "@/services/acp-auth.service";
-import { useTauriEvent } from "@/services/tauri-events";
-import { connectionChannelId } from "@/lib/connection-utils";
+
 import { cleanupWorktreeIfClean, useWorktreesQuery } from "@/services/worktree.service";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import type { ConnectionKey } from "@/types/bindings";
@@ -58,6 +56,8 @@ import { toast } from "sonner";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { ActivityVisibility } from "@/types/bindings";
+
+import { useConnectionAuthEvents } from "@/components/execution/agent-activity-panel/useAgentAuthFlow";
 
 interface AgentsViewProps {
   projectId?: number;
@@ -140,56 +140,16 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const cancelMutation = useCancelActiveSessionMutation();
 
-  const queryClient = useQueryClient();
-  const authRequiredTasks = useBoardStore((s) => s.authRequiredTasks);
   const pendingSessionRetry = useBoardStore((s) => s.pendingSessionRetry);
-  const {
-    clearAuthRequired,
-    setAuthTerminalIdle,
-    setPendingAuthRetry,
-    setPendingSessionRetry,
-    clearPendingSessionRetry,
-  } = useBoardActions();
-  // Mirrored from an effect rather than assigned during render — both are read
-  // only inside the Tauri event callbacks below, which run after commit.
-  const authRequiredTasksRef = useRef(authRequiredTasks);
+  const { clearPendingSessionRetry } = useBoardActions();
+  // Mirrored from an effect rather than assigned during render: read only inside the retry
+  // below, after commit.
   const sessionsRef = useRef(sessions);
   useEffect(() => {
-    authRequiredTasksRef.current = authRequiredTasks;
     sessionsRef.current = sessions;
   });
   const spawnAcpMutation = useSpawnAcpSessionMutation();
-
-  const connId = connectionChannelId(connection);
-  useTauriEvent<{ exit_code: number | null }>(`acp://auth-pty-exit/${connId}`, (payload) => {
-    const tasks = authRequiredTasksRef.current;
-    const found = Object.entries(tasks).find(
-      ([, e]) => e.terminalState === "running" && connectionChannelId(e.connection) === connId,
-    );
-    if (!found) return;
-    // A task's entry is keyed by its task id, a manual session's by its session id.
-    const authKey = found[0];
-    if (payload.exit_code === 0) {
-      const lastPrompt = authRequiredTasksRef.current[authKey]?.lastPrompt;
-      clearAuthRequired(authKey);
-      const isManualSession = sessionsRef.current.some(
-        (s) => s.session_id === authKey && !s.task_id,
-      );
-      if (isManualSession) {
-        setPendingSessionRetry({ sessionId: authKey, lastPrompt: lastPrompt ?? null });
-      } else {
-        setPendingAuthRetry(Number(authKey));
-      }
-    } else {
-      setAuthTerminalIdle(authKey);
-    }
-  });
-
-  useTauriEvent<{ agentId: string }>(`acp://auth-state-changed/${connId}`, (payload) => {
-    void queryClient.invalidateQueries({
-      queryKey: authQueryKeys.info(payload.agentId, connection),
-    });
-  });
+  useConnectionAuthEvents(connection, sessions);
 
   useEffect(() => {
     if (!pendingSessionRetry || !projectId) return;

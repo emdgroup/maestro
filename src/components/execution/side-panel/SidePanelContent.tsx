@@ -17,7 +17,6 @@ import {
   awaitForSurface,
   awaitToFollow,
 } from "@/components/execution/activity/canvas/await-matching";
-import type { PendingCanvasAwait } from "@/components/execution/activity/canvas/await-matching";
 import { extractBodyText } from "@/components/execution/activity/PermissionPrompt";
 import {
   extractPlanToolCallId,
@@ -29,10 +28,7 @@ import { OverviewPanel } from "./OverviewPanel";
 import { SubagentsPanel } from "./SubagentsPanel";
 import { ArtifactsPanel } from "./ArtifactsPanel";
 import { WorkspaceFilesPanel } from "./WorkspaceFilesPanel";
-import type { CanvasSurface, PlanEntry, ToolCallItem } from "@/components/execution/activity/types";
-import type { ArtifactFile } from "@/types/bindings";
-import type { SidePanelTab, TabKind } from "./useSidePanelTabs";
-import type { ConnectionKey } from "@/types/bindings";
+import type { SidePanelTab } from "./useSidePanelTabs";
 import { Skeleton } from "@/ui/skeleton";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
 import { useSessionDiffStats } from "./useSessionDiffStats";
@@ -45,47 +41,13 @@ import {
 } from "@/services/canvas.service";
 import { sendAuthTerminalInput } from "@/services/acp-auth.service";
 import { useSelectedProject } from "@/store/projectStore";
-import type { Annotation } from "@/store/annotationStore";
 import { PlanAnnotationLayer } from "./annotations/PlanAnnotationLayer";
+import { useSessionPanel } from "./SessionPanelContext";
 import { CanvasAnnotationLayer } from "./annotations/CanvasAnnotationLayer";
 
 interface SidePanelContentProps {
   tabs: SidePanelTab[];
   activeTabId: string;
-  isSessionActive: boolean;
-  sessionId: string;
-  subagentItems: ToolCallItem[];
-  toolCallMap: Map<string, ToolCallItem>;
-  /** Set while a plan is awaiting an answer — the tab reads and annotates it, the stream card
-   *  answers it. Only the send button's wording depends on this. */
-  sidePanelPlan: { requestId: string; payload: Record<string, unknown> } | null;
-  canvasMap: Map<string, CanvasSurface>;
-  latestCanvasSurfaceId: string | null;
-  /** Open `canvas_await` calls — what makes a surface's controls answer rather than just record. */
-  pendingCanvasAwaits: PendingCanvasAwait[];
-  onCanvasEvent: (requestId: string | null, event: unknown) => void;
-  /** Drops the surface from this session's carousel. Its autosaved file is deleted alongside. */
-  onCloseCanvas: (surfaceId: string) => void;
-  /** Takes a `.html` file on *this* machine and brings it in as a surface. */
-  onImportCanvas: (path: string) => void;
-  workingFiles: ArtifactFile[];
-  taskId: number | null;
-  workspacePath: string;
-  connection: ConnectionKey;
-  planEntries?: PlanEntry[] | null;
-  planTitle?: string | null;
-  onOpenTabKind: (kind: TabKind) => void;
-  /** Opens a path (absolute, or project-relative) in a Files tab. */
-  onOpenFile: (path: string) => void;
-  onSpawnShell?: () => Promise<string | null>;
-  terminalBuffers?: Map<string, string>;
-  onSendAnnotations: (annotations: Annotation[]) => void;
-  /** The agent is mid-turn, so a prompt would be dropped — see useMessageSender.handleSend. */
-  isProcessing?: boolean;
-  /** The agent takes image blocks, so a canvas region is worth capturing. */
-  canSendImages?: boolean;
-  /** Puts text in the composer without sending it. Absent when there is no live agent to ask. */
-  onSeedPrompt?: (text: string) => void;
   /** Reports a Files tab holding an unsaved draft, so closing it can be guarded. */
   onTabDirtyChange?: (tabId: string, dirty: boolean) => void;
   /** Reports the file a Files tab has open, so the tab can name it on hover. */
@@ -95,34 +57,36 @@ interface SidePanelContentProps {
 export function SidePanelContent({
   tabs,
   activeTabId,
-  isSessionActive,
-  sessionId,
-  subagentItems,
-  toolCallMap,
-  sidePanelPlan,
-  canvasMap,
-  latestCanvasSurfaceId,
-  pendingCanvasAwaits,
-  onCanvasEvent,
-  onCloseCanvas,
-  onImportCanvas,
-  workingFiles,
-  taskId,
-  workspacePath,
-  connection,
-  planEntries,
-  planTitle,
-  onOpenTabKind,
-  onOpenFile,
-  onSpawnShell,
-  terminalBuffers,
-  onSendAnnotations,
-  isProcessing,
-  canSendImages,
-  onSeedPrompt,
   onTabDirtyChange,
   onTabFileChange,
 }: SidePanelContentProps) {
+  const {
+    isSessionActive,
+    sessionId,
+    subagentItems,
+    toolCallMap,
+    sidePanelPlan,
+    canvasMap,
+    latestCanvasSurfaceId,
+    pendingCanvasAwaits,
+    onCanvasEvent,
+    onCloseCanvas,
+    onImportCanvas,
+    workingFiles,
+    taskId,
+    workspacePath,
+    connection,
+    planEntries,
+    planTitle,
+    onOpenTabKind,
+    onOpenFile,
+    onSpawnShell,
+    terminalBuffers,
+    onSendAnnotations,
+    isProcessing,
+    canSendImages,
+    onSeedPrompt,
+  } = useSessionPanel();
   const [artifactsSelectedFile, setArtifactsSelectedFile] = useState<string | null>(null);
   const selectedProject = useSelectedProject();
   const exportCanvasMutation = useExportCanvasSurfaceMutation();

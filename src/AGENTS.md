@@ -53,6 +53,7 @@ and `connectionChannelId` (`ssh-3`) in the backend's event channel names.
 ## Contexts
 
 - `KanbanContext` — provides `projectId`, `projectPath`, `onTaskClick` to the kanban component subtree (avoids prop-drilling through `BoardView → KanbanColumn → TaskCard`)
+- `SessionPanelContext` (`components/execution/side-panel/`) carries what a session's side-panel tabs show and do, from `AgentActivityPanel` to `SidePanelContent`; `ExecutionSidePanel` between them only lays out the tabs. A session's sign-in flow is `useAgentAuthFlow`, and `AgentAuthModal` reads its terminal's state from `boardStore` itself.
 
 ## base-ui Component Pitfall
 
