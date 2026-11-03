@@ -113,13 +113,13 @@ pub struct Task {
     pub loop_config: Option<LoopConfig>,
     /// What the board shows of a loop. Set on every loop task.
     #[specta(optional)]
-    pub loop_summary: Option<super::loops::LoopSummary>,
+    pub loop_summary: Option<maestro_protocol::LoopSummary>,
     /// The usage-limit gate holding this task while it waits on its agent.
     #[specta(optional)]
-    pub gate: Option<super::loops::AgentGateState>,
+    pub gate: Option<maestro_protocol::AgentGateState>,
     /// The automation run that created this task, if one did.
     #[specta(optional)]
-    pub drafted_by: Option<super::loops::TaskDraft>,
+    pub drafted_by: Option<maestro_protocol::TaskDraft>,
 }
 
 impl Task {
@@ -169,13 +169,9 @@ impl Task {
             claimed_from: task.claimed_from,
             run_mode: task.run_mode,
             loop_config: task.loop_config,
-            loop_summary: task
-                .loop_summary
-                .and_then(|summary| super::loops::mirror(*summary).ok()),
-            gate: task.gate.and_then(|gate| super::loops::mirror(*gate).ok()),
-            drafted_by: task
-                .drafted_by
-                .and_then(|draft| super::loops::mirror(*draft).ok()),
+            loop_summary: task.loop_summary.map(|summary| *summary),
+            gate: task.gate.map(|gate| *gate),
+            drafted_by: task.drafted_by.map(|draft| *draft),
         }
     }
 }
