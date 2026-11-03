@@ -29,9 +29,13 @@ export const ACCENT_COLORS: AccentColor[] = [
   { name: "Pink", hue: 355 },
 ];
 
+/** OKLCH lightness of the accent in each theme; the chroma is the same in both. */
+export const ACCENT_LIGHTNESS = { light: 0.5, dark: 0.75 } as const;
+export const ACCENT_CHROMA = 0.15;
+
 export function swatchColor(hue: number, isDark: boolean): string {
-  const lightness = isDark ? "75%" : "50%";
-  return `oklch(${lightness} 0.15 ${hue})`;
+  const lightness = isDark ? ACCENT_LIGHTNESS.dark : ACCENT_LIGHTNESS.light;
+  return `oklch(${lightness * 100}% ${ACCENT_CHROMA} ${hue})`;
 }
 
 /** One of the 16 preset hues at random — used by the "assign automatically" policy. */
@@ -43,12 +47,12 @@ export function randomPresetHue(): number {
 
 /**
  * The precedence rule for the effective accent hue:
- * explicit project colour → global default → OS accent.
+ * explicit project colour → global default → OS accent. Null only while the OS accent is unknown.
  */
 export function resolveProjectHue(options: {
   projectAccent: number | null;
   globalAccent: number | null;
-  systemAccent: number;
-}): number {
+  systemAccent: number | null;
+}): number | null {
   return options.projectAccent ?? options.globalAccent ?? options.systemAccent;
 }

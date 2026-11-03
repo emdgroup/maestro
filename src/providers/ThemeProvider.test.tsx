@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, waitFor } from "@testing-library/react";
-import { ThemeProvider } from "./ThemeProvider";
+import { act, render, waitFor } from "@testing-library/react";
+import { ThemeProvider, useTheme, type ThemeContextValue } from "./ThemeProvider";
 import type { AppSettings } from "@/types/bindings";
 
 const stored = vi.hoisted(() => ({ current: null as boolean | null }));
@@ -95,5 +95,49 @@ describe("ThemeProvider — reduce motion", () => {
       </ThemeProvider>,
     );
     await waitFor(() => expect(reduceMotionApplied()).toBe(true));
+  });
+});
+
+describe("ThemeProvider — saving a setting", () => {
+  beforeEach(() => {
+    stored.current = null;
+    detected.current = false;
+    save.mockClear();
+    document.documentElement.classList.remove("reduce-motion");
+  });
+
+  function Probe({ onValue }: { onValue: (value: ThemeContextValue) => void }) {
+    onValue(useTheme());
+    return null;
+  }
+
+  function renderWithContext() {
+    const seen: { current: ThemeContextValue | null } = { current: null };
+    render(
+      <ThemeProvider>
+        <Probe onValue={(value) => (seen.current = value)} />
+      </ThemeProvider>,
+    );
+    return seen;
+  }
+
+  it("shows the choice at once", async () => {
+    const seen = renderWithContext();
+    await act(() => seen.current!.setUiScale("125"));
+    expect(seen.current!.uiScale).toBe("125");
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ ui_scale: "125" }));
+  });
+
+  // Every setting rolls back the same way; before, the accent and the scale stayed on screen.
+  it("rolls every setting back when the save fails", async () => {
+    save.mockImplementationOnce(() => Promise.reject(new Error("disk full")));
+    const seen = renderWithContext();
+    await act(() => seen.current!.setReduceMotion(true));
+    expect(seen.current!.reduceMotion).toBe(false);
+    expect(reduceMotionApplied()).toBe(false);
+
+    save.mockImplementationOnce(() => Promise.reject(new Error("disk full")));
+    await act(() => seen.current!.setGlobalAccentColor(145));
+    expect(seen.current!.globalAccentHue).toBeNull();
   });
 });
