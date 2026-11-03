@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
+use maestro_protocol::skill_names::{is_library_name, validate_skill_name};
 use maestro_protocol::{
     ApplySkillRequest, ManagedSkill, ProjectSkill, SkillFile, SkillList, ALL_AGENTS,
 };
@@ -248,13 +249,9 @@ fn write_state(home: &Path, mut state: SkillState) -> Result<(), String> {
     crate::mcp_store::write_json_atomic(&state_path(home), &state)
 }
 
-/// The Agent Skills name rule, which is also what keeps a name safe to use as a directory.
-fn validate_name(name: &str) -> Result<(), String> {
-    let valid = (1..=64).contains(&name.len())
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
-    if valid {
+/// A name that can be in the library, and so is safe to use as a directory.
+fn library_name(name: &str) -> Result<(), String> {
+    if is_library_name(name) {
         Ok(())
     } else {
         Err(format!(
@@ -376,7 +373,12 @@ fn reconcile(
 }
 
 pub(crate) async fn apply(req: ApplySkillRequest) -> Result<(), String> {
-    validate_name(&req.name)?;
+    // Writing the skill makes it new, and a new skill is held to the whole naming rule.
+    if req.files.is_some() || req.source.is_some() {
+        validate_skill_name(&req.name)?;
+    } else {
+        library_name(&req.name)?;
+    }
     let _guard = MANAGED.lock().await;
     let home = crate::tool_config::home_dir()?;
     let dir = library_root(&home).join(&req.name);
@@ -483,7 +485,7 @@ fn remove_dir_if_present(dir: &Path) -> Result<(), String> {
 }
 
 pub(crate) async fn delete(name: &str) -> Result<(), String> {
-    validate_name(name)?;
+    library_name(name)?;
     let _guard = MANAGED.lock().await;
     let home = crate::tool_config::home_dir()?;
     let mut state = read_state(&home)?;
@@ -598,15 +600,6 @@ mod tests {
         );
         assert!(found[0].agents.contains(&"codex-acp".to_string()));
         assert_eq!(found[1].agents, vec!["claude-acp"]);
-    }
-
-    #[test]
-    fn skill_names_follow_the_agent_skills_rule() {
-        let long = "x".repeat(65);
-        for bad in ["", "PDF", "a/b", "..", "a_b", long.as_str()] {
-            assert!(validate_name(bad).is_err(), "{bad} must be rejected");
-        }
-        assert!(validate_name("pdf-tools-2").is_ok());
     }
 
     fn skill(path: &str, contents: &str) -> SkillFile {
