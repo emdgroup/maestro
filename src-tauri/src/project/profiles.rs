@@ -1,9 +1,5 @@
-//! Agent profiles: what an agent *is* for a given role on this project.
-//!
-//! A role is not an agent — "review" means something different in every codebase, and the thing
-//! that makes it mean anything is the prompt and the permissions it runs under. A profile bundles
-//! those with the agent and model, so a project can say "the reviewer is a different model from the
-//! coder, reads only, and looks for these things" once rather than per task.
+//! Agent profiles: reading and writing a project's profiles. The types, and which profile a role
+//! resolves to, are `maestro_protocol::profiles`, shared with the daemon that starts the stages.
 //!
 //! Stored in `.maestro/profiles.json` and committed, because a reviewer's instructions are a
 //! property of the project rather than of the machine that happens to run it. That also puts them
@@ -23,36 +19,9 @@ use crate::core::project_storage::{read_maestro_json, write_maestro_json};
 use crate::core::AppState;
 use crate::models::GitConnection;
 
-pub const PROFILES_FILE: &str = "profiles.json";
-
-/// Modes in which a role that must not write, does not write unattended.
-///
-/// `readonly` and `plan` refuse a write outright. `default` turns one into a permission prompt,
-/// which for a read-only phase cannot be auto-answered, so it becomes the user's decision rather
-/// than the agent's. Ordered from strongest to weakest, and deliberately not a preference list —
-/// which of the three a role should use depends on what it has to deliver, not on which is
-/// strictest. See `READ_ONLY_MODES` in `utils/helpers/permission-modes.ts` for the preference
-/// order a profile that names no mode is filled in from — that is the same set of three, and the
-/// two lists have to stay in step: this one decides whether a role *can* be held read-only, and
-/// that one is what the spawn actually picks from when it is.
-const READ_ONLY_SAFE_MODES: [&str; 3] = ["readonly", "plan", "default"];
-
-/// What a profile does when the agent it names cannot honour part of it.
-///
-/// Agents differ in which models and permission modes they expose, and `effort` is not universal
-/// at all. Failing the spawn over an unsupported field would make a shared profile unusable for
-/// anyone whose agent differs slightly, so the default is to carry on and say so.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
-#[serde(rename_all = "PascalCase")]
-pub enum FallbackBehaviour {
-    /// Drop the unsupported field, spawn anyway, warn the user.
-    #[default]
-    Warn,
-    /// Refuse to spawn. For a profile whose whole point is the field that is missing — a
-    /// read-only reviewer on an agent with no read-only mode is not a reviewer.
-    Fail,
-}
-
+pub use maestro_protocol::profiles::{
+    role_is_skipped, AgentProfile, FallbackBehaviour, ProfilesDocument, PROFILES_FILE,
+};
 pub use maestro_protocol::AgentRole;
 
 /// Which pipeline role a session was started for, and the profile that role resolved to.
@@ -67,243 +36,18 @@ pub struct SessionRole {
     pub profile_id: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-pub struct AgentProfile {
-    pub id: String,
-    pub name: String,
-    pub role: AgentRole,
-    pub agent_id: String,
-    #[specta(optional)]
-    pub model: Option<String>,
-    /// Not ACP-universal — agents that do not expose it drop it per `fallback_behaviour`.
-    #[specta(optional)]
-    pub effort: Option<String>,
-    /// The ACP session mode id. `None` means "whatever the agent defaults to", which is only
-    /// appropriate for the coder.
-    #[specta(optional)]
-    pub permission_mode: Option<String>,
-    #[serde(default)]
-    pub skills: Vec<String>,
-    #[serde(default)]
-    pub mcp_servers: Vec<String>,
-    /// What the role means for this project. The field that makes a profile worth having: without
-    /// it every project gets a generic reviewer.
-    #[specta(optional)]
-    pub role_prompt: Option<String>,
-    #[serde(default)]
-    pub fallback_behaviour: FallbackBehaviour,
-}
-
-/// The project's profiles, plus which one each role uses by default.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
-pub struct ProfilesDocument {
-    #[serde(default)]
-    pub profiles: Vec<AgentProfile>,
-    /// Role → profile id. A role with no entry falls back to the first profile declaring it.
-    #[serde(default)]
-    pub defaults: std::collections::HashMap<String, String>,
-}
-
-impl ProfilesDocument {
-    /// The profile to use for a role, given an optional explicit override.
-    ///
-    /// Resolution order is override → project default → the first profile declaring the role.
-    /// The last step is what keeps a project usable after someone adds a reviewer profile without
-    /// also remembering to mark it as the default.
-    pub fn resolve(&self, role: AgentRole, override_id: Option<&str>) -> Option<&AgentProfile> {
-        if let Some(id) = override_id {
-            if let Some(profile) = self.profiles.iter().find(|p| p.id == id) {
-                return Some(profile);
-            }
-        }
-
-        let role_key = serde_json::to_value(role).ok()?.as_str()?.to_string();
-        if let Some(id) = self.defaults.get(&role_key) {
-            if let Some(profile) = self.profiles.iter().find(|p| &p.id == id) {
-                return Some(profile);
-            }
-        }
-
-        self.profiles.iter().find(|p| p.role == role)
-    }
-}
-
-/// Whether the task has explicitly turned this role off, as opposed to leaving it to the project.
-///
-/// The overrides map is role → profile id, where an absent key means "the project decides". That
-/// leaves no way to say "not this task" — a task cannot name the absence of a profile — so a
-/// present key with a null value carries it. The distinction is the whole point: reading the map
-/// with `get(..).flatten()` would collapse both back into "no choice made".
-///
-/// Unreadable JSON is `false`, mirroring `has_profile_for_role`: the caller is deciding whether to
-/// *skip* a stage, and a parse failure is not a reason to skip one.
-pub fn role_is_skipped(overrides_json: Option<&str>, role: AgentRole) -> bool {
-    let Some(raw) = overrides_json else {
-        return false;
-    };
-    let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, Option<String>>>(raw)
-    else {
-        return false;
-    };
-    let Some(role_key) = serde_json::to_value(role)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_string))
-    else {
-        return false;
-    };
-    matches!(map.get(&role_key), Some(None))
-}
-
-/// What a profile resolved to for an actual spawn, with anything the agent cannot honour removed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-pub struct ResolvedProfile {
-    pub profile_id: String,
-    pub agent_id: String,
-    #[specta(optional)]
-    pub model: Option<String>,
-    #[specta(optional)]
-    pub effort: Option<String>,
-    #[specta(optional)]
-    pub permission_mode: Option<String>,
-    pub skills: Vec<String>,
-    pub mcp_servers: Vec<String>,
-    #[specta(optional)]
-    pub role_prompt: Option<String>,
-    /// Human-readable notes about what was dropped, for the UI to show. Empty is the happy path.
-    pub warnings: Vec<String>,
-}
-
-/// What the agent actually offers, as reported at spawn.
-///
-/// Empty lists mean "unknown", not "nothing" — an agent that reports no modes has not told us it
-/// lacks the one we want, and refusing on that basis would break every agent that stays quiet.
-#[derive(Debug, Clone, Default)]
-pub struct AgentCapabilities {
-    pub model_ids: Vec<String>,
-    pub mode_ids: Vec<String>,
-    pub supports_effort: bool,
-}
-
-/// Reduce a profile to what this agent can actually do.
-///
-/// Returns `Err` only when the profile asked to fail rather than degrade. The read-only correction
-/// is not a degradation and is applied regardless: a profile for a read-only role that names a
-/// writable mode is a mistake, and honouring it would quietly hand a planner the ability to
-/// implement its own plan.
-pub fn apply_capabilities(
-    profile: &AgentProfile,
-    capabilities: &AgentCapabilities,
-) -> Result<ResolvedProfile, String> {
-    let mut warnings = Vec::new();
-
-    let model = match &profile.model {
-        Some(model)
-            if !capabilities.model_ids.is_empty() && !capabilities.model_ids.contains(model) =>
-        {
-            warnings.push(format!(
-                "'{}' does not offer the model '{}', using its default",
-                profile.agent_id, model
-            ));
-            None
-        }
-        other => other.clone(),
-    };
-
-    let effort = match &profile.effort {
-        Some(effort) if !capabilities.supports_effort => {
-            warnings.push(format!(
-                "'{}' does not expose an effort setting, so '{}' is ignored",
-                profile.agent_id, effort
-            ));
-            None
-        }
-        other => other.clone(),
-    };
-
-    let permission_mode = match &profile.permission_mode {
-        Some(mode)
-            if !capabilities.mode_ids.is_empty() && !capabilities.mode_ids.contains(mode) =>
-        {
-            warnings.push(format!(
-                "'{}' has no '{}' permission mode, using its default",
-                profile.agent_id, mode
-            ));
-            None
-        }
-        other => other.clone(),
-    };
-
-    // A read-only role left in a mode that lets the agent write is the case `Fail` exists for: the
-    // guarantee the gates depend on cannot be provided, and spawning anyway would provide the
-    // opposite.
-    //
-    // Checking the mode rather than merely its presence is load-bearing. `default` is a legitimate
-    // way to hold a role that has to deliver prose — `plan` is the only read-only mode claude-code
-    // offers, and a plan-mode agent cannot end a turn without asking to leave it — because a write
-    // becomes a permission prompt, and `try_auto_approve_permission` refuses to answer one in a
-    // read-only phase, so it reaches the user. `acceptEdits` and `bypassPermissions` do not hold
-    // anything, and a presence check called them read-only.
-    // Naming no mode means the spawn picks one, and it picks from this same set — so the question
-    // is what the agent offers, not whether the profile filled the field in. An empty `mode_ids` is
-    // an agent that did not advertise, which is unknown rather than none, as above.
-    let held_read_only = match permission_mode.as_deref() {
-        Some(mode) => READ_ONLY_SAFE_MODES.contains(&mode),
-        None => {
-            capabilities.mode_ids.is_empty()
-                || capabilities
-                    .mode_ids
-                    .iter()
-                    .any(|mode| READ_ONLY_SAFE_MODES.contains(&mode.as_str()))
-        }
-    };
-
-    if profile.role.is_read_only() && !held_read_only {
-        warnings.push(format!(
-            "'{}' could not be held read-only for the {:?} role",
-            profile.agent_id, profile.role
-        ));
-    }
-
-    if profile.fallback_behaviour == FallbackBehaviour::Fail && !warnings.is_empty() {
-        return Err(format!(
-            "Profile '{}' cannot run on '{}': {}",
-            profile.name,
-            profile.agent_id,
-            warnings.join("; ")
-        ));
-    }
-
-    Ok(ResolvedProfile {
-        profile_id: profile.id.clone(),
-        agent_id: profile.agent_id.clone(),
-        model,
-        effort,
-        permission_mode,
-        skills: profile.skills.clone(),
-        mcp_servers: profile.mcp_servers.clone(),
-        role_prompt: profile.role_prompt.clone(),
-        warnings,
-    })
-}
-
 async fn git_conn(app_state: &Arc<AppState>, project_id: i32) -> Result<GitConnection, String> {
     let (_, conn) = crate::core::get_project_with_git_conn(app_state, project_id).await?;
     Ok(conn)
 }
 
-/// Whether the project defines a profile for `role`.
-///
-/// This is how a team opts into a role: the pipeline runs a reviewer when there is a reviewer to
-/// run, and a project with no profiles keeps exactly the pipeline it had. Unreadable profiles are
-/// `false` rather than an error — the caller is deciding whether to start an agent, and a parse
-/// failure is not a reason to start one.
-pub async fn has_profile_for_role(app_state: &AppState, project_id: i32, role: AgentRole) -> bool {
-    let Ok((_project, conn)) = crate::core::get_project_with_git_conn(app_state, project_id).await
-    else {
-        return false;
-    };
-    let document: ProfilesDocument = read_maestro_json(&conn, PROFILES_FILE).await;
-    document.resolve(role, None).is_some()
+/// The project's profiles. A missing or unreadable file is the empty document.
+pub(crate) async fn read_profiles(
+    app_state: &AppState,
+    project_id: i32,
+) -> Result<ProfilesDocument, String> {
+    let (_, conn) = crate::core::get_project_with_git_conn(app_state, project_id).await?;
+    Ok(read_maestro_json(&conn, PROFILES_FILE).await)
 }
 
 #[tauri::command]
@@ -312,8 +56,7 @@ pub async fn list_agent_profiles(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<ProfilesDocument, String> {
-    let conn = git_conn(&app_state, project_id).await?;
-    Ok(read_maestro_json(&conn, PROFILES_FILE).await)
+    read_profiles(&app_state, project_id).await
 }
 
 /// Replace the whole document.
@@ -369,39 +112,20 @@ async fn seed_profiles(conn: &GitConnection, document: &ProfilesDocument) -> Res
     Ok(true)
 }
 
-/// Resolve the profile for a role and reduce it to what the agent can honour.
-///
-/// Takes the agent's advertised capabilities as arguments rather than looking them up, because
-/// they are only known once the session has spawned and reported them — and the caller holding
-/// that report is the frontend. Keeping the reduction here rather than there is what stops the
-/// read-only correction being reimplemented, and differently, per call site.
-///
-/// `None` means the project has no profile for the role, which is not an error: profiles are
-/// opt-in and a project without them keeps the per-task settings it already had.
+/// Whether `role` resolves to a profile on this project, `profile_id` being the task's override
+/// for it. The test the daemon makes before it runs the planner ahead of the coder.
 #[tauri::command]
 #[specta::specta]
-pub async fn resolve_agent_profile(
+pub async fn has_profile_for_role(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
     role: AgentRole,
     profile_id: Option<String>,
-    model_ids: Vec<String>,
-    mode_ids: Vec<String>,
-    supports_effort: bool,
-) -> Result<Option<ResolvedProfile>, String> {
-    let conn = git_conn(&app_state, project_id).await?;
-    let document: ProfilesDocument = read_maestro_json(&conn, PROFILES_FILE).await;
-
-    let Some(profile) = document.resolve(role, profile_id.as_deref()) else {
-        return Ok(None);
-    };
-
-    let capabilities = AgentCapabilities {
-        model_ids,
-        mode_ids,
-        supports_effort,
-    };
-    apply_capabilities(profile, &capabilities).map(Some)
+) -> Result<bool, String> {
+    Ok(read_profiles(&app_state, project_id)
+        .await?
+        .resolve(role, profile_id.as_deref())
+        .is_some())
 }
 
 #[cfg(test)]
@@ -422,224 +146,6 @@ mod tests {
             role_prompt: None,
             fallback_behaviour: FallbackBehaviour::Warn,
         }
-    }
-
-    fn capable() -> AgentCapabilities {
-        AgentCapabilities {
-            model_ids: vec!["sonnet".to_string(), "opus".to_string()],
-            mode_ids: vec!["readonly".to_string(), "acceptEdits".to_string()],
-            supports_effort: true,
-        }
-    }
-
-    #[test]
-    fn resolution_prefers_an_override_then_the_default_then_the_role() {
-        let mut only = profile(AgentRole::Reviewer);
-        only.id = "strict".to_string();
-        let mut lenient = profile(AgentRole::Reviewer);
-        lenient.id = "lenient".to_string();
-
-        let mut doc = ProfilesDocument {
-            profiles: vec![only.clone(), lenient.clone()],
-            defaults: Default::default(),
-        };
-
-        // No default set: the first profile declaring the role.
-        assert_eq!(doc.resolve(AgentRole::Reviewer, None).unwrap().id, "strict");
-
-        doc.defaults
-            .insert("Reviewer".to_string(), "lenient".to_string());
-        assert_eq!(
-            doc.resolve(AgentRole::Reviewer, None).unwrap().id,
-            "lenient"
-        );
-
-        // An explicit choice beats the default.
-        assert_eq!(
-            doc.resolve(AgentRole::Reviewer, Some("strict")).unwrap().id,
-            "strict"
-        );
-    }
-
-    /// An id that no longer exists must not silently pick something else — but it must not strand
-    /// the task either, so it falls through to the ordinary resolution.
-    #[test]
-    fn an_unknown_override_falls_through_rather_than_failing() {
-        let doc = ProfilesDocument {
-            profiles: vec![profile(AgentRole::Coder)],
-            defaults: Default::default(),
-        };
-        assert_eq!(
-            doc.resolve(AgentRole::Coder, Some("deleted")).unwrap().id,
-            "coder"
-        );
-    }
-
-    #[test]
-    fn a_role_with_no_profile_resolves_to_nothing() {
-        let doc = ProfilesDocument {
-            profiles: vec![profile(AgentRole::Coder)],
-            defaults: Default::default(),
-        };
-        assert!(doc.resolve(AgentRole::Reviewer, None).is_none());
-    }
-
-    /// The three states the map can put a role in, plus the one it cannot be trusted to.
-    #[test]
-    fn only_a_present_null_marks_a_role_as_skipped() {
-        let json = r#"{"Planner": null, "Reviewer": "strict"}"#;
-
-        assert!(role_is_skipped(Some(json), AgentRole::Planner));
-        // Named, so it runs.
-        assert!(!role_is_skipped(Some(json), AgentRole::Reviewer));
-        // Absent, so the project decides — which is not the same as "off".
-        assert!(!role_is_skipped(Some(json), AgentRole::Refiner));
-
-        assert!(!role_is_skipped(None, AgentRole::Planner));
-        assert!(!role_is_skipped(Some("{"), AgentRole::Planner));
-        assert!(!role_is_skipped(Some("[]"), AgentRole::Planner));
-    }
-
-    #[test]
-    fn a_fully_supported_profile_resolves_without_warnings() {
-        let mut p = profile(AgentRole::Reviewer);
-        p.model = Some("opus".to_string());
-        p.effort = Some("high".to_string());
-
-        let resolved = apply_capabilities(&p, &capable()).unwrap();
-        assert!(resolved.warnings.is_empty(), "{:?}", resolved.warnings);
-        assert_eq!(resolved.model.as_deref(), Some("opus"));
-        assert_eq!(resolved.permission_mode.as_deref(), Some("readonly"));
-    }
-
-    /// Degrading rather than failing is what keeps a committed profile usable by a teammate whose
-    /// agent differs.
-    #[test]
-    fn unsupported_fields_are_dropped_with_a_warning() {
-        let mut p = profile(AgentRole::Coder);
-        p.model = Some("gpt-9".to_string());
-        p.effort = Some("high".to_string());
-        p.permission_mode = Some("acceptEdits".to_string());
-
-        let capabilities = AgentCapabilities {
-            model_ids: vec!["sonnet".to_string()],
-            mode_ids: vec!["acceptEdits".to_string()],
-            supports_effort: false,
-        };
-
-        let resolved = apply_capabilities(&p, &capabilities).unwrap();
-        assert_eq!(resolved.model, None);
-        assert_eq!(resolved.effort, None);
-        assert_eq!(resolved.permission_mode.as_deref(), Some("acceptEdits"));
-        assert_eq!(resolved.warnings.len(), 2, "{:?}", resolved.warnings);
-    }
-
-    /// An agent that reports no modes has not told us it lacks ours. Treating silence as absence
-    /// would drop the mode for every agent that does not advertise.
-    #[test]
-    fn unknown_capabilities_are_not_treated_as_missing_ones() {
-        let p = profile(AgentRole::Reviewer);
-        let resolved = apply_capabilities(&p, &AgentCapabilities::default()).unwrap();
-
-        assert_eq!(resolved.permission_mode.as_deref(), Some("readonly"));
-        assert!(resolved.warnings.is_empty(), "{:?}", resolved.warnings);
-    }
-
-    /// The case `Fail` exists for: a reviewer that cannot be held read-only is not a reviewer, and
-    /// spawning it anyway would hand a read-only role write access.
-    #[test]
-    fn a_read_only_role_that_cannot_be_held_read_only_is_reported() {
-        let mut p = profile(AgentRole::Reviewer);
-        p.permission_mode = Some("readonly".to_string());
-
-        let capabilities = AgentCapabilities {
-            mode_ids: vec!["acceptEdits".to_string()],
-            ..Default::default()
-        };
-
-        let warned = apply_capabilities(&p, &capabilities).unwrap();
-        assert_eq!(warned.permission_mode, None);
-        assert_eq!(warned.warnings.len(), 2, "{:?}", warned.warnings);
-
-        p.fallback_behaviour = FallbackBehaviour::Fail;
-        assert!(apply_capabilities(&p, &capabilities).is_err());
-    }
-
-    /// The check used to be for a mode being *present*, which called `acceptEdits` read-only. A
-    /// live run found the consequence: the planner implemented the task it was only supposed to
-    /// plan for.
-    #[test]
-    fn a_writable_mode_does_not_count_as_holding_a_read_only_role() {
-        let mut p = profile(AgentRole::Planner);
-        p.permission_mode = Some("acceptEdits".to_string());
-
-        let resolved = apply_capabilities(&p, &capable()).unwrap();
-        assert_eq!(resolved.permission_mode.as_deref(), Some("acceptEdits"));
-        assert_eq!(resolved.warnings.len(), 1, "{:?}", resolved.warnings);
-    }
-
-    /// `default` is how the roles that deliver prose are held: `plan` is the only read-only mode
-    /// claude-code offers, and a plan-mode agent cannot end a turn without asking to leave it. A
-    /// write becomes a prompt the user answers, so the role is held — just not by construction.
-    #[test]
-    fn default_holds_a_read_only_role_without_a_warning() {
-        let mut p = profile(AgentRole::Refiner);
-        p.permission_mode = Some("default".to_string());
-
-        let capabilities = AgentCapabilities {
-            mode_ids: vec!["default".to_string(), "acceptEdits".to_string()],
-            ..Default::default()
-        };
-        let resolved = apply_capabilities(&p, &capabilities).unwrap();
-        assert!(resolved.warnings.is_empty(), "{:?}", resolved.warnings);
-    }
-
-    /// A profile that names no mode is held by whatever the spawn will pick, so an agent offering
-    /// one of the safe modes is not a failure to hold the role. Settings leaves the field empty
-    /// whenever the agent probe does not settle, and claude-acp offers `plan`.
-    #[test]
-    fn an_unnamed_mode_is_held_by_whatever_the_agent_offers() {
-        let mut p = profile(AgentRole::Refiner);
-        p.permission_mode = None;
-
-        let capabilities = AgentCapabilities {
-            mode_ids: vec![
-                "default".to_string(),
-                "acceptEdits".to_string(),
-                "bypassPermissions".to_string(),
-                "plan".to_string(),
-            ],
-            ..Default::default()
-        };
-        let resolved = apply_capabilities(&p, &capabilities).unwrap();
-        assert!(resolved.warnings.is_empty(), "{:?}", resolved.warnings);
-    }
-
-    /// An agent that offers only writable modes cannot hold the role however the spawn picks.
-    #[test]
-    fn an_unnamed_mode_still_warns_when_nothing_safe_is_offered() {
-        let mut p = profile(AgentRole::Refiner);
-        p.permission_mode = None;
-
-        let capabilities = AgentCapabilities {
-            mode_ids: vec!["acceptEdits".to_string(), "bypassPermissions".to_string()],
-            ..Default::default()
-        };
-        let resolved = apply_capabilities(&p, &capabilities).unwrap();
-        assert_eq!(resolved.warnings.len(), 1, "{:?}", resolved.warnings);
-
-        p.fallback_behaviour = FallbackBehaviour::Fail;
-        assert!(apply_capabilities(&p, &capabilities).is_err());
-    }
-
-    /// The coder is the one role that may legitimately run with the agent's default mode.
-    #[test]
-    fn the_coder_is_not_forced_read_only() {
-        let mut p = profile(AgentRole::Coder);
-        p.permission_mode = None;
-
-        let resolved = apply_capabilities(&p, &capable()).unwrap();
-        assert!(resolved.warnings.is_empty(), "{:?}", resolved.warnings);
     }
 
     /// Seeding fills a project that never had the file and leaves one the user emptied alone.

@@ -295,7 +295,14 @@ pub async fn send_task_to_review(
     // Sending work to review by hand is still asking for it to be reviewed, so a project with a
     // review agent gets one here too. Doing otherwise would make the button a way of skipping the
     // reviewer, which nothing on it says it is.
-    let reviewer_pending = reviewer_should_run(&app_state, &task).await;
+    let profiles = crate::project::profiles::read_profiles(&app_state, project_id)
+        .await
+        .unwrap_or_default();
+    let reviewer_pending = maestro_protocol::profiles::reviewer_should_run(
+        task.review_rounds,
+        task.profile_overrides.as_deref(),
+        &profiles,
+    );
 
     apply_transition_on_server(
         &app_state,
@@ -473,44 +480,6 @@ pub struct StartTaskResult {
     pub session_id: Option<String>,
     /// The attachments the prompt went without, each as `<file>: <why>`.
     pub skipped_attachments: Vec<String>,
-}
-
-/// Whether a review agent should look at this task before the user does.
-///
-/// Three conditions, all necessary. The project must define a `Reviewer` profile, which is how a
-/// team opts in — a project without one keeps the pipeline it had. The task must not have turned
-/// the stage off for itself, which is the same opt-out one task at a time. And the loop must have
-/// rounds left, or a reviewer would be started only to have its verdict escalated anyway.
-///
-/// So the work of the last rework round reaches the user unreviewed, deliberately: by then they
-/// are the reviewer, and the alternative is paying an agent for a verdict nobody may act on.
-async fn reviewer_should_run(
-    app_state: &crate::core::AppState,
-    task: &crate::models::Task,
-) -> bool {
-    use maestro_protocol::completion::review_rounds_remain;
-
-    if !review_rounds_remain(task.review_rounds) {
-        return false;
-    }
-
-    if crate::project::profiles::role_is_skipped(
-        task.profile_overrides.as_deref(),
-        crate::project::profiles::AgentRole::Reviewer,
-    ) {
-        log::debug!(
-            "[acp] task {} skips review, so it goes straight to the user",
-            task.id
-        );
-        return false;
-    }
-
-    crate::project::profiles::has_profile_for_role(
-        app_state,
-        task.project_id,
-        crate::project::profiles::AgentRole::Reviewer,
-    )
-    .await
 }
 
 /// Whether the agent has changed anything since it started, measured against

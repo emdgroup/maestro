@@ -10,7 +10,7 @@ import type { AgentRole } from "@/types/bindings";
  * which is why the resolved mode is logged.
  *
  * `READ_ONLY_MODES` plus `DEFAULT_MODE` is the set `READ_ONLY_SAFE_MODES` in
- * `src-tauri/src/project/profiles.rs` calls read-only-safe. That check answers "can this role be
+ * `maestro-server/src/profiles.rs` calls read-only-safe. That check answers "can this role be
  * held read-only" from what the agent offers, so a mode added to one list belongs in the other.
  *
  * `acceptEdits` is deliberately absent. It silences prompts for edits but still asks before
