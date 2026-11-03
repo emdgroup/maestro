@@ -145,40 +145,6 @@ pub async fn respond_host_tool(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn set_acp_model(
-    app_state: State<'_, Arc<AppState>>,
-    session_id: &str,
-    model_id: String,
-) -> Result<(), String> {
-    let msg = ServerRequest::SetModel(SetModelRequest {
-        session_id: session_id.to_string(),
-        model_id,
-    });
-    crate::acp::write_to_acp_session(&app_state, session_id, &msg).await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn set_acp_mode(
-    app_state: State<'_, Arc<AppState>>,
-    session_id: &str,
-    mode_id: String,
-) -> Result<(), String> {
-    // At `info` because which mode a role ended up in is not otherwise knowable: the request itself
-    // is only traced, and the fallback list in `useExecuteTask` is a guess about names that differ
-    // per harness. Tuning it needs evidence, and a mode nobody can observe is a mode nobody can
-    // correct — during the live pass this was the reason a blocked reviewer could not be explained.
-    log::info!("[acp] session-{session_id} permission mode set to {mode_id}");
-
-    let msg = ServerRequest::SetMode(SetModeRequest {
-        session_id: session_id.to_string(),
-        mode_id,
-    });
-    crate::acp::write_to_acp_session(&app_state, session_id, &msg).await
-}
-
-#[tauri::command]
-#[specta::specta]
 pub async fn set_acp_config_option(
     app_state: State<'_, Arc<AppState>>,
     session_id: &str,

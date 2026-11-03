@@ -127,12 +127,12 @@ and logic, so a feature touches one directory rather than three.
 
 - `core/` — cross-cutting foundations: `schema.rs` (SQLite schema + migration), `settings.rs`, `connection.rs` (incl. `get_project_with_git_conn()`), `project_storage.rs`, `AppState`
 - `project/` — project CRUD, handlers, models, `git_ops.rs`, `lock.rs` (asks the connection's daemon for the project lock, and for takeovers), `session_state.rs`, `prime.rs`
-- `task/` — task commands, each one round trip to the daemon that stores the task (see "Tasks live in the daemon" in `maestro-server/AGENTS.md`), the app's models converted from the protocol rows, `relationships.rs`, `instructions.rs`, `attachments.rs`, `ops.rs`
+- `task/` — task commands, each one round trip to the daemon that stores the task (see "Tasks live in the daemon" in `maestro-server/AGENTS.md`), the app's models converted from the protocol rows, `attachments.rs`, `ops.rs`
 - `git/` — worktree lifecycle/query/staging, `merge.rs`, `review.rs`, diff + review models and handlers, `remote.rs`. The git work runs here; the worktree and review rows are the daemon's
 - `acp/` — ACP session management: `manager.rs`, `registry.rs`, `transport*.rs`, `reader_task.rs`, `deploy.rs`, `replay.rs`, `host_tools.rs`, and session/prompt/discovery/file/meta/auth handlers
 - `execution/` — PTY spawning (local + remote), `queue.rs` and `capacity.rs` (the app's view of the daemon's capacity), handlers, models
 - `connectivity/` — SSH (`ssh/`), WSL, Docker, SFTP, filesystem handlers, connection models
-- `integration/` — issue-tracking providers (`providers/`), `lookup/`, `issue_sync.rs`, `keychain.rs`
+- `integration/` — issue-tracking providers (`providers/`), `lookup/`, `keychain.rs`
 - `settings/` — app settings handlers and models
 - `ipc/mod.rs`, `models/mod.rs` — thin re-export shims only (no code), kept so `lib.rs`'s `collect_commands![]` and older `crate::models::*` paths keep resolving. New code should import from the owning domain module directly.
 

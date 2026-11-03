@@ -5,9 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::State;
 
-use crate::acp::registry::{
-    AgentDiscoveryCacheEntry, AgentDiscoveryResult, DiscoveredAgent, ProjectAgentMatch,
-};
+use crate::acp::registry::{AgentDiscoveryCacheEntry, AgentDiscoveryResult, DiscoveredAgent};
 use crate::acp::transport::CheckToolsResponse;
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
@@ -421,86 +419,6 @@ pub async fn preflight_connection(
     })
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn check_required_tools(
-    app_state: State<'_, Arc<AppState>>,
-    connection: crate::acp::ConnectionKey,
-) -> Result<Vec<ToolCheckEntry>, String> {
-    let agents =
-        crate::acp::query_list_agents_via_connection_server(connection, &app_state).await?;
-    let tools: Vec<String> = agents
-        .iter()
-        .flat_map(|agent| agent.spawn_deps.iter().cloned())
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
-    let response = crate::acp::query_check_tools_via_server(connection, tools, &app_state).await?;
-    Ok(response
-        .results
-        .into_iter()
-        .map(|result| ToolCheckEntry {
-            required_by: agents
-                .iter()
-                .filter(|agent| agent.spawn_deps.contains(&result.tool))
-                .map(|agent| agent.name.clone())
-                .collect(),
-            mandatory: false,
-            tool: result.tool,
-            available: result.available,
-            version: result.version,
-            configured_path: result.configured_path,
-            resolved_path: result.resolved_path,
-            source: tool_path_source_name(&result.source).to_string(),
-            error: result.error,
-        })
-        .collect())
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn set_tool_path(
-    app_state: State<'_, Arc<AppState>>,
-    connection: crate::acp::ConnectionKey,
-    tool: String,
-    path: Option<String>,
-) -> Result<ToolCheckEntry, String> {
-    let result = crate::acp::set_tool_path_via_server(connection, tool, path, &app_state).await?;
-    Ok(ToolCheckEntry {
-        tool: result.tool,
-        available: result.available,
-        version: result.version,
-        required_by: Vec::new(),
-        mandatory: false,
-        configured_path: result.configured_path,
-        resolved_path: result.resolved_path,
-        source: tool_path_source_name(&result.source).to_string(),
-        error: result.error,
-    })
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn test_tool_path(
-    app_state: State<'_, Arc<AppState>>,
-    connection: crate::acp::ConnectionKey,
-    tool: String,
-    path: String,
-) -> Result<ToolCheckEntry, String> {
-    let result = crate::acp::test_tool_path_via_server(connection, tool, path, &app_state).await?;
-    Ok(ToolCheckEntry {
-        tool: result.tool,
-        available: result.available,
-        version: result.version,
-        required_by: Vec::new(),
-        mandatory: false,
-        configured_path: result.configured_path,
-        resolved_path: result.resolved_path,
-        source: tool_path_source_name(&result.source).to_string(),
-        error: result.error,
-    })
-}
-
 fn tool_path_source_name(source: &maestro_protocol::ToolPathSource) -> &'static str {
     match source {
         maestro_protocol::ToolPathSource::Override => "override",
@@ -510,27 +428,6 @@ fn tool_path_source_name(source: &maestro_protocol::ToolPathSource) -> &'static 
         maestro_protocol::ToolPathSource::ShellEnvironment => "shell_environment",
         maestro_protocol::ToolPathSource::NotFound => "not_found",
     }
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn detect_project_agents(
-    app_state: State<'_, Arc<AppState>>,
-    connection: crate::acp::ConnectionKey,
-    cwd: String,
-) -> Result<Vec<ProjectAgentMatch>, String> {
-    let response =
-        crate::acp::manager::query_detect_project_agents_via_server(connection, cwd, &app_state)
-            .await?;
-
-    Ok(response
-        .agents
-        .into_iter()
-        .map(|a| ProjectAgentMatch {
-            agent_id: a.agent_id,
-            markers_found: a.markers_found,
-        })
-        .collect())
 }
 
 pub(crate) async fn fetch_and_filter_agents(

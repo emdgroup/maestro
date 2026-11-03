@@ -128,8 +128,6 @@ fn walk_files(
 }
 
 /// Read a local file's text content. Rejects binary files and files over [`TEXT_LIMIT`].
-#[tauri::command]
-#[specta::specta]
 pub async fn read_local_file(path: String) -> Result<String, String> {
     run_blocking(move || {
         use std::io::Read;
@@ -353,15 +351,4 @@ pub fn open_path_native(app: tauri::AppHandle, path: String) -> Result<(), Strin
     app.opener()
         .open_path(path, None::<&str>)
         .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn get_file_size(path: String) -> Result<u64, String> {
-    run_blocking(move || {
-        fs::metadata(&path)
-            .map(|m| m.len())
-            .map_err(|e| e.to_string())
-    })
-    .await
 }

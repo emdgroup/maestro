@@ -14,8 +14,8 @@ use crate::acp::transport_setup::{
 };
 use crate::acp::transport_types::{serialize_message, serialize_message_with_id};
 use maestro_protocol::{
-    DetectInstalledAgentsRequest, DetectInstalledAgentsResponse, DetectProjectAgentsRequest,
-    DetectProjectAgentsResponse, InstallSkillsRequest, InstallSkillsResponse, RequestId, SkillFile,
+    DetectInstalledAgentsRequest, DetectInstalledAgentsResponse, InstallSkillsRequest,
+    InstallSkillsResponse, RequestId, SkillFile,
 };
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -217,25 +217,6 @@ pub async fn query_acquire_project_lock_via_server(
         reply!(ServerResponse::AcquireProjectLockOk(response) => response),
         15,
         "AcquireProjectLock via connection server timed out after 15s",
-    )
-    .await
-}
-
-pub async fn query_project_locks_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    project_paths: Vec<String>,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<maestro_protocol::ListProjectLocksResponse, String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        &format!("No connection server for connection {:?}", connection_key),
-        ServerRequest::ListProjectLocks(maestro_protocol::ListProjectLocksRequest {
-            project_paths,
-        }),
-        reply!(ServerResponse::ProjectLocksOk(response) => response),
-        15,
-        "ListProjectLocks via connection server timed out after 15s",
     )
     .await
 }
@@ -718,42 +699,6 @@ pub async fn query_check_tools_via_server(
     .await
 }
 
-pub async fn set_tool_path_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    tool: String,
-    path: Option<String>,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<maestro_protocol::ToolCheckResult, String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        "Connection not initialized. Run preflight first.",
-        ServerRequest::SetToolPath(maestro_protocol::SetToolPathRequest { tool, path }),
-        reply!(ServerResponse::SetToolPathOk(response) => response),
-        15,
-        "SetToolPath via connection server timed out after 15s",
-    )
-    .await
-}
-
-pub async fn test_tool_path_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    tool: String,
-    path: String,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<maestro_protocol::ToolCheckResult, String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        "Connection not initialized. Run preflight first.",
-        ServerRequest::TestToolPath(maestro_protocol::TestToolPathRequest { tool, path }),
-        reply!(ServerResponse::TestToolPathOk(response) => response),
-        15,
-        "TestToolPath via connection server timed out after 15s",
-    )
-    .await
-}
-
 /// Send `InstallSkills` through the running connection server and return whether it installed.
 ///
 /// The generous timeout covers the first run on a machine, where `npx` downloads the skills CLI
@@ -799,24 +744,6 @@ pub async fn query_detect_installed_via_server(
             .collect::<Vec<_>>()
     );
     Ok(response)
-}
-
-/// Send `DetectProjectAgents` through the running connection server and return the result.
-pub async fn query_detect_project_agents_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    cwd: String,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<DetectProjectAgentsResponse, String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        "Connection not initialized. Run preflight first.",
-        ServerRequest::DetectProjectAgents(DetectProjectAgentsRequest { cwd }),
-        reply!(ServerResponse::DetectProjectAgentsOk(response) => response),
-        15,
-        "DetectProjectAgents timed out after 15s",
-    )
-    .await
 }
 
 /// Spawn a long-lived maestro-server shared across all sessions for `connection_id`.

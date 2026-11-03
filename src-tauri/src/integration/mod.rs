@@ -2,7 +2,6 @@ pub mod code_hosting_handlers;
 pub mod handlers;
 pub mod image_proxy;
 pub mod integration_models;
-pub mod issue_sync;
 pub mod issue_tracking_handlers;
 pub mod issue_tracking_models;
 pub mod keychain;

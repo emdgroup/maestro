@@ -27,8 +27,8 @@ pub use crate::settings::models as settings;
 pub use crate::task::models as task;
 pub use crate::task::{
     BranchMode, PhaseStatus, ProjectConfigRequest, ProjectConfigResponse, PullRequestCi, Task,
-    TaskAttachment, TaskBall, TaskComment, TaskCompletion, TaskConfigRequest, TaskInstruction,
-    TaskPhase, TaskPriority, TaskRelationship, TaskStatus, WorkspaceMode,
+    TaskAttachment, TaskBall, TaskComment, TaskCompletion, TaskPhase, TaskPriority, TaskStatus,
+    WorkspaceMode,
 };
 pub use settings::{
     ActivityVisibility, AgentStreamWidth, AppSettings, ConnectionCapacitySettings,

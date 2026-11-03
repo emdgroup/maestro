@@ -165,26 +165,6 @@ impl From<wire::LoopConfig> for LoopConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct TaskRelationship {
-    pub id: i32,
-    pub from_task_id: i32,
-    pub to_task_id: i32,
-    pub relationship_type: String,
-    pub created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct TaskInstruction {
-    pub id: i32,
-    pub task_id: i32,
-    pub content: String,
-    pub source: String,
-    pub created_at: String,
-}
-
 /// One entry in a task's outcome thread.
 ///
 /// `kind` is what a gate points at — `proposal`, `plan`, `verdict`, `outcome`, `note`. Kept as a
@@ -530,30 +510,6 @@ impl Task {
     }
 }
 
-impl From<wire::TaskRelationship> for TaskRelationship {
-    fn from(row: wire::TaskRelationship) -> Self {
-        TaskRelationship {
-            id: row.id,
-            from_task_id: row.from_task_id,
-            to_task_id: row.to_task_id,
-            relationship_type: row.relationship_type,
-            created_at: row.created_at,
-        }
-    }
-}
-
-impl From<wire::TaskInstruction> for TaskInstruction {
-    fn from(row: wire::TaskInstruction) -> Self {
-        TaskInstruction {
-            id: row.id,
-            task_id: row.task_id,
-            content: row.content,
-            source: row.source,
-            created_at: row.created_at,
-        }
-    }
-}
-
 impl From<wire::TaskComment> for TaskComment {
     fn from(row: wire::TaskComment) -> Self {
         TaskComment {
@@ -619,17 +575,4 @@ pub struct ProjectConfigRequest {
     /// form offers a picker: a mistyped branch would only surface when a worktree failed to be
     /// created for it.
     pub base_branch: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct TaskConfigRequest {
-    #[specta(optional)]
-    pub model_override: Option<String>,
-    #[specta(optional)]
-    pub mcp_allowlist: Option<Vec<String>>,
-    #[specta(optional)]
-    pub skills_override: Option<Vec<String>>,
-    #[specta(optional)]
-    pub permission_mode_override: Option<String>,
 }

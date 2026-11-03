@@ -132,74 +132,7 @@ pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, Str
     Ok(projects)
 }
 
-/// Get list of all projects per connection
-#[tauri::command]
-#[specta::specta]
-pub async fn get_connection_projects(
-    app_state: State<'_, Arc<AppState>>,
-    connection_key: ConnectionKey,
-) -> Result<Vec<Project>, String> {
-    // ── Step 1: fetch projects (db lock acquired and released in this block) ─
-    let projects: Vec<Project> = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        fetch_projects_from_db(&conn, connection_key)?
-        // conn drops here — lock released before async work below
-    };
-
-    // ── Step 2: validate paths ───────────────────────────────────────────────
-    let stale_ids = collect_stale_project_ids(&projects, connection_key, &app_state).await;
-
-    // ── Step 3: delete stale projects and return filtered list ───────────────
-    if !stale_ids.is_empty() {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        for id in &stale_ids {
-            conn.execute("DELETE FROM projects WHERE id = ?", [id])
-                .map_err(|e| e.to_string())?;
-        }
-    }
-
-    Ok(projects
-        .into_iter()
-        .filter(|p| !stale_ids.contains(&p.id))
-        .collect())
-}
-
-/// Returns the IDs of projects whose paths no longer exist.
-async fn collect_stale_project_ids(
-    projects: &[Project],
-    connection_key: ConnectionKey,
-    app_state: &Arc<AppState>,
-) -> Vec<i32> {
-    // Without a usable connection nothing can be judged stale, and hiding every project of an
-    // unreachable host would be worse than showing one that has moved.
-    let Ok(conn) = crate::core::git_connection_for(app_state, String::new(), connection_key).await
-    else {
-        return vec![];
-    };
-
-    let mut stale = Vec::new();
-    for project in projects {
-        // A transport failure is not evidence the directory is gone — only a `test -d` that
-        // actually ran and said no. Keeping the project is the recoverable mistake.
-        if let Ok(present) = crate::connectivity::files::try_dir_exists(&conn, &project.path).await
-        {
-            if !present {
-                stale.push(project.id);
-            }
-        }
-    }
-    stale
-}
-
 /// Get project by id
-#[tauri::command]
-#[specta::specta]
 pub fn get_project(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
@@ -309,22 +242,6 @@ pub async fn release_active_project_lock(
         .cloned()
         .collect();
     crate::acp::session_ops::forget_sessions(&app_state, &held).await;
-    Ok(())
-}
-
-/// remove project by id
-#[tauri::command]
-#[specta::specta]
-pub fn delete_project(app_state: State<'_, Arc<AppState>>, project_id: i32) -> Result<(), String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-
-    // Delete from database
-    conn.execute("DELETE FROM projects WHERE id = ?", [project_id])
-        .map_err(|e| e.to_string())?;
-
     Ok(())
 }
 

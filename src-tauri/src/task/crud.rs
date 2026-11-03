@@ -288,8 +288,8 @@ pub async fn delete_task(
 
 /// Choose which agent profile this task uses for each role.
 ///
-/// Its own command rather than a field on `TaskConfigRequest`, for the reason
-/// `set_project_accent_color` is separate from the project settings form: that request rewrites
+/// Its own command rather than a field of a wider settings request, for the reason
+/// `set_project_accent_color` is separate from the project settings form: such a request rewrites
 /// every column it names, so a caller that only wanted to change one has to resend the rest
 /// correctly or silently clear them. The override dialog knows about roles and nothing else.
 ///
@@ -326,27 +326,6 @@ fn profile_overrides_column(
     serde_json::to_string(overrides)
         .map(Some)
         .map_err(|e| format!("Failed to serialize profile overrides: {}", e))
-}
-
-/// Update task-level configuration overrides. Every field is written, so an absent one clears its
-/// column.
-#[tauri::command]
-#[specta::specta]
-pub async fn update_task_settings(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    task_id: i32,
-    settings: crate::models::TaskConfigRequest,
-) -> Result<(), String> {
-    let update = TaskUpdate {
-        model_override: Some(settings.model_override),
-        mcp_allowlist: Some(settings.mcp_allowlist),
-        skills_override: Some(settings.skills_override),
-        permission_mode_override: Some(settings.permission_mode_override),
-        ..TaskUpdate::default()
-    };
-    update_task_on_server(&app_state, project_id, task_id, update).await?;
-    Ok(())
 }
 
 #[cfg(test)]

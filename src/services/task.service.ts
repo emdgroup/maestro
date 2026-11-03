@@ -131,9 +131,9 @@ export function useUpdateTask() {
 /**
  * Mutation hook for choosing which agent profile a task uses for each role.
  *
- * Separate from `useUpdateTaskSettingsMutation` for the same reason the command is separate from
- * `update_task_settings`: that one rewrites every override column it names, so a caller wanting to
- * change one field has to resend the others correctly or silently clear them.
+ * Its own command rather than a field of a wider settings update, because such an update rewrites
+ * every override column it names, so a caller wanting to change one field has to resend the others
+ * correctly or silently clear them.
  */
 export function useSetTaskProfileOverridesMutation() {
   const queryClient = useQueryClient();

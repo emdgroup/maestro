@@ -180,19 +180,6 @@ pub async fn delete_integration(
     Ok(())
 }
 
-/// Validate credentials against the provider API without storing them.
-/// Returns the display name from the provider on success.
-#[tauri::command]
-#[specta::specta]
-pub async fn test_integration(
-    provider: String,
-    token: String,
-    instance_url: Option<String>,
-    email: Option<String>,
-) -> Result<String, String> {
-    validate_credentials(&provider, &token, instance_url.as_deref(), email.as_deref()).await
-}
-
 /// Validate credentials for a given provider and return the display name.
 /// All HTTP requests use a 15-second timeout. instance_url is normalized via
 /// normalize_instance_url() before use (T-55-03).

@@ -67,8 +67,6 @@ pub fn list_ssh_connections(app_state: State<Arc<AppState>>) -> Result<Vec<SshCo
 }
 
 /// Get a specific SSH connection
-#[tauri::command]
-#[specta::specta]
 pub fn get_ssh_connection(
     connection_id: i32,
     app_state: State<Arc<AppState>>,
@@ -402,33 +400,6 @@ pub fn delete_ssh_connection(
     {
         let _ = PasswordManager::delete_passphrase(&path);
     }
-
-    Ok(())
-}
-
-/// Remove saved password from OS Keyring
-#[tauri::command]
-#[specta::specta]
-pub fn forget_saved_password(
-    app_state: State<Arc<AppState>>,
-    connection_id: i32,
-) -> Result<(), String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-
-    // Get connection details before deleting (for keyring cleanup)
-    let (host, username): (String, String) = conn
-        .query_row(
-            "SELECT host, username FROM ssh_connections WHERE id = ?",
-            [connection_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .map_err(|e| format!("Connection not found: {}", e))?;
-
-    // Optionally delete password from keyring (ignore errors)
-    let _ = PasswordManager::delete_password(&host, &username);
 
     Ok(())
 }
