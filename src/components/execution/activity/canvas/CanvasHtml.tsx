@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import { AlertTriangle } from "lucide-react";
-import { api } from "@/lib/tauri-utils";
+import { canvasFetch } from "@/services/canvas.service";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/providers/ThemeProvider";
 import { Skeleton } from "@/ui/skeleton";
@@ -90,7 +90,7 @@ async function hostFetch(
     };
   }
   try {
-    const response = await api.canvasFetch(
+    const response = await canvasFetch(
       request.url,
       request.init?.method ?? null,
       request.init?.headers ?? null,

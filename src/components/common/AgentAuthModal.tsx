@@ -5,8 +5,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/ui/button";
 import { Loader2, TerminalSquare } from "lucide-react";
 import type { ConnectionKey } from "@/types/bindings";
-import { commands } from "@/types/bindings";
-import { useAgentAuthInfoQuery, useAcpAuthenticateMutation } from "@/services/acp-auth.service";
+import {
+  startAuthTerminal,
+  useAgentAuthInfoQuery,
+  useAcpAuthenticateMutation,
+} from "@/services/acp-auth.service";
 import { useNavigate } from "@/store/navigationStore";
 import { useBoardActions } from "@/store/boardStore";
 
@@ -107,14 +110,7 @@ export function AgentAuthModal({
     if (methodType === "terminal" && authKey != null && sessionId != null) {
       setIsStartingTerminal(true);
       try {
-        const result = await commands.acpStartAuthTerminal(
-          agentId,
-          methodId,
-          connection,
-          sessionId,
-        );
-        if (result.status === "error") throw new Error(result.error);
-        const terminalId = result.data;
+        const terminalId = await startAuthTerminal(agentId, methodId, connection, sessionId);
         navigate({ agentId: authKey });
         setAuthTerminalRunning(authKey, terminalId);
         onClose();

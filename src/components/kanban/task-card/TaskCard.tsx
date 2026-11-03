@@ -32,12 +32,13 @@ import {
 import {
   useRecoverTaskSessionMutation,
   useCancelActiveSessionMutation,
+  discardFailedSpawn,
+  sendAcpPromptStructured,
 } from "@/services/execution.service";
 import { useDeleteWorktreeMutation } from "@/services/worktree.service";
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
 import { useBoardStore, useBoardActions, useAuthRequiredTask } from "@/store/boardStore";
-import { api } from "@/lib/tauri-utils";
-import { commands } from "@/types/bindings";
+import { abortAuthTerminal } from "@/services/acp-auth.service";
 import { Flame, ArrowUp, Minus, ArrowDown, GitBranch, ExternalLink } from "lucide-react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { zoomCardToDialog } from "@/components/kanban/taskZoom";
@@ -470,7 +471,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
     if (pendingAuthRetry !== task.id) return;
     clearPendingAuthRetry();
     if (activeSession) {
-      void api.discardFailedSpawn(activeSession.session_id);
+      void discardFailedSpawn(activeSession.session_id);
     }
     void handleExecute(task, { canPickAgent: true });
   }, [pendingAuthRetry, task.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -705,7 +706,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
             // The prompt the agent never got to answer, replayed on the session that is still
             // there. With no session there is nothing to replay it on, so the task starts again.
             if (authRequired?.lastPrompt && activeSession) {
-              void api.sendAcpPromptStructured(
+              void sendAcpPromptStructured(
                 activeSession.session_id,
                 authRequired.lastPrompt as JsonValue,
               );
@@ -715,9 +716,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
             }
           },
           onAuthRetry: () => {
-            if (authRequired?.terminalId) {
-              void commands.acpAbortAuthTerminal(authRequired.connection);
-            }
+            if (authRequired?.terminalId) abortAuthTerminal(authRequired.connection);
             setAuthTerminalIdle(String(task.id));
           },
         }}

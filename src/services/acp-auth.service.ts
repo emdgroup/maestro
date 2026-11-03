@@ -16,6 +16,28 @@ export function useAgentAuthInfoQuery(agentId: string | null, connection: Connec
   });
 }
 
+/**
+ * The interactive terminal a `terminal` auth method signs in through. Imperative and uncached, so
+ * plain functions. Input and abort are fire-and-forget: a terminal that is already gone has nothing
+ * to report.
+ */
+export const startAuthTerminal = (
+  agentId: string,
+  methodId: string,
+  connection: ConnectionKey,
+  sessionId: string,
+) => api.acpStartAuthTerminal(agentId, methodId, connection, sessionId);
+
+export function abortAuthTerminal(connection: ConnectionKey) {
+  void api.acpAbortAuthTerminal(connection).catch(() => {});
+}
+
+export function sendAuthTerminalInput(connection: ConnectionKey, data: string) {
+  void api
+    .acpSendAuthPtyInput(connection, Array.from(new TextEncoder().encode(data)))
+    .catch(() => {});
+}
+
 export function useAcpAuthenticateMutation() {
   const queryClient = useQueryClient();
   return useMutation({

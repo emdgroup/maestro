@@ -39,10 +39,11 @@ import { useSessionDiffStats } from "./useSessionDiffStats";
 import { useSessionShipState } from "./useSessionShipState";
 import { useWslConnections } from "@/services/connection.service";
 import {
+  reportCanvasError,
   useDeleteCanvasSurfaceMutation,
   useExportCanvasSurfaceMutation,
 } from "@/services/canvas.service";
-import { commands } from "@/types/bindings";
+import { sendAuthTerminalInput } from "@/services/acp-auth.service";
 import { useSelectedProject } from "@/store/projectStore";
 import type { Annotation } from "@/store/annotationStore";
 import { PlanAnnotationLayer } from "./annotations/PlanAnnotationLayer";
@@ -259,8 +260,8 @@ export function SidePanelContent({
 
   // The agent never sees its rendered surface, so a blocked asset or a thrown exception is only
   // visible here. Parked in the backend and carried back on its next canvas call.
-  const reportCanvasError = (surfaceId: string, error: { message: string; source: string }) => {
-    void commands.canvasReportError(sessionId, surfaceId, `${error.source}: ${error.message}`);
+  const handleCanvasError = (surfaceId: string, error: { message: string; source: string }) => {
+    reportCanvasError(sessionId, surfaceId, `${error.source}: ${error.message}`);
   };
 
   // What the user has entered, per surface. Per surface because they can page between canvases
@@ -578,7 +579,7 @@ export function SidePanelContent({
                         surface={activeSurface}
                         handleRef={canvasFrameRef}
                         onNodes={setFrameNodes}
-                        onError={(error) => reportCanvasError(activeSurface.surfaceId, error)}
+                        onError={(error) => handleCanvasError(activeSurface.surfaceId, error)}
                       />
                     </CanvasEventContext.Provider>
                   )}
@@ -646,14 +647,7 @@ export function SidePanelContent({
                     terminalId={acpTerminalId}
                     initialOutput={terminalBuffers?.get(acpTerminalId) ?? ""}
                     onInput={
-                      isAuthTerminal
-                        ? (data) => {
-                            void commands.acpSendAuthPtyInput(
-                              connection,
-                              Array.from(new TextEncoder().encode(data)),
-                            );
-                          }
-                        : undefined
+                      isAuthTerminal ? (data) => sendAuthTerminalInput(connection, data) : undefined
                     }
                   />
                 ) : ptyEntry?.key != null ? (
