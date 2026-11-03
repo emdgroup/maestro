@@ -146,7 +146,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::stop_background_server,
         crate::ipc::preview_schedule,
         crate::ipc::adopt_automation_session,
-        crate::ipc::resolve_agent_profile,
+        crate::ipc::has_profile_for_role,
         crate::ipc::get_project_settings,
         crate::ipc::update_project_settings,
         crate::ipc::set_project_accent_color,

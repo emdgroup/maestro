@@ -1461,19 +1461,12 @@ async adoptAutomationSession(projectId: number, sessionId: string) : Promise<Res
 }
 },
 /**
- * Resolve the profile for a role and reduce it to what the agent can honour.
- * 
- * Takes the agent's advertised capabilities as arguments rather than looking them up, because
- * they are only known once the session has spawned and reported them — and the caller holding
- * that report is the frontend. Keeping the reduction here rather than there is what stops the
- * read-only correction being reimplemented, and differently, per call site.
- * 
- * `None` means the project has no profile for the role, which is not an error: profiles are
- * opt-in and a project without them keeps the per-task settings it already had.
+ * Whether `role` resolves to a profile on this project, `profile_id` being the task's override
+ * for it. The test the daemon makes before it runs the planner ahead of the coder.
  */
-async resolveAgentProfile(projectId: number, role: AgentRole, profileId: string | null, modelIds: string[], modeIds: string[], supportsEffort: boolean) : Promise<Result<ResolvedProfile | null, string>> {
+async hasProfileForRole(projectId: number, role: AgentRole, profileId: string | null) : Promise<Result<boolean, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("resolve_agent_profile", { projectId, role, profileId, modelIds, modeIds, supportsEffort }) };
+    return { status: "ok", data: await TAURI_INVOKE("has_profile_for_role", { projectId, role, profileId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -3049,7 +3042,7 @@ window?: string | null;
 backoff: boolean }
 export type AgentProfile = { id: string; name: string; role: AgentRole; agent_id: string; model?: string | null; 
 /**
- * Not ACP-universal — agents that do not expose it drop it per `fallback_behaviour`.
+ * Not ACP-universal: agents that do not expose it drop it per `fallback_behaviour`.
  */
 effort?: string | null; 
 /**
@@ -3661,8 +3654,8 @@ export type FallbackBehaviour =
  */
 "Warn" | 
 /**
- * Refuse to spawn. For a profile whose whole point is the field that is missing — a
- * read-only reviewer on an agent with no read-only mode is not a reviewer.
+ * Refuse to spawn. For a profile whose whole point is the field that is missing: a read-only
+ * reviewer on an agent with no read-only mode is not a reviewer.
  */
 "Fail"
 export type FileEntry = { name: string; is_dir: boolean }
@@ -4305,14 +4298,6 @@ export type RemoteIssue = { external_id: string; title: string; body: string | n
  */
 export type RepoOption = { name: string; description: string | null; clone_url: string | null }
 /**
- * What a profile resolved to for an actual spawn, with anything the agent cannot honour removed.
- */
-export type ResolvedProfile = { profile_id: string; agent_id: string; model?: string | null; effort?: string | null; permission_mode?: string | null; skills: string[]; mcp_servers: string[]; role_prompt?: string | null; 
-/**
- * Human-readable notes about what was dropped, for the UI to show. Empty is the happy path.
- */
-warnings: string[] }
-/**
  * Typed response for save_task_review and request_changes IPC commands
  */
 export type ReviewResult = { success: boolean; review_id: number; task_status: string | null }
@@ -4483,9 +4468,8 @@ pull_request_ci?: PullRequestCi | null;
  * Which profile this task wants for a given role, as JSON keyed by role name — a profile id,
  * or null for "skip this stage". Carried as the raw string rather than a parsed map because
  * the frontend is what reads it: it is written by the card's override dialog and handed
- * straight back to `resolve_agent_profile`, which already takes an override id and falls back
- * when it names nothing. `role_is_skipped` parses it on the Rust side, for the one stage the
- * backend decides on its own.
+ * straight back to `has_profile_for_role`, which already takes an override id and falls back
+ * when it names nothing. `maestro_protocol::profiles` parses it on the Rust side.
  */
 profile_overrides?: string | null; 
 /**

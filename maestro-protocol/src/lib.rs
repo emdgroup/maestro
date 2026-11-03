@@ -9,6 +9,7 @@ pub mod completion;
 pub mod exec;
 pub mod mcp_args;
 pub mod paths;
+pub mod profiles;
 pub mod skill_names;
 pub mod worktree_names;
 

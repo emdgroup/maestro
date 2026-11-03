@@ -158,8 +158,7 @@ export function useExecuteTask(
     const overrides = parseProfileOverrides(task.profile_overrides);
     if (task.phase != null || isRoleSkipped(overrides, "Planner")) return false;
     return api
-      .resolveAgentProfile(id, "Planner", profileIdFor(overrides, "Planner"), [], [], true)
-      .then((profile) => profile !== null)
+      .hasProfileForRole(id, "Planner", profileIdFor(overrides, "Planner"))
       .catch(() => false);
   };
 

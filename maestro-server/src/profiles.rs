@@ -1,99 +1,30 @@
 //! Agent profiles, read by the daemon so a task's stage can be started with no window open.
 //!
-//! A port of `src-tauri/src/project/profiles.rs` and of the stage settings `useExecuteTask` picks,
-//! reading `.maestro/profiles.json` and `.maestro/settings.json` with `std::fs`, because the daemon
-//! runs on the machine the project is on. The rules are the app's; see its module for why each
-//! one is what it is.
+//! The profile types and which profile a role resolves to are `maestro_protocol::profiles`, shared
+//! with the app that edits the file. What is here is the daemon's alone: reading
+//! `.maestro/profiles.json` and `.maestro/settings.json` with `std::fs`, because the daemon runs on
+//! the machine the project is on, and reducing a profile to what the spawned agent supports.
 
-use std::collections::HashMap;
 use std::path::Path;
 
+pub use maestro_protocol::profiles::{
+    role_is_skipped, AgentProfile, FallbackBehaviour, ProfilesDocument, PROFILES_FILE,
+};
 use maestro_protocol::{AgentRole, Task};
 use serde::de::DeserializeOwned;
-use serde::Deserialize;
 
-/// Modes in which a role that must not write does not write unattended. Must stay in step with
-/// `READ_ONLY_MODES` plus `DEFAULT_MODE` below, as in the app.
+/// Modes in which a role that must not write does not write unattended.
+///
+/// `readonly` and `plan` refuse a write outright. `default` turns one into a permission prompt,
+/// which for a read-only phase cannot be auto-answered, so it becomes the user's decision rather
+/// than the agent's. Must stay in step with `READ_ONLY_MODES` plus `DEFAULT_MODE` below, and with
+/// the same lists in the app's `utils/helpers/permission-modes.ts`.
 const READ_ONLY_SAFE_MODES: [&str; 3] = ["readonly", "plan", "default"];
 
 /// Preference lists for a profile that names no mode, first one the agent offers wins.
 const WRITABLE_MODES: [&str; 5] = ["auto", "agent", "build", "full-access", "bypassPermissions"];
 const READ_ONLY_MODES: [&str; 2] = ["readonly", "plan"];
 const DEFAULT_MODE: &str = "default";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
-pub enum FallbackBehaviour {
-    #[default]
-    Warn,
-    Fail,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub struct AgentProfile {
-    pub id: String,
-    pub name: String,
-    pub role: AgentRole,
-    pub agent_id: String,
-    #[serde(default)]
-    pub model: Option<String>,
-    #[serde(default)]
-    pub effort: Option<String>,
-    #[serde(default)]
-    pub permission_mode: Option<String>,
-    #[serde(default)]
-    pub skills: Vec<String>,
-    #[serde(default)]
-    pub mcp_servers: Vec<String>,
-    #[serde(default)]
-    pub role_prompt: Option<String>,
-    #[serde(default)]
-    pub fallback_behaviour: FallbackBehaviour,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct ProfilesDocument {
-    #[serde(default)]
-    pub profiles: Vec<AgentProfile>,
-    /// Role → profile id. A role with no entry falls back to the first profile declaring it.
-    #[serde(default)]
-    pub defaults: HashMap<String, String>,
-}
-
-impl ProfilesDocument {
-    /// Override → project default → the first profile declaring the role.
-    pub fn resolve(&self, role: AgentRole, override_id: Option<&str>) -> Option<&AgentProfile> {
-        if let Some(profile) = override_id.and_then(|id| self.profiles.iter().find(|p| p.id == id))
-        {
-            return Some(profile);
-        }
-        if let Some(id) = self.defaults.get(role_key(role)) {
-            if let Some(profile) = self.profiles.iter().find(|p| &p.id == id) {
-                return Some(profile);
-            }
-        }
-        self.profiles.iter().find(|p| p.role == role)
-    }
-}
-
-fn role_key(role: AgentRole) -> &'static str {
-    match role {
-        AgentRole::Refiner => "Refiner",
-        AgentRole::Planner => "Planner",
-        AgentRole::Coder => "Coder",
-        AgentRole::Reviewer => "Reviewer",
-        AgentRole::Judge => "Judge",
-        AgentRole::Preparer => "Preparer",
-        AgentRole::Worker => "Worker",
-    }
-}
-
-/// Only the coder and a loop's worker write, and a loop's preparer, which commits the loop's tests.
-pub fn is_read_only(role: AgentRole) -> bool {
-    !matches!(
-        role,
-        AgentRole::Coder | AgentRole::Worker | AgentRole::Preparer
-    )
-}
 
 /// A missing or unreadable file is the default document, as `read_maestro_json` treats it.
 fn read_maestro_json<T: DeserializeOwned + Default>(project_path: &str, file: &str) -> T {
@@ -104,7 +35,7 @@ fn read_maestro_json<T: DeserializeOwned + Default>(project_path: &str, file: &s
 }
 
 pub fn read_profiles(project_path: &str) -> ProfilesDocument {
-    read_maestro_json(project_path, "profiles.json")
+    read_maestro_json(project_path, PROFILES_FILE)
 }
 
 pub fn default_agent(project_path: &str) -> Option<String> {
@@ -118,26 +49,9 @@ pub fn remote_name(project_path: &str) -> Option<String> {
         .filter(|name| !name.trim().is_empty())
 }
 
-/// Whether the project defines a profile for `role`, which is how a project opts into it.
-pub fn has_profile_for_role(project_path: &str, role: AgentRole) -> bool {
-    read_profiles(project_path).resolve(role, None).is_some()
-}
-
-fn overrides(overrides_json: Option<&str>) -> Option<HashMap<String, Option<String>>> {
-    serde_json::from_str(overrides_json?).ok()
-}
-
-/// Whether the task turned this role off: a present key with a null value. Unreadable JSON is
-/// `false`, since a parse failure is not a reason to skip a stage.
-pub fn role_is_skipped(overrides_json: Option<&str>, role: AgentRole) -> bool {
-    overrides(overrides_json).is_some_and(|map| matches!(map.get(role_key(role)), Some(None)))
-}
-
 /// The profile id the task names for `role`, if any (`profileIdFor`).
 pub(crate) fn profile_id_for(task: &Task, role: AgentRole) -> Option<String> {
-    overrides(task.profile_overrides.as_deref())?
-        .remove(role_key(role))
-        .flatten()
+    maestro_protocol::profiles::overridden_profile(task.profile_overrides.as_deref(), role)
 }
 
 /// The role prompt of the profile a stage runs on: `profile_id`'s when it names one, else the
@@ -218,6 +132,10 @@ pub fn apply_capabilities(
         other => other.clone(),
     };
 
+    // Checking the mode rather than merely its presence is load-bearing: `acceptEdits` and
+    // `bypassPermissions` hold nothing, and a presence check called them read-only. Naming no mode
+    // means the spawn picks one from this same set, so the question is what the agent offers; an
+    // empty `mode_ids` is an agent that did not advertise, which is unknown rather than none.
     let held_read_only = match permission_mode.as_deref() {
         Some(mode) => READ_ONLY_SAFE_MODES.contains(&mode),
         None => {
@@ -229,7 +147,7 @@ pub fn apply_capabilities(
         }
     };
 
-    if is_read_only(profile.role) && !held_read_only {
+    if profile.role.is_read_only() && !held_read_only {
         warnings.push(format!(
             "'{}' could not be held read-only for the {:?} role",
             profile.agent_id, profile.role
@@ -332,7 +250,7 @@ fn stage_settings(
     role: AgentRole,
     capabilities: &AgentCapabilities,
 ) -> Result<StageSettings, String> {
-    let read_only = is_read_only(role);
+    let read_only = role.is_read_only();
     let agent_id = choose_agent(document, default_agent, task, role);
     let resolved = document
         .resolve(role, profile_id_for(task, role).as_deref())
@@ -433,63 +351,6 @@ mod tests {
             "ball": "Agent", "review_rounds": 0, "fix_rounds": 0,
         }))
         .unwrap()
-    }
-
-    #[test]
-    fn resolution_prefers_an_override_then_the_default_then_the_role() {
-        let mut only = profile(AgentRole::Reviewer);
-        only.id = "strict".to_string();
-        let mut lenient = profile(AgentRole::Reviewer);
-        lenient.id = "lenient".to_string();
-
-        let mut doc = ProfilesDocument {
-            profiles: vec![only, lenient],
-            defaults: Default::default(),
-        };
-        assert_eq!(doc.resolve(AgentRole::Reviewer, None).unwrap().id, "strict");
-
-        doc.defaults
-            .insert("Reviewer".to_string(), "lenient".to_string());
-        assert_eq!(
-            doc.resolve(AgentRole::Reviewer, None).unwrap().id,
-            "lenient"
-        );
-        assert_eq!(
-            doc.resolve(AgentRole::Reviewer, Some("strict")).unwrap().id,
-            "strict"
-        );
-    }
-
-    #[test]
-    fn an_unknown_override_falls_through_rather_than_failing() {
-        let doc = ProfilesDocument {
-            profiles: vec![profile(AgentRole::Coder)],
-            defaults: Default::default(),
-        };
-        assert_eq!(
-            doc.resolve(AgentRole::Coder, Some("deleted")).unwrap().id,
-            "coder"
-        );
-    }
-
-    #[test]
-    fn a_role_with_no_profile_resolves_to_nothing() {
-        let doc = ProfilesDocument {
-            profiles: vec![profile(AgentRole::Coder)],
-            defaults: Default::default(),
-        };
-        assert!(doc.resolve(AgentRole::Reviewer, None).is_none());
-    }
-
-    #[test]
-    fn only_a_present_null_marks_a_role_as_skipped() {
-        let json = r#"{"Planner": null, "Reviewer": "strict"}"#;
-        assert!(role_is_skipped(Some(json), AgentRole::Planner));
-        assert!(!role_is_skipped(Some(json), AgentRole::Reviewer));
-        assert!(!role_is_skipped(Some(json), AgentRole::Refiner));
-        assert!(!role_is_skipped(None, AgentRole::Planner));
-        assert!(!role_is_skipped(Some("{"), AgentRole::Planner));
-        assert!(!role_is_skipped(Some("[]"), AgentRole::Planner));
     }
 
     #[test]
@@ -647,14 +508,6 @@ mod tests {
         assert_eq!(resolve_automatic_mode(&[], true), None);
     }
 
-    #[test]
-    fn only_the_coder_writes() {
-        assert!(!is_read_only(AgentRole::Coder));
-        assert!(is_read_only(AgentRole::Refiner));
-        assert!(is_read_only(AgentRole::Planner));
-        assert!(is_read_only(AgentRole::Reviewer));
-    }
-
     // The agent choice order from useExecuteTask.
 
     fn two_profiles() -> ProfilesDocument {
@@ -767,7 +620,7 @@ mod tests {
     fn files_are_read_from_the_projects_maestro_folder() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().to_str().unwrap();
-        assert!(!has_profile_for_role(path, AgentRole::Reviewer));
+        assert!(read_profiles(path).profiles.is_empty());
         assert_eq!(default_agent(path), None);
 
         std::fs::create_dir(dir.path().join(".maestro")).unwrap();
@@ -781,7 +634,7 @@ mod tests {
             r#"{"default_agent":"claude","updated_at":"x"}"#,
         )
         .unwrap();
-        assert!(has_profile_for_role(path, AgentRole::Reviewer));
+        assert_eq!(read_profiles(path).profiles.len(), 1);
         assert_eq!(default_agent(path).as_deref(), Some("claude"));
         assert_eq!(
             agent_for(path, &task(), AgentRole::Reviewer).as_deref(),

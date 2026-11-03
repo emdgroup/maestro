@@ -248,7 +248,10 @@ turn and started the next stage, closing the window stopped every task where it 
 in `maestro-server/src/` carry it. `scheduler.rs` drains a project's queue and hands every stage
 over. `task_runner.rs` starts one stage (`StartTask`): the planner first where the project has one,
 capacity, the agent, the claim, the worktree from `worktree.rs`'s `prepare_task_workspace`, the
-spawn, the stage's profile from `profiles.rs`, the prompt from `task_prompt.rs`, the session ready,
+spawn, the stage's profile from `profiles.rs` (which profile a role resolves to, whether it is
+skipped and whether a reviewer runs are `maestro_protocol::profiles`, shared with the app; reducing
+a profile to what the agent offers is the daemon's alone), the prompt from `task_prompt.rs`, the
+session ready,
 and the session it supersedes closed. `task_turn.rs` reads a turn's end. `session/task_gate.rs`
 settles a task session's prompts. `task_restart.rs` is the startup pass. `pipeline_settings.rs`
 holds capacity, auto mode and holds.

@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ConnectionKey, Task, TaskAttachment } from "@/types/bindings";
 
 const api = vi.hoisted(() => ({
-  resolveAgentProfile: vi.fn(),
+  hasProfileForRole: vi.fn(),
   checkWorktreeDirty: vi.fn(),
   stashWorktree: vi.fn(),
   listWorktreesWithStatus: vi.fn(),
@@ -67,7 +67,7 @@ function render() {
 beforeEach(() => {
   vi.clearAllMocks();
   api.checkWorktreeDirty.mockResolvedValue({ modified_count: 0, untracked_count: 0 });
-  api.resolveAgentProfile.mockResolvedValue(null);
+  api.hasProfileForRole.mockResolvedValue(false);
   startTask.mockResolvedValue({ session_id: "42", skipped_attachments: [] });
   api.listTaskAttachments.mockResolvedValue([]);
   deleteAttachment.mockResolvedValue(undefined);
@@ -144,7 +144,7 @@ describe("useExecuteTask", () => {
 
   it("does not ask about uncommitted work when the planner runs first", async () => {
     api.checkWorktreeDirty.mockResolvedValue({ modified_count: 2, untracked_count: 0 });
-    api.resolveAgentProfile.mockResolvedValue({ agent_id: "claude" });
+    api.hasProfileForRole.mockResolvedValue(true);
     const { result } = render();
     await act(() => result.current.execute(TASK));
     expect(api.checkWorktreeDirty).not.toHaveBeenCalled();
