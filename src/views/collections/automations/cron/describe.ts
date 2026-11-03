@@ -12,7 +12,6 @@
 import {
   DAY_NAMES,
   expand,
-  FIELDS,
   isError,
   MONTH_NAMES,
   parseExpression,
@@ -248,6 +247,3 @@ export function describeExpression(cron: string): { text: string } | { error: st
 
   return { text: clauses.join(", ") };
 }
-
-/** The label under a slot, and the name used in its popover heading. */
-export const FIELD_LABELS = FIELDS.map((field) => field.label);

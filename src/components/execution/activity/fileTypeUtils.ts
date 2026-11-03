@@ -86,10 +86,6 @@ export function isImageExtension(path: string): boolean {
   return IMAGE_EXTENSIONS.has(extOf(path));
 }
 
-export function isPdfExtension(path: string): boolean {
-  return extOf(path) === ".pdf";
-}
-
 export function langForExtension(path: string): string | undefined {
   return EXT_TO_LANG[extOf(path)];
 }
