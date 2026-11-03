@@ -287,12 +287,6 @@ impl RemoteSshSession {
         Ok(())
     }
 
-    /// Disconnect from the SSH server
-    pub async fn disconnect(&self) {
-        *self.handle.lock().await = None;
-        *self.state.lock().await = SshConnectionState::Disconnected;
-    }
-
     /// Check if currently connected
     pub async fn is_connected(&self) -> bool {
         *self.state.lock().await == SshConnectionState::Connected
@@ -319,31 +313,6 @@ impl RemoteSshSession {
                 exit_code: -1,
                 stderr: e,
             })?;
-        finish_command(output)
-    }
-
-    /// Execute a command on the remote host, piping `stdin_data` to its stdin.
-    pub async fn execute_command_with_stdin(
-        &self,
-        cmd: &str,
-        stdin_data: &[u8],
-    ) -> Result<String, SshError> {
-        let target = crate::connectivity::exec_channel::ExecTarget::Ssh {
-            connection_id: self.ssh_connection.id,
-            session: self,
-        };
-        let output = crate::connectivity::exec_channel::run_with_stdin(
-            &target,
-            None,
-            "sh",
-            &["-c", cmd],
-            Some(stdin_data.to_vec()),
-        )
-        .await
-        .map_err(|e| SshError::CommandExecutionError {
-            exit_code: -1,
-            stderr: e,
-        })?;
         finish_command(output)
     }
 

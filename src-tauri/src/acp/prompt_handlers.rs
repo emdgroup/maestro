@@ -1,5 +1,3 @@
-use serde::{Deserialize, Serialize};
-use specta::Type;
 use std::sync::Arc;
 use tauri::State;
 
@@ -8,14 +6,6 @@ use crate::acp::transport::{
     SetModeRequest, SetModelRequest,
 };
 use crate::core::AppState;
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct AcpPromptCapabilities {
-    pub embedded_context: bool,
-    pub image: bool,
-    pub audio: bool,
-}
 
 async fn send_prompt_impl(
     app_state: &Arc<AppState>,

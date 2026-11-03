@@ -247,7 +247,7 @@ pub async fn ensure_wsl_server(
     .map_err(|_| format!("WSL probe timed out for distro {}", distro))?
     .map_err(|e| format!("Failed to probe WSL distro {}: {}", distro, e))?;
 
-    let text = crate::connectivity::wsl::decode_wsl_output_pub(&probe_out.stdout)?;
+    let text = crate::connectivity::wsl::decode_wsl_output(&probe_out.stdout)?;
     let parts: Vec<&str> = text.trim().splitn(3, "|||").collect();
     if parts.len() != 3 {
         return Err(format!("Unexpected WSL probe output: {}", text.trim()));

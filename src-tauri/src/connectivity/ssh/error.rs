@@ -43,11 +43,3 @@ impl std::error::Error for SshError {}
 pub fn is_transient_error(error: &SshError) -> bool {
     matches!(error, SshError::ConnectionError(_))
 }
-
-/// Check if an error is permanent (should not be retried)
-pub fn is_permanent_error(error: &SshError) -> bool {
-    matches!(
-        error,
-        SshError::AuthenticationError(_) | SshError::PermissionError(_) | SshError::HostKeyError(_)
-    )
-}

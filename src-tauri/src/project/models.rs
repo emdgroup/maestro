@@ -24,16 +24,6 @@ impl Project {
         self.connection_id.is_some()
     }
 
-    /// Check if this is a WSL project
-    pub fn is_wsl(&self) -> bool {
-        self.wsl_connection_id.is_some()
-    }
-
-    /// Check if this is a Docker/Podman/nerdctl container project
-    pub fn is_docker(&self) -> bool {
-        self.docker_connection_id.is_some()
-    }
-
     /// Parse a Project from a rusqlite Row.
     /// Expects columns: id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id
     pub fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {

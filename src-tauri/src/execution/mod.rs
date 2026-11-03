@@ -5,9 +5,7 @@ pub mod pty;
 pub mod pty_ops;
 pub mod pty_stream;
 pub mod queue;
-pub mod remote;
 pub mod spawn;
-pub mod streaming;
 
 pub use models::{
     is_loop_sandbox, is_maestro_created_worktree, worktree_path_for_session,

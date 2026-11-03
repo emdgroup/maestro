@@ -329,7 +329,6 @@ pub fn delete_project(app_state: State<'_, Arc<AppState>>, project_id: i32) -> R
 }
 
 /// remove projects by connection id
-#[tauri::command]
 pub fn remove_projects_by_connection_id(
     app_state: State<'_, Arc<AppState>>,
     connection_id: i32,

@@ -130,7 +130,7 @@ and logic, so a feature touches one directory rather than three.
 - `task/` — task commands, each one round trip to the daemon that stores the task (see "Tasks live in the daemon" in `maestro-server/AGENTS.md`), the app's models converted from the protocol rows, `relationships.rs`, `instructions.rs`, `attachments.rs`, `ops.rs`
 - `git/` — worktree lifecycle/query/staging, `merge.rs`, `review.rs`, diff + review models and handlers, `remote.rs`. The git work runs here; the worktree and review rows are the daemon's
 - `acp/` — ACP session management: `manager.rs`, `registry.rs`, `transport*.rs`, `reader_task.rs`, `deploy.rs`, `replay.rs`, `host_tools.rs`, and session/prompt/discovery/file/meta/auth handlers
-- `execution/` — PTY/process spawning (local + remote), `queue.rs` and `capacity.rs` (the app's view of the daemon's capacity), `streaming.rs`, handlers, models
+- `execution/` — PTY spawning (local + remote), `queue.rs` and `capacity.rs` (the app's view of the daemon's capacity), handlers, models
 - `connectivity/` — SSH (`ssh/`), WSL, Docker, SFTP, filesystem handlers, connection models
 - `integration/` — issue-tracking providers (`providers/`), `lookup/`, `issue_sync.rs`, `keychain.rs`
 - `settings/` — app settings handlers and models
