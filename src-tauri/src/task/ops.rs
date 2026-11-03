@@ -3,8 +3,7 @@ use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 use crate::models::Task;
 use maestro_protocol::{
-    AgentRole, ApplyTaskTransitionRequest, CloseRefinementRequest, TaskPhase, TaskTransition,
-    TransitionGuard,
+    ApplyTaskTransitionRequest, CloseRefinementRequest, TaskPhase, TaskTransition, TransitionGuard,
 };
 use std::sync::Arc;
 use tauri::{Emitter, State};
@@ -195,7 +194,7 @@ pub async fn restart_task(
             ServerRequest::RestartTask(maestro_protocol::RestartTaskRequest {
                 project_path,
                 task_id,
-                status: status.into(),
+                status,
             })
         },
         reply!(ServerResponse::RestartTaskOk => ()),
@@ -451,7 +450,7 @@ pub async fn start_task(
         ServerRequest::StartTask(maestro_protocol::StartTaskRequest {
             project_path,
             task_id,
-            role: AgentRole::from(role),
+            role,
             feedback,
             unattended,
             respect_capacity,

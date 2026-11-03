@@ -59,7 +59,7 @@ specta-typescript = "0.0.9"
 tauri-specta = { version = "2.0.0-rc.20", features = ["derive", "typescript"] }
 urlencoding = "2.1"
 which = "8.0.2"
-maestro-protocol = { path = "../maestro-protocol", features = ["image", "process"] }
+maestro-protocol = { path = "../maestro-protocol", features = ["image", "process", "specta"] }
 uuid = { version = "1", features = ["v4"] }
 tauri-plugin-log = "2.9.0"
 log = "0.4.33"

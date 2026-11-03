@@ -53,39 +53,7 @@ pub enum FallbackBehaviour {
     Fail,
 }
 
-/// The role a profile is written for.
-///
-/// Selecting by role is what lets a task say "plan with the planner" without naming a profile, and
-/// what makes a project's default reviewer a project-level fact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "PascalCase")]
-pub enum AgentRole {
-    Refiner,
-    Planner,
-    Coder,
-    Reviewer,
-    /// Decides a loop's `judge` checks and writes its review digest.
-    Judge,
-    /// Prepares a loop with the user: writes its tests in the loop's worktree and sets its checks.
-    Preparer,
-    /// Works a loop's iterations, each in a fresh session, as the coder works a pipeline task.
-    Worker,
-}
-
-impl AgentRole {
-    /// Whether the role is allowed to modify the repository.
-    ///
-    /// Only the coder and a loop's worker write, and a loop's preparer, which commits the loop's
-    /// tests. This is the
-    /// single place that says so — a profile claiming otherwise is corrected rather than trusted,
-    /// because the read-only guarantee is what the plan and proposal gates are built on.
-    pub fn is_read_only(self) -> bool {
-        !matches!(
-            self,
-            AgentRole::Coder | AgentRole::Worker | AgentRole::Preparer
-        )
-    }
-}
+pub use maestro_protocol::AgentRole;
 
 /// Which pipeline role a session was started for, and the profile that role resolved to.
 ///

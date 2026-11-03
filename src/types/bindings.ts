@@ -3059,18 +3059,19 @@ permission_mode?: string | null; skills?: string[]; mcp_servers?: string[];
  */
 role_prompt?: string | null; fallback_behaviour?: FallbackBehaviour }
 /**
- * The role a profile is written for.
+ * The pipeline role a session was started for, and the role a profile is written for.
  * 
  * Selecting by role is what lets a task say "plan with the planner" without naming a profile, and
  * what makes a project's default reviewer a project-level fact.
  */
 export type AgentRole = "Refiner" | "Planner" | "Coder" | "Reviewer" | 
 /**
- * Decides a loop's `judge` checks and writes its review digest.
+ * Decides a loop's `judge` checks and writes its review digest. Read-only.
  */
 "Judge" | 
 /**
- * Prepares a loop with the user: writes its tests in the loop's worktree and sets its checks.
+ * Prepares a loop with the user before it runs: writes its tests in the loop's worktree and
+ * sets its checks. Works a loop's `Refining` phase, which is the refiner's on a pipeline task.
  */
 "Preparer" | 
 /**
@@ -3340,7 +3341,7 @@ export type BranchList = { local: string[]; remote: string[] }
  * Which branch a `NewWorktree` workspace ends up on: one created for it, or one that already
  * exists.
  * 
- * Only `Create` needs a companion — the name to give the branch — which is why the task carries
+ * Only `Create` needs a companion, the name to give the branch, which is why the task carries
  * `workspace_branch` beside this rather than encoding the name here. `Checkout` needs nothing: the
  * branch it checks out is the task's `base_branch`.
  */
@@ -3767,12 +3768,17 @@ command?: string | null }
 export type LoopCheckSpec = { kind: LoopCheckKind; label: string; command?: string | null; timeout_secs?: number | null }
 export type LoopCheckState = "Pending" | "Pass" | "Fail" | "Flaky"
 /**
- * A loop's budget and how its checks run. Mirrors `maestro_protocol::LoopConfig`, which holds the
- * defaults.
+ * A loop's budget and how its checks run, stored as JSON on the task. A field the stored JSON
+ * lacks takes its default, so adding one needs no migration.
  */
-export type LoopConfig = { max_iterations: number; 
+export type LoopConfig = { 
 /**
- * How long one iteration's Build session may run, in seconds.
+ * Iterations that count. One a usage limit cut off does not.
+ */
+max_iterations: number; 
+/**
+ * How long one iteration's Build session may run, in seconds. One still running then is
+ * closed, and what it wrote is committed and checked as if it had ended.
  */
 max_build_secs: number; 
 /**
@@ -3780,12 +3786,16 @@ max_build_secs: number;
  */
 stall_limit: number; 
 /**
- * The time limit of a step or check without its own.
+ * The time limit of a step or check without its own. A row still running past its limit is
+ * killed and fails.
  */
 check_timeout_secs: number; 
 /**
- * Ordered patterns for what the worker's worktree leaves out; `!` makes files visible again.
- * See `maestro_protocol::LoopConfig`.
+ * What the worker's worktree leaves out, as ordered patterns: anchored at the repository root
+ * unless they start with a `**` segment, `*` within one folder, a `**` segment any number of
+ * folders, a trailing slash a folder and everything under it. `!pattern` makes matching files
+ * visible again, and a later entry wins over an earlier one. (No literal star-slash here: this
+ * comment is copied into a TypeScript block comment, which that would close.)
  */
 sealed_paths: string[] }
 export type LoopHalt = "Flaky" | "Failing" | "Stalled" | "OutOfIterations" | "Paused" | "Stopped" | "Blocked" | "Conflict"
@@ -4077,7 +4087,7 @@ export type PullRequestCheckStatus = "Passed" | "Failed" | "Running"
  * What the forge's CI last said about an open pull request's head commit.
  * 
  * A display cache rather than a lifecycle field: the sweep runs every three minutes, and this is
- * what lets the card answer "can this land" in between. Nothing branches on it — `CiState` is what
+ * what lets the card answer "can this land" in between. Nothing branches on it: `CiState` is what
  * the fix loop reads, freshly, from the forge.
  * 
  * `None` covers all three ways there is nothing to say: no CI configured, a forge that will not
@@ -4086,7 +4096,7 @@ export type PullRequestCheckStatus = "Passed" | "Failed" | "Running"
  * 
  * Conflicts are deliberately not in here. `AwaitingMerge` with `Waiting` and the ball on the user
  * is a conflict and nothing else, so storing it would be a second copy of a fact the lifecycle
- * fields already carry — and one a sweep that learned nothing could overwrite.
+ * fields already carry, and one a sweep that learned nothing could overwrite.
  */
 export type PullRequestCi = "Passing" | "Failing" | "Pending"
 /**
@@ -4144,6 +4154,10 @@ warnings: string[] }
  * Typed response for save_task_review and request_changes IPC commands
  */
 export type ReviewResult = { success: boolean; review_id: number; task_status: string | null }
+/**
+ * How a task runs once it is started: the stage pipeline, or a loop of fresh coder sessions that
+ * ends when its checks pass. See `docs/loops-plan.md`.
+ */
 export type RunMode = "Pipeline" | "Loop"
 /**
  * Which finished runs a project keeps, per automation. A run is deleted once it is past the newest
@@ -4340,12 +4354,12 @@ gate?: AgentGateState | null;
 drafted_by?: TaskDraft | null }
 export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
 /**
- * Who the pipeline is blocked on — not who owns the ticket.
+ * Who the pipeline is blocked on, not who owns the ticket.
  * 
  * A Planning backlog and a queued task are `None`, because nothing is waiting on anyone. That is
  * what keeps the "Needs me" filter showing genuine gates rather than the whole board.
  * 
- * `External` is a task waiting on something outside Maestro — a PR waiting on CI and a human
+ * `External` is a task waiting on something outside Maestro: a PR waiting on CI and a human
  * reviewer on GitHub. Folding that into `User` would list tasks in "Needs me" that our user
  * cannot act on, which is the one thing that filter has to get right.
  */
@@ -4353,22 +4367,18 @@ export type TaskBall = "Agent" | "User" | "External" | "None"
 /**
  * One entry in a task's outcome thread.
  * 
- * `kind` is what a gate points at — `proposal`, `plan`, `verdict`, `outcome`, `note`. Kept as a
+ * `kind` is what a gate points at: `proposal`, `plan`, `verdict`, `outcome`, `note`. Kept as a
  * string rather than an enum because the pipeline adds kinds as roles land, and an unknown one
  * arriving from an older or newer build should render as itself, not fail to deserialise the
  * whole thread.
  * 
  * `body` and `external_ref` are the inline-or-reference pair: exactly one carries the content.
  */
-export type TaskComment = { id: number; task_id: number; kind: string; author: string; body?: string | null; external_ref?: string | null; 
-/**
- * The phase that produced it, so a thread can be read back against the pipeline.
- */
-phase?: string | null; created_at: string }
+export type TaskComment = { id: number; task_id: number; kind: string; author: string; body?: string | null; external_ref?: string | null; phase?: string | null; created_at: string }
 /**
  * How a task reached `Done`, and therefore what is left over.
  * 
- * Only meaningful on a Done task, and only in a git project — a non-git task has no merge, no
+ * Only meaningful on a Done task, and only in a git project. A non-git task has no merge, no
  * worktree and no PR, so its completion is `None` rather than a variant meaning "not applicable".
  * 
  * `LocalOnly` is the one that carries unfinished business: the changes were committed and
@@ -4381,10 +4391,6 @@ export type TaskCompletion = "Merged" | "MergedViaPR" | "LocalOnly" | "NoChanges
 export type TaskDraft = { automation: string; run?: number | null }
 /**
  * What the pipeline is doing to a task right now, independent of which column it sits in.
- * 
- * `Refining`, `Drafting`, `PlanReview`, `SelfReview` and `AwaitingMerge` are defined but inert:
- * no transition produces them until the refiner, planner, reviewer and PR roles land. They exist
- * now so adding those roles does not need a second migration.
  * 
  * A phase says nothing about which column the task is in. `Spawning` sits in Queue, which is what
  * lets a failed spawn be an ordinary active row rather than an exception to the phase invariant.
@@ -4544,7 +4550,7 @@ error?: string | null }
  * exists. Shared by tasks and by the project default that seeds them.
  * 
  * This replaced a boolean, which could only say the first two. `ReuseWorkspace` is the one that
- * needs a companion — the worktree it names — which is why a task carries
+ * needs a companion, the worktree it names, which is why a task carries
  * `workspace_worktree_id` beside the mode rather than encoding everything here.
  */
 export type WorkspaceMode = "NewWorktree" | "RepositoryDirectory" | "ReuseWorkspace"

@@ -32,7 +32,7 @@ pub async fn list_task_comments(
         reply!(ServerResponse::ListTaskCommentsOk(list) => list),
     )
     .await?;
-    Ok(list.comments.into_iter().map(Into::into).collect())
+    Ok(list.comments.into_iter().collect())
 }
 
 /// Add a note of the user's own to a task's thread.
@@ -71,5 +71,5 @@ pub async fn add_task_note(
         reply!(ServerResponse::AddTaskCommentOk(comment) => comment),
     )
     .await?;
-    Ok(comment.into())
+    Ok(comment)
 }
