@@ -29,6 +29,9 @@ use crate::helpers::send_response;
 use crate::project_store::Store;
 use crate::send_diag;
 use crate::sessions::SessionMap;
+use maestro_protocol::mcp_args::{
+    bool_argument, enum_argument, required_text, string_argument, string_list_argument,
+};
 
 /// A call waiting for an answer, and where to send it.
 pub(crate) type GatewayItem = (HostToolCall, oneshot::Sender<HostToolResult>);
@@ -616,7 +619,7 @@ fn project_prompt(
                 project_path: project_path.to_string(),
                 title: string_argument(arguments, "title")?.unwrap_or_default(),
                 body: string_argument(arguments, "body")?.unwrap_or_default(),
-                tags: tags_argument(arguments)?.unwrap_or_default(),
+                tags: string_list_argument(arguments, "tags")?.unwrap_or_default(),
                 favorite: bool_argument(arguments, "favorite")?.unwrap_or(false),
             };
             (prompt_json(&prompt_store::create(conn, &request)?), true)
@@ -628,7 +631,7 @@ fn project_prompt(
             let mut prompt = visible(id()?)?;
             let title = string_argument(arguments, "title")?;
             let body = string_argument(arguments, "body")?;
-            let tags = tags_argument(arguments)?;
+            let tags = string_list_argument(arguments, "tags")?;
             let favorite = bool_argument(arguments, "favorite")?;
             if title.is_some() || body.is_some() || tags.is_some() {
                 let request = maestro_protocol::UpdatePromptRequest {
@@ -668,33 +671,6 @@ fn prompt_json(prompt: &maestro_protocol::Prompt) -> Value {
         "created_at": prompt.created_at,
         "updated_at": prompt.updated_at,
     })
-}
-
-// Absent and null both mean "leave it"; a value of the wrong type is refused with the field's
-// name rather than coerced, since nothing validates a tool's schema before it gets here.
-fn string_argument(arguments: &Value, key: &str) -> Result<Option<String>, String> {
-    match arguments.get(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(_) => Err(format!("{key} must be a string")),
-    }
-}
-
-fn bool_argument(arguments: &Value, key: &str) -> Result<Option<bool>, String> {
-    match arguments.get(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::Bool(value)) => Ok(Some(*value)),
-        Some(_) => Err(format!("{key} must be true or false")),
-    }
-}
-
-fn tags_argument(arguments: &Value) -> Result<Option<Vec<String>>, String> {
-    match arguments.get("tags") {
-        None | Some(Value::Null) => Ok(None),
-        Some(value) => serde_json::from_value(value.clone())
-            .map(Some)
-            .map_err(|_| "tags must be a list of strings".to_string()),
-    }
 }
 
 const TASK_TOOLS: [&str; 8] = [
@@ -798,7 +774,7 @@ impl LoopFields {
             }
         };
         Ok(LoopFields {
-            run_mode: parse_enum(arguments, "run_mode", &["Pipeline", "Loop"])?
+            run_mode: enum_argument(arguments, "run_mode", &["Pipeline", "Loop"])?
                 .map(|name| serde_json::from_value(Value::String(name)))
                 .transpose()
                 .map_err(|e| e.to_string())?,
@@ -807,10 +783,7 @@ impl LoopFields {
             max_build_minutes: number("max_build_minutes")?,
             stall_limit: number("stall_limit")?,
             check_timeout_minutes: number("check_timeout_minutes")?,
-            sealed_paths: arguments
-                .get("sealed_paths")
-                .filter(|value| !value.is_null())
-                .map(|value| string_list(Some(value))),
+            sealed_paths: string_list_argument(arguments, "sealed_paths")?,
         })
     }
 
@@ -909,7 +882,7 @@ async fn task_tool(
             loop_tool(&store, &binding, name, arguments, &mut pushes).await?
         }
         "create_task" => {
-            let title = parse_title(arguments)?;
+            let title = required_text(arguments, "title")?;
             let priority = parse_priority(arguments)?;
             let fields = LoopFields::parse(arguments)?;
             let looping = fields.run_mode == Some(RunMode::Loop);
@@ -929,12 +902,9 @@ async fn task_tool(
             let request = ServerRequest::CreateTask(CreateTaskRequest {
                 project_path: project_path.clone(),
                 title,
-                description: arguments
-                    .get("description")
-                    .and_then(Value::as_str)
-                    .map(str::to_string),
+                description: string_argument(arguments, "description")?,
                 skills: Vec::new(),
-                labels: string_list(arguments.get("labels")),
+                labels: string_list_argument(arguments, "labels")?.unwrap_or_default(),
                 base_branch,
                 agent_id: None,
                 priority,
@@ -1065,27 +1035,17 @@ async fn task_tool(
         }
         "update_task" => {
             let task_id = parse_task_id(&binding, arguments)?;
-            let status = parse_enum(arguments, "status", &STATUSES)?
+            let status = enum_argument(arguments, "status", &STATUSES)?
                 .map(|name| serde_json::from_value::<TaskStatus>(Value::String(name)))
                 .transpose()
                 .map_err(|e| e.to_string())?;
             let priority = parse_priority(arguments)?;
             let title = match arguments.get("title") {
                 None | Some(Value::Null) => None,
-                Some(_) => Some(parse_title(arguments)?),
+                Some(_) => Some(required_text(arguments, "title")?),
             };
-            let description = match arguments.get("description") {
-                None | Some(Value::Null) => None,
-                Some(value) => Some(
-                    value
-                        .as_str()
-                        .ok_or_else(|| format!("description must be a string, got {value}"))?
-                        .to_string(),
-                ),
-            };
-            let labels = arguments
-                .get("labels")
-                .map(|_| string_list(arguments.get("labels")));
+            let description = string_argument(arguments, "description")?;
+            let labels = string_list_argument(arguments, "labels")?;
             let fields = LoopFields::parse(arguments)?;
             if status.is_none()
                 && priority.is_none()
@@ -1165,12 +1125,7 @@ async fn task_tool(
         // must not be something a tool call can forge afterwards.
         "comment_task" => {
             let task_id = parse_task_id(&binding, arguments)?;
-            let body = arguments
-                .get("body")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|body| !body.is_empty())
-                .ok_or_else(|| "body is required".to_string())?;
+            let body = required_text(arguments, "body")?;
             let mut conn = store.lock().await;
             task_in_project(&mut conn, &project_path, task_id)?;
             let request = ServerRequest::AddTaskComment(maestro_protocol::AddTaskCommentRequest {
@@ -1179,7 +1134,7 @@ async fn task_tool(
                 comment: NewTaskComment {
                     kind: "note".to_string(),
                     author: "agent".to_string(),
-                    body: Some(body.to_string()),
+                    body: Some(body),
                     external_ref: None,
                     phase: None,
                 },
@@ -1415,14 +1370,6 @@ fn loop_status(
     value
 }
 
-/// A string argument that must be there and not blank, trimmed.
-fn required_text(arguments: &Value, key: &str) -> Result<String, String> {
-    string_argument(arguments, key)?
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| format!("{key} is required"))
-}
-
 /// Which task the agent means. An absent `id` is the task this session was started for, which is
 /// what the agent almost always wants and cannot otherwise name: it is told what to do, not which
 /// card that came from.
@@ -1438,57 +1385,11 @@ fn parse_task_id(binding: &SessionTask, arguments: &Value) -> Result<i32, String
     }
 }
 
-/// Trimmed and required to be non-empty: nothing enforces the tool schema's `minLength` for these
-/// tools, so a whitespace title would otherwise reach the board as a blank card.
-fn parse_title(arguments: &Value) -> Result<String, String> {
-    let title = arguments
-        .get("title")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "title is required".to_string())?
-        .trim();
-    if title.is_empty() {
-        return Err("title is required".to_string());
-    }
-    Ok(title.to_string())
-}
-
-/// One of a fixed set of names, if the agent supplied it. Rejected rather than coerced: silently
-/// filing a task as Medium because the agent invented a priority is the kind of thing nobody
-/// notices.
-fn parse_enum(arguments: &Value, key: &str, allowed: &[&str]) -> Result<Option<String>, String> {
-    let value = match arguments.get(key) {
-        None | Some(Value::Null) => return Ok(None),
-        Some(value) => value,
-    };
-    let name = value
-        .as_str()
-        .ok_or_else(|| format!("{key} must be a string, got {value}"))?;
-    if !allowed.contains(&name) {
-        return Err(format!(
-            "unknown {key} {name:?} — use one of {}",
-            allowed.join(", ")
-        ));
-    }
-    Ok(Some(name.to_string()))
-}
-
 fn parse_priority(arguments: &Value) -> Result<Option<TaskPriority>, String> {
-    parse_enum(arguments, "priority", &PRIORITIES)?
+    enum_argument(arguments, "priority", &PRIORITIES)?
         .map(|name| serde_json::from_value(Value::String(name)))
         .transpose()
         .map_err(|e| e.to_string())
-}
-
-fn string_list(value: Option<&Value>) -> Vec<String> {
-    value
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 /// A new task's base branch and workspace mode, as the create dialog resolves them: the project's
