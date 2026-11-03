@@ -34,6 +34,7 @@ mod pipeline_settings;
 mod profiles;
 mod project_locks;
 mod project_path;
+mod project_settings;
 mod project_store;
 mod prompt_store;
 mod scheduler;
