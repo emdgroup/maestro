@@ -526,7 +526,8 @@ Three files:
   `assets/mcp-tools.json` and forwards every call to the gateway.
 - `maestro-server/src/mcp_gateway.rs` — the loopback listener in the running server. Draws canvas
   surfaces itself by emitting a `SessionUpdate`, and parks every call — canvas ones included — in
-  `PendingHostTools` until Tauri answers.
+  `PendingHostTools` until Tauri answers. The tools it answers itself are beside it in
+  `mcp_gateway/`: `task_tools.rs`, `loop_tools.rs` and `prompt_tools.rs`.
 - `src-tauri/src/acp/host_tools.rs` — the host end: `canvas_await`, with the automation and
   template tools in `acp/automation_tools.rs` and the shared prompt tools in `prompts.rs`.
 
@@ -576,7 +577,7 @@ sees its own surface, so this is the only way a blocked asset or a thrown except
 They arrive on the **next** call by necessity — the frame has not rendered this one yet.
 
 **Adding a tool** is two edits: an entry in `assets/mcp-tools.json` and an arm in
-`host_tools::handle`, or in `mcp_gateway.rs` for a task tool. The entry's `description` is the _only_ documentation the agent gets — it
+`host_tools::handle`, or in `mcp_gateway/task_tools.rs` for a task tool. The entry's `description` is the _only_ documentation the agent gets — it
 carries what the skill prose used to — so it is prose, not a label, and belongs in that asset
 rather than in Rust for the same reason `registry.json` does. `build_tools` loads it and does
 nothing else.
