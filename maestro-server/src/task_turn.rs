@@ -73,7 +73,7 @@ pub(crate) fn next_stage(task: &Task) -> Option<AgentRole> {
 /// Whether a reviewer looks before the user: the project has one, the task did not turn it off,
 /// and rounds remain.
 fn reviewer_should_run(project_path: &str, task: &Task) -> bool {
-    crate::turn::review_rounds_remain(task.review_rounds)
+    maestro_protocol::completion::review_rounds_remain(task.review_rounds)
         && !crate::profiles::role_is_skipped(task.profile_overrides.as_deref(), AgentRole::Reviewer)
         && crate::profiles::has_profile_for_role(project_path, AgentRole::Reviewer)
 }

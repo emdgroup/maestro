@@ -236,7 +236,7 @@ fn handle_server_message(
     acp_session_id_cache: &Arc<std::sync::Mutex<Option<String>>>,
     replay_buffer: &crate::acp::session_types::ReplayBuffer,
     initialized: &Arc<std::sync::Mutex<bool>>,
-    completion_filter: &Arc<std::sync::Mutex<crate::acp::completion::CompletionMarkerFilter>>,
+    completion_filter: &Arc<std::sync::Mutex<maestro_protocol::completion::CompletionMarkerFilter>>,
 ) -> Option<String> {
     match msg {
         ServerResponse::SessionUpdate(upd) => {

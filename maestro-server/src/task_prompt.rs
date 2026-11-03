@@ -18,7 +18,7 @@ use crate::task_store;
 /// `useExecuteTask.ts` for why it is worded as it is.
 const COMPLETION_PROTOCOL: &str = concat!(
     "When the task is complete and needs no further work, end your final message with `",
-    crate::turn::completion_marker!(),
+    maestro_protocol::completion_marker!(),
     "` — it moves the task to review, so omit it if you are asking a question or reporting a blocker."
 );
 
