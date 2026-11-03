@@ -161,9 +161,6 @@ pub struct AppState {
     /// The project this window holds, and the connection whose server holds it for us. See
     /// `project::lock`.
     pub active_project_lock: Mutex<Option<(i32, crate::acp::ConnectionKey)>>,
-    /// Mutex-guarded token storage for ticketing provider tokens.
-    /// Per-project locks prevent concurrent refresh races (AUTH-06).
-    pub token_manager: crate::integration::TokenManager,
     /// Resolved git remote name per project — see `git::remote::project_remote`, which owns both
     /// the resolution and the invalidation. Cached because the worktree list refetches every ten
     /// seconds and resolving reads settings and runs `git remote -v`, both of which cross the
@@ -204,7 +201,6 @@ impl AppState {
             },
             app_data_dir,
             active_project_lock: Mutex::new(None),
-            token_manager: crate::integration::TokenManager::new(),
             project_remotes: Mutex::new(HashMap::new()),
             last_remote_fetch: Mutex::new(HashMap::new()),
         }

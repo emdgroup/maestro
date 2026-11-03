@@ -1,15 +1,6 @@
 use super::normalize_instance_url;
-use crate::integration::token_manager::StoredToken;
 use crate::models::issue_tracking::RemoteIssue;
 use base64::Engine as _;
-
-#[derive(serde::Deserialize)]
-struct JiraMyselfResponse {
-    #[serde(rename = "displayName")]
-    display_name: Option<String>,
-    #[serde(rename = "emailAddress")]
-    email_address: Option<String>,
-}
 
 #[derive(serde::Deserialize)]
 struct JiraSearchResponse {
@@ -52,66 +43,6 @@ fn make_basic_auth(email: &str, api_token: &str) -> String {
 
 fn extract_body(description: Option<serde_json::Value>) -> Option<String> {
     description.map(|adf| jc_adf::from_adf::to_markdown(&adf))
-}
-
-pub async fn validate_and_store(
-    project_id: i32,
-    site_url: &str,
-    email: &str,
-    api_token: &str,
-    _project_key: &str,
-    _project_path: &str,
-    app_state: &crate::core::AppState,
-) -> Result<String, String> {
-    let base = normalize_instance_url(site_url);
-    let auth = make_basic_auth(email, api_token);
-
-    let client = super::http_client()?;
-
-    let response = client
-        .get(format!("{}/rest/api/3/myself", base))
-        .header("Authorization", auth)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        if status.as_u16() == 401 {
-            return Err("Jira Cloud: bad credentials".to_string());
-        }
-        return Err(format!(
-            "Jira Cloud API error {}: {}",
-            status.as_u16(),
-            status.canonical_reason().unwrap_or("Unknown")
-        ));
-    }
-
-    let user: JiraMyselfResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Jira Cloud response: {}", e))?;
-
-    let display_name = user
-        .display_name
-        .or(user.email_address)
-        .unwrap_or_else(|| "unknown".to_string());
-
-    let stored_token = StoredToken {
-        access_token: api_token.to_string(),
-        refresh_token: None,
-        expires_at: None,
-        provider: "jira_cloud".to_string(),
-    };
-    app_state.token_manager.store_token(
-        project_id,
-        stored_token,
-        &app_state.app_data_dir,
-        &app_state.app_handle,
-    )?;
-
-    Ok(display_name)
 }
 
 pub async fn fetch_issues(
@@ -199,21 +130,6 @@ pub async fn fetch_issues(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_myself_response_display_name() {
-        let json = r#"{"displayName":"Jane Doe","emailAddress":"jane@co.com"}"#;
-        let resp: JiraMyselfResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(resp.display_name, Some("Jane Doe".to_string()));
-    }
-
-    #[test]
-    fn test_myself_response_fallback_email() {
-        let json = r#"{"emailAddress":"jane@co.com"}"#;
-        let resp: JiraMyselfResponse = serde_json::from_str(json).unwrap();
-        let name = resp.display_name.or(resp.email_address);
-        assert_eq!(name, Some("jane@co.com".to_string()));
-    }
 
     #[test]
     fn test_adf_body_extraction_some() {

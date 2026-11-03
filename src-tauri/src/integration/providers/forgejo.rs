@@ -1,10 +1,4 @@
-use crate::integration::token_manager::StoredToken;
 use crate::models::issue_tracking::RemoteIssue;
-
-#[derive(serde::Deserialize)]
-struct ForgejoUserResponse {
-    login: String,
-}
 
 #[derive(serde::Deserialize)]
 struct ForgejoIssueResponse {
@@ -22,68 +16,6 @@ struct ForgejoLabel {
 }
 
 use super::{extract_type_from_labels, normalize_instance_url};
-
-/// Validate a Forgejo API token, save the IssueTrackingConfig, and store the token.
-/// Returns the authenticated Forgejo login name on success.
-pub async fn validate_and_store(
-    project_id: i32,
-    instance_url: &str,
-    _owner: &str,
-    _repo: &str,
-    token: &str,
-    _project_root: &str,
-    app_state: &crate::core::AppState,
-) -> Result<String, String> {
-    let base = normalize_instance_url(instance_url);
-
-    let client = super::http_client()?;
-
-    let response = client
-        .get(format!("{}/api/v1/user", base))
-        .header("Authorization", format!("token {}", token))
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if response.status().as_u16() == 401 {
-        return Err("Forgejo: invalid or expired token".to_string());
-    }
-    if response.status().as_u16() == 403 {
-        return Err(
-            "Forgejo: token is valid but missing the required 'read:user' scope. \
-             Regenerate your token with 'read:user' permission enabled."
-                .to_string(),
-        );
-    }
-    if !response.status().is_success() {
-        let status = response.status();
-        return Err(format!(
-            "Forgejo API error {}: {}",
-            status.as_u16(),
-            status.canonical_reason().unwrap_or("Unknown")
-        ));
-    }
-
-    let user: ForgejoUserResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Forgejo user response: {}", e))?;
-
-    let stored_token = StoredToken {
-        access_token: token.to_string(),
-        refresh_token: None,
-        expires_at: None,
-        provider: "forgejo".to_string(),
-    };
-    app_state.token_manager.store_token(
-        project_id,
-        stored_token,
-        &app_state.app_data_dir,
-        &app_state.app_handle,
-    )?;
-
-    Ok(user.login)
-}
 
 /// Fetch open issues (excluding PRs, filtered server-side) from a Forgejo repository.
 pub async fn fetch_issues(
