@@ -13,7 +13,7 @@ import {
   AttachmentDescription,
 } from "@/ui/attachment";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { docIcon } from "./compose-bar/AttachmentShelf";
+import { fileIcon } from "./fileTypeUtils";
 import { MessageActionBar } from "./MessageActionBar";
 import { basename } from "@/lib/path-utils";
 import { formatBytes, plural } from "@/lib/format-utils";
@@ -296,7 +296,7 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
               {fileBlocks.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {fileBlocks.map((b, i) => {
-                    const Icon = docIcon(b.name);
+                    const Icon = fileIcon(b.name);
                     const type = fileTypeLabel(b.name);
                     const meta = b.size !== undefined ? `${type} · ${formatBytes(b.size)}` : type;
                     return (

@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Reveal } from "@/components/common/Reveal";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { iconForFilePath } from "./composeUtils";
+import { DynamicIcon } from "@/ui/dynamic-icon";
+import { fileIcon } from "../fileTypeUtils";
 import type { MentionEntry } from "./mentionEntry";
 
 const X_PATH = "M18 6L6 18M6 6l12 12";
@@ -32,7 +33,7 @@ export function AttachmentPills({ mentions, onRemoveMention }: Props) {
                     <span className="inline-flex items-center gap-1 text-[11px] font-mono px-1.5 py-0.5 rounded-md bg-accent/8 border border-accent/12 text-accent" />
                   }
                 >
-                  {iconForFilePath(m.displayName, "w-2.5 h-2.5 shrink-0")}
+                  <DynamicIcon icon={fileIcon(m.displayName)} className="w-2.5 h-2.5 shrink-0" />
                   {m.displayName}
                   <button
                     type="button"

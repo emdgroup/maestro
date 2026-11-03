@@ -3,20 +3,12 @@ import { DragDropProvider, DragOverlay } from "@dnd-kit/react";
 import { move } from "@dnd-kit/helpers";
 import { useIsGitRepo } from "@/store/projectStore";
 import { Task, TaskStatus } from "@/types/bindings";
-import { KanbanColumn } from "@/components/kanban/kanban-column/KanbanColumn";
+import { KanbanColumn, STATUS_LABELS } from "@/components/kanban/kanban-column/KanbanColumn";
 import { useUpdateTask } from "@/services/task.service";
 import { priorityAfterDrop } from "@/lib/queue-priority";
 import { useCardMotion } from "./useCardMotion";
 
 const BOARD_STATUSES: Array<TaskStatus> = ["Planning", "Queue", "InProgress", "Review", "Done"];
-
-const COLUMN_TITLES: Partial<Record<TaskStatus, string>> = {
-  Planning: "Planning",
-  Queue: "Queue",
-  InProgress: "In Progress",
-  Review: "Review",
-  Done: "Done",
-};
 
 type DndGroup = "Planning" | "Queue";
 type DndItems = Record<DndGroup, number[]>;
@@ -168,7 +160,7 @@ export function BoardView({ tasks }: BoardViewProps) {
           {statuses.map((status) => (
             <KanbanColumn
               key={status}
-              columnTitle={COLUMN_TITLES[status]!}
+              columnTitle={STATUS_LABELS[status]}
               tasks={getColumnTasks(status)}
               status={status}
               isDragActive={isDragActive}

@@ -1,6 +1,7 @@
 import type { RefObject } from "react";
 import { cn } from "@/lib/utils";
-import { iconForFilePath } from "./composeUtils";
+import { DynamicIcon } from "@/ui/dynamic-icon";
+import { fileIcon } from "../fileTypeUtils";
 import { SuggestionsPortalWrapper } from "./SuggestionsPortalWrapper";
 
 interface Props {
@@ -38,13 +39,13 @@ export function MentionSuggestionsPanel({
               "w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-foreground/7",
             )}
           >
-            {iconForFilePath(
-              path,
-              cn(
+            <DynamicIcon
+              icon={fileIcon(path)}
+              className={cn(
                 "w-3 h-3 shrink-0 transition-colors",
                 i === highlight ? "text-accent" : "text-muted-foreground",
-              ),
-            )}
+              )}
+            />
             <span
               className={cn(
                 "font-mono text-xs truncate transition-colors",
