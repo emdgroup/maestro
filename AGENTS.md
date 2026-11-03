@@ -143,7 +143,11 @@ Separate binary (must be on PATH). Acts as ACP intermediary between Tauri and AI
 **maestro-protocol (`maestro-protocol/src/`):**
 
 Shared crate defining the JSON message types between maestro (Tauri) and maestro-server, and the
-rules both sides have to apply alike, one module each: `completion.rs` (the completion marker and
+rules both sides have to apply alike. The wire types sit in private modules by domain, all
+re-exported from `lib.rs` so every `maestro_protocol::X` path is flat: `messages.rs` (the
+`ServerRequest` and `ServerResponse` enums, with the message tests in `messages/tests.rs`),
+`framing.rs`, `session.rs`, `task.rs`, `loops.rs`, `pipeline.rs`, `project.rs`, `automation.rs`,
+`collections.rs` and `usage.rs`. The shared rules are public modules, one each: `completion.rs` (the completion marker and
 review cap), `worktree_names.rs`, `paths.rs` (path tidying and the home directory),
 `attachments.rs`, `mcp_args.rs` (MCP tool arguments) and `skill_names.rs`. It stays light because
 `maestro-server` is built on its own for remote hosts: anything heavier sits behind an optional
