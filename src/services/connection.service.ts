@@ -92,11 +92,16 @@ export function useUpdateSshConnection() {
  */
 const LOCAL: ConnectionKey = { type: "local" };
 
-export function useListDirectories(connectionId: number | null | undefined, path: string) {
+export function useListDirectories(
+  connectionId: number | null | undefined,
+  path: string,
+  enabled = true,
+) {
   const connection: ConnectionKey = connectionId ? { type: "ssh", id: connectionId } : LOCAL;
   return useQuery({
     queryKey: connectionQueryKeys.dirs(connectionId, path),
     queryFn: () => api.listDirectories(connection, path),
+    enabled,
   });
 }
 
