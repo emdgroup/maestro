@@ -3,11 +3,12 @@ use specta::Type;
 use std::sync::Arc;
 use tauri::State;
 
+use crate::acp::connection_server::{query_via_server, query_via_server_within, reply};
 use crate::core::AppState;
 use crate::models::worktree::{
     ActiveSessionInfo, ExecutionMode, SessionListEntryDto, SessionListResult,
 };
-use maestro_protocol::{SessionDeleteRequest, SessionListRequest};
+use maestro_protocol::{ServerRequest, ServerResponse, SessionDeleteRequest, SessionListRequest};
 
 // Re-export attachment types and handlers (including macro-generated tauri/specta symbols)
 // so ipc/mod.rs glob import still resolves them.
@@ -189,14 +190,16 @@ pub async fn list_acp_sessions(
     connection: crate::acp::ConnectionKey,
     cursor: Option<String>,
 ) -> Result<SessionListResult, String> {
-    let resp = crate::acp::query_session_list_via_server(
+    let resp = query_via_server_within(
         connection,
-        SessionListRequest {
+        &app_state,
+        ServerRequest::SessionList(SessionListRequest {
             agent_id: agent_id.clone(),
             cwd: cwd.clone(),
             cursor,
-        },
-        &app_state,
+        }),
+        reply!(ServerResponse::SessionListOk(response) => response),
+        30,
     )
     .await?;
     let supports_session_delete = resp.supports_session_delete;
@@ -258,14 +261,16 @@ pub async fn delete_acp_session(
     cwd: String,
     connection: crate::acp::ConnectionKey,
 ) -> Result<(), String> {
-    crate::acp::query_session_delete_via_server(
+    query_via_server_within(
         connection,
-        SessionDeleteRequest {
+        &app_state,
+        ServerRequest::SessionDelete(SessionDeleteRequest {
             agent_id,
             session_id,
             cwd,
-        },
-        &app_state,
+        }),
+        reply!(ServerResponse::SessionDeleteOk => ()),
+        30,
     )
     .await
 }
@@ -302,16 +307,17 @@ pub async fn rename_acp_session(
         }
     }
 
-    crate::acp::connection_server::query_rename_session_via_server(
+    query_via_server(
         connection_key,
-        maestro_protocol::RenameSessionRequest {
+        &app_state,
+        ServerRequest::RenameSession(maestro_protocol::RenameSessionRequest {
             project_path,
             agent_id,
             acp_session_id,
             cwd,
             name: display_name,
-        },
-        &app_state,
+        }),
+        reply!(ServerResponse::RenameSessionOk => ()),
     )
     .await?;
 

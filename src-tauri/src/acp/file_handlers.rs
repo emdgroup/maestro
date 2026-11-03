@@ -27,11 +27,9 @@ async fn session_file_rpc<T>(
     let response = request_via_server(
         connection_key,
         app_state,
-        &format!("No connection server for connection {:?}", connection_key),
         Some(session_id),
         build_request(&cwd),
         15,
-        "File operation timed out",
     )
     .await?;
     extract(response).ok_or_else(|| UNEXPECTED_REPLY.to_string())

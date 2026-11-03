@@ -438,10 +438,9 @@ pub async fn start_task(
     let (connection_key, project_path) =
         crate::project::crud::target(&app_state, project_id).await?;
     // Spawning an agent, and signing it in, takes far longer than a store write.
-    crate::acp::connection_server::query_via_server(
+    crate::acp::connection_server::query_via_server_within(
         connection_key,
         &app_state,
-        &format!("No connection server for connection {connection_key:?}"),
         ServerRequest::StartTask(maestro_protocol::StartTaskRequest {
             project_path,
             task_id,
@@ -456,7 +455,6 @@ pub async fn start_task(
             skipped_attachments: response.skipped_attachments,
         }),
         120,
-        "The project's server did not start the task within 120s",
     )
     .await
 }

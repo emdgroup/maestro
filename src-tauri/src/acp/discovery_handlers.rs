@@ -5,10 +5,13 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::State;
 
+use crate::acp::connection_server::{query_via_server, query_via_server_within, reply};
 use crate::acp::registry::{AgentDiscoveryCacheEntry, AgentDiscoveryResult, DiscoveredAgent};
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
-use maestro_protocol::CheckToolsResponse;
+use maestro_protocol::{
+    CheckToolsRequest, CheckToolsResponse, InstallSkillsRequest, ServerRequest, ServerResponse,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -243,12 +246,18 @@ pub async fn preflight_connection(
         }
     }
 
-    let tool_results =
-        crate::acp::query_check_tools_via_server(connection_key, tools_to_check, &app_state)
-            .await
-            .unwrap_or_else(|_| CheckToolsResponse {
-                results: Vec::new(),
-            });
+    let tool_results = query_via_server(
+        connection_key,
+        &app_state,
+        ServerRequest::CheckTools(CheckToolsRequest {
+            tools: tools_to_check,
+        }),
+        reply!(ServerResponse::CheckToolsOk(response) => response),
+    )
+    .await
+    .unwrap_or_else(|_| CheckToolsResponse {
+        results: Vec::new(),
+    });
 
     let tool_checks: Vec<ToolCheckEntry> = tool_results
         .results
@@ -304,10 +313,16 @@ pub async fn preflight_connection(
     {
         let app_state = Arc::clone(&*app_state);
         tokio::spawn(async move {
-            match crate::acp::query_install_skills_via_server(
+            // The generous timeout covers the first run on a machine, where `npx` downloads the
+            // skills CLI before it can do anything; later runs return immediately.
+            match query_via_server_within(
                 connection_key,
-                crate::acp::skills::bundled(),
                 &app_state,
+                ServerRequest::InstallSkills(InstallSkillsRequest {
+                    skills: crate::acp::skills::bundled(),
+                }),
+                reply!(ServerResponse::InstallSkillsOk(response) => response),
+                150,
             )
             .await
             {
@@ -386,13 +401,26 @@ pub(crate) async fn fetch_and_filter_agents(
         Err(e) => return (Vec::new(), Some(e)),
     };
 
-    let detected =
-        crate::acp::manager::query_detect_installed_via_server(connection_key, app_state)
-            .await
-            .unwrap_or_else(|_| maestro_protocol::DetectInstalledAgentsResponse {
-                agents: Vec::new(),
-                all_checked_ids: Vec::new(),
-            });
+    let detected = query_via_server_within(
+        connection_key,
+        app_state,
+        ServerRequest::DetectInstalledAgents(maestro_protocol::DetectInstalledAgentsRequest {}),
+        reply!(ServerResponse::DetectInstalledAgentsOk(response) => response),
+        30,
+    )
+    .await
+    .unwrap_or_else(|_| maestro_protocol::DetectInstalledAgentsResponse {
+        agents: Vec::new(),
+        all_checked_ids: Vec::new(),
+    });
+    log::debug!(
+        "[registry] DetectInstalledAgentsOk: {:?}",
+        detected
+            .agents
+            .iter()
+            .map(|agent| &agent.agent_id)
+            .collect::<Vec<_>>()
+    );
 
     let detected_tool_names: std::collections::HashMap<String, String> = detected
         .agents

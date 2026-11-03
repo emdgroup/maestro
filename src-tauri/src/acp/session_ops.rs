@@ -3,7 +3,7 @@
 use crate::acp::discovery_handlers::ensure_connection_server;
 use crate::acp::session_types::{AcpProcess, AcpProcessParams, SessionRequest, TaskMetadata};
 use crate::acp::transport_types::serialize_message;
-use maestro_protocol::{ServerRequest, SessionLoadRequest, SpawnRequest};
+use maestro_protocol::{ServerRequest, ServerResponse, SessionLoadRequest, SpawnRequest};
 use std::sync::Arc;
 use tauri::Emitter;
 
@@ -324,14 +324,16 @@ pub async fn attach_project_sessions(
         if action == RowAction::Reload {
             // `SessionClose` drops the server's live entry and leaves the row open, so what
             // follows genuinely is a fresh load. A failed close leaves the session as it was.
-            match crate::acp::connection_server::query_session_close_via_server(
+            match crate::acp::connection_server::query_via_server_within(
                 connection_key,
-                maestro_protocol::SessionCloseRequest {
+                app_state,
+                ServerRequest::SessionClose(maestro_protocol::SessionCloseRequest {
                     agent_id: row.agent_id.clone(),
                     session_id: row.acp_session_id.clone(),
                     cwd: row.cwd.clone(),
-                },
-                app_state,
+                }),
+                crate::acp::connection_server::reply!(ServerResponse::SessionCloseOk => ()),
+                30,
             )
             .await
             {

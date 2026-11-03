@@ -17,12 +17,13 @@ use specta::Type;
 use tauri::State;
 
 use crate::acp::connection_server::{
-    query_list_mcp_servers_via_server, query_save_mcp_servers_via_server,
-    query_set_mcp_secrets_via_server, query_test_mcp_server_via_server,
+    query_list_mcp_servers_via_server, query_save_mcp_servers_via_server, query_via_server,
+    query_via_server_within, reply,
 };
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
 use crate::integration::keychain::KeychainStore;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 use super::mcp_oauth::{self, AUTHORIZATION, OAUTH_KEY};
 
@@ -165,7 +166,13 @@ pub(crate) async fn push_secrets(
             }
         }
     }
-    query_set_mcp_secrets_via_server(connection, secrets, app_state).await?;
+    query_via_server(
+        connection,
+        app_state,
+        ServerRequest::SetMcpSecrets(maestro_protocol::SetMcpSecretsRequest { secrets }),
+        reply!(ServerResponse::SetMcpSecretsOk => ()),
+    )
+    .await?;
     mcp_oauth::schedule_refresh(app_state, connection, soonest);
     Ok(())
 }
@@ -346,7 +353,18 @@ pub async fn test_mcp_server(
             }
         }
     }
-    query_test_mcp_server_via_server(connection, convert(server)?, &app_state).await
+    // The server answers within 15 seconds whatever happens, so the margin here only covers the
+    // round trip.
+    query_via_server_within(
+        connection,
+        &app_state,
+        ServerRequest::TestMcpServer(maestro_protocol::TestMcpServerRequest {
+            server: convert(server)?,
+        }),
+        reply!(ServerResponse::TestMcpServerOk(response) => response),
+        30,
+    )
+    .await
 }
 
 /// The whole GitHub MCP Registry, star-ranked: a few hundred servers, read 100 at a time, the

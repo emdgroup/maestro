@@ -38,11 +38,19 @@ pub async fn prime_project_server(
         .await
         .unwrap_or_default();
     if let Some(agent_id) = config.default_agent {
-        crate::acp::pre_initialize_via_connection_server(
+        crate::acp::connection_server::query_via_server_within(
             connection_key,
-            &agent_id,
-            &project_path,
             &app_state,
+            maestro_protocol::ServerRequest::PreInitialize(
+                maestro_protocol::PreInitializeRequest {
+                    agent_id,
+                    cwd: project_path.clone(),
+                },
+            ),
+            crate::acp::connection_server::reply!(
+                maestro_protocol::ServerResponse::PreInitializeOk(response) => response
+            ),
+            60,
         )
         .await?;
     }

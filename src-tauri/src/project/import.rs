@@ -4,7 +4,7 @@
 //! The only place allowed to read the legacy task, worktree, review, prompt and alias tables, and
 //! the old `restorable_sessions` and `session_folders` of `.maestro/state.json`.
 
-use crate::acp::connection_server::{query_via_server, reply};
+use crate::acp::connection_server::{query_via_server_within, reply};
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
 use crate::models::GitConnection;
@@ -109,12 +109,9 @@ async fn import(
             let conn = app_state.db()?;
             crate::core::settings::install_id(&conn)?
         };
-        let not_found = format!("No connection server for connection {connection_key:?}");
-        let timed_out = "The project's server did not finish the import in time";
-        let begun = query_via_server(
+        let begun = query_via_server_within(
             connection_key,
             app_state,
-            &not_found,
             ServerRequest::BeginImport(BeginImportRequest {
                 project_path: request.project_path.clone(),
                 floors: std::mem::take(&mut request.floors),
@@ -122,7 +119,6 @@ async fn import(
             }),
             reply!(ServerResponse::BeginImportOk(response) => response),
             IMPORT_TIMEOUT_SECS,
-            timed_out,
         )
         .await?;
         if begun.imported_before {
@@ -148,28 +144,24 @@ async fn import(
             .await;
             let import_id = begun.import_id;
             for chunk in split_import(request, IMPORT_CHUNK_BYTES) {
-                query_via_server(
+                query_via_server_within(
                     connection_key,
                     app_state,
-                    &not_found,
                     ServerRequest::ImportChunk(ImportChunkRequest {
                         import_id: import_id.clone(),
                         chunk,
                     }),
                     reply!(ServerResponse::ImportChunkOk => ()),
                     IMPORT_TIMEOUT_SECS,
-                    timed_out,
                 )
                 .await?;
             }
-            let response = query_via_server(
+            let response = query_via_server_within(
                 connection_key,
                 app_state,
-                &not_found,
                 ServerRequest::CommitImport(ImportRef { import_id }),
                 reply!(ServerResponse::ImportProjectOk(response) => response),
                 IMPORT_TIMEOUT_SECS,
-                timed_out,
             )
             .await?;
             log::info!(
@@ -198,17 +190,15 @@ async fn import(
         .is_some_and(|value| value == "true")
     };
     if first_in && auto_mode {
-        query_via_server(
+        query_via_server_within(
             connection_key,
             app_state,
-            &format!("No connection server for connection {connection_key:?}"),
             ServerRequest::SetAutoMode(maestro_protocol::AutoModeSetting {
                 project_path: project_path.to_string(),
                 enabled: true,
             }),
             reply!(ServerResponse::SetAutoModeOk => ()),
             IMPORT_TIMEOUT_SECS,
-            "The project's server did not set auto mode in time",
         )
         .await?;
     }

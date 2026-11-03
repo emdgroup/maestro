@@ -8,15 +8,7 @@ use crate::acp::transport_setup::{
     open_local_transport, open_remote_transport, spawn_stdin_writer_task,
 };
 use crate::acp::transport_types::{serialize_message, serialize_message_with_id};
-use maestro_protocol::{
-    CheckToolsRequest, CheckToolsResponse, ListAgentsRequest, PreInitializeRequest,
-    PreInitializeResponse, ServerRequest, ServerResponse, SessionCloseRequest,
-    SessionDeleteRequest, SessionListOkResponse,
-};
-use maestro_protocol::{
-    DetectInstalledAgentsRequest, DetectInstalledAgentsResponse, InstallSkillsRequest,
-    InstallSkillsResponse, RequestId, SkillFile,
-};
+use maestro_protocol::{ListAgentsRequest, RequestId, ServerRequest, ServerResponse};
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -35,15 +27,21 @@ pub(crate) use reply;
 
 pub(crate) const UNEXPECTED_REPLY: &str = "The server answered with a reply of another type";
 
+/// How long a request waits for its reply unless the caller says otherwise.
+const DEFAULT_TIMEOUT_SECS: u64 = 15;
+
+fn no_server(connection_key: crate::acp::ConnectionKey) -> String {
+    format!("No connection server for connection {connection_key:?}")
+}
+
 async fn connection_handles(
     connection_key: crate::acp::ConnectionKey,
     app_state: &crate::core::AppState,
-    not_found_err: &str,
 ) -> Result<(tokio::sync::mpsc::Sender<Vec<u8>>, PendingRequests), String> {
     let servers = app_state.acp.connection_servers.lock().await;
     let server = servers
         .get(&connection_key)
-        .ok_or_else(|| not_found_err.to_string())?;
+        .ok_or_else(|| no_server(connection_key))?;
     Ok((server.writer_tx.clone(), server.pending.clone()))
 }
 
@@ -55,7 +53,6 @@ async fn await_reply(
     receiver: oneshot::Receiver<Result<ServerResponse, String>>,
     request: &ServerRequest,
     timeout_secs: u64,
-    timeout_err: &str,
 ) -> Result<ServerResponse, String> {
     let sent = match serialize_message_with_id(Some(id), request) {
         Ok(bytes) => writer_tx
@@ -71,7 +68,9 @@ async fn await_reply(
     match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), receiver).await {
         Err(_) => {
             pending.forget(id);
-            Err(timeout_err.to_string())
+            Err(format!(
+                "The connection's server did not answer within {timeout_secs}s"
+            ))
         }
         Ok(inner) => inner.map_err(|_| "Response channel dropped".to_string())?,
     }
@@ -84,45 +83,41 @@ async fn await_reply(
 pub(crate) async fn request_via_server(
     connection_key: crate::acp::ConnectionKey,
     app_state: &crate::core::AppState,
-    not_found_err: &str,
     session_id: Option<&str>,
     request: ServerRequest,
     timeout_secs: u64,
-    timeout_err: &str,
 ) -> Result<ServerResponse, String> {
-    let (writer_tx, pending) = connection_handles(connection_key, app_state, not_found_err).await?;
+    let (writer_tx, pending) = connection_handles(connection_key, app_state).await?;
     let (id, receiver) = pending.register(session_id);
-    await_reply(
-        &writer_tx,
-        &pending,
-        id,
-        receiver,
-        &request,
-        timeout_secs,
-        timeout_err,
+    await_reply(&writer_tx, &pending, id, receiver, &request, timeout_secs).await
+}
+
+/// [`query_via_server_within`] with the default timeout.
+pub(crate) async fn query_via_server<T>(
+    connection_key: crate::acp::ConnectionKey,
+    app_state: &crate::core::AppState,
+    request: ServerRequest,
+    extract: impl FnOnce(ServerResponse) -> Option<T>,
+) -> Result<T, String> {
+    query_via_server_within(
+        connection_key,
+        app_state,
+        request,
+        extract,
+        DEFAULT_TIMEOUT_SECS,
     )
     .await
 }
 
-pub(crate) async fn query_via_server<T>(
+pub(crate) async fn query_via_server_within<T>(
     connection_key: crate::acp::ConnectionKey,
     app_state: &crate::core::AppState,
-    not_found_err: &str,
     request: ServerRequest,
     extract: impl FnOnce(ServerResponse) -> Option<T>,
     timeout_secs: u64,
-    timeout_err: &str,
 ) -> Result<T, String> {
-    let response = request_via_server(
-        connection_key,
-        app_state,
-        not_found_err,
-        None,
-        request,
-        timeout_secs,
-        timeout_err,
-    )
-    .await?;
+    let response =
+        request_via_server(connection_key, app_state, None, request, timeout_secs).await?;
     extract(response).ok_or_else(|| UNEXPECTED_REPLY.to_string())
 }
 
@@ -138,16 +133,7 @@ pub(crate) async fn query_project_store<T>(
 ) -> Result<T, String> {
     let (connection_key, project_path) =
         crate::project::crud::target(app_state, project_id).await?;
-    query_via_server(
-        connection_key,
-        app_state,
-        &format!("No connection server for connection {:?}", connection_key),
-        request(project_path),
-        extract,
-        15,
-        "The project's server did not answer within 15s",
-    )
-    .await
+    query_via_server(connection_key, app_state, request(project_path), extract).await
 }
 
 /// Send `ListAgents` through the running connection server and return the result.
@@ -159,11 +145,8 @@ pub async fn query_list_agents_via_connection_server(
     let response = query_via_server(
         connection_key,
         app_state,
-        &format!("No connection server for connection {:?}", connection_key),
         ServerRequest::ListAgents(ListAgentsRequest {}),
         reply!(ServerResponse::ListAgentsOk(response) => response),
-        15,
-        "ListAgents via connection server timed out after 15s",
     )
     .await?;
     let agents: Vec<crate::acp::registry::DiscoveredAgent> = response
@@ -190,14 +173,7 @@ pub async fn send_via_server(
     app_state: &Arc<crate::core::AppState>,
     request: ServerRequest,
 ) -> Result<(), String> {
-    let writer_tx = app_state
-        .acp
-        .connection_servers
-        .lock()
-        .await
-        .get(&connection_key)
-        .map(|server| server.writer_tx.clone())
-        .ok_or_else(|| format!("No connection server for connection {:?}", connection_key))?;
+    let (writer_tx, _) = connection_handles(connection_key, app_state).await?;
     writer_tx
         .send(serialize_message(&request)?)
         .await
@@ -212,11 +188,8 @@ pub async fn query_acquire_project_lock_via_server(
     query_via_server(
         connection_key,
         app_state,
-        &format!("No connection server for connection {:?}", connection_key),
         ServerRequest::AcquireProjectLock(request),
         reply!(ServerResponse::AcquireProjectLockOk(response) => response),
-        15,
-        "AcquireProjectLock via connection server timed out after 15s",
     )
     .await
 }
@@ -227,12 +200,7 @@ pub async fn query_takeover_via_server(
     request: maestro_protocol::AcquireProjectLockRequest,
     app_state: &Arc<crate::core::AppState>,
 ) -> Result<bool, String> {
-    let (writer_tx, pending) = connection_handles(
-        connection_key,
-        app_state,
-        &format!("No connection server for connection {:?}", connection_key),
-    )
-    .await?;
+    let (writer_tx, pending) = connection_handles(connection_key, app_state).await?;
     let (id, receiver) = pending.register(None);
     if !pending.claim_takeover(id) {
         pending.forget(id);
@@ -245,7 +213,6 @@ pub async fn query_takeover_via_server(
         receiver,
         &ServerRequest::RequestTakeover(request),
         15,
-        "The takeover request timed out after 15s",
     )
     .await?;
     match response {
@@ -297,31 +264,11 @@ pub async fn query_project_sessions_via_server(
     query_via_server(
         connection_key,
         app_state,
-        &format!("No connection server for connection {:?}", connection_key),
         ServerRequest::ListProjectSessions(maestro_protocol::ListProjectSessionsRequest {
             project_path,
             include_closed,
         }),
         reply!(ServerResponse::ListProjectSessionsOk(response) => response),
-        15,
-        "ListProjectSessions via connection server timed out after 15s",
-    )
-    .await
-}
-
-pub async fn query_rename_session_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    request: maestro_protocol::RenameSessionRequest,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<(), String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        &format!("No connection server for connection {:?}", connection_key),
-        ServerRequest::RenameSession(request),
-        reply!(ServerResponse::RenameSessionOk => ()),
-        15,
-        "RenameSession via connection server timed out after 15s",
     )
     .await
 }
@@ -336,11 +283,8 @@ pub async fn query_close_project_session_via_server(
     query_via_server(
         connection_key,
         app_state,
-        &format!("No connection server for connection {:?}", connection_key),
         ServerRequest::CloseProjectSession(request),
         reply!(ServerResponse::CloseProjectSessionOk => ()),
-        15,
-        "CloseProjectSession via connection server timed out after 15s",
     )
     .await
 }
@@ -357,11 +301,8 @@ pub async fn query_list_automations_via_server(
     query_via_server(
         connection_key,
         app_state,
-        &format!("No connection server for connection {:?}", connection_key),
         ServerRequest::ListAutomations(maestro_protocol::ListAutomationsRequest { project_path }),
         reply!(ServerResponse::ListAutomationsOk(response) => response),
-        15,
-        "ListAutomations via connection server timed out after 15s",
     )
     .await
 }
@@ -375,14 +316,11 @@ pub async fn query_save_automation_via_server(
     query_via_server(
         connection_key,
         app_state,
-        &format!("No connection server for connection {:?}", connection_key),
         ServerRequest::SaveAutomation(maestro_protocol::SaveAutomationRequest {
             project_path,
             automation,
         }),
         reply!(ServerResponse::SaveAutomationOk(response) => response),
-        15,
-        "SaveAutomation via connection server timed out after 15s",
     )
     .await
 }
@@ -395,53 +333,10 @@ pub async fn query_delete_automation_via_server(
     query_via_server(
         connection_key,
         app_state,
-        &format!("No connection server for connection {:?}", connection_key),
         ServerRequest::DeleteAutomation(maestro_protocol::DeleteAutomationRequest {
             automation_id,
         }),
         reply!(ServerResponse::DeleteAutomationOk => ()),
-        15,
-        "DeleteAutomation via connection server timed out after 15s",
-    )
-    .await
-}
-
-pub async fn query_delete_automation_run_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    run_id: String,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<(), String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        &format!("No connection server for connection {:?}", connection_key),
-        ServerRequest::DeleteAutomationRun(maestro_protocol::DeleteAutomationRunRequest { run_id }),
-        reply!(ServerResponse::DeleteAutomationRunOk => ()),
-        // Removing a worktree is a git process over a whole checkout.
-        60,
-        "DeleteAutomationRun via connection server timed out after 60s",
-    )
-    .await
-}
-
-pub async fn query_set_run_retention_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    project_path: String,
-    retention: maestro_protocol::RunRetention,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<(), String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        &format!("No connection server for connection {:?}", connection_key),
-        ServerRequest::SetRunRetention(maestro_protocol::SetRunRetentionRequest {
-            project_path,
-            retention,
-        }),
-        reply!(ServerResponse::SetRunRetentionOk => ()),
-        // Answered after trimming, which removes worktrees.
-        60,
-        "SetRunRetention via connection server timed out after 60s",
     )
     .await
 }
@@ -456,14 +351,11 @@ pub async fn query_webhook_settings_via_server(
     query_via_server(
         connection_key,
         app_state,
-        &format!("No connection server for connection {:?}", connection_key),
         match settings {
             Some(settings) => ServerRequest::SetWebhookSettings(settings),
             None => ServerRequest::GetWebhookSettings,
         },
         reply!(ServerResponse::WebhookSettingsOk(response) => response),
-        15,
-        "Webhook settings via connection server timed out after 15s",
     )
     .await
 }
@@ -474,10 +366,9 @@ pub async fn query_server_status_via_server(
     autostart: Option<bool>,
     app_state: &Arc<crate::core::AppState>,
 ) -> Result<maestro_protocol::ServerStatus, String> {
-    query_via_server(
+    query_via_server_within(
         connection_key,
         app_state,
-        &format!("No connection server for connection {:?}", connection_key),
         match autostart {
             Some(enabled) => {
                 ServerRequest::SetAutostart(maestro_protocol::SetAutostartRequest { enabled })
@@ -486,7 +377,6 @@ pub async fn query_server_status_via_server(
         },
         reply!(ServerResponse::ServerStatusOk(response) => response),
         30,
-        "Server status via connection server timed out after 30s",
     )
     .await
 }
@@ -506,7 +396,7 @@ pub async fn stop_connection_server(
         .lock()
         .await
         .remove(&connection_key)
-        .ok_or_else(|| format!("No connection server for connection {:?}", connection_key))?;
+        .ok_or_else(|| no_server(connection_key))?;
     let request = serialize_message(&ServerRequest::Shutdown)?;
     server
         .writer_tx
@@ -523,42 +413,6 @@ pub async fn stop_connection_server(
     Ok(())
 }
 
-pub async fn query_roll_webhook_secret_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    automation_id: String,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<maestro_protocol::Automation, String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        &format!("No connection server for connection {:?}", connection_key),
-        ServerRequest::RollWebhookSecret(maestro_protocol::AutomationIdRequest { automation_id }),
-        reply!(ServerResponse::RollWebhookSecretOk(response) => response),
-        15,
-        "RollWebhookSecret via connection server timed out after 15s",
-    )
-    .await
-}
-
-pub async fn query_webhook_deliveries_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    automation_id: String,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<maestro_protocol::ListWebhookDeliveriesResponse, String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        &format!("No connection server for connection {:?}", connection_key),
-        ServerRequest::ListWebhookDeliveries(maestro_protocol::AutomationIdRequest {
-            automation_id,
-        }),
-        reply!(ServerResponse::ListWebhookDeliveriesOk(response) => response),
-        15,
-        "ListWebhookDeliveries via connection server timed out after 15s",
-    )
-    .await
-}
-
 /// Ask the server to start an automation now.
 ///
 /// There is no reply to wait for beyond the request being accepted: the run announces itself on
@@ -568,40 +422,10 @@ pub async fn query_run_automation_via_server(
     automation_id: String,
     app_state: &Arc<crate::core::AppState>,
 ) -> Result<(), String> {
-    let writer_tx = {
-        let servers = app_state.acp.connection_servers.lock().await;
-        servers
-            .get(&connection_key)
-            .map(|server| server.writer_tx.clone())
-            .ok_or_else(|| format!("No connection server for connection {:?}", connection_key))?
-    };
-    let bytes = serialize_message(&ServerRequest::RunAutomation(
-        maestro_protocol::RunAutomationRequest { automation_id },
-    ))?;
-    writer_tx
-        .send(bytes)
-        .await
-        .map_err(|_| "Connection server writer channel closed".to_string())
-}
-
-/// When an expression the user is still typing would next come round.
-///
-/// Short timeout on purpose: this fires while somebody edits a field, and a preview nobody is
-/// waiting for any more is worth less than the editor staying responsive.
-pub async fn query_preview_schedule_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    cron: String,
-    timezone: String,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<maestro_protocol::PreviewScheduleResponse, String> {
-    query_via_server(
+    send_via_server(
         connection_key,
         app_state,
-        &format!("No connection server for connection {:?}", connection_key),
-        ServerRequest::PreviewSchedule(maestro_protocol::PreviewScheduleRequest { cron, timezone }),
-        reply!(ServerResponse::PreviewScheduleOk(response) => response),
-        5,
-        "PreviewSchedule via connection server timed out after 5s",
+        ServerRequest::RunAutomation(maestro_protocol::RunAutomationRequest { automation_id }),
     )
     .await
 }
@@ -615,135 +439,13 @@ pub async fn query_automation_runs_via_server(
     query_via_server(
         connection_key,
         app_state,
-        &format!("No connection server for connection {:?}", connection_key),
         ServerRequest::ListAutomationRuns(maestro_protocol::ListAutomationRunsRequest {
             project_path,
             limit,
         }),
         reply!(ServerResponse::ListAutomationRunsOk(response) => response),
-        15,
-        "ListAutomationRuns via connection server timed out after 15s",
     )
     .await
-}
-
-/// Send `SessionList` through the running connection server and return the result.
-pub async fn query_session_list_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    request: maestro_protocol::SessionListRequest,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<SessionListOkResponse, String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        "Connection not initialized. Run preflight first.",
-        ServerRequest::SessionList(request),
-        reply!(ServerResponse::SessionListOk(response) => response),
-        30,
-        "SessionList via connection server timed out after 30s",
-    )
-    .await
-}
-
-/// Send `SessionDelete` through the running connection server.
-pub async fn query_session_delete_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    request: SessionDeleteRequest,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<(), String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        "Connection not initialized. Run preflight first.",
-        ServerRequest::SessionDelete(request),
-        reply!(ServerResponse::SessionDeleteOk => ()),
-        30,
-        "SessionDelete via connection server timed out after 30s",
-    )
-    .await
-}
-
-/// Send `SessionClose` through the running connection server.
-pub async fn query_session_close_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    request: SessionCloseRequest,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<(), String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        "Connection not initialized. Run preflight first.",
-        ServerRequest::SessionClose(request),
-        reply!(ServerResponse::SessionCloseOk => ()),
-        30,
-        "SessionClose via connection server timed out after 30s",
-    )
-    .await
-}
-
-/// Send `CheckTools` through the running connection server and return the result.
-pub async fn query_check_tools_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    tools: Vec<String>,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<CheckToolsResponse, String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        "Connection not initialized. Run preflight first.",
-        ServerRequest::CheckTools(CheckToolsRequest { tools }),
-        reply!(ServerResponse::CheckToolsOk(response) => response),
-        15,
-        "CheckTools via connection server timed out after 15s",
-    )
-    .await
-}
-
-/// Send `InstallSkills` through the running connection server and return whether it installed.
-///
-/// The generous timeout covers the first run on a machine, where `npx` downloads the skills CLI
-/// before it can do anything; later runs are a couple of file reads and return immediately.
-pub async fn query_install_skills_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    skills: Vec<SkillFile>,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<InstallSkillsResponse, String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        "Connection not initialized. Run preflight first.",
-        ServerRequest::InstallSkills(InstallSkillsRequest { skills }),
-        reply!(ServerResponse::InstallSkillsOk(response) => response),
-        150,
-        "InstallSkills via connection server timed out after 150s",
-    )
-    .await
-}
-
-/// Send `DetectInstalledAgents` through the running connection server and return the result.
-pub async fn query_detect_installed_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<DetectInstalledAgentsResponse, String> {
-    let response = query_via_server(
-        connection_key,
-        app_state,
-        "Connection not initialized. Run preflight first.",
-        ServerRequest::DetectInstalledAgents(DetectInstalledAgentsRequest {}),
-        reply!(ServerResponse::DetectInstalledAgentsOk(response) => response),
-        30,
-        "DetectInstalledAgents timed out after 30s",
-    )
-    .await?;
-    log::debug!(
-        "[registry] DetectInstalledAgentsOk: {:?}",
-        response
-            .agents
-            .iter()
-            .map(|agent| &agent.agent_id)
-            .collect::<Vec<_>>()
-    );
-    Ok(response)
 }
 
 /// Spawn a long-lived maestro-server shared across all sessions for `connection_id`.
@@ -875,30 +577,6 @@ pub async fn spawn_connection_server(
     Ok(())
 }
 
-/// Send a `PreInitialize` request on the connection's shared maestro-server and wait
-/// for the `PreInitializeOk` response (or an error). The connection server must be
-/// running before calling this (use `spawn_connection_server` first).
-pub async fn pre_initialize_via_connection_server(
-    connection_key: crate::acp::ConnectionKey,
-    agent_id: &str,
-    cwd: &str,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<PreInitializeResponse, String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        &format!("No connection server for connection {:?}", connection_key),
-        ServerRequest::PreInitialize(PreInitializeRequest {
-            agent_id: agent_id.to_string(),
-            cwd: cwd.to_string(),
-        }),
-        reply!(ServerResponse::PreInitializeOk(response) => response),
-        60,
-        &format!("PreInitialize timed out for agent {}", agent_id),
-    )
-    .await
-}
-
 /// The MCP servers the user manages on this connection's machine, secrets blanked.
 pub async fn query_list_mcp_servers_via_server(
     connection_key: crate::acp::ConnectionKey,
@@ -908,11 +586,8 @@ pub async fn query_list_mcp_servers_via_server(
     query_via_server(
         connection_key,
         app_state,
-        "Connection not initialized. Run preflight first.",
         ServerRequest::ListMcpServers(maestro_protocol::ProjectScopedRequest { project_path }),
         reply!(ServerResponse::ListMcpServersOk(response) => response),
-        15,
-        "ListMcpServers via connection server timed out after 15s",
     )
     .await
 }
@@ -925,64 +600,8 @@ pub async fn query_save_mcp_servers_via_server(
     query_via_server(
         connection_key,
         app_state,
-        "Connection not initialized. Run preflight first.",
         ServerRequest::SaveMcpServers(maestro_protocol::SaveMcpServersRequest { servers }),
         reply!(ServerResponse::SaveMcpServersOk => ()),
-        15,
-        "SaveMcpServers via connection server timed out after 15s",
-    )
-    .await
-}
-
-pub async fn query_set_mcp_secrets_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    secrets: Vec<maestro_protocol::McpSecret>,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<(), String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        "Connection not initialized. Run preflight first.",
-        ServerRequest::SetMcpSecrets(maestro_protocol::SetMcpSecretsRequest { secrets }),
-        reply!(ServerResponse::SetMcpSecretsOk => ()),
-        15,
-        "SetMcpSecrets via connection server timed out after 15s",
-    )
-    .await
-}
-
-/// Connect to a server from the target and list its tools. The server answers within 15 seconds
-/// whatever happens, so the margin here only covers the round trip.
-pub async fn query_test_mcp_server_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    server: maestro_protocol::ManagedMcpServer,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<maestro_protocol::McpTestResult, String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        "Connection not initialized. Run preflight first.",
-        ServerRequest::TestMcpServer(maestro_protocol::TestMcpServerRequest { server }),
-        reply!(ServerResponse::TestMcpServerOk(response) => response),
-        30,
-        "TestMcpServer via connection server timed out after 30s",
-    )
-    .await
-}
-
-pub async fn query_list_skills_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    project_path: Option<String>,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<maestro_protocol::SkillList, String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        "Connection not initialized. Run preflight first.",
-        ServerRequest::ListSkills(maestro_protocol::ProjectScopedRequest { project_path }),
-        reply!(ServerResponse::ListSkillsOk(response) => response),
-        15,
-        "ListSkills via connection server timed out after 15s",
     )
     .await
 }
@@ -994,31 +613,12 @@ pub async fn query_apply_skill_via_server(
     request: maestro_protocol::ApplySkillRequest,
     app_state: &Arc<crate::core::AppState>,
 ) -> Result<(), String> {
-    query_via_server(
+    query_via_server_within(
         connection_key,
         app_state,
-        "Connection not initialized. Run preflight first.",
         ServerRequest::ApplySkill(request),
         reply!(ServerResponse::ApplySkillOk => ()),
         300,
-        "ApplySkill via connection server timed out after 300s",
-    )
-    .await
-}
-
-pub async fn query_delete_skill_via_server(
-    connection_key: crate::acp::ConnectionKey,
-    name: String,
-    app_state: &Arc<crate::core::AppState>,
-) -> Result<(), String> {
-    query_via_server(
-        connection_key,
-        app_state,
-        "Connection not initialized. Run preflight first.",
-        ServerRequest::DeleteSkill(maestro_protocol::DeleteSkillRequest { name }),
-        reply!(ServerResponse::DeleteSkillOk => ()),
-        150,
-        "DeleteSkill via connection server timed out after 150s",
     )
     .await
 }

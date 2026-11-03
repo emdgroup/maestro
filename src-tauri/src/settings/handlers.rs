@@ -97,11 +97,8 @@ pub async fn get_connection_capacity(
     let status = query_via_server(
         connection,
         &app_state,
-        &format!("No connection server for connection {connection:?}"),
         ServerRequest::GetCapacity,
         reply!(ServerResponse::GetCapacityOk(status) => status),
-        15,
-        "The connection's server did not answer within 15s",
     )
     .await?;
     Ok(ConnectionCapacitySettings {
@@ -122,14 +119,11 @@ pub async fn save_connection_capacity(
     query_via_server(
         connection,
         &app_state,
-        &format!("No connection server for connection {connection:?}"),
         ServerRequest::SetCapacity(maestro_protocol::CapacitySettings {
             concurrency_mode: settings.concurrency_mode,
             max_concurrent_agents: settings.max_concurrent_agents,
         }),
         reply!(ServerResponse::SetCapacityOk => ()),
-        15,
-        "The connection's server did not answer within 15s",
     )
     .await
 }
@@ -157,11 +151,8 @@ pub(crate) async fn seed_connection_capacity(
     let status = query_via_server(
         connection,
         app_state,
-        &format!("No connection server for connection {connection:?}"),
         ServerRequest::GetCapacity,
         reply!(ServerResponse::GetCapacityOk(status) => status),
-        15,
-        "The connection's server did not answer within 15s",
     )
     .await?;
     if status.stored {
@@ -170,7 +161,6 @@ pub(crate) async fn seed_connection_capacity(
     query_via_server(
         connection,
         app_state,
-        &format!("No connection server for connection {connection:?}"),
         ServerRequest::SetCapacity(maestro_protocol::CapacitySettings {
             concurrency_mode: if mode == "Hard" {
                 maestro_protocol::ConcurrencyMode::Hard
@@ -180,8 +170,6 @@ pub(crate) async fn seed_connection_capacity(
             max_concurrent_agents,
         }),
         reply!(ServerResponse::SetCapacityOk => ()),
-        15,
-        "The connection's server did not answer within 15s",
     )
     .await
 }

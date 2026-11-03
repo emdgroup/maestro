@@ -118,10 +118,7 @@ impl ConnectionKey {
 }
 
 pub use connection_server::{
-    pre_initialize_via_connection_server, query_check_tools_via_server,
-    query_install_skills_via_server, query_list_agents_via_connection_server,
-    query_session_close_via_server, query_session_delete_via_server, query_session_list_via_server,
-    spawn_connection_server, stop_resident_servers,
+    query_list_agents_via_connection_server, spawn_connection_server, stop_resident_servers,
 };
 pub use registry::{AgentDiscoveryCacheEntry, AgentDiscoveryResult, DiscoveredAgent};
 pub use session_ops::{

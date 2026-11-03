@@ -62,13 +62,10 @@ pub async fn get_home_summary(
     let summary = query_via_server(
         connection,
         &app_state,
-        &format!("No connection server for connection {:?}", connection),
         ServerRequest::HomeSummary(maestro_protocol::HomeSummaryRequest {
             project_paths: recent.iter().map(|(_, path)| path.clone()).collect(),
         }),
         reply!(ServerResponse::HomeSummaryOk(summary) => summary),
-        15,
-        "The connection's server did not answer within 15s",
     )
     .await?;
     let mut projects: Vec<HomeProject> = summary

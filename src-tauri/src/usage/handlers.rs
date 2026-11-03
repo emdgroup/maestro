@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use tauri::State;
 
-use crate::acp::connection_server::{query_via_server, reply};
+use crate::acp::connection_server::{query_via_server_within, reply};
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
 use crate::usage::mirror;
@@ -14,14 +14,12 @@ async fn turns_after(
     connection: ConnectionKey,
     after_turn_id: i64,
 ) -> Result<maestro_protocol::UsageTurnsResponse, String> {
-    query_via_server(
+    query_via_server_within(
         connection,
         app_state,
-        &format!("No connection server for connection {:?}", connection),
         ServerRequest::UsageTurns(maestro_protocol::UsageTurnsRequest { after_turn_id }),
         reply!(ServerResponse::UsageTurnsOk(page) => page),
         TIMEOUT_SECS,
-        "The connection's server did not answer within 30s",
     )
     .await
 }
@@ -31,14 +29,12 @@ async fn hours_after(
     connection: ConnectionKey,
     after_hour: String,
 ) -> Result<maestro_protocol::UsageHoursResponse, String> {
-    query_via_server(
+    query_via_server_within(
         connection,
         app_state,
-        &format!("No connection server for connection {:?}", connection),
         ServerRequest::UsageHours(maestro_protocol::UsageHoursRequest { after_hour }),
         reply!(ServerResponse::UsageHoursOk(page) => page),
         TIMEOUT_SECS,
-        "The connection's server did not answer within 30s",
     )
     .await
 }
