@@ -7,18 +7,18 @@ Notes for working in this directory. The repository-wide rules are in the root `
 
 `App.tsx` renders the four main views (`KanbanView`, `AgentsView`, `WorktreesView`, `SettingsView`) as lazily-loaded modules using `React.lazy()`. Only the active view is visible; tab transitions animate using `framer-motion`'s `useAnimationControls`. `navigationStore` drives `activeTab` and `slideDirection`.
 
-`KanbanView` renders either `<TaskDetailScreen>` (when `activeTaskId` is set) or the board + action bar. The `BoardView` inside renders all five columns and owns the `ReviewModal` and `ExecutionTerminal` drawer.
+`KanbanView` renders either `<TaskDetailScreen>` (when `activeTaskId` is set) or the board + action bar. The `BoardView` inside renders all five columns. `KanbanView` also owns the review dialog, which shows `TaskReviewPanel` for the task in `boardStore.reviewPanelTaskId`.
 
 ## Zustand Stores — Roles
 
 | Store                  | Purpose                                                                                                                                                       |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `boardStore`           | `activeTerminalTaskId` and `isTerminalOpen` — drives the bottom terminal drawer in `BoardView`                                                                |
+| `boardStore`           | `reviewPanelTaskId`, which opens the task review dialog in `KanbanView`, and per-agent sign-in state (`authRequiredTasks`) with its pending retries           |
 | `navigationStore`      | Tab routing (`activeTab`), view-to-view slide direction, `activeTaskId` for task detail screen, `pendingAgentId`/`pendingWorktreeId` for deep-link navigation |
 | `projectStore`         | Selected project reference; `useSelectedProject()` is the canonical way to get `projectId`/`projectPath`                                                      |
-| `reviewStore`          | Diff data, selected file, and loading state for `ReviewModal`                                                                                                 |
+| `reviewStore`          | Diff data, selected file, and loading state for `TaskReviewPanel`                                                                                             |
 | `sessionActivityStore` | Per-execution live status (`spawning` / `thinking` / `acting` / `awaiting`) shown in `AgentActivityPanel`                                                     |
-| `configStore`          | App-wide settings (theme, model defaults) cached from Tauri                                                                                                   |
+| `configStore`          | Preflight tool checks per connection, written when a connection comes up and read by `SpawnSessionDialog`                                                     |
 | `homeStore`            | Each connection's phase on Home (idle, signing in, connecting, up, failed, stopped, unreachable), attach order, minimized panels                              |
 | `fileSessionStore`     | Files sessions, which have no process behind them and so are not in the backend's session list; `AgentsView` merges them into the rows it shows               |
 
