@@ -45,7 +45,7 @@ import { useDefaultAgentFallback } from "@/hooks/useDefaultAgentFallback";
 import { useProjectAgentIntro } from "@/hooks/useProjectAgentIntro";
 import { UpdateSplashScreen } from "@/components/execution/UpdateSplashScreen";
 import { ProjectTakeoverDialog } from "@/components/common/ProjectTakeoverDialog";
-import { getFolderName } from "@/lib/path-utils";
+import { basename } from "@/lib/path-utils";
 import {
   registerProjectMain,
   slideIn,
@@ -214,7 +214,7 @@ function App() {
       reason: { kind: "taken_over"; by: string } | { kind: "stale" };
     }>("project-kicked", ({ payload }) => {
       clearSelectedProject();
-      const project = getFolderName(payload.project_path);
+      const project = basename(payload.project_path);
       toast.info(
         payload.reason.kind === "taken_over"
           ? `Maestro on ${payload.reason.by} took over ${project}`

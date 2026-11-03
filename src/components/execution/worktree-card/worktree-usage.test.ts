@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  folderName,
   groupWorktrees,
   pathIsWithin,
   relativeAge,
@@ -221,14 +220,6 @@ describe("relativeAge", () => {
   it("returns nothing it cannot parse", () => {
     expect(relativeAge(null, now)).toBeNull();
     expect(relativeAge("not a date", now)).toBeNull();
-  });
-});
-
-describe("folderName", () => {
-  it("takes the last segment, whatever the separators", () => {
-    expect(folderName("/repo/.maestro/worktrees/session-3")).toBe("session-3");
-    expect(folderName("C:\\repo\\wt\\")).toBe("wt");
-    expect(folderName("/repo")).toBe("repo");
   });
 });
 

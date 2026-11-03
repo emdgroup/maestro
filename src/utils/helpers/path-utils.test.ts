@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { basename, fileUriToPath, getFolderName, isAbsolutePath, toPosixPath } from "./path-utils";
+import { basename, fileUriToPath, isAbsolutePath, toPosixPath } from "./path-utils";
 
 describe("fileUriToPath", () => {
   it("drops the empty-authority slash only in front of a drive letter", () => {
@@ -77,10 +77,9 @@ describe("basename", () => {
   it("returns a bare filename as-is", () => {
     expect(basename("App.tsx")).toBe("App.tsx");
   });
-});
 
-describe("getFolderName", () => {
-  it("strips trailing slash before extracting name", () => {
-    expect(getFolderName("/path/to/")).toBe("to");
+  it("ignores a trailing separator", () => {
+    expect(basename("/path/to/")).toBe("to");
+    expect(basename("C:\\repo\\wt\\")).toBe("wt");
   });
 });

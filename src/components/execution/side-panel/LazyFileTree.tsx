@@ -21,6 +21,7 @@ import { ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from "@/ui/
 import { useListDirContents, useListWorkspaceFiles } from "@/services/connection.service";
 import { ToolbarButton } from "./ToolbarButton";
 import type { ConnectionKey } from "@/types/bindings";
+import { basename } from "@/lib/path-utils";
 
 /** The entry a menu action applies to, resolved to everything the mutation and dialog need. */
 export interface FileTreeTarget {
@@ -281,7 +282,7 @@ function FilterResults({
   return (
     <>
       {matches.map((relativePath) => {
-        const name = relativePath.split("/").pop() ?? relativePath;
+        const name = basename(relativePath);
         const isSelected = relativePath === selectedFile;
         return (
           <Tooltip key={relativePath}>

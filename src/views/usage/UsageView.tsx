@@ -10,7 +10,7 @@ import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { SEGMENT_GROUP } from "@/lib/segmented";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { folderName, formatCost, formatMetric, formatTokens, type Metric } from "./format";
+import { formatCost, formatMetric, formatTokens, type Metric } from "./format";
 import {
   bucketKeys,
   describeDates,
@@ -24,6 +24,7 @@ import { RangePicker } from "./RangePicker";
 import { UsageBreakdown, type BreakdownRow } from "./UsageBreakdown";
 import { UsageChart, type ChartSeries } from "./UsageChart";
 import { UsageCalendar, UsageHeatmap } from "./UsageHeatmap";
+import { basename } from "@/lib/path-utils";
 
 /** How many hues each split has; the series past them fold into Other. */
 const HUES: Record<UsageSplit, number> = { connection: 4, agent: 4, model: 4, token_type: 5 };
@@ -169,7 +170,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
   const projectRows: BreakdownRow[] = (report?.projects ?? [])
     .map((p) => ({
       id: projectId(p),
-      name: folderName(p.project_path),
+      name: basename(p.project_path),
       qualifier: connectionName(p.connection_key),
       value: metric === "cost" ? p.cost : p.tokens,
       byType: p.by_type,
@@ -193,7 +194,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
   );
   const chips = [
     ...projects.map((p) => ({
-      label: `${folderName(p.project_path)} · ${connectionName(p.connection_key)}`,
+      label: `${basename(p.project_path)} · ${connectionName(p.connection_key)}`,
       remove: () => setProjects((all) => all.filter((x) => x !== p)),
     })),
     ...models.map((m) => ({

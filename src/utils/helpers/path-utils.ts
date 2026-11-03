@@ -1,19 +1,4 @@
 /**
- * Extract the folder name from a file system path.
- *
- * @param path - Full file system path
- * @returns The last folder/file name in the path
- *
- * @example
- * getFolderName('/home/user/projects/my-app') // returns 'my-app'
- * getFolderName('/path/to/') // returns 'to'
- * getFolderName('/') // returns '/'
- */
-export function getFolderName(path: string): string {
-  return basename(path);
-}
-
-/**
  * Windows paths reach the UI with backslashes — from tool calls, from the Rust
  * side, from the OS dialogs — while everything that compares or joins them here
  * assumes "/".
@@ -59,7 +44,8 @@ export function fileUriToPath(uri: string): string {
 }
 
 /**
- * Last segment of a path, whichever separator it uses.
+ * Last segment of a path, whichever separator it uses, ignoring a trailing one. A path with no
+ * segment at all (`/`) comes back as given.
  *
  * @example
  * basename('src\\components\\App.tsx') // returns 'App.tsx'

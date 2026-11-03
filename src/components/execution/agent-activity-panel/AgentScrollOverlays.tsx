@@ -5,6 +5,7 @@ import { ComposeBar } from "../activity/compose-bar/ComposeBar";
 import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
 import { parseUserContent } from "../activity/ActivityUserMessage";
 import { parseCanvasPrompt } from "../activity/canvas/canvas-prompt";
+import { basename } from "@/lib/path-utils";
 
 /** The pinned bar says what the message was, and a canvas prompt was a click, not its own text. */
 function summariseUserMessage(content: string): string {
@@ -17,7 +18,7 @@ function summariseUserMessage(content: string): string {
     case "imported":
       return `imported ${canvas.surfaces.join(", ")}`;
     case "convert":
-      return `imported ${canvas.path.split(/[/\\]/).pop()}`;
+      return `imported ${basename(canvas.path)}`;
     default:
       return `${canvas.componentId || canvas.surfaceId} ${canvas.eventKind} on ${canvas.surfaceId}`;
   }

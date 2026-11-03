@@ -1,4 +1,5 @@
 import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
+import { basename } from "@/lib/path-utils";
 
 /** Who and what inside Maestro is currently pointed at one worktree. */
 export interface WorktreeUsage {
@@ -164,12 +165,7 @@ export function relativeAge(iso: string | null, now: number): string | null {
  * rather than the branch — and it stays available in the card's tooltip either way.
  */
 export function worktreeTitle(worktree: WorktreeWithStatus): string {
-  return worktree.task_name ?? folderName(worktree.path);
-}
-
-export function folderName(path: string): string {
-  const segments = normalizePath(path).split("/");
-  return segments[segments.length - 1] || path;
+  return worktree.task_name ?? basename(worktree.path);
 }
 
 /**
@@ -183,7 +179,7 @@ export function folderName(path: string): string {
 export function relativeWorktreePath(path: string, repoPath: string): string {
   const target = normalizePath(path);
   const root = normalizePath(repoPath);
-  if (target === root) return folderName(target);
+  if (target === root) return basename(target);
   return target.startsWith(`${root}/`) ? target.slice(root.length + 1) : target;
 }
 

@@ -12,6 +12,7 @@ import { useHomeStore } from "@/store/homeStore";
 import type { ConnectionPhase } from "@/store/homeStore";
 import type { ConnectionKey, SshAuthMethod } from "@/types/bindings";
 import type { AuthSubmission } from "@/views/home/ssh-auth-modal/ssh-auth-utils";
+import { basename } from "@/lib/path-utils";
 
 /**
  * Query key factory for SSH connection-related queries
@@ -580,8 +581,7 @@ export function useLocalImageDataUrl(localAbsPath: string, mime: string) {
  * in whatever opens it do not travel back.
  */
 async function hostCopyPath(absolutePath: string): Promise<string> {
-  const basename = absolutePath.split("/").pop() ?? "file";
-  return join(await tempDir(), "maestro", basename);
+  return join(await tempDir(), "maestro", basename(absolutePath));
 }
 
 /**
@@ -601,9 +601,8 @@ export async function openFileWithConnection(
   if (connection.type === "local") {
     await api.openPathNative(absolutePath);
   } else if (connection.type === "ssh" && opts?.sshConnectionId != null) {
-    const basename = absolutePath.split("/").pop() ?? "file";
     const localPath = await hostCopyPath(absolutePath);
-    const transferId = opts.transferId ?? `open-${basename}`;
+    const transferId = opts.transferId ?? `open-${basename(absolutePath)}`;
     await api.sftpDownload(opts.sshConnectionId, absolutePath, localPath, transferId);
     await api.openPathNative(localPath);
   } else if (connection.type === "wsl" && opts?.wslDistroName) {
@@ -638,8 +637,7 @@ export async function downloadFileToFolder(
 ): Promise<string | null> {
   const chosen = await openDirPicker({ directory: true });
   if (!chosen) return null;
-  const basename = absolutePath.split("/").pop() ?? "file";
-  const destPath = await join(chosen as string, basename);
+  const destPath = await join(chosen as string, basename(absolutePath));
 
   if (connection.type === "ssh") {
     await api.sftpDownload(connection.id, absolutePath, destPath, transferId);

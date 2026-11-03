@@ -13,6 +13,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import type { AuthProps, SavedKeyFile } from "./ssh-auth-utils";
 import { OS } from "./ssh-auth-utils";
 import { AuthFooter } from "./PasswordAuth";
+import { basename } from "@/lib/path-utils";
 
 export function KeyFileAuth({
   loading,
@@ -60,8 +61,6 @@ export function KeyFileAuth({
       savePassphrase: showPassphraseInput && !!passphrase && savePassphrase,
     });
   };
-
-  const basename = (path: string) => path.split(/[/\\]/).pop() ?? path;
 
   return (
     <form onSubmit={handleSubmit}>

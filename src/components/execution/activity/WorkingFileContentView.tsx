@@ -7,6 +7,7 @@ import { useAcpSessionMeta, useSessionFileQuery } from "@/services/execution.ser
 import { useConnectionFileQuery } from "@/services/connection.service";
 import { useSelectedProject } from "@/store/projectStore";
 import type { ConnectionKey } from "@/types/bindings";
+import { basename } from "@/lib/path-utils";
 
 function FileContentInner({
   content,
@@ -46,7 +47,7 @@ function FileContentInner({
           src={blobUrl ?? undefined}
           sandbox="allow-scripts"
           className="w-full h-full border-0 bg-background"
-          title={path.split("/").pop()}
+          title={basename(path)}
         />
       );
     case "plain":
@@ -66,7 +67,7 @@ function FileContentInner({
       return (
         <img
           src={`data:${mime};base64,${content}`}
-          alt={path.split("/").pop() ?? ""}
+          alt={basename(path)}
           className="max-w-full rounded-md"
         />
       );

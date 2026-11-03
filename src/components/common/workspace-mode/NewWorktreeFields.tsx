@@ -14,6 +14,7 @@ import { useProjectBranchesQuery } from "@/services/project.service";
 import { useSelectedProject } from "@/store/projectStore";
 import type { BranchMode, WorktreeWithStatus } from "@/types/bindings";
 import { findBranchConflict, type BranchConflict } from "./branch-conflict";
+import { basename } from "@/lib/path-utils";
 
 const MODES: { value: BranchMode; label: string; description: string }[] = [
   {
@@ -163,7 +164,7 @@ export function NewWorktreeFields({
                   if (!held) return null;
                   return held.kind === "repositoryDirectory"
                     ? "in use: your project directory"
-                    : `in use: ${folderName(held.worktree.path)}`;
+                    : `in use: ${basename(held.worktree.path)}`;
                 }
           }
         />
@@ -206,8 +207,8 @@ export function NewWorktreeFields({
               ) : (
                 <>
                   <span className="font-mono">{branch}</span> is already checked out in{" "}
-                  <span className="font-mono">{folderName(conflict.worktree.path)}</span>. Git
-                  allows one worktree per branch.
+                  <span className="font-mono">{basename(conflict.worktree.path)}</span>. Git allows
+                  one worktree per branch.
                 </>
               )}
             </span>
@@ -246,10 +247,4 @@ export function NewWorktreeFields({
       )}
     </div>
   );
-}
-
-/** The last path segment — what the user sees on disk and in the Workspaces view. */
-function folderName(path: string): string {
-  const segments = path.replace(/\\/g, "/").replace(/\/+$/, "").split("/");
-  return segments[segments.length - 1] || path;
 }

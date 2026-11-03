@@ -69,7 +69,7 @@ import { ToolbarButton } from "./ToolbarButton";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/ui/resizable";
 import { ReviewLayout } from "@/components/execution/diff/ReviewLayout";
 import { useReviewPanelLayout } from "@/components/execution/diff/useReviewPanelLayout";
-import { isAbsolutePath } from "@/lib/path-utils";
+import { isAbsolutePath, basename } from "@/lib/path-utils";
 import { CopyStateIcon, useCopyToClipboard } from "@/components/execution/activity/HighlightedCode";
 import { TransferIcon } from "./TransferIcon";
 import { transferTooltip, useFileTransfer } from "./useFileTransfer";
@@ -222,7 +222,7 @@ export function WorkspaceFilesPanel({
     }
   }, [isActive, fullPath, binaryMime, mode, refetch]);
 
-  const basename = selected ? (selected.split("/").pop() ?? selected) : null;
+  const fileName = selected ? basename(selected) : null;
   const editable = canEditFile({ fileName: selected, binaryMime, error: contentError, content });
   const previewKind = previewKindFor(selected);
 
@@ -520,7 +520,7 @@ export function WorkspaceFilesPanel({
         {/* Centred, exactly as the Changes tab's header centres its own. The relative path is the
             title rather than a second line: this bar is 40px tall and can be 224px wide. */}
         <div className="flex-1 flex items-center justify-center gap-1.5 min-w-0 overflow-hidden">
-          {basename ? (
+          {fileName ? (
             <>
               {/* Clicking the name copies the absolute path; the icon shows on hover so the bar
                   still reads as a title. */}
@@ -534,7 +534,7 @@ export function WorkspaceFilesPanel({
                     />
                   }
                 >
-                  <span className="truncate">{basename}</span>
+                  <span className="truncate">{fileName}</span>
                   <CopyStateIcon
                     copied={copied}
                     className={cn(
@@ -736,7 +736,7 @@ export function WorkspaceFilesPanel({
           <AlertDialogHeader>
             <AlertDialogTitle>This file changed while you were editing</AlertDialogTitle>
             <AlertDialogDescription>
-              {basename} was written by something else — most likely the agent — since you started
+              {fileName} was written by something else — most likely the agent — since you started
               editing. Overwriting replaces those changes with yours; reloading discards yours.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -765,7 +765,7 @@ export function WorkspaceFilesPanel({
           <AlertDialogHeader>
             <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
             <AlertDialogDescription>
-              {basename} has edits that have not been written to disk. They will be lost.
+              {fileName} has edits that have not been written to disk. They will be lost.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

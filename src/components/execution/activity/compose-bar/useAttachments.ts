@@ -4,6 +4,7 @@ import { saveClipboardImage, validateAttachment } from "@/services/execution.ser
 import type { AcpPromptCapabilities } from "../useAcpSessionLifecycle";
 import { isImageExtension } from "../fileTypeUtils";
 import type { ExternalAttachment } from "./externalAttachment";
+import { basename } from "@/lib/path-utils";
 
 interface Params {
   promptCapabilities: AcpPromptCapabilities | null | undefined;
@@ -26,7 +27,7 @@ export function useAttachments({ promptCapabilities, sessionId }: Params) {
     for (const path of paths) {
       const isImage = isImageExtension(path);
       if (isImage && !promptCapabilities?.image) continue;
-      const displayName = path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
+      const displayName = basename(path);
       let sizeBytes: number | undefined;
       let error: string | undefined;
       try {

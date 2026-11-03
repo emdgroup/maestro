@@ -10,7 +10,7 @@ import {
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
 import { Button } from "@/ui/button";
-import { getFolderName } from "@/lib/path-utils";
+import { basename } from "@/lib/path-utils";
 import { useAnswerProjectTakeover } from "@/services/project.service";
 import type { ConnectionKey } from "@/types/bindings";
 
@@ -64,8 +64,8 @@ export function ProjectTakeoverDialog() {
           <AlertDialogTitle>Give up this project?</AlertDialogTitle>
           <AlertDialogDescription>
             Maestro on {request?.requester_label} wants{" "}
-            {request ? getFolderName(request.project_path) : ""}. Its agent sessions keep running.
-            Given up in {secondsLeft}s if you do not answer.
+            {request ? basename(request.project_path) : ""}. Its agent sessions keep running. Given
+            up in {secondsLeft}s if you do not answer.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

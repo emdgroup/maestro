@@ -17,6 +17,7 @@ import type { ConnectionKey } from "@/types/bindings";
 import { ToolbarButton } from "./ToolbarButton";
 import { TransferIcon } from "./TransferIcon";
 import { transferTooltip, useFileTransfer } from "./useFileTransfer";
+import { basename } from "@/lib/path-utils";
 
 interface ArtifactsPanelProps {
   files: string[];
@@ -62,7 +63,7 @@ export function ArtifactsPanel({
     return idx >= 0 ? (files[idx] ?? null) : null;
   }, [selected, relativeFiles, files]);
 
-  const basename = selected ? (selected.split("/").pop() ?? selected) : null;
+  const fileName = selected ? basename(selected) : null;
   const absolutePath =
     selectedAbsPath && cwd && !/^([a-zA-Z]:)?[\\/]/.test(selectedAbsPath)
       ? `${cwd}/${selectedAbsPath}`
@@ -109,7 +110,7 @@ export function ArtifactsPanel({
         </ToolbarButton>
         {/* As the Files tab: clicking the name copies the absolute path. */}
         <div className="flex-1 flex items-center justify-center gap-1.5 min-w-0 overflow-hidden">
-          {basename ? (
+          {fileName ? (
             <Tooltip trackCursorAxis="x">
               <TooltipTrigger
                 render={
@@ -120,7 +121,7 @@ export function ArtifactsPanel({
                   />
                 }
               >
-                <span className="truncate">{basename}</span>
+                <span className="truncate">{fileName}</span>
                 <CopyStateIcon
                   copied={copied}
                   className={cn(

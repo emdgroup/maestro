@@ -15,6 +15,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { docIcon, formatFileSize } from "./compose-bar/AttachmentShelf";
 import { MessageActionBar } from "./MessageActionBar";
+import { basename } from "@/lib/path-utils";
 
 function fileTypeLabel(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -124,7 +125,7 @@ export function parseUserContent(raw: string): ParsedUserContent {
         textParts.push(text);
         blocks.push({ type: "text", text });
       } else if (block.type === "image" && typeof block.data === "string") {
-        const name = (block.uri as string | undefined)?.split(/[/\\]/).pop() ?? "image";
+        const name = block.uri ? basename(block.uri as string) : "image";
         blocks.push({
           type: "image",
           data: block.data,
@@ -133,7 +134,7 @@ export function parseUserContent(raw: string): ParsedUserContent {
         });
       } else if (!seenText && block.type === "resource" && block.resource?.uri) {
         const uri: string = block.resource.uri;
-        const name = uri.split(/[/\\]/).pop() ?? uri;
+        const name = basename(uri);
         blocks.push({
           type: "file",
           name,
@@ -150,7 +151,7 @@ export function parseUserContent(raw: string): ParsedUserContent {
         });
       } else if (seenText && block.type === "resource" && block.resource?.uri) {
         const uri: string = block.resource.uri;
-        const name = uri.split(/[/\\]/).pop() ?? uri;
+        const name = basename(uri);
         attachments.push(name);
         blocks.push({ type: "attachment", name, uri });
       } else if (seenText && block.type === "resource_link" && block.name) {
@@ -189,8 +190,8 @@ function CanvasPromptRow({ prompt }: { prompt: CanvasPrompt }) {
         </span>
       ) : prompt.kind === "convert" ? (
         <span>
-          imported <span className="font-mono">{prompt.path.split(/[/\\]/).pop()}</span> — asked the
-          agent to make it a canvas
+          imported <span className="font-mono">{basename(prompt.path)}</span> — asked the agent to
+          make it a canvas
         </span>
       ) : (
         <span>

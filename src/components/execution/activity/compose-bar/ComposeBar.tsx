@@ -31,6 +31,7 @@ import { AttachmentShelf } from "./AttachmentShelf";
 import { MentionSuggestionsPanel } from "./MentionSuggestionsPanel";
 import { CommandSuggestionsPanel } from "./CommandSuggestionsPanel";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { basename } from "@/lib/path-utils";
 
 /** Share of its bounds the input may grow to before it scrolls internally. */
 const MAX_HEIGHT_RATIO = 0.75;
@@ -196,8 +197,7 @@ export function ComposeBar({
 
   const selectMention = useCallback(
     (filePath: string) => {
-      const basename = filePath.split("/").pop() ?? filePath;
-      const newMention = { id: crypto.randomUUID(), displayName: basename, filePath };
+      const newMention = { id: crypto.randomUUID(), displayName: basename(filePath), filePath };
       const before = value.slice(0, mentionAC.mentionTriggerOffset);
       const after = value.slice(textareaRef.current?.selectionStart ?? value.length);
       const insertion = `@${basename} `;

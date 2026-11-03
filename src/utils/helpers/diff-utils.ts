@@ -4,6 +4,7 @@
  */
 
 import { DiffFileWithName, DiffHighlighterLang, DiffStatus } from "@/types/review";
+import { basename } from "@/lib/path-utils";
 
 /**
  * The language a file's extension names, as a name `diff-highlighter.ts` can find a grammar for:
@@ -99,7 +100,7 @@ export const LANGUAGE_BY_FILENAME: Record<string, DiffHighlighterLang> = {
 };
 
 export function detectLanguage(fileName: string): DiffHighlighterLang {
-  const base = fileName.split("/").pop() ?? fileName;
+  const base = basename(fileName);
   const named = LANGUAGE_BY_FILENAME[base];
   if (named) return named;
   const ext = base.includes(".") ? base.split(".").pop()!.toLowerCase() : "";

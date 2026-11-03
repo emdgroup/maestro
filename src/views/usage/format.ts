@@ -13,9 +13,3 @@ export function formatTokens(value: number): string {
 }
 
 export const formatMetric = (metric: Metric) => (metric === "cost" ? formatCost : formatTokens);
-
-/** The folder's name, in either separator. */
-export function folderName(path: string): string {
-  const parts = path.split(/[\\/]/).filter(Boolean);
-  return parts[parts.length - 1] ?? path;
-}
