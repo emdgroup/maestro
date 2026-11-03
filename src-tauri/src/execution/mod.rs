@@ -8,7 +8,6 @@ pub mod queue;
 pub mod spawn;
 
 pub use models::{
-    ActiveSessionInfo, AheadBehind, ExecutionMode, PtySessionMeta, SessionListEntryDto,
-    SessionListResult, Worktree, WorktreeWithStatus,
+    ActiveSessionInfo, ExecutionMode, PtySessionMeta, SessionListEntryDto, SessionListResult,
 };
 pub use pty::{spawn_agent_cli_pty, PtySession};

@@ -1,5 +1,5 @@
+use crate::connectivity::exec_channel::shell_quote;
 use crate::connectivity::exec_channel::{cold_spawn, ExecTarget};
-use crate::git::remote::shell_quote;
 use maestro_protocol::command_ext::NoConsoleWindow;
 use tauri::{AppHandle, Manager};
 

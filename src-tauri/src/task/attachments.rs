@@ -134,8 +134,7 @@ pub async fn add_task_attachment(
     let relative = attachment_relative_path(task_id, name, &taken);
     let dir = on_project_machine(&project.path, &format!("{TASK_ATTACHMENTS_DIR}/{task_id}"));
     let dest = on_project_machine(&project.path, &relative);
-    crate::acp::attachment_handlers::copy_to_machine(&app_state, &conn, source, &dir, &dest)
-        .await?;
+    crate::connectivity::files::copy_to_machine(&app_state, &conn, source, &dir, &dest).await?;
 
     let attachment = query_project_store(
         &app_state,

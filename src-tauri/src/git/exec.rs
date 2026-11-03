@@ -1,4 +1,3 @@
-use super::remote;
 use crate::connectivity::exec_channel::{self, ExecTarget};
 use crate::models::GitConnection;
 
@@ -115,7 +114,7 @@ pub async fn run_git_commands_lossy(
         commands
             .iter()
             .map(|args| {
-                let quoted: Vec<String> = args.iter().map(|a| remote::shell_quote(a)).collect();
+                let quoted: Vec<String> = args.iter().map(|a| exec_channel::shell_quote(a)).collect();
                 format!("{} {} 2>/dev/null", git_prefix, quoted.join(" "))
             })
             .collect::<Vec<_>>()
@@ -140,10 +139,10 @@ pub async fn run_git_commands_lossy(
     let git_prefix = if matches!(conn, GitConnection::Wsl { .. }) {
         format!(
             "git -c http.sslVerify=false -C {}",
-            remote::shell_quote(abs_path)
+            exec_channel::shell_quote(abs_path)
         )
     } else {
-        format!("git -C {}", remote::shell_quote(abs_path))
+        format!("git -C {}", exec_channel::shell_quote(abs_path))
     };
     let script = build_script(git_prefix);
     let output = exec_channel::run(&ExecTarget::of(conn), None, "sh", &["-c", &script])

@@ -3,14 +3,13 @@ pub use crate::connectivity::models as connection;
 pub use crate::connectivity::{ConnectionStatus, GitConnection};
 pub use crate::execution::models as worktree;
 pub use crate::execution::{
-    ActiveSessionInfo, AheadBehind, ExecutionMode, PtySessionMeta, SessionListEntryDto,
-    SessionListResult, Worktree, WorktreeWithStatus,
+    ActiveSessionInfo, ExecutionMode, PtySessionMeta, SessionListEntryDto, SessionListResult,
 };
 pub use crate::git::diff_models as diff;
 pub use crate::git::review_models as review;
 pub use crate::git::{
-    BinaryFileInfo, CommitInfo, DiffTarget, DirtyStatus, MergeResult, ReviewResult,
-    WorktreeDiffResult, WorktreeDiffStats,
+    AheadBehind, BinaryFileInfo, CommitInfo, DiffTarget, DirtyStatus, MergeResult, ReviewResult,
+    Worktree, WorktreeDiffResult, WorktreeDiffStats, WorktreeWithStatus,
 };
 pub use crate::integration::integration_models as integration;
 pub use crate::integration::issue_tracking_models as issue_tracking;
@@ -19,14 +18,14 @@ pub use crate::integration::{
 };
 pub use crate::project::models as project;
 pub use crate::project::{
-    now_rfc3339, Project, ProjectConfig, ProjectIssueTrackingConfig, ProjectStatus,
+    now_rfc3339, Project, ProjectConfig, ProjectConfigRequest, ProjectConfigResponse,
+    ProjectIssueTrackingConfig, ProjectStatus,
 };
 pub use crate::settings::models as settings;
 pub use crate::task::models as task;
 pub use crate::task::{
-    BranchMode, PhaseStatus, ProjectConfigRequest, ProjectConfigResponse, PullRequestCi, Task,
-    TaskAttachment, TaskBall, TaskComment, TaskCompletion, TaskPhase, TaskPriority, TaskStatus,
-    WorkspaceMode,
+    BranchMode, PhaseStatus, PullRequestCi, Task, TaskAttachment, TaskBall, TaskComment,
+    TaskCompletion, TaskPhase, TaskPriority, TaskStatus, WorkspaceMode,
 };
 pub use settings::{
     ActivityVisibility, AgentStreamWidth, AppSettings, ConnectionCapacitySettings,

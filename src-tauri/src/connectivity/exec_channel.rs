@@ -24,8 +24,13 @@ use tokio::sync::mpsc;
 use crate::acp::transport_types::try_parse_acp_frame;
 use crate::connectivity::docker::ContainerCli;
 use crate::connectivity::ssh::RemoteSshSession;
-use crate::git::remote::shell_quote;
 use maestro_protocol::command_ext::NoConsoleWindow;
+
+/// Shell-safe quoting for paths used in SSH commands.
+/// Wraps in single quotes and escapes internal single quotes as '\'' (end quote, escaped quote, restart quote).
+pub fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
 
 pub struct CommandOutput {
     pub stdout: Vec<u8>,

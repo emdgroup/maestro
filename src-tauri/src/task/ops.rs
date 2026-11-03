@@ -50,41 +50,6 @@ pub(crate) async fn apply_transition_writing(
     Ok(reply.task.map(|task| Task::from_wire(task, project_id)))
 }
 
-/// List git branches and the current branch for a project
-///
-/// Returns a tuple of (branches, current_branch).
-/// Falls back to ([], "main") if the project is not a git repo or git is unavailable.
-#[tauri::command]
-#[specta::specta]
-pub async fn list_project_branches(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-) -> Result<(crate::git::BranchList, String), String> {
-    let project = crate::project::crud::load_project(&app_state, project_id)?;
-
-    // Uses get_git_connection directly (not get_project_with_git_conn) because
-    // branch listing should fall back to local path when SSH is disconnected,
-    // rather than failing entirely.
-    let git_conn = crate::core::get_git_connection(&project, &app_state)
-        .await
-        .unwrap_or_else(|_| crate::models::GitConnection::Local {
-            path: project.path.clone(),
-        });
-
-    let remote = crate::git::remote::project_remote(&app_state, project_id).await;
-    let (branches, current_branch) = tokio::join!(
-        crate::git::list_branches(&git_conn, &remote),
-        crate::git::get_current_branch(&git_conn),
-    );
-    let branches = branches.unwrap_or_else(|_| crate::git::BranchList {
-        local: vec![],
-        remote: vec![],
-    });
-    let current_branch = current_branch.unwrap_or_else(|_| "main".to_string());
-
-    Ok((branches, current_branch))
-}
-
 /// Stop the active ACP or PTY session for a task, then abandon everything the run produced.
 ///
 /// Stop is abandonment, not a pause: the worktree and its branch are deleted and the task returns

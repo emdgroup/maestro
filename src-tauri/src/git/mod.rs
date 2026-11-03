@@ -8,6 +8,7 @@ pub mod review_handlers;
 pub mod review_models;
 pub mod worktree_handlers;
 pub mod worktree_lifecycle;
+pub mod worktree_models;
 pub mod worktree_query;
 pub mod worktree_staging;
 pub mod worktree_sync;
@@ -16,6 +17,7 @@ pub use diff_models::{
     BinaryFileInfo, CommitInfo, DiffTarget, DirtyStatus, WorktreeDiffResult, WorktreeDiffStats,
 };
 pub use review_models::{MergeResult, ReviewResult};
+pub use worktree_models::{AheadBehind, Worktree, WorktreeWithStatus};
 
 pub use exec::{run_git_commands_lossy, run_git_in_dir, run_git_in_dir_lossy};
 pub use merge::squash_merge_to_base;

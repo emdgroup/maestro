@@ -7,7 +7,6 @@ pub mod models;
 pub mod ops;
 
 pub use models::{
-    BranchMode, PhaseStatus, ProjectConfigRequest, ProjectConfigResponse, PullRequestCi, Task,
-    TaskAttachment, TaskBall, TaskComment, TaskCompletion, TaskPhase, TaskPriority, TaskStatus,
-    WorkspaceMode,
+    BranchMode, PhaseStatus, PullRequestCi, Task, TaskAttachment, TaskBall, TaskComment,
+    TaskCompletion, TaskPhase, TaskPriority, TaskStatus, WorkspaceMode,
 };

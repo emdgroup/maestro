@@ -1,7 +1,7 @@
 //! Branch-oriented pull request commands, for the session side panel.
 //!
 //! Distinct from the task-oriented ones in `git::merge`, and deliberately so. Those are steps in
-//! the pipeline: they move a task's phase, and `reconcile_pull_requests` sweeps what they wrote.
+//! the pipeline: they move a task's phase, and `pull_request_sweep` sweeps what they wrote.
 //! These two know nothing about tasks. They take a branch, ask the forge about it, and write
 //! nothing — which is what lets the panel show a pull request opened outside Maestro, and what
 //! keeps a session that has no task from needing a row to hang state on.

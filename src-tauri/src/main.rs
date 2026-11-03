@@ -4,7 +4,8 @@
     windows_subsystem = "windows"
 )]
 
-use maestro_lib::core::{init_db, load_settings, logging, AppState};
+use maestro_lib::core::{init_db, logging, AppState};
+use maestro_lib::settings::store::load_settings;
 use std::sync::Arc;
 use tauri::Manager;
 

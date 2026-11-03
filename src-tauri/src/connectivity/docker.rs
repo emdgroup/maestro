@@ -270,7 +270,7 @@ pub async fn list_directories(
 ) -> Result<Vec<String>, String> {
     let script = format!(
         "ls -1aF {} 2>/dev/null",
-        crate::git::remote::shell_quote(path)
+        crate::connectivity::exec_channel::shell_quote(path)
     );
     let output = run(cli, container_name, "sh", &["-c", &script]).await?;
     if !output.success() {

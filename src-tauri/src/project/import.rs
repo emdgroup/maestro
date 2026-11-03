@@ -107,7 +107,7 @@ async fn import(
         }
         let source_id = {
             let conn = app_state.db()?;
-            crate::core::settings::install_id(&conn)?
+            crate::settings::store::install_id(&conn)?
         };
         let begun = query_via_server_within(
             connection_key,
@@ -894,7 +894,7 @@ async fn copy_attachments(
             &format!("{TASK_ATTACHMENTS_DIR}/{}", copy.task_id),
         );
         let dest = on_project_machine(project_path, &copy.relative);
-        if let Err(e) = crate::acp::attachment_handlers::copy_to_machine(
+        if let Err(e) = crate::connectivity::files::copy_to_machine(
             app_state,
             git_conn,
             &copy.source,
