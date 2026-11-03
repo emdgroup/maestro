@@ -19,7 +19,7 @@ use maestro_protocol::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::command_ext::NoConsoleWindow;
+use maestro_protocol::command_ext::NoConsoleWindow;
 
 /// Pinned deliberately. `@latest` would fetch and execute whatever npm serves at that moment on
 /// every machine Maestro touches, which is the supply-chain exposure `maestro-server/AGENTS.md`

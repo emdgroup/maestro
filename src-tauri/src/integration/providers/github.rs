@@ -1,5 +1,5 @@
-use crate::command_ext::NoConsoleWindow;
 use crate::models::issue_tracking::RemoteIssue;
+use maestro_protocol::command_ext::NoConsoleWindow;
 use tokio::process::Command as TokioCommand;
 
 #[derive(serde::Deserialize)]

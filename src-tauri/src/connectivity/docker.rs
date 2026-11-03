@@ -1,4 +1,4 @@
-use crate::command_ext::NoConsoleWindow;
+use maestro_protocol::command_ext::NoConsoleWindow;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::Path;

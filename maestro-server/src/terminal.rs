@@ -1,4 +1,4 @@
-use crate::command_ext::NoConsoleWindow;
+use maestro_protocol::command_ext::NoConsoleWindow;
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

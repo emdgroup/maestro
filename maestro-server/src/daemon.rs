@@ -514,7 +514,7 @@ async fn query_activity(runtime: &DaemonRuntime) -> Result<DaemonActivity, Strin
 /// Deliberately not `kill_on_drop`: the whole point is a server that survives the process that
 /// started it. Its standard streams go nowhere, so it holds no pipe belonging to the app.
 async fn start_daemon() -> Result<(), String> {
-    use crate::command_ext::NoConsoleWindow;
+    use maestro_protocol::command_ext::NoConsoleWindow;
     let exe = std::env::current_exe().map_err(|e| format!("cannot locate this binary: {e}"))?;
     tokio::process::Command::new(exe)
         .arg("daemon")

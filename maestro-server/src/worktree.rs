@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, LazyLock, Mutex};
 
-use crate::command_ext::NoConsoleWindow;
+use maestro_protocol::command_ext::NoConsoleWindow;
 use maestro_protocol::worktree_names::{
     automation_branch_name, automation_worktree_path, loop_sandbox_path, tip_contained_elsewhere,
     worktree_path_for_task, MAESTRO_BRANCH_PREFIX, WORKTREE_DIR,

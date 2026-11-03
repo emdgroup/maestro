@@ -10,7 +10,7 @@ name = "maestro-server"
 path = "src/main.rs"
 
 [dependencies]
-maestro-protocol = { path = "../maestro-protocol", features = ["image"] }
+maestro-protocol = { path = "../maestro-protocol", features = ["image", "process"] }
 # Elicitation and terminal authentication are stable as of schema 1.7.0 (tool-call `name` as of 1.8.0), so the
 # `unstable_elicitation` / `unstable_auth_methods` flags no longer exist upstream.
 agent-client-protocol = { version = "3.6.0", features = [

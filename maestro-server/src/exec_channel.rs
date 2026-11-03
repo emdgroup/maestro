@@ -15,7 +15,7 @@ use maestro_protocol::{read_frame, write_frame};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::Mutex;
 
-use crate::command_ext::NoConsoleWindow;
+use maestro_protocol::command_ext::NoConsoleWindow;
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     serve(

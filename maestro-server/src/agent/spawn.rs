@@ -1,4 +1,4 @@
-use crate::command_ext::NoConsoleWindow;
+use maestro_protocol::command_ext::NoConsoleWindow;
 use std::path::Path;
 
 /// Spawn an ACP agent as a child subprocess with piped stdin/stdout/stderr.

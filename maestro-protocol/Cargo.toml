@@ -18,3 +18,5 @@ image = { version = "0.25", default-features = false, features = [
 # Scaling an image attachment down before it is sent. Off by default, so the crate stays light for
 # anyone who only needs the message types.
 image = ["dep:image"]
+# `NoConsoleWindow` for the processes the app and the daemon spawn.
+process = ["tokio/process"]

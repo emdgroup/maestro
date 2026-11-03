@@ -1,6 +1,5 @@
 pub mod acp;
 pub mod collections;
-pub mod command_ext;
 pub mod connectivity;
 pub mod core;
 pub mod execution;

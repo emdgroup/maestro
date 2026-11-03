@@ -1,4 +1,4 @@
-use crate::command_ext::NoConsoleWindow;
+use maestro_protocol::command_ext::NoConsoleWindow;
 use tauri::{AppHandle, Manager};
 
 const REMOTE_INSTALL_DIR: &str = ".local/bin";
