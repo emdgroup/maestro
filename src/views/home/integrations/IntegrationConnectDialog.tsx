@@ -10,11 +10,12 @@ import {
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSaveIntegration, PROVIDER_NAMES } from "@/services/integration.service";
 import { getProviderFields } from "./integration-provider-config";
 import { ProviderInstructions } from "./ProviderInstructions";
+import { Spinner } from "@/ui/spinner";
 
 interface IntegrationConnectDialogProps {
   provider: string;
@@ -314,7 +315,7 @@ export function IntegrationConnectDialog({
             <Button onClick={handleSubmit} disabled={isSubmitDisabled}>
               {isPending ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" />
+                  <Spinner className="size-4" />
                   Connecting...
                 </>
               ) : (

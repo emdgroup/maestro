@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { SquareArrowOutUpRight, SearchAlert, RefreshCw, Loader2 } from "lucide-react";
+import { SquareArrowOutUpRight, SearchAlert, RefreshCw } from "lucide-react";
 import { Label } from "@/ui/label";
 import { Input } from "@/ui/input";
 import { Button } from "@/ui/button";
@@ -19,6 +19,7 @@ import {
   useListGithubRepos,
   useRefreshGithubRepos,
 } from "@/services/integration-lookup.service";
+import { Spinner } from "@/ui/spinner";
 
 interface Props {
   integration: IntegrationStatus;
@@ -89,7 +90,7 @@ export function GitHubForm({ integration, fields, onFieldsChange, showValidation
             aria-invalid={showValidation && !owner ? "true" : undefined}
           />
           {owner && ownerCheck.isLoading && (
-            <Loader2 className="size-4 text-muted-foreground animate-spin shrink-0" />
+            <Spinner className="size-4 text-muted-foreground shrink-0" />
           )}
           {owner && ownerValid && (
             <Tooltip>

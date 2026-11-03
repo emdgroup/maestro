@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { Check, Container, Loader2, Server, SquareTerminal } from "lucide-react";
+import { Check, Container, Server, SquareTerminal } from "lucide-react";
 import { connectionKeyStr } from "@/lib/connection-utils";
 import type { ConnectionKey, SshAuthMethod } from "@/types/bindings";
 import { getErrorMessage } from "@/lib/error-utils";
@@ -21,6 +21,7 @@ import { useHomeStore } from "@/store/homeStore";
 import { HomeSheet } from "./HomeSheet";
 import { Segmented } from "@/components/common/Segmented";
 import { Button } from "@/ui/button";
+import { Spinner } from "@/ui/spinner";
 
 type Kind = "ssh" | "wsl" | "docker";
 type Auth = "agent" | "key" | "password";
@@ -59,7 +60,7 @@ function Checklist({
             {index < step ? (
               <Check className="size-4 text-emerald-600" />
             ) : index === step && !error ? (
-              <Loader2 className="size-3.5 animate-spin" />
+              <Spinner className="size-3.5" />
             ) : (
               <span className="inline-block size-1.5 rounded-full bg-foreground/20" />
             )}

@@ -1,14 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
-import {
-  Check,
-  Container,
-  Loader2,
-  Monitor,
-  Pencil,
-  Server,
-  ServerOff,
-  SquareTerminal,
-} from "lucide-react";
+import { Check, Container, Monitor, Pencil, Server, ServerOff, SquareTerminal } from "lucide-react";
 import type {
   ConnectionKey,
   DockerConnection,
@@ -24,6 +15,7 @@ import { AddProjectTile, ProjectChip, ProjectTile, projectStatus } from "./Proje
 import type { ProjectCard } from "./ProjectTile";
 import { attach, connect, signIn } from "@/services/connection.service";
 import { Button } from "@/ui/button";
+import { Spinner } from "@/ui/spinner";
 
 /** A connection as Home lists it. */
 export interface HomeConnection {
@@ -65,10 +57,6 @@ export interface ConnectionPanelProps {
   menu: ReactNode;
 }
 
-function Spinner() {
-  return <Loader2 className="size-3.5 animate-spin" />;
-}
-
 /** The three steps of attaching, inline under the header. */
 function ConnectingSteps({
   connection,
@@ -94,7 +82,7 @@ function ConnectingSteps({
           {index < step ? (
             <Check className="size-3.5 text-emerald-600" />
           ) : index === step ? (
-            <Spinner />
+            <Spinner className="size-3.5" />
           ) : (
             <span className="inline-block size-1.5 rounded-full bg-foreground/20" />
           )}
@@ -385,7 +373,7 @@ export function ConnectionPanel({
   } else if (phase.kind === "stopping") {
     body = (
       <div className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Spinner />
+        <Spinner className="size-3.5" />
         Stopping the Maestro server. Its agent sessions and automation runs end with it.
       </div>
     );
@@ -470,7 +458,7 @@ export function ConnectionPanel({
               disabled={checking}
               className="home-pill flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 text-foreground hover:bg-foreground/10"
             >
-              {checking && <Spinner />}
+              {checking && <Spinner className="size-3.5" />}
               {checking ? "Checking…" : "Refresh"}
             </button>
           ) : phase.kind === "idle" ? (

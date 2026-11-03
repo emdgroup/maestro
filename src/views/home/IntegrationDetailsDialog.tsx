@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+
 import { Button } from "@/ui/button";
 import { BrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { useSaveIntegration, PROVIDER_NAMES } from "@/services/integration.service";
@@ -7,6 +7,7 @@ import type { IntegrationStatus } from "@/services/integration.service";
 import { getProviderFields } from "@/views/home/integrations/integration-provider-config";
 import { CapabilityTags } from "./IntegrationsPanel";
 import { HomeSheet } from "./HomeSheet";
+import { Spinner } from "@/ui/spinner";
 
 interface IntegrationDetailsDialogProps {
   integration: IntegrationStatus | null;
@@ -164,7 +165,7 @@ export function IntegrationDetailsDialog({
               Cancel
             </Button>
             <Button onClick={save} disabled={isPending || !token.trim()}>
-              {isPending && <Loader2 className="size-4 animate-spin" />}
+              {isPending && <Spinner className="size-4" />}
               Save
             </Button>
           </div>

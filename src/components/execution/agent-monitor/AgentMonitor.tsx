@@ -9,7 +9,6 @@ import {
 } from "react";
 import { motion } from "framer-motion";
 import { BotOff, FolderOpen, GitBranch, RotateCw, Terminal, X } from "lucide-react";
-import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { Empty, EmptyDescription } from "@/ui/empty";
@@ -40,6 +39,7 @@ import { STAGE_NAMES } from "@/lib/default-profiles";
 import { useAgentProfilesQuery } from "@/services/project.service";
 import { useAutomationRunsQuery } from "@/services/automation.service";
 import { ACTIVITY_DOT, ElapsedTime } from "@/components/execution/shared/activityStatus";
+import { AgentIcon } from "@/components/common/AgentIcon";
 
 const STATUS_FALLBACK: Record<SessionActivityStatus, string> = {
   spawning: "Starting",
@@ -103,33 +103,6 @@ function getStatusLabel(activityInfo: SessionActivityInfo): string {
   if (label) return label;
   if (status === "idle" && !seen) return "Done";
   return STATUS_FALLBACK[status];
-}
-
-function AgentIcon({
-  agentId,
-  src,
-  className,
-}: {
-  agentId: string;
-  src?: string;
-  className: string;
-}) {
-  if (hasBrandIcon(agentId)) {
-    return <BrandIcon slug={agentId} className={className} />;
-  }
-  if (src) {
-    return (
-      <img
-        src={src}
-        className={cn(className, "dark:filter-[invert(1)]")}
-        onError={(e) => {
-          (e.currentTarget as HTMLImageElement).style.display = "none";
-        }}
-        alt="agent icon"
-      />
-    );
-  }
-  return null;
 }
 
 /**
@@ -238,9 +211,8 @@ const SessionRow = memo(function SessionRow({
                 <div className="pr-avatar-icon w-8 h-8 rounded-md overflow-hidden relative bg-card">
                   {session.execution_mode === "acp" && session.agent_id ? (
                     <AgentIcon
-                      agentId={session.agent_id}
-                      src={agentIcons?.[session.agent_id]}
-                      className="w-8 h-8 rounded-md bg-muted/40"
+                      agent={{ id: session.agent_id, icon: agentIcons?.[session.agent_id] }}
+                      className="size-8 rounded-md bg-muted/40"
                     />
                   ) : (
                     <div className="w-8 h-8 rounded-md bg-muted/40 border border-border flex items-center justify-center">
@@ -480,9 +452,8 @@ export function AgentMonitor({
           <Tooltip>
             <TooltipTrigger render={<span className="shrink-0 inline-flex" />}>
               <AgentIcon
-                agentId={session.agent_id}
-                src={agentIcons?.[session.agent_id]}
-                className="w-10 h-10 rounded-sm shrink-0"
+                agent={{ id: session.agent_id, icon: agentIcons?.[session.agent_id] }}
+                className="size-10 rounded-sm"
               />
             </TooltipTrigger>
             <TooltipContent>{agentNames?.[session.agent_id] ?? session.agent_id}</TooltipContent>

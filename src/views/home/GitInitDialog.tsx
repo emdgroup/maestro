@@ -7,8 +7,9 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { Button } from "@/ui/button";
-import { GitBranch, Loader2 } from "lucide-react";
+import { GitBranch } from "lucide-react";
 import { basename } from "@/lib/path-utils";
+import { Spinner } from "@/ui/spinner";
 
 interface GitInitDialogProps {
   open: boolean;
@@ -49,7 +50,7 @@ export function GitInitDialog({
           <Button onClick={onInitGit} disabled={loading}>
             {loading ? (
               <>
-                <Loader2 className="size-4 animate-spin" />
+                <Spinner className="size-4" />
                 Initializing...
               </>
             ) : (

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Menu } from "@base-ui/react/menu";
 import { toast } from "sonner";
-import { Check, ChevronDown, ChevronRight, House, Loader2, Plus } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, House, Plus } from "lucide-react";
 import type { Project } from "@/types/bindings";
 import { cn } from "@/lib/utils";
 import { connectionKeyFromProject, connectionKeyStr } from "@/lib/connection-utils";
@@ -28,6 +28,8 @@ import {
   zoomToHome,
 } from "@/components/layout/project-transition/projectTransition";
 import { plural } from "@/lib/format-utils";
+import { Spinner } from "@/ui/spinner";
+import { Count } from "@/components/home/Count";
 
 const segment =
   "flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-xs outline-none transition-colors hover:bg-foreground/[0.08] focus-visible:bg-foreground/[0.08] data-popup-open:bg-foreground/[0.08]";
@@ -96,24 +98,11 @@ function StatusWord({
   opening: boolean;
   current: boolean;
 }) {
-  if (opening) return <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />;
+  if (opening) return <Spinner className="size-3.5 shrink-0 text-muted-foreground" />;
   if (current) return <Check className="size-3.5 shrink-0 text-accent" strokeWidth={2.4} />;
   const status = projectStatus(card);
   return (
     <span className={cn("shrink-0 text-[11px] font-medium", status.className)}>{status.label}</span>
-  );
-}
-
-function Count({ value, label, className }: { value: number; label: string; className?: string }) {
-  return (
-    <span>
-      <b
-        className={cn("font-semibold tabular-nums", value ? className : "text-muted-foreground/50")}
-      >
-        {value}
-      </b>{" "}
-      <span className="text-muted-foreground">{label}</span>
-    </span>
   );
 }
 
@@ -259,7 +248,7 @@ function ConnectionEntry({
           </>
         ) : phase.kind === "connecting" || phase.kind === "stopping" ? (
           <div className="flex items-center justify-center gap-2 py-5 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" />
+            <Spinner className="size-3.5" />
             {line}
           </div>
         ) : (

@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { X, Loader2 } from "lucide-react";
+import { X } from "lucide-react";
 import { Button } from "@/ui/button";
 import { BrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import {
@@ -12,6 +12,7 @@ import { GitLabRepoForm } from "./provider-forms/GitlabRepoForm";
 import { OwnerRepoForm } from "./provider-forms/OwnerRepoForm";
 import { AzureDevOpsRepoForm } from "./provider-forms/AzureDevOpsRepoForm";
 import { BitbucketRepoForm } from "./provider-forms/BitbucketRepoForm";
+import { Spinner } from "@/ui/spinner";
 
 interface ProviderRepoPickerProps {
   onRepoSelected: (cloneUrl: string, repoName: string, provider?: string) => void;
@@ -32,7 +33,7 @@ export function ProviderRepoPicker({ onRepoSelected, disabled }: ProviderRepoPic
   if (integrationsQuery.isLoading) {
     return (
       <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
-        <Loader2 className="size-4 mr-2 animate-spin" />
+        <Spinner className="size-4 mr-2" />
         Loading providers…
       </div>
     );

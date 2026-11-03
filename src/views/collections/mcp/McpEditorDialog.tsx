@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Reveal } from "@/components/common/Reveal";
-import { ChevronRight, CircleCheck, CircleX, Loader2, Plus, X } from "lucide-react";
+import { ChevronRight, CircleCheck, CircleX, Plus, X } from "lucide-react";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { CopyStateIcon } from "@/components/common/CopyStateIcon";
 import { toast } from "sonner";
@@ -38,6 +38,7 @@ import type {
   McpTestResult,
 } from "@/types/bindings";
 import { plural } from "@/lib/format-utils";
+import { Spinner } from "@/ui/spinner";
 
 const EMPTY: McpServerConfig = {
   name: "",
@@ -484,7 +485,7 @@ export function McpEditorDialog({
               )
             }
           >
-            {test.isPending && <Loader2 className="mr-1 size-3.5 animate-spin" />}
+            {test.isPending && <Spinner className="mr-1 size-3.5" />}
             Test connection
           </Button>
           {unsigned ? (
@@ -557,7 +558,7 @@ function OAuthPanel({
           disabled={pending || !canSignIn}
           onClick={onSignIn}
         >
-          {pending && <Loader2 className="mr-1 size-3 animate-spin" />}
+          {pending && <Spinner className="mr-1 size-3" />}
           {pending ? "Signing in…" : signedIn || saved ? "Sign in again" : "Sign in"}
         </Button>
       </div>

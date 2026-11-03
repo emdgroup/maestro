@@ -2,7 +2,7 @@ import React, { useState, Fragment } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/ui/dialog";
 import { Button } from "@/ui/button";
-import { Loader2, TerminalSquare } from "lucide-react";
+import { TerminalSquare } from "lucide-react";
 import type { ConnectionKey } from "@/types/bindings";
 import {
   startAuthTerminal,
@@ -13,6 +13,7 @@ import { useTauriEvent } from "@/services/tauri-events";
 import { connectionChannelId } from "@/lib/connection-utils";
 import { useNavigate } from "@/store/navigationStore";
 import { useBoardActions } from "@/store/boardStore";
+import { Spinner } from "@/ui/spinner";
 
 interface AgentAuthModalProps {
   agentId: string;
@@ -195,7 +196,7 @@ export function AgentAuthModal({
 
         {isInProgress ? (
           <div className="flex flex-col items-center gap-3 py-6 text-sm text-muted-foreground">
-            <Loader2 className="w-6 h-6 animate-spin" />
+            <Spinner className="size-6" />
             <span>Authentication in progress. Follow any prompts in your browser or terminal.</span>
             {outputLines.length > 0 && (
               <pre className="w-full max-h-40 overflow-y-auto rounded-md bg-muted px-3 py-2 text-xs font-mono text-foreground text-left whitespace-pre-wrap break-all">

@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import {
-  Loader2,
   ChevronRight,
   Search,
   X,
@@ -22,6 +21,7 @@ import { useListDirContents, useListWorkspaceFiles } from "@/services/connection
 import { ToolbarButton } from "./ToolbarButton";
 import type { ConnectionKey } from "@/types/bindings";
 import { basename } from "@/lib/path-utils";
+import { Spinner } from "@/ui/spinner";
 
 /** The entry a menu action applies to, resolved to everything the mutation and dialog need. */
 export interface FileTreeTarget {
@@ -352,7 +352,7 @@ function DirContents({
   if (isLoading) {
     return (
       <div className="flex items-center py-1.5" style={{ paddingLeft: indentFor(depth) }}>
-        <Loader2 className="size-3 animate-spin text-muted-foreground" />
+        <Spinner className="size-3 text-muted-foreground" />
       </div>
     );
   }

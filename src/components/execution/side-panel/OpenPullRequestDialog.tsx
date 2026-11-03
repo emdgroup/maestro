@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { TriangleAlert, Loader2 } from "lucide-react";
+import { TriangleAlert } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -21,6 +21,7 @@ import {
 } from "@/ui/combobox";
 import { useProjectBranchesQuery } from "@/services/project.service";
 import { useOpenPullRequestForBranch } from "@/services/integration.service";
+import { Spinner } from "@/ui/spinner";
 
 interface Props {
   open: boolean;
@@ -157,7 +158,7 @@ export function OpenPullRequestDialog({
             disabled={!canSubmit || openPullRequest.isPending}
             onClick={() => void handleSubmit()}
           >
-            {openPullRequest.isPending && <Loader2 className="size-4 animate-spin" />}
+            {openPullRequest.isPending && <Spinner className="size-4" />}
             Open pull request
           </Button>
         </AlertDialogFooter>

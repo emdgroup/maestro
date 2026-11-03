@@ -1,6 +1,8 @@
-import { Loader2, Lock, Plus, X } from "lucide-react";
+import { Lock, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { Spinner } from "@/ui/spinner";
+import { Count } from "@/components/home/Count";
 
 /** What a tile shows about one project, from its connection's summary. */
 export interface ProjectCard {
@@ -46,22 +48,6 @@ export function displayPath(path: string) {
   return path.replace(
     /^(\/home\/[^/]+|\/Users\/[^/]+|\/root|[A-Za-z]:[\\/]Users[\\/][^\\/]+)(?=[\\/]|$)/,
     "~",
-  );
-}
-
-function Count({ value, label, className }: { value: number; label: string; className?: string }) {
-  return (
-    <span className="flex items-baseline gap-1">
-      <span
-        className={cn(
-          "text-base font-semibold tabular-nums",
-          value ? className : "text-muted-foreground/50",
-        )}
-      >
-        {value}
-      </span>
-      <span className="text-[11px] text-muted-foreground">{label}</span>
-    </span>
   );
 }
 
@@ -112,14 +98,14 @@ export function ProjectTile({ project, opening, onOpen, onRemove }: TileProps) {
               status.rank === 1 && "animate-pulse",
             )}
           >
-            {opening ? <Loader2 className="size-3.5 animate-spin" /> : status.label}
+            {opening ? <Spinner className="size-3.5" /> : status.label}
           </span>
         </div>
         <div className="mt-2 h-4 w-full truncate text-xs text-muted-foreground">{context}</div>
         <div className="mt-auto flex gap-4 pt-3">
-          <Count value={project.working} label="working" className="home-working" />
-          <Count value={project.review} label="review" className="home-review" />
-          <Count value={project.queued} label="queued" />
+          <Count large value={project.working} label="working" className="home-working" />
+          <Count large value={project.review} label="review" className="home-review" />
+          <Count large value={project.queued} label="queued" />
         </div>
       </button>
       {!opening && (
