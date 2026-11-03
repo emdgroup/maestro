@@ -143,7 +143,12 @@ Separate binary (must be on PATH). Acts as ACP intermediary between Tauri and AI
 
 **maestro-protocol (`maestro-protocol/src/`):**
 
-Shared crate defining the JSON message types between maestro (Tauri) and maestro-server.
+Shared crate defining the JSON message types between maestro (Tauri) and maestro-server, and the
+rules both sides have to apply alike, one module each: `completion.rs` (the completion marker and
+review cap), `worktree_names.rs`, `paths.rs` (path tidying and the home directory),
+`attachments.rs`, `mcp_args.rs` (MCP tool arguments) and `skill_names.rs`. It stays light because
+`maestro-server` is built on its own for remote hosts: anything heavier sits behind an optional
+feature, `image` for scaling attachments and `process` for `command_ext::NoConsoleWindow`.
 
 **Cargo workspace:** Root `Cargo.toml` defines three members: `src-tauri`, `maestro-server`, `maestro-protocol`. Build from repo root with `cargo build` or from `src-tauri/` for the Tauri app only.
 
