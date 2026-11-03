@@ -9,12 +9,15 @@ import React, {
 import { flushSync } from "react-dom";
 import { Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { api } from "@/lib/tauri-utils";
+import {
+  prepareExternalAttachments,
+  readSessionFile,
+  useAcpSessionMeta,
+} from "@/services/execution.service";
 import type { JsonValue } from "@/types/bindings";
 import type { AcpPromptCapabilities } from "../useAcpSessionLifecycle";
 import type { AvailableCommand, UsageState, ConfigOption } from "../types";
 import { useSettings } from "@/services/settings.service";
-import { useAcpSessionMeta } from "@/services/execution.service";
 import { LiquidContextIndicator } from "../LiquidContextIndicator";
 import { ConfigSelector } from "../config-selectors/ConfigSelector";
 import { mimeForExtension } from "../fileTypeUtils";
@@ -260,7 +263,7 @@ export function ComposeBar({
     try {
       const attachmentBlocks: JsonValue[] = [];
       if (attachments.length > 0) {
-        const prepared = await api.prepareExternalAttachments(
+        const prepared = await prepareExternalAttachments(
           sessionId,
           attachments.map((a) => ({ path: a.localAbsPath, is_image: a.isImage })),
           embeddedContext,
@@ -274,7 +277,7 @@ export function ComposeBar({
       if (mentions.length > 0 && embeddedContext) {
         const results = await Promise.allSettled(
           mentions.map(async (m) => {
-            const text = await api.readSessionFile(sessionId, m.filePath);
+            const text = await readSessionFile(sessionId, m.filePath);
             return { path: m.filePath, text, mime: mimeForExtension(m.filePath) };
           }),
         );

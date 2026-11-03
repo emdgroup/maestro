@@ -1,11 +1,11 @@
 import { useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { Cpu } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Badge } from "@/ui/badge";
 import { cn } from "@/lib/utils";
-import { api } from "@/lib/tauri-utils";
+import { executionQueryKeys, useQueueCapacityQuery } from "@/services/execution.service";
 
 /**
  * One transition emits several events, and answering each separately means several
@@ -23,7 +23,7 @@ const DEBOUNCE_MS = 400;
  */
 export function QueueCapacityBadge({ projectId }: { projectId: number | null }) {
   const queryClient = useQueryClient();
-  const queryKey = ["queue-capacity", projectId] as const;
+  const queryKey = executionQueryKeys.queueCapacity(projectId);
 
   useEffect(() => {
     if (projectId === null) return;
@@ -44,11 +44,7 @@ export function QueueCapacityBadge({ projectId }: { projectId: number | null }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, queryClient]);
 
-  const { data } = useQuery({
-    queryKey,
-    queryFn: () => api.getQueueCapacity(projectId!),
-    enabled: projectId !== null,
-  });
+  const { data } = useQueueCapacityQuery(projectId);
 
   if (!data) return null;
 

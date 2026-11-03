@@ -4,9 +4,14 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { api } from "@/lib/tauri-utils";
 import { getTerminalTheme, getTerminalColorOptions } from "@/lib/terminalTheme";
 import { useSettings } from "@/services/settings.service";
+import {
+  attachTerminal,
+  detachTerminal,
+  resizeTerminal,
+  sendTerminalInput,
+} from "@/services/execution.service";
 import {
   registerTerminal,
   unregisterTerminal,
@@ -67,7 +72,7 @@ export function TerminalComponent({ sessionId }: TerminalComponentProps) {
     // Register resize handler BEFORE fitAddon.fit() so the initial fit
     // sends the correct dimensions to the backend PTY immediately.
     terminal.onResize(({ cols, rows }) => {
-      api.resizeTerminal(sessionId, cols, rows).catch((err) => {
+      resizeTerminal(sessionId, cols, rows).catch((err) => {
         console.error("Failed to resize terminal:", err);
       });
     });
@@ -83,10 +88,10 @@ export function TerminalComponent({ sessionId }: TerminalComponentProps) {
     // Attach to backend PTY using execution service.
     // Retry once after 500ms — PTY may still be initializing for interactive sessions.
     const tryAttach = () => {
-      api.attachTerminal(sessionId, channel, null).catch((err) => {
+      attachTerminal(sessionId, channel).catch((err) => {
         console.error("Failed to attach terminal:", err);
         setTimeout(() => {
-          api.attachTerminal(sessionId, channel, null).catch((err2) => {
+          attachTerminal(sessionId, channel).catch((err2) => {
             console.error("Failed to attach terminal (retry):", err2);
             terminal.write(`\r\nError: Failed to attach terminal: ${err2}\r\n`);
           });
@@ -102,7 +107,7 @@ export function TerminalComponent({ sessionId }: TerminalComponentProps) {
     // next paint, so the correct size is set before the user sees anything.
     const rafId = requestAnimationFrame(() => {
       fitAddon.fit();
-      // fit() triggers onResize -> api.resizeTerminal() -> SIGWINCH -> program repaints.
+      // fit() triggers onResize -> resizeTerminal() -> SIGWINCH -> program repaints.
       // Reset terminal state before attaching:
       //   - Disable mouse tracking modes that a previous TUI (e.g. claude) may have
       //     enabled without disabling on exit. Without this, bash echoes mouse escape
@@ -115,7 +120,7 @@ export function TerminalComponent({ sessionId }: TerminalComponentProps) {
 
     // Set up terminal to send input to backend
     terminal.onData((data: string) => {
-      api.sendTerminalInput(sessionId, data).catch((err) => {
+      sendTerminalInput(sessionId, data).catch((err) => {
         console.error("Failed to send terminal input:", err);
       });
     });
@@ -137,7 +142,7 @@ export function TerminalComponent({ sessionId }: TerminalComponentProps) {
       cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
       unregisterTerminal(container);
-      api.detachTerminal(sessionId).catch(() => {});
+      detachTerminal(sessionId).catch(() => {});
       terminal.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

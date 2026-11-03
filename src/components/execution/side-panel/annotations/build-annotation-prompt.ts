@@ -1,4 +1,4 @@
-import { api } from "@/lib/tauri-utils";
+import { prepareExternalAttachments } from "@/services/execution.service";
 import { commentAnchor } from "@/components/execution/diff/comment-anchor";
 import type { Annotation } from "@/store/annotationStore";
 import type { JsonValue } from "@/types/bindings";
@@ -95,7 +95,7 @@ async function imageBlock(
 ): Promise<JsonValue | null> {
   if (!shotPath || !canSendImages || sessionId == null) return null;
   try {
-    const prepared = await api.prepareExternalAttachments(
+    const prepared = await prepareExternalAttachments(
       sessionId,
       [{ path: shotPath, is_image: true }],
       false,

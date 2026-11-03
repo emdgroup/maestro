@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { open as openFilePicker } from "@tauri-apps/plugin-dialog";
-import { api } from "@/lib/tauri-utils";
+import { saveClipboardImage, validateAttachment } from "@/services/execution.service";
 import type { AcpPromptCapabilities } from "../useAcpSessionLifecycle";
 import { isImageExtension } from "../fileTypeUtils";
 import type { ExternalAttachment } from "./externalAttachment";
@@ -30,7 +30,7 @@ export function useAttachments({ promptCapabilities, sessionId }: Params) {
       let sizeBytes: number | undefined;
       let error: string | undefined;
       try {
-        const validation = await api.validateAttachment(path, isImage);
+        const validation = await validateAttachment(path, isImage);
         sizeBytes = validation.size_bytes;
         error = validation.rejection ?? undefined;
       } catch (e) {
@@ -72,14 +72,14 @@ export function useAttachments({ promptCapabilities, sessionId }: Params) {
           binary += String.fromCharCode(bytes[i]);
         }
         const base64Data = btoa(binary);
-        const tempPath = await api.saveClipboardImage(base64Data, mimeType);
+        const tempPath = await saveClipboardImage(base64Data, mimeType);
         const ext = mimeType.split("/")[1]?.replace("jpeg", "jpg") ?? "png";
         const displayName =
           pastedCount === 0 ? `Pasted image.${ext}` : `Pasted image (${pastedCount + 1}).${ext}`;
         pastedCount += 1;
         let pasteError: string | undefined;
         try {
-          pasteError = (await api.validateAttachment(tempPath, true)).rejection ?? undefined;
+          pasteError = (await validateAttachment(tempPath, true)).rejection ?? undefined;
         } catch (e) {
           pasteError = e instanceof Error ? e.message : String(e);
         }

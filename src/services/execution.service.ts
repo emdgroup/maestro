@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
@@ -7,8 +8,7 @@ import { taskQueryKeys } from "@/services/task.service";
 import { findEffortOption } from "@/lib/effort-option";
 import { useAnnotationStore } from "@/store/annotationStore";
 import type { ConfigOption } from "@/components/execution/activity/types";
-import type { ConnectionKey, SessionRole } from "@/types/bindings";
-import { commands } from "@/types/bindings";
+import type { ConnectionKey, ExternalFileRequest, JsonValue, SessionRole } from "@/types/bindings";
 
 export const executionQueryKeys = {
   activeSessions: (projectId: number) => ["activeSessions", projectId] as const,
@@ -25,7 +25,20 @@ export const executionQueryKeys = {
   // against the agent's default model is the wrong answer for a profile naming another one.
   agentConfig: (agentId: string, cwd: string, connection: ConnectionKey, modelId: string) =>
     ["agentConfig", agentId, cwd, connection, modelId] as const,
+  queueCapacity: (projectId: number | null) => ["queueCapacity", projectId] as const,
 };
+
+/**
+ * How many agent slots the project's host has, and how many are taken. Invalidated by the events
+ * that start or end a session, through the app-wide sync.
+ */
+export function useQueueCapacityQuery(projectId: number | null) {
+  return useQuery({
+    queryKey: executionQueryKeys.queueCapacity(projectId),
+    queryFn: () => api.getQueueCapacity(projectId!),
+    enabled: projectId !== null,
+  });
+}
 
 /**
  * What a conversation's recorded turns used, oldest first. Read again as each turn ends: the server
@@ -576,6 +589,55 @@ export function useSessionFileQuery(
 }
 
 /**
+ * What a component fires at a live session: prompts, interrupts, answers to what the agent asked,
+ * and the files a prompt carries. Imperative and uncached, so plain functions rather than hooks.
+ */
+export const sendAcpPrompt = (sessionId: string, content: string) =>
+  api.sendAcpPrompt(sessionId, content);
+export const sendAcpPromptStructured = (sessionId: string, blocks: JsonValue) =>
+  api.sendAcpPromptStructured(sessionId, blocks);
+export const interruptAcpTurn = (sessionId: string) => api.interruptAcpTurn(sessionId);
+export const respondAcpPermission = (
+  sessionId: string,
+  requestId: string,
+  optionId: string | null,
+) => api.respondAcpPermission(sessionId, requestId, optionId);
+export const respondAcpElicitation = (sessionId: string, requestId: string, response: JsonValue) =>
+  api.respondAcpElicitation(sessionId, requestId, response);
+export const respondHostTool = (sessionId: string, requestId: string, result: JsonValue) =>
+  api.respondHostTool(sessionId, requestId, result);
+export const setAcpConfigOption = (sessionId: string, optionId: string, value: string) =>
+  api.setAcpConfigOption(sessionId, optionId, value);
+export const discardFailedSpawn = (sessionId: string) => api.discardFailedSpawn(sessionId);
+export const getAcpSessionMeta = (sessionId: string) => api.getAcpSessionMeta(sessionId);
+export const searchSessionFiles = (sessionId: string, query: string, limit: number) =>
+  api.searchSessionFiles(sessionId, query, limit);
+export const readSessionFile = (sessionId: string, relativePath: string) =>
+  api.readSessionFile(sessionId, relativePath);
+export const prepareExternalAttachments = (
+  sessionId: string,
+  files: ExternalFileRequest[],
+  embeddedContext: boolean,
+) => api.prepareExternalAttachments(sessionId, files, embeddedContext);
+export const validateAttachment = (path: string, isImage: boolean) =>
+  api.validateAttachment(path, isImage);
+/** Writes pasted or captured image bytes to a temp file and answers with its path. */
+export const saveClipboardImage = (base64Data: string, mimeType: string) =>
+  api.saveClipboardImage(base64Data, mimeType);
+
+/**
+ * Terminal I/O for an attached PTY. Imperative and uncached, driven from xterm's own callbacks, so
+ * these are plain functions rather than query hooks.
+ */
+export const attachTerminal = (sessionId: string, channel: Channel<string>) =>
+  api.attachTerminal(sessionId, channel, null);
+export const detachTerminal = (sessionId: string) => api.detachTerminal(sessionId);
+export const sendTerminalInput = (sessionId: string, data: string) =>
+  api.sendTerminalInput(sessionId, data);
+export const resizeTerminal = (sessionId: string, cols: number, rows: number) =>
+  api.resizeTerminal(sessionId, cols, rows);
+
+/**
  * Flush buffered replay events for a loaded session.
  * Called after event listeners are registered to avoid the subscribe/emit race.
  */
@@ -615,11 +677,8 @@ export function useCancelActiveSessionMutation() {
 export function useReloadAcpSessionMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ sessionId }: { sessionId: string; projectId: number }) => {
-      const result = await commands.reloadAcpSession(sessionId);
-      if (result.status === "error") throw new Error(result.error);
-      return result.data;
-    },
+    mutationFn: ({ sessionId }: { sessionId: string; projectId: number }) =>
+      api.reloadAcpSession(sessionId),
     onSuccess: (reloaded, { sessionId, projectId }) => {
       // A reload that comes back under a new id leaves the old one with nothing to send to.
       if (reloaded !== sessionId) useAnnotationStore.getState().clearSession(sessionId);
@@ -634,11 +693,8 @@ export function useReloadAcpSessionMutation() {
 export function useRecoverTaskSessionMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ taskId, projectId }: { taskId: number; projectId: number }) => {
-      const result = await commands.recoverTaskSession(taskId, projectId);
-      if (result.status === "error") throw new Error(result.error);
-      return result.data;
-    },
+    mutationFn: ({ taskId, projectId }: { taskId: number; projectId: number }) =>
+      api.recoverTaskSession(taskId, projectId),
     onSuccess: (_sessionId, { projectId }) => {
       void queryClient.invalidateQueries({
         queryKey: executionQueryKeys.activeSessions(projectId),

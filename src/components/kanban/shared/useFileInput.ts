@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { open as openFilePicker } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { api } from "@/lib/tauri-utils";
+import { saveClipboardImage } from "@/services/execution.service";
 
 export function extractFilename(filePath: string): string {
   return filePath.split(/[/\\]/).pop() ?? filePath;
@@ -58,7 +58,7 @@ export function useFileInput(
             binary += String.fromCharCode(...(bytes.subarray(i, i + CHUNK) as unknown as number[]));
           }
           const base64Data = btoa(binary);
-          const tempPath = await api.saveClipboardImage(base64Data, mimeType);
+          const tempPath = await saveClipboardImage(base64Data, mimeType);
           const ext = mimeType.split("/")[1]?.replace("jpeg", "jpg") ?? "png";
           const filename = count === 0 ? `Pasted image.${ext}` : `Pasted image (${count}).${ext}`;
           count++;

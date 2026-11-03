@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { api } from "@/lib/tauri-utils";
+import { searchSessionFiles } from "@/services/execution.service";
 import type { MentionEntry } from "./mentionEntry";
 
 interface Params {
@@ -21,7 +21,7 @@ export function useMentionAutocomplete({ sessionId }: Params) {
     if (mentionSearchRef.current) clearTimeout(mentionSearchRef.current);
     mentionSearchRef.current = setTimeout(async () => {
       try {
-        const results = await api.searchSessionFiles(sessionId, mentionQuery, 20);
+        const results = await searchSessionFiles(sessionId, mentionQuery, 20);
         setMentionSuggestions(results);
         setMentionHighlight(0);
       } catch {

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
-import { api } from "@/lib/tauri-utils";
+import { respondAcpElicitation, respondAcpPermission } from "@/services/execution.service";
 import { isPlanPermission } from "../activity/PermissionPrompt";
 import { isRejectOption, getOptionName, formatFieldAnswer } from "../activity/utils";
 import { parseElicitationFields } from "../activity/ElicitationPrompt";
@@ -41,7 +41,7 @@ export function usePermissionHandlers(
   const handlePermissionRespond = useCallback(
     async (requestId: string, optionId: string | null) => {
       try {
-        await api.respondAcpPermission(sessionId, requestId, optionId);
+        await respondAcpPermission(sessionId, requestId, optionId);
       } catch {
         // best-effort
       }
@@ -84,7 +84,7 @@ export function usePermissionHandlers(
   const handleElicitationSubmit = useCallback(
     async (requestId: string, values: Record<string, unknown>) => {
       try {
-        await api.respondAcpElicitation(sessionId, requestId, {
+        await respondAcpElicitation(sessionId, requestId, {
           action: "accept",
           content: values,
         } as never);
@@ -122,7 +122,7 @@ export function usePermissionHandlers(
   const handleElicitationDecline = useCallback(
     async (requestId: string) => {
       try {
-        await api.respondAcpElicitation(sessionId, requestId, { action: "decline" });
+        await respondAcpElicitation(sessionId, requestId, { action: "decline" });
       } catch {
         /* best-effort */
       }

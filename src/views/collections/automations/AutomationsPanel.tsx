@@ -28,7 +28,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
-import { api } from "@/lib/tauri-utils";
 import { cn } from "@/lib/utils";
 import {
   useAutomationRunEvents,
@@ -41,7 +40,10 @@ import {
   useSetRunRetentionMutation,
   useWebhookDeliveriesQuery,
 } from "@/services/automation.service";
-import { useAgentDiscoveryQuery } from "@/services/execution.service";
+import {
+  useAgentDiscoveryQuery,
+  useCancelActiveSessionMutation,
+} from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useNavigate } from "@/store/navigationStore";
 import { AutomationEditorDialog } from "./AutomationEditorDialog";
@@ -109,6 +111,7 @@ function AutomationRow({
   onToggleEnabled: (enabled: boolean) => void;
 }) {
   const navigate = useNavigate();
+  const stopSession = useCancelActiveSessionMutation();
 
   const agentName = agents.find((a) => a.id === automation.agent_id)?.name ?? automation.agent_id;
   const sessionId = running?.session_id ?? null;
@@ -273,7 +276,7 @@ function AutomationRow({
               variant="outline"
               size="sm"
               disabled={sessionId === null}
-              onClick={() => sessionId && void api.cancelAcpSession(sessionId)}
+              onClick={() => sessionId && stopSession.mutate({ sessionId, executionMode: "acp" })}
               className="text-xs"
             >
               <Square className="size-3" />
