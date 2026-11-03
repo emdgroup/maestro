@@ -1,7 +1,5 @@
 use std::sync::Arc;
-use std::time::Duration;
 use tauri::State;
-use tokio::sync::oneshot;
 
 use crate::acp::connection_server::{reply, request_via_server, UNEXPECTED_REPLY};
 use crate::acp::ConnectionKey;
@@ -9,54 +7,34 @@ use crate::connectivity::files::BINARY_LIMIT;
 use crate::core::AppState;
 use maestro_protocol::{FileReadRequest, FileSearchRequest, ServerRequest, ServerResponse};
 
-/// Send a request to a session and await a oneshot response with a 15-second timeout.
+/// Send a request on a session's behalf and await its reply, with a 15-second timeout.
+///
+/// The reply names no session, so on the server every session of a connection shares it is matched
+/// by id.
 async fn session_file_rpc<T>(
     app_state: &AppState,
     session_id: &str,
-    pending_field: impl Fn(
-        &crate::acp::AcpProcess,
-    ) -> &Arc<std::sync::Mutex<Option<oneshot::Sender<Result<T, String>>>>>,
     build_request: impl FnOnce(&str) -> ServerRequest,
     extract: impl FnOnce(ServerResponse) -> Option<T>,
 ) -> Result<T, String> {
-    let (cwd, pending, shared_connection) = {
+    let (cwd, connection_key) = {
         let sessions = app_state.acp.sessions.lock().await;
         let s = sessions
             .get(session_id)
             .ok_or_else(|| format!("No ACP session for session_id {session_id}"))?;
-        let shared = matches!(s.writer, crate::acp::AcpTransportWriter::SharedServer(_));
-        (
-            s.cwd.clone(),
-            Arc::clone(pending_field(s)),
-            shared.then_some(s.connection_key),
-        )
+        (s.cwd.clone(), s.connection_key)
     };
-    // The reply names no session, so on a server several sessions share it is matched by id. A
-    // session with a server to itself has nothing to confuse it with and keeps its own slot.
-    if let Some(connection_key) = shared_connection {
-        let response = request_via_server(
-            connection_key,
-            app_state,
-            &format!("No connection server for connection {:?}", connection_key),
-            Some(session_id),
-            build_request(&cwd),
-            15,
-            "File operation timed out",
-        )
-        .await?;
-        return extract(response).ok_or_else(|| UNEXPECTED_REPLY.to_string());
-    }
-    let (tx, rx) = oneshot::channel();
-    {
-        *pending
-            .lock()
-            .map_err(|_| "pending channel lock poisoned".to_string())? = Some(tx);
-    }
-    crate::acp::write_to_acp_session(app_state, session_id, &build_request(&cwd)).await?;
-    tokio::time::timeout(Duration::from_secs(15), rx)
-        .await
-        .map_err(|_| "File operation timed out".to_string())?
-        .map_err(|_| "File operation response channel closed".to_string())?
+    let response = request_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        Some(session_id),
+        build_request(&cwd),
+        15,
+        "File operation timed out",
+    )
+    .await?;
+    extract(response).ok_or_else(|| UNEXPECTED_REPLY.to_string())
 }
 
 #[tauri::command]
@@ -70,7 +48,6 @@ pub async fn search_session_files(
     session_file_rpc(
         &app_state,
         session_id,
-        |s| &s.pending_file_search,
         |cwd| {
             ServerRequest::FileSearch(FileSearchRequest {
                 cwd: cwd.to_string(),
@@ -93,7 +70,6 @@ pub async fn read_session_file(
     session_file_rpc(
         &app_state,
         session_id,
-        |s| &s.pending_file_read,
         |cwd| {
             ServerRequest::FileRead(FileReadRequest {
                 cwd: cwd.to_string(),

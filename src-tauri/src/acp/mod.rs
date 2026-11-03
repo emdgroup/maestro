@@ -115,11 +115,10 @@ pub use connection_server::{
 };
 pub use registry::{AgentDiscoveryCacheEntry, AgentDiscoveryResult, DiscoveredAgent};
 pub use session_ops::{
-    load_acp_session_cold, resolve_remote_context, restore_acp_sessions, spawn_acp_session_cold,
-    try_session_load_via_connection_server, try_spawn_via_connection_server, write_to_acp_session,
+    load_via_connection_server, restore_acp_sessions, spawn_via_connection_server,
+    write_to_acp_session,
 };
 pub use session_types::{
-    AcpProcess, AcpProcessParams, AcpTransportWriter, ConnectionServer, PendingRequests,
-    RestorableSession, SessionCapabilitiesInfo, SessionRequest, TaskKey, TaskMetadata,
-    TransportTarget,
+    AcpProcess, AcpProcessParams, ConnectionServer, PendingRequests, RestorableSession,
+    SessionCapabilitiesInfo, SessionRequest, TaskKey, TaskMetadata, TransportTarget,
 };

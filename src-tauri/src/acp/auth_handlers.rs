@@ -27,12 +27,7 @@ pub async fn discard_failed_spawn(
     app_state: State<'_, Arc<AppState>>,
     session_id: &str,
 ) -> Result<(), String> {
-    let mut sessions = app_state.acp.sessions.lock().await;
-    if let Some(mut session) = sessions.remove(session_id) {
-        if let Some(cancel_tx) = session.reader_cancel_tx.take() {
-            let _ = cancel_tx.send(());
-        }
-    }
+    app_state.acp.sessions.lock().await.remove(session_id);
     Ok(())
 }
 

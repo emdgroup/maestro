@@ -7,7 +7,7 @@ use tauri::State;
 /// pre-initialize the default agent so the first session spawn is near-instant.
 ///
 /// The frontend should call this fire-and-forget after a successful `open_project`.
-/// Failures are benign — subsequent session spawns fall back to the cold path.
+/// Failures are benign: a session spawn ensures the server itself.
 #[tauri::command]
 #[specta::specta]
 pub async fn prime_project_server(

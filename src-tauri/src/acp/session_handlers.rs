@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tauri::Emitter;
 use tauri::State;
 
-use crate::acp::{ConnectionKey, SessionRequest, TaskKey, TaskMetadata};
+use crate::acp::{SessionRequest, TaskKey, TaskMetadata};
 use crate::core::AppState;
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -30,8 +30,8 @@ pub async fn spawn_acp_session(
     task_name: Option<String>,
     role: Option<crate::project::profiles::SessionRole>,
 ) -> Result<SpawnSessionResult, String> {
-    let connection_id = connection.ssh_id();
-    let wsl_connection_id = connection.wsl_id();
+    // First, because the worktree and the task below are read through the same server.
+    crate::acp::discovery_handlers::ensure_connection_server(&app_state, connection).await?;
 
     let branch_name = match worktree_branch {
         Some(branch) => Some(branch),
@@ -39,19 +39,6 @@ pub async fn spawn_acp_session(
     };
 
     let session_id = crate::core::new_session_id();
-
-    let ssh_opt = match connection_id {
-        Some(conn_id) => {
-            let ssh = app_state.ssh.get_session(conn_id).await.ok_or_else(|| {
-                format!(
-                    "No active SSH session for connection_id {}. Connect first.",
-                    conn_id
-                )
-            })?;
-            Some((conn_id, ssh))
-        }
-        None => None,
-    };
 
     // Routed through the project's own connection rather than rebuilt per connection type: a
     // container project used to fall through to a Local git run against a path that only exists
@@ -114,156 +101,18 @@ pub async fn spawn_acp_session(
         project_id: Some(project_id),
         app_state: Arc::clone(&*app_state),
     };
-    // Ensure the shared Local maestro-server is running before the fast path so that all
-    // Local sessions go through a single process. This keeps agent_connections alive across
-    // auth_required, allowing acp_authenticate/acp_start_auth_terminal to succeed.
-    if matches!(connection_key, ConnectionKey::Local) {
-        crate::acp::spawn_connection_server(
-            ConnectionKey::Local,
-            crate::acp::TransportTarget::Local,
-            &app_state,
-        )
-        .await?;
-    }
-    if crate::acp::try_spawn_via_connection_server(
+    crate::acp::spawn_via_connection_server(
         &session_id,
         TaskMetadata {
             task_id,
-            task_name: task_name.clone(),
-            branch_name: branch_name.clone(),
-            session_start_sha: session_start_sha.clone(),
-            role: role.clone(),
+            task_name,
+            branch_name,
+            session_start_sha,
+            role,
         },
         &req,
     )
-    .await?
-    {
-        return Ok(finish_spawn(
-            &app_state,
-            TaskKey::of(Some(project_id), task_id),
-            &session_id,
-        )
-        .await);
-    }
-
-    // Cold path
-    match ssh_opt {
-        Some((conn_id, ssh)) => {
-            let maestro_path = {
-                let cache = app_state.acp.discovery_cache.lock().await;
-                cache
-                    .get(&ConnectionKey::Ssh { id: conn_id })
-                    .and_then(|e| e.maestro_server_path.clone())
-                    .ok_or_else(|| {
-                        format!(
-                        "maestro-server path not cached for connection {}. Reconnect to refresh.",
-                        conn_id
-                    )
-                    })?
-            };
-            let req = SessionRequest {
-                connection_key: ConnectionKey::Ssh { id: conn_id },
-                ..req
-            };
-            crate::acp::spawn_acp_session_cold(
-                crate::acp::TransportTarget::Remote {
-                    ssh: &ssh,
-                    server_path: &maestro_path,
-                },
-                &session_id,
-                TaskMetadata {
-                    task_id,
-                    task_name: task_name.clone(),
-                    branch_name,
-                    session_start_sha,
-                    role: role.clone(),
-                },
-                &req,
-            )
-            .await?;
-        }
-        None => {
-            if let Some(wsl_id) = wsl_connection_id {
-                let distro = {
-                    let conn = app_state
-                        .db
-                        .lock()
-                        .map_err(|e| format!("Lock failed: {}", e))?;
-                    conn.query_row(
-                        "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                        [wsl_id],
-                        |row| row.get::<_, String>(0),
-                    )
-                    .map_err(|e| format!("WSL connection {} not found: {}", wsl_id, e))?
-                };
-                let req = SessionRequest {
-                    connection_key: ConnectionKey::Wsl { id: wsl_id },
-                    ..req
-                };
-                #[cfg(windows)]
-                {
-                    let maestro_path = {
-                        let cached = app_state
-                            .acp
-                            .discovery_cache
-                            .lock()
-                            .await
-                            .get(&ConnectionKey::Wsl { id: wsl_id })
-                            .and_then(|e| e.maestro_server_path.clone());
-                        match cached {
-                            Some(p) => p,
-                            None => {
-                                crate::acp::deploy::ensure_wsl_server(
-                                    &distro,
-                                    &app_state.app_handle,
-                                )
-                                .await
-                                .map_err(|e| {
-                                    format!("Failed to deploy maestro-server to WSL: {}", e)
-                                })?
-                                .path
-                            }
-                        }
-                    };
-                    crate::acp::spawn_acp_session_cold(
-                        crate::acp::TransportTarget::Wsl {
-                            distro: &distro,
-                            server_path: &maestro_path,
-                        },
-                        &session_id,
-                        TaskMetadata {
-                            task_id,
-                            task_name: task_name.clone(),
-                            branch_name,
-                            session_start_sha,
-                            role: role.clone(),
-                        },
-                        &req,
-                    )
-                    .await?;
-                }
-                #[cfg(not(windows))]
-                {
-                    let _ = (distro, req);
-                    return Err("WSL connections are only supported on Windows".to_string());
-                }
-            } else {
-                crate::acp::spawn_acp_session_cold(
-                    crate::acp::TransportTarget::Local,
-                    &session_id,
-                    TaskMetadata {
-                        task_id,
-                        task_name,
-                        branch_name,
-                        session_start_sha,
-                        role,
-                    },
-                    &req,
-                )
-                .await?;
-            }
-        }
-    }
+    .await?;
 
     Ok(finish_spawn(
         &app_state,
@@ -307,8 +156,7 @@ async fn branch_of_worktree_at(
 
 /// What every successful spawn does once its session exists, whichever path built it.
 ///
-/// One function rather than a copy per return, because the two paths have to agree that a spawn is
-/// only finished when the sessions it replaces are gone. Superseding *after* the new session is
+/// A spawn is only finished when the sessions it replaces are gone. Superseding *after* the new session is
 /// registered, never before: a spawn that fails must leave the task holding the session it already
 /// had rather than none at all.
 async fn finish_spawn(
@@ -365,10 +213,7 @@ pub(crate) async fn tear_down_session(
     // surfaced as a lost connection. It is torn down when the project or the app closes.
     let mut sessions = app_state.acp.sessions.lock().await;
     let task = sessions.get(session_id).and_then(|p| p.task_key());
-    if let Some(mut session) = sessions.remove(session_id) {
-        if let Some(cancel_tx) = session.reader_cancel_tx.take() {
-            let _ = cancel_tx.send(());
-        }
+    if let Some(session) = sessions.remove(session_id) {
         // `Cancel` closes the row only through a session the daemon still runs under this id, and
         // one whose load never came up, failed, or was cleared by the sweep is not. Without this
         // the user's close does nothing and the conversation comes back on every open. The daemon
@@ -529,142 +374,8 @@ pub async fn restore_acp_session(
         app_state: Arc::clone(app_state),
     };
 
-    if crate::acp::try_session_load_via_connection_server(&acp_session_id, task.clone(), &req)
-        .await?
-    {
-        app_state.app_handle.emit("sessions-changed", ()).ok();
-        return Ok(session_id);
-    }
-
-    // Cold path
-    match connection_key {
-        ConnectionKey::Ssh { id: conn_id } => {
-            let (ssh, maestro_path) =
-                crate::acp::resolve_remote_context(app_state, conn_id).await?;
-            crate::acp::load_acp_session_cold(
-                crate::acp::TransportTarget::Remote {
-                    ssh: &ssh,
-                    server_path: &maestro_path,
-                },
-                &acp_session_id,
-                task.clone(),
-                &req,
-            )
-            .await?;
-        }
-        ConnectionKey::Wsl { id: wsl_id } => {
-            let distro = {
-                let conn = app_state
-                    .db
-                    .lock()
-                    .map_err(|e| format!("Lock failed: {}", e))?;
-                conn.query_row(
-                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                    [wsl_id],
-                    |row| row.get::<_, String>(0),
-                )
-                .map_err(|e| format!("WSL connection {} not found: {}", wsl_id, e))?
-            };
-            #[cfg(windows)]
-            {
-                let maestro_path = {
-                    let cached = app_state
-                        .acp
-                        .discovery_cache
-                        .lock()
-                        .await
-                        .get(&ConnectionKey::Wsl { id: wsl_id })
-                        .and_then(|e| e.maestro_server_path.clone());
-                    match cached {
-                        Some(p) => p,
-                        None => {
-                            crate::acp::deploy::ensure_wsl_server(&distro, &app_state.app_handle)
-                                .await
-                                .map_err(|e| {
-                                    format!("Failed to deploy maestro-server to WSL: {}", e)
-                                })?
-                                .path
-                        }
-                    }
-                };
-                crate::acp::load_acp_session_cold(
-                    crate::acp::TransportTarget::Wsl {
-                        distro: &distro,
-                        server_path: &maestro_path,
-                    },
-                    &acp_session_id,
-                    task.clone(),
-                    &req,
-                )
-                .await?;
-            }
-            #[cfg(not(windows))]
-            {
-                let _ = distro;
-                return Err("WSL connections are only supported on Windows".to_string());
-            }
-        }
-        ConnectionKey::Local => {
-            crate::acp::load_acp_session_cold(
-                crate::acp::TransportTarget::Local,
-                &acp_session_id,
-                task.clone(),
-                &req,
-            )
-            .await?;
-        }
-        ConnectionKey::Docker { id: docker_id } => {
-            let container_name = {
-                let conn = app_state
-                    .db
-                    .lock()
-                    .map_err(|e| format!("Lock failed: {}", e))?;
-                conn.query_row(
-                    "SELECT container_name FROM docker_connections WHERE id = ?",
-                    [docker_id],
-                    |row| row.get::<_, String>(0),
-                )
-                .map_err(|e| format!("Docker connection {} not found: {}", docker_id, e))?
-            };
-            let cli = crate::connectivity::docker::ContainerCli::detect()
-                .map_err(|e| format!("No container CLI found: {}", e))?;
-            let maestro_path = {
-                let cached = app_state
-                    .acp
-                    .discovery_cache
-                    .lock()
-                    .await
-                    .get(&ConnectionKey::Docker { id: docker_id })
-                    .and_then(|e| e.maestro_server_path.clone());
-                match cached {
-                    Some(p) => p,
-                    None => {
-                        crate::acp::deploy::ensure_container_server(
-                            &cli,
-                            &container_name,
-                            &app_state.app_handle,
-                        )
-                        .await
-                        .map_err(|e| {
-                            format!("Failed to deploy maestro-server to container: {}", e)
-                        })?
-                        .path
-                    }
-                }
-            };
-            crate::acp::load_acp_session_cold(
-                crate::acp::TransportTarget::Docker {
-                    cli: &cli,
-                    container_name: &container_name,
-                    server_path: &maestro_path,
-                },
-                &acp_session_id,
-                task.clone(),
-                &req,
-            )
-            .await?;
-        }
-    }
+    crate::acp::discovery_handlers::ensure_connection_server(app_state, connection_key).await?;
+    crate::acp::load_via_connection_server(&acp_session_id, task, &req).await?;
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
     Ok(session_id)

@@ -1513,7 +1513,7 @@ async setProjectAccentColor(projectId: number, accentColor: string | null) : Pro
  * pre-initialize the default agent so the first session spawn is near-instant.
  * 
  * The frontend should call this fire-and-forget after a successful `open_project`.
- * Failures are benign — subsequent session spawns fall back to the cold path.
+ * Failures are benign: a session spawn ensures the server itself.
  */
 async primeProjectServer(projectId: number) : Promise<Result<null, string>> {
     try {

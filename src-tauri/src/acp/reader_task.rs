@@ -3,21 +3,17 @@
 
 use crate::acp::manager::log_server_diagnostic;
 use crate::acp::replay::{emit_or_buffer_payload, push_config_init_to_buffer};
-use crate::acp::session_types::{
-    PendingReply, PendingRequests, ReaderTaskContext, RestorableSession,
-};
+use crate::acp::session_types::{PendingRequests, RestorableSession};
 use crate::acp::transport_types::{serialize_message, AcpReadSource};
 use crate::acp::TaskKey;
 use maestro_protocol::{
-    FileReadResponse, FileSearchResponse, PromptCapabilitiesInfo, ServerRequest, ServerResponse,
-    SessionModeState, SessionModelState,
+    PromptCapabilitiesInfo, ServerRequest, ServerResponse, SessionModeState, SessionModelState,
 };
 use maestro_protocol::{TaskTransition, TransitionGuard};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Emitter;
-use tokio::sync::oneshot;
 
 /// Payload for `acp://connection-live` and `acp://connection-lost`.
 ///
@@ -35,95 +31,6 @@ pub struct ConnectionEvent {
 pub struct ConnectionQuiet {
     pub connection: crate::acp::ConnectionKey,
     pub quiet_for_secs: u64,
-}
-
-pub(crate) fn spawn_reader_task(
-    source: AcpReadSource,
-    cancel_rx: oneshot::Receiver<()>,
-    ctx: ReaderTaskContext,
-) {
-    let ReaderTaskContext {
-        session_id,
-        app_handle,
-        app_state,
-        current_model_id,
-        current_mode_id,
-        pending_file_search,
-        pending_file_read,
-        acp_session_id_cache,
-        replay_buffer,
-        initialized,
-        completion_filter,
-    } = ctx;
-    tokio::spawn(async move {
-        let mut source = source;
-        let mut cancel_rx = cancel_rx;
-
-        loop {
-            let msg = tokio::select! {
-                biased;
-                _ = &mut cancel_rx => break,
-                result = source.next_message() => match result {
-                    Some(msg) => msg,
-                    None => break,
-                },
-            };
-            match &msg {
-                ServerResponse::Ping { .. } | ServerResponse::TerminalOutput(_) => {}
-                _ => {
-                    if let Ok(json) = serde_json::to_string(&msg) {
-                        log::trace!("[acp] << session_id={session_id} {json}");
-                    }
-                }
-            }
-            if let ServerResponse::Ping { seq } = &msg {
-                log::trace!("[acp] ping seq={seq} on direct session session_id={session_id}");
-                let pong = ServerRequest::Pong { seq: *seq };
-                if let Err(e) =
-                    crate::acp::write_to_acp_session(&app_state, &session_id, &pong).await
-                {
-                    log::warn!("[acp] pong failed on direct session session_id={session_id}: {e}");
-                }
-                if let Err(e) = app_state.app_handle.emit("acp://heartbeat", ()) {
-                    log::warn!("[acp] emit heartbeat failed: {e}");
-                }
-                continue;
-            }
-
-            update_session_from_response(&session_id, &msg, &app_state).await;
-
-            // Off the reader loop: a `canvas_await` blocks until the user acts, and nothing else
-            // on this session could arrive meanwhile, including the answer itself.
-            if let ServerResponse::HostToolCall(call) = msg {
-                let state = Arc::clone(&app_state);
-                let owned_session_id = session_id.clone();
-                tokio::spawn(async move {
-                    crate::acp::host_tools::handle(state, &owned_session_id, call).await;
-                });
-                continue;
-            }
-
-            handle_server_message(
-                msg,
-                &session_id,
-                &app_handle,
-                &current_model_id,
-                &current_mode_id,
-                &pending_file_search,
-                &pending_file_read,
-                &acp_session_id_cache,
-                &replay_buffer,
-                &initialized,
-                &completion_filter,
-            );
-        }
-
-        app_state.acp.sessions.lock().await.remove(&session_id);
-        app_state.app_handle.emit("sessions-changed", ()).ok();
-        if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", session_id), ()) {
-            log::warn!("[acp] emit session-ended/{session_id} failed: {e}");
-        }
-    });
 }
 
 /// Apply `event` to the session's task in the daemon and wait for it, logging a failure. Never
@@ -231,8 +138,6 @@ fn handle_server_message(
     app_handle: &tauri::AppHandle,
     current_model_id: &Arc<std::sync::Mutex<Option<String>>>,
     current_mode_id: &Arc<std::sync::Mutex<Option<String>>>,
-    pending_file_search: &PendingReply<Vec<String>>,
-    pending_file_read: &PendingReply<String>,
     acp_session_id_cache: &Arc<std::sync::Mutex<Option<String>>>,
     replay_buffer: &crate::acp::session_types::ReplayBuffer,
     initialized: &Arc<std::sync::Mutex<bool>>,
@@ -416,36 +321,11 @@ fn handle_server_message(
                 log::warn!("[acp] emit config-state-updated/{session_id} failed: {e}");
             }
         }
-        ServerResponse::FileSearchOk(FileSearchResponse { files }) => {
-            if let Ok(mut guard) = pending_file_search.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(files));
-                }
-            }
-        }
-        ServerResponse::FileReadOk(FileReadResponse { content }) => {
-            if let Ok(mut guard) = pending_file_read.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(content));
-                }
-            }
-        }
         ServerResponse::Error(err) => {
             log::error!(
                 "[acp] session-error session_id={session_id}: {}",
                 err.message
             );
-            // Resolve any pending file op with the error before emitting the session-error event.
-            if let Ok(mut guard) = pending_file_search.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Err(err.message.clone()));
-                }
-            }
-            if let Ok(mut guard) = pending_file_read.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Err(err.message.clone()));
-                }
-            }
             if let Err(e) =
                 app_handle.emit(&format!("acp://session-error/{}", session_id), &err.message)
             {
@@ -704,8 +584,6 @@ pub(crate) async fn handle_shared_server_message(
                 (
                     Arc::clone(&s.current_model_id),
                     Arc::clone(&s.current_mode_id),
-                    Arc::clone(&s.pending_file_search),
-                    Arc::clone(&s.pending_file_read),
                     Arc::clone(&s.acp_session_id),
                     Arc::clone(&s.replay_buffer),
                     Arc::clone(&s.initialized),
@@ -718,8 +596,6 @@ pub(crate) async fn handle_shared_server_message(
         if let Some((
             current_model_id,
             current_mode_id,
-            pfs,
-            pfr,
             acp_sid,
             replay,
             initialized,
@@ -776,8 +652,6 @@ pub(crate) async fn handle_shared_server_message(
                 app_handle,
                 &current_model_id,
                 &current_mode_id,
-                &pfs,
-                &pfr,
                 &acp_sid,
                 &replay,
                 &initialized,
