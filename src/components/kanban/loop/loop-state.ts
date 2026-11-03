@@ -8,6 +8,7 @@ import type {
   Task,
   TaskComment,
 } from "@/types/bindings";
+import { formatTimeOfDay } from "@/lib/format-utils";
 
 /** What a card says on its phase line, and how loudly. */
 export interface StateLine {
@@ -36,7 +37,7 @@ const HALTS: Record<LoopHalt, { label: string; urgent: boolean }> = {
 /** `15:00`, or `Tue 15:00` once it is not today. */
 export function clockTime(iso: string, now: Date = new Date()): string {
   const at = new Date(iso);
-  const time = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const time = formatTimeOfDay(at);
   return at.toDateString() === now.toDateString()
     ? time
     : `${at.toLocaleDateString(undefined, { weekday: "short" })} ${time}`;

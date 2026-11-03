@@ -17,8 +17,9 @@ import {
   type ContextTarget,
   type EditTarget,
 } from "./editCommands";
+import { isMacOS } from "@/lib/platform-utils";
 
-const MOD = navigator.userAgent.includes("Mac") ? "⌘" : "Ctrl+";
+const MOD = isMacOS ? "⌘" : "Ctrl+";
 
 interface MenuState {
   target: Exclude<ContextTarget, { kind: "none" }>;

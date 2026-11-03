@@ -137,28 +137,6 @@ export function agentLabel(session: ActiveSessionInfo): string {
 }
 
 /**
- * How long ago something happened, compactly.
- *
- * Floored at a minute: `formatDistanceToNow` renders anything younger as "less than a minute ago",
- * which spends four words on the least informative case. A timestamp in the future — clock skew
- * between a remote worktree and this host — floors to the same place rather than reading "in 3
- * minutes" on a card about work that has already happened.
- */
-export function relativeAge(iso: string | null, now: number): string | null {
-  if (!iso) return null;
-  const then = Date.parse(iso);
-  if (Number.isNaN(then)) return null;
-
-  const minutes = Math.max(1, Math.round((now - then) / 60_000));
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} h`;
-  const days = Math.round(hours / 24);
-  if (days < 7) return `${days} d`;
-  return `${Math.round(days / 7)} w`;
-}
-
-/**
  * The worktree's identity: the task it was created for, else the folder it lives in.
  *
  * The folder name is what the user sees on disk and in a terminal prompt, so it is the fallback

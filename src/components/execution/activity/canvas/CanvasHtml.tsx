@@ -15,6 +15,7 @@ import { Skeleton } from "@/ui/skeleton";
 import type { CanvasSurface } from "../types";
 import { CanvasEventContext, type CanvasEventKind } from "./canvas-events";
 import { buildSrcdoc, THEME_VARS, wantsViewportHeight } from "./canvas-frame";
+import { plural } from "@/lib/format-utils";
 
 /** One element with an `id`, as the frame reports it. Rects are in the frame's viewport. */
 export interface FrameNode {
@@ -297,7 +298,7 @@ export function CanvasHtml({ surface, className, handleRef, onNodes, onError }: 
         <div className="mt-2 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5">
           <div className="flex items-center gap-1.5 text-[11px] font-medium text-warning">
             <AlertTriangle className="w-3 h-3" />
-            {errors.length} problem{errors.length !== 1 ? "s" : ""} in this canvas
+            {plural(errors.length, "problem")} in this canvas
           </div>
           <ul className="mt-1 space-y-0.5">
             {errors.slice(0, MAX_SHOWN_ERRORS).map((error, i) => (

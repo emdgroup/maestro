@@ -18,16 +18,7 @@ import type { ProjectCard } from "./ProjectTile";
 import { HomeSheet } from "./HomeSheet";
 import { attach, connect } from "@/services/connection.service";
 import { useStopBackgroundServerMutation } from "@/services/automation.service";
-
-/** `3d 6h`, `4h 12m`, `9m`. */
-export function formatUptime(startedAt: string, now = Date.now()) {
-  const minutes = Math.max(0, Math.floor((now - Date.parse(startedAt)) / 60_000));
-  const days = Math.floor(minutes / 1440);
-  const hours = Math.floor((minutes % 1440) / 60);
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes % 60}m`;
-  return `${minutes}m`;
-}
+import { formatUptime } from "@/lib/format-utils";
 
 type Confirm = "stop" | "restart" | "remove";
 

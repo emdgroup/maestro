@@ -33,6 +33,7 @@ import {
   DropdownMenuItem,
 } from "@/ui/dropdown-menu";
 import type { PendingComment } from "./DiffViewer";
+import { plural } from "@/lib/format-utils";
 
 // --- ReworkModal ---
 interface ReworkModalProps {
@@ -70,8 +71,7 @@ export function ReworkModal({
         <AlertDialogHeader>
           <AlertDialogTitle>Request changes</AlertDialogTitle>
           <AlertDialogDescription>
-            Submit {comments.length} comment{comments.length !== 1 ? "s" : ""} and send task back
-            for rework.
+            Submit {plural(comments.length, "comment")} and send task back for rework.
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -85,7 +85,7 @@ export function ReworkModal({
               <ChevronRight
                 className={cn("size-3 transition-transform duration-200", expanded && "rotate-90")}
               />
-              {comments.length} comment{comments.length !== 1 ? "s" : ""}
+              {plural(comments.length, "comment")}
             </Button>
             <Reveal open={expanded}>
               <div className="max-h-40 overflow-y-auto border-t divide-y">
@@ -395,8 +395,7 @@ export function ApproveModal({
                 checked={includeUntracked}
                 onCheckedChange={(v) => setIncludeUntracked(v === true)}
               />
-              Include {untrackedCount} untracked file{untrackedCount !== 1 ? "s" : ""} (not yet
-              committed)
+              Include {plural(untrackedCount, "untracked file")} (not yet committed)
             </label>
             {!includeUntracked && (
               <p className="text-xs text-destructive">
@@ -480,11 +479,7 @@ export function DiscardModal({
               removed
             </p>
           )}
-          {commitCount > 0 && (
-            <p>
-              {commitCount} commit{commitCount !== 1 ? "s" : ""} will be rolled back
-            </p>
-          )}
+          {commitCount > 0 && <p>{plural(commitCount, "commit")} will be rolled back</p>}
           {!worktreePath && commitCount === 0 && <p>Task will be moved without code changes.</p>}
         </div>
 

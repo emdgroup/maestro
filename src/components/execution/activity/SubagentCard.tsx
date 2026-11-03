@@ -2,7 +2,7 @@ import { useContext, useState, useMemo } from "react";
 import { Reveal } from "@/components/common/Reveal";
 import { Bot, ChevronRight, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatElapsed, humanizeTokenCount } from "@/lib/format-utils";
+import { formatElapsed, formatTokens } from "@/lib/format-utils";
 import { MarkdownBlock } from "./MarkdownBlock";
 import { TypingDots } from "./ActivityMessageItem";
 import { ToolCallTimeline } from "./ToolCallTimeline";
@@ -69,11 +69,11 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
     const parts = [formatElapsed(Math.floor(ms / 1000))];
     if (meta?.outputTokens != null && meta?.cachedTokens != null) {
       parts.push(
-        `${humanizeTokenCount(meta.outputTokens)} out`,
-        `${humanizeTokenCount(meta.cachedTokens)} cached`,
+        `${formatTokens(meta.outputTokens)} out`,
+        `${formatTokens(meta.cachedTokens)} cached`,
       );
     } else {
-      parts.push(`${humanizeTokenCount(tokens)} tokens`);
+      parts.push(`${formatTokens(tokens)} tokens`);
     }
     parts.push(`${tools} tool calls`);
     return parts.join(" · ");

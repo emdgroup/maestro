@@ -15,7 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
-import { relativeAge } from "@/components/execution/worktree-card/worktree-usage";
+import { relativeAge, plural } from "@/lib/format-utils";
 import {
   useBackgroundServerQuery,
   useSetBackgroundServerAutostartMutation,
@@ -30,10 +30,6 @@ const HOW_IT_STARTS: Record<Exclude<Autostart, "unsupported" | "off">, string> =
   systemd: "Installed as a systemd user service, with linger, so it starts at boot.",
   cron: "Installed as a crontab @reboot line, since systemd or linger was not available.",
 };
-
-function plural(count: number, one: string, many: string) {
-  return `${count} ${count === 1 ? one : many}`;
-}
 
 function Count({ icon, count, label }: { icon: ReactNode; count: number; label: string }) {
   return (

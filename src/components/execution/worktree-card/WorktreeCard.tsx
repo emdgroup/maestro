@@ -22,6 +22,7 @@ import {
   worktreeTitle,
   worktreeUsage,
 } from "./worktree-usage";
+import { plural } from "@/lib/format-utils";
 
 interface WorktreeCardProps {
   worktree: WorktreeWithStatus;
@@ -223,9 +224,7 @@ export function WorktreeCard({
                 {usage.shellCount > 0 && (
                   <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
                     <Terminal className="size-3.5 shrink-0" />
-                    <span>
-                      {usage.shellCount} shell{usage.shellCount === 1 ? "" : "s"} running here
-                    </span>
+                    <span>{plural(usage.shellCount, "shell")} running here</span>
                   </div>
                 )}
               </PopoverContent>

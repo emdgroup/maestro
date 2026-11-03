@@ -10,7 +10,7 @@ import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { SEGMENT_GROUP } from "@/lib/segmented";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { formatCost, formatMetric, formatTokens, type Metric } from "./format";
+import { formatMetric, type Metric } from "./format";
 import {
   bucketKeys,
   describeDates,
@@ -25,6 +25,7 @@ import { UsageBreakdown, type BreakdownRow } from "./UsageBreakdown";
 import { UsageChart, type ChartSeries } from "./UsageChart";
 import { UsageCalendar, UsageHeatmap } from "./UsageHeatmap";
 import { basename } from "@/lib/path-utils";
+import { formatCost, formatTokens } from "@/lib/format-utils";
 
 /** How many hues each split has; the series past them fold into Other. */
 const HUES: Record<UsageSplit, number> = { connection: 4, agent: 4, model: 4, token_type: 5 };

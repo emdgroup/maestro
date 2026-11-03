@@ -32,7 +32,7 @@ import { Textarea } from "@/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useNow } from "@/hooks/useNow";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
-import { formatTokens } from "@/views/usage/format";
+
 import type { SessionActivityStatus } from "@/store/sessionActivityStore";
 import {
   checkOutcomes,
@@ -46,13 +46,11 @@ import {
   setupOutcomes,
   type CheckOutcome,
 } from "./loop-state";
+import { formatTokens, formatTimeOfDay, plural } from "@/lib/format-utils";
 
 /** The rail runs down the middle of the 72px ring, and the cards start past it. */
 const RAIL = "left-[35px]";
 const INDENT = "pl-[88px]";
-
-const time = (iso: string) =>
-  new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
 const secsBetween = (from: string, to: number) => Math.max(0, (to - Date.parse(from)) / 1000);
 
@@ -299,8 +297,6 @@ function StepTile({
     </Box>
   );
 }
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 const changed = (iteration: LoopIteration) =>
   iteration.files === 0 ? (
@@ -938,8 +934,8 @@ function HeadIteration({
           <span className="text-xs text-muted-foreground">
             of {config?.max_iterations ?? "?"} ·{" "}
             {iteration.ended_at && !live
-              ? `ended ${time(iteration.ended_at)}`
-              : `started ${time(iteration.started_at)}`}
+              ? `ended ${formatTimeOfDay(iteration.ended_at)}`
+              : `started ${formatTimeOfDay(iteration.started_at)}`}
           </span>
           <span
             className={cn(
@@ -1463,7 +1459,7 @@ function IterationRow({
           <span className="min-w-0 flex-1 space-y-1">
             <span className="flex items-center gap-4 text-xs text-muted-foreground">
               <span className="shrink-0 tabular-nums">
-                {time(iteration.started_at)}
+                {formatTimeOfDay(iteration.started_at)}
                 {iteration.ended_at &&
                   ` · ${formatDuration(secsBetween(iteration.started_at, Date.parse(iteration.ended_at)))}`}
               </span>

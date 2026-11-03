@@ -58,6 +58,7 @@ import { useOpenRun, useRunEntries } from "./runs/useRunEntries";
 import { describeNextRun, describeSchedule, localTimezone } from "./schedule";
 import { keptCount, runDuration, waitDuration, type RunEntry } from "./runs/runs";
 import type { Automation, AutomationRun, ConnectionKey } from "@/types/bindings";
+import { plural } from "@/lib/format-utils";
 
 export type AutomationsTab = "dashboard" | "templates";
 
@@ -318,7 +319,7 @@ function AutomationRow({
               type="button"
               onClick={onToggleExpanded}
               aria-expanded={expanded}
-              aria-label={`${expanded ? "Hide" : "Show"} ${runs.length} run${runs.length === 1 ? "" : "s"} of ${automation.name}`}
+              aria-label={`${expanded ? "Hide" : "Show"} ${plural(runs.length, "run")} of ${automation.name}`}
               className="flex h-6 cursor-pointer items-center gap-0.5 rounded text-[11px] tabular-nums text-muted-foreground hover:text-foreground"
             >
               {runs.length > 0 && runs.length}

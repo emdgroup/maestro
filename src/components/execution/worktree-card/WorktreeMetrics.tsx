@@ -2,7 +2,7 @@ import { Clock, GitCommitVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { parseDiffStat } from "@/lib/diff-utils";
 import type { WorktreeWithStatus } from "@/types/bindings";
-import { relativeAge } from "./worktree-usage";
+import { relativeAge } from "@/lib/format-utils";
 
 interface WorktreeMetricsProps {
   worktree: WorktreeWithStatus;

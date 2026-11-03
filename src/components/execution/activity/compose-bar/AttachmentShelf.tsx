@@ -21,6 +21,7 @@ import {
   AttachmentAction,
 } from "@/ui/attachment";
 import type { ExternalAttachment } from "./externalAttachment";
+import { formatBytes } from "@/lib/format-utils";
 
 function imageMime(displayName: string): string {
   const ext = displayName.split(".").pop()?.toLowerCase() ?? "";
@@ -73,12 +74,6 @@ export function docIcon(displayName: string) {
   return FileIcon;
 }
 
-export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function ImageCard({
   attachment,
   onRemove,
@@ -91,8 +86,7 @@ function ImageCard({
     attachment.error ? "" : attachment.localAbsPath,
     mime,
   );
-  const meta =
-    attachment.sizeBytes !== undefined ? formatFileSize(attachment.sizeBytes) : undefined;
+  const meta = attachment.sizeBytes !== undefined ? formatBytes(attachment.sizeBytes) : undefined;
 
   return (
     <Attachment size="sm" state={attachment.error ? "error" : "done"}>
@@ -124,8 +118,7 @@ function DocCard({
   onRemove: () => void;
 }) {
   const icon = docIcon(attachment.displayName);
-  const meta =
-    attachment.sizeBytes !== undefined ? formatFileSize(attachment.sizeBytes) : undefined;
+  const meta = attachment.sizeBytes !== undefined ? formatBytes(attachment.sizeBytes) : undefined;
 
   return (
     <Attachment size="sm" state={attachment.error ? "error" : "done"}>

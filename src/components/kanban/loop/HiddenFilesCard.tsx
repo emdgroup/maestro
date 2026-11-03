@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { buildFileTree, type FileTreeNode } from "@/components/execution/diff/file-tree";
 import type { LoopDraft } from "./loop-draft";
 import { hiddenMatcher, isRule, orderPatterns, type Hidden } from "./loop-state";
+import { plural } from "@/lib/format-utils";
 
 /** Files a check depends on without naming them: what its command runs through. */
 const DEPENDS_ON: { command: RegExp; file: RegExp; why: string }[] = [
@@ -20,8 +21,6 @@ const DEPENDS_ON: { command: RegExp; file: RegExp; why: string }[] = [
   { command: /\bvitest\b/, file: /^vitest\.config\.[^/]+$/, why: "decides which tests run" },
   { command: /\bjest\b/, file: /^jest\.config\.[^/]+$/, why: "decides which tests run" },
 ];
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** How many files `pattern` hides on its own, or shows again for an exception. */
 const matches = (pattern: string, files: string[]) => {

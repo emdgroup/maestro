@@ -27,6 +27,7 @@ import {
   whenSlidOut,
   zoomToHome,
 } from "@/components/layout/project-transition/projectTransition";
+import { plural } from "@/lib/format-utils";
 
 const segment =
   "flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-xs outline-none transition-colors hover:bg-foreground/[0.08] focus-visible:bg-foreground/[0.08] data-popup-open:bg-foreground/[0.08]";
@@ -163,7 +164,7 @@ function ProjectList({ children }: { children: ReactNode }) {
 function phaseLine(phase: ConnectionPhase, cards: ProjectCard[] | null) {
   switch (phase.kind) {
     case "up":
-      return cards ? `${cards.length} ${cards.length === 1 ? "project" : "projects"}` : "Connected";
+      return cards ? plural(cards.length, "project") : "Connected";
     case "connecting":
       return phase.starting ? "Starting…" : "Connecting…";
     case "stopping":

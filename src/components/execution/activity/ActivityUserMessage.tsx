@@ -13,9 +13,10 @@ import {
   AttachmentDescription,
 } from "@/ui/attachment";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { docIcon, formatFileSize } from "./compose-bar/AttachmentShelf";
+import { docIcon } from "./compose-bar/AttachmentShelf";
 import { MessageActionBar } from "./MessageActionBar";
 import { basename } from "@/lib/path-utils";
+import { formatBytes, plural } from "@/lib/format-utils";
 
 function fileTypeLabel(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -180,8 +181,7 @@ function CanvasPromptRow({ prompt }: { prompt: CanvasPrompt }) {
       <MousePointerClick className="size-3 shrink-0" />
       {prompt.kind === "restored" ? (
         <span>
-          {prompt.surfaces.length} canvas {prompt.surfaces.length === 1 ? "surface" : "surfaces"}{" "}
-          restored — asked the agent to listen
+          {plural(prompt.surfaces.length, "canvas surface")} restored — asked the agent to listen
         </span>
       ) : prompt.kind === "imported" ? (
         <span>
@@ -284,7 +284,7 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
                             </Tooltip>
                             <AttachmentDescription>
                               {b.mimeType.split("/").pop()?.toUpperCase()} ·{" "}
-                              {formatFileSize(Math.round(b.data.length * 0.75))}
+                              {formatBytes(Math.round(b.data.length * 0.75))}
                             </AttachmentDescription>
                           </AttachmentContent>
                         </Attachment>
@@ -298,8 +298,7 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
                   {fileBlocks.map((b, i) => {
                     const Icon = docIcon(b.name);
                     const type = fileTypeLabel(b.name);
-                    const meta =
-                      b.size !== undefined ? `${type} · ${formatFileSize(b.size)}` : type;
+                    const meta = b.size !== undefined ? `${type} · ${formatBytes(b.size)}` : type;
                     return (
                       <Attachment
                         key={i}

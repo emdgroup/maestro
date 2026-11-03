@@ -1,5 +1,5 @@
 import { memo, useState, useEffect } from "react";
-import { formatTimeAgoCompact } from "@/lib/format-utils";
+import { formatElapsedCompact, formatTimeAgoCompact } from "@/lib/format-utils";
 import type { SessionActivityStatus } from "@/store/sessionActivityStore";
 
 export const ACTIVITY_DOT: Record<SessionActivityStatus, string> = {
@@ -20,11 +20,6 @@ export const ACTIVITY_TEXT: Record<SessionActivityStatus, string> = {
   idle: "text-muted-foreground/40",
   stale: "text-destructive",
 };
-
-export function formatElapsedCompact(ms: number): string {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
 
 export const ElapsedTime = memo(function ElapsedTime({
   status,

@@ -20,6 +20,7 @@ import {
 import { pickDefaultAccept, readLastAccept, writeLastAccept } from "./plan-accept-preference";
 import type { PermissionOption } from "./permission-prompt-utils";
 import type { ToolCallItem } from "./types";
+import { plural } from "@/lib/format-utils";
 
 /**
  * A plan the session has already settled, as a quiet row in the stream.
@@ -113,7 +114,7 @@ export function PendingPlanCard({
             link beside this chip goes. */}
         {noteCount > 0 && (
           <span className="shrink-0 rounded-full border border-accent/30 bg-accent/15 px-1.75 py-0.5 text-[10px] font-semibold text-accent">
-            {noteCount === 1 ? "1 note" : `${noteCount} notes`}
+            {plural(noteCount, "note")}
           </span>
         )}
         {/* A link, not a button: it goes somewhere rather than answering the request, and the two

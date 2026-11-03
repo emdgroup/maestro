@@ -11,6 +11,7 @@ import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
 import { projectQueryKeys } from "@/services/project.service";
 import type { DiffTarget } from "@/types/bindings";
+import { plural } from "@/lib/format-utils";
 
 export const worktreeQueryKeys = {
   base: ["worktrees"] as const,
@@ -395,10 +396,9 @@ export function usePruneBranchesMutation() {
       void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
       // The base-branch picker reads its own list; without this it keeps offering deleted branches.
       void queryClient.invalidateQueries({ queryKey: projectQueryKeys.branches(projectId) });
-      const plural = deleted.length === 1 ? "branch" : "branches";
       toast.success(
         deleted.length === branches.length
-          ? `Pruned ${deleted.length} ${plural}`
+          ? `Pruned ${plural(deleted.length, "branch", "branches")}`
           : `Pruned ${deleted.length} of ${branches.length} branches, see the log for the rest`,
       );
     },

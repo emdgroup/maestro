@@ -4,7 +4,12 @@ import {
   formatElapsed,
   formatTimeAgoCompact,
   formatTimeAgoLong,
-  humanizeTokenCount,
+  formatTokens,
+  formatCost,
+  relativeAge,
+  formatElapsedCompact,
+  formatCountdown,
+  formatUptime,
   plural,
 } from "./format-utils";
 
@@ -108,12 +113,94 @@ describe("formatElapsed", () => {
   });
 });
 
-describe("humanizeTokenCount", () => {
+describe("relativeAge", () => {
+  const now = Date.parse("2026-08-29T12:00:00Z");
+  const ago = (ms: number) => new Date(now - ms).toISOString();
+
+  it("floors at one minute", () => {
+    expect(relativeAge(ago(2_000), now)).toBe("1 min");
+    expect(relativeAge(ago(59_000), now)).toBe("1 min");
+  });
+
+  it("steps up through the units", () => {
+    expect(relativeAge(ago(5 * 60_000), now)).toBe("5 min");
+    expect(relativeAge(ago(3 * 3_600_000), now)).toBe("3 h");
+    expect(relativeAge(ago(2 * 86_400_000), now)).toBe("2 d");
+    expect(relativeAge(ago(21 * 86_400_000), now)).toBe("3 w");
+  });
+
+  // Clock skew between a remote worktree's host and this one must not read as "in 3 minutes".
+  it("floors a timestamp from the future rather than counting forward", () => {
+    expect(relativeAge(ago(-5 * 60_000), now)).toBe("1 min");
+  });
+
+  it("returns nothing it cannot parse", () => {
+    expect(relativeAge(null, now)).toBeNull();
+    expect(relativeAge("not a date", now)).toBeNull();
+  });
+});
+
+describe("formatElapsedCompact", () => {
+  it("floors to whole seconds and pads", () => {
+    expect(formatElapsedCompact(0)).toBe("0:00");
+    expect(formatElapsedCompact(999)).toBe("0:00");
+    expect(formatElapsedCompact(1_000)).toBe("0:01");
+    expect(formatElapsedCompact(9_000)).toBe("0:09");
+    expect(formatElapsedCompact(59_999)).toBe("0:59");
+    expect(formatElapsedCompact(60_000)).toBe("1:00");
+    expect(formatElapsedCompact(3_661_000)).toBe("61:01");
+  });
+
+  // A status change re-stamps `stateChangedAt` mid-tick, so ElapsedTime subtracts it from a
+  // `now` that is up to a second stale. Unclamped this floored to -1 and rendered "-1:-1".
+  it("reports 0:00 for a span that has not elapsed yet", () => {
+    expect(formatElapsedCompact(-1)).toBe("0:00");
+    expect(formatElapsedCompact(-999)).toBe("0:00");
+    expect(formatElapsedCompact(-1_000)).toBe("0:00");
+    expect(formatElapsedCompact(-60_000)).toBe("0:00");
+  });
+});
+
+describe("formatCountdown", () => {
+  it("counts down in days, hours, minutes, and seconds only in the last minute", () => {
+    expect(formatCountdown(28 * 3600)).toBe("1d 4h");
+    expect(formatCountdown(5 * 3600)).toBe("5h 00m");
+    expect(formatCountdown(2 * 3600 + 5 * 60 + 30)).toBe("2h 05m");
+    expect(formatCountdown(3599)).toBe("59m");
+    expect(formatCountdown(65)).toBe("1m");
+    expect(formatCountdown(59.9)).toBe("59s");
+    expect(formatCountdown(-3)).toBe("0s");
+  });
+});
+
+describe("formatUptime", () => {
+  const now = Date.parse("2026-10-05T12:00:00Z");
+  it("shows the two largest units", () => {
+    expect(formatUptime("2026-10-02T06:00:00Z", now)).toBe("3d 6h");
+    expect(formatUptime("2026-10-05T07:48:00Z", now)).toBe("4h 12m");
+    expect(formatUptime("2026-10-05T11:51:00Z", now)).toBe("9m");
+  });
+});
+
+describe("formatTokens", () => {
   it("keeps small counts exact and abbreviates the rest", () => {
-    expect(humanizeTokenCount(999)).toBe("999");
-    expect(humanizeTokenCount(1_000)).toBe("1k");
-    expect(humanizeTokenCount(1_500)).toBe("1.5k");
-    expect(humanizeTokenCount(15_000)).toBe("15k");
-    expect(humanizeTokenCount(1_500_000)).toBe("1.5M");
+    expect(formatTokens(999)).toBe("999");
+    expect(formatTokens(1_000)).toBe("1K");
+    expect(formatTokens(1_500)).toBe("1.5K");
+    expect(formatTokens(106_900)).toBe("106.9K");
+    expect(formatTokens(1_500_000)).toBe("1.5M");
+  });
+});
+
+describe("formatCost", () => {
+  it("shows cents below a thousand and whole units above", () => {
+    expect(formatCost(0.4)).toBe("$0.40");
+    expect(formatCost(142.18)).toBe("$142.18");
+    expect(formatCost(1234.5)).toBe("$1,235");
+    expect(formatCost(2, "EUR")).toBe("€2.00");
+  });
+
+  it("falls back for a currency Intl does not know", () => {
+    expect(formatCost(1.2, "NOPE1")).toBe("1.20 NOPE1");
   });
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { HomeProject } from "@/types/bindings";
 import { deriveRepoName } from "./AddProjectDialog";
-import { formatUptime } from "./ConnectionMenu";
+
 import { displayPath, projectStatus } from "./ProjectTile";
 import { toCard } from "./useHomeSummaries";
 
@@ -48,15 +48,6 @@ describe("displayPath", () => {
     expect(displayPath("C:\\Users\\billy\\src\\x")).toBe("~\\src\\x");
     expect(displayPath("C:/Users/billy/maestro-demo")).toBe("~/maestro-demo");
     expect(displayPath("/data/x")).toBe("/data/x");
-  });
-});
-
-describe("formatUptime", () => {
-  const now = Date.parse("2026-10-05T12:00:00Z");
-  it("shows the two largest units", () => {
-    expect(formatUptime("2026-10-02T06:00:00Z", now)).toBe("3d 6h");
-    expect(formatUptime("2026-10-05T07:48:00Z", now)).toBe("4h 12m");
-    expect(formatUptime("2026-10-05T11:51:00Z", now)).toBe("9m");
   });
 });
 

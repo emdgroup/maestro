@@ -18,18 +18,3 @@ export interface AuthProps {
   loading: boolean;
   onSubmit: (auth: AuthSubmission) => void;
 }
-
-// ---------------------------------------------------------------------------
-// OS detection
-// ---------------------------------------------------------------------------
-
-export type OsPlatform = "macos" | "linux" | "windows";
-
-export function detectOs(): OsPlatform {
-  const ua = navigator.userAgent;
-  if (ua.includes("Win")) return "windows";
-  if (ua.includes("Mac")) return "macos";
-  return "linux";
-}
-
-export const OS = detectOs();

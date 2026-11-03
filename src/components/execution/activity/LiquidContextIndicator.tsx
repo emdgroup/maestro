@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useId } from "react";
 import { cn } from "@/lib/utils";
-import { humanizeTokenCount } from "@/lib/format-utils";
+import { formatTokens } from "@/lib/format-utils";
 import { Progress, ProgressTrack, ProgressIndicator } from "@/ui/progress";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Button } from "@/ui/button";
@@ -238,7 +238,7 @@ export function LiquidContextIndicator({
         {/* Token info */}
         {/* The session's cost lives in the session header, beside its plan limits. */}
         <div className="text-[11px] text-muted-foreground">
-          {humanizeTokenCount(usage.used)} / {humanizeTokenCount(usage.size)} tokens
+          {formatTokens(usage.used)} / {formatTokens(usage.size)} tokens
         </div>
 
         {/* Contextual tip */}

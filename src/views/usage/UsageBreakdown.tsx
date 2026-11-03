@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Reveal } from "@/components/common/Reveal";
 import { ChevronDown } from "lucide-react";
 import type { UsageTokenSplit } from "@/types/bindings";
-import { formatTokens } from "./format";
+import { formatTokens } from "@/lib/format-utils";
 
 export interface BreakdownRow {
   id: string;

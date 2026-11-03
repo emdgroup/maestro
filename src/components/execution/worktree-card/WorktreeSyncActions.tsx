@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { usePullWorktreeMutation, usePushWorktreeMutation } from "@/services/worktree.service";
 import type { WorktreeWithStatus } from "@/types/bindings";
+import { plural } from "@/lib/format-utils";
 
 /** One of the two chips. `count` is always above zero when `show` is true. */
 export interface SyncAction {
@@ -69,8 +70,8 @@ export function syncActions(
 
   const dirty = worktree.changed_files_count;
   const uncommitted =
-    dirty > 0 ? ` ${dirty} uncommitted file${dirty === 1 ? "" : "s"} will not be included.` : "";
-  const commits = (n: number) => `${n} commit${n === 1 ? "" : "s"}`;
+    dirty > 0 ? ` ${plural(dirty, "uncommitted file")} will not be included.` : "";
+  const commits = (n: number) => plural(n, "commit");
 
   if (worktree.ahead_behind == null) {
     const ahead = worktree.commit_count ?? 0;

@@ -55,6 +55,7 @@ import {
   type LoopDraft,
 } from "./loop-draft";
 import { gateLine, loopHalt, setupOutcomes } from "./loop-state";
+import { plural } from "@/lib/format-utils";
 
 /** Accepting a proposal makes it a full check, of the kind the user picks, sealing what it names. */
 function AcceptForm({
@@ -541,9 +542,7 @@ export function LoopTab({
       <div className="flex items-baseline justify-between px-1">
         <h3 className="field-label">Done when</h3>
         {real.length > 0 && (
-          <span className="text-xs text-muted-foreground">
-            {real.length} {real.length === 1 ? "check" : "checks"}
-          </span>
+          <span className="text-xs text-muted-foreground">{plural(real.length, "check")}</span>
         )}
       </div>
       <SetupCard

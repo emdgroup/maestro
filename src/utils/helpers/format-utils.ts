@@ -62,6 +62,64 @@ export function plural(count: number, word: string, pluralWord = `${word}s`): st
   return `${count} ${count === 1 ? word : pluralWord}`;
 }
 
+/**
+ * How long ago something happened, in the footer register: `5 min`, `3 h`, `2 d`, `3 w`. Callers
+ * add the `ago` where the sentence wants one.
+ *
+ * Floored at a minute: `formatDistanceToNow` renders anything younger as "less than a minute ago",
+ * which spends four words on the least informative case. A timestamp in the future (clock skew
+ * between a remote host and this one) floors to the same place rather than reading "in 3 minutes"
+ * about work that has already happened.
+ */
+export function relativeAge(iso: string | null, now: number): string | null {
+  if (!iso) return null;
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return null;
+
+  const minutes = Math.max(1, Math.round((now - then) / 60_000));
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days} d`;
+  return `${Math.round(days / 7)} w`;
+}
+
+/** `15:00`, in the user's locale. */
+export function formatTimeOfDay(at: TimeInput): string {
+  return new Date(toEpoch(at)).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** A ticking stopwatch: `4:07`, `61:01`. Takes milliseconds and never goes below `0:00`. */
+export function formatElapsedCompact(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** A countdown: `1d 4h`, `2h 05m`, `12m`, and seconds only in the last minute. */
+export function formatCountdown(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s >= 86400) return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
+  if (s >= 3600) {
+    return `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
+  }
+  if (s >= 60) return `${Math.floor(s / 60)}m`;
+  return `${s}s`;
+}
+
+/** How long something has been up, unpadded and in whole minutes: `3d 6h`, `4h 12m`, `9m`. */
+export function formatUptime(startedAt: string, now = Date.now()): string {
+  const minutes = Math.max(0, Math.floor((now - Date.parse(startedAt)) / 60_000));
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  return `${minutes}m`;
+}
+
 /** `4m 07s`, or `1h 04m` once the run passes an hour and the seconds stop mattering. */
 export function formatElapsed(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -71,18 +129,30 @@ export function formatElapsed(seconds: number): string {
   return `${m}m ${String(s).padStart(2, "0")}s`;
 }
 
-export function humanizeTokenCount(count: number): string {
-  if (count < 1000) return String(count);
-  if (count < 10_000) {
-    const k = Math.floor(count / 1000);
-    const h = Math.round((count % 1000) / 100);
-    return h === 0 ? `${k}k` : h === 10 ? `${k + 1}k` : `${k}.${h}k`;
+const compactNumber = new Intl.NumberFormat("en-US", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+/** `999`, `1.5K`, `106.9K`, `268M`. */
+export function formatTokens(count: number): string {
+  return compactNumber.format(count);
+}
+
+/**
+ * `$142.18`, and whole units from a thousand up. A currency Intl does not know falls back to
+ * `1.20 XYZ` rather than throwing.
+ */
+export function formatCost(amount: number, currency = "USD"): string {
+  const digits = amount >= 1000 ? 0 : 2;
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`;
   }
-  if (count < 1_000_000) return `${Math.round(count / 1000)}k`;
-  if (count < 10_000_000) {
-    const m = Math.floor(count / 1_000_000);
-    const h = Math.round((count % 1_000_000) / 100_000);
-    return h === 0 ? `${m}M` : h === 10 ? `${m + 1}M` : `${m}.${h}M`;
-  }
-  return `${Math.round(count / 1_000_000)}M`;
 }

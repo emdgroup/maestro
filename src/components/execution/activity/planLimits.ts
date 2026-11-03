@@ -86,17 +86,6 @@ export function elapsedShare(w: PlanWindow, id: PlanWindowId, nowSec: number): n
   return Math.min(1, Math.max(0, 1 - left));
 }
 
-/** `1d 4h`, `2h 05m`, `12m`, and seconds only in the last minute. */
-export function formatCountdown(seconds: number): string {
-  const s = Math.max(0, Math.floor(seconds));
-  if (s >= 86400) return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
-  if (s >= 3600) {
-    return `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
-  }
-  if (s >= 60) return `${Math.floor(s / 60)}m`;
-  return `${s}s`;
-}
-
 /** The windows still running: a reading says nothing once its window has reset. */
 export function liveWindows(limits: PlanLimits | undefined, nowSec: number): PlanWindowId[] {
   if (!limits) return [];

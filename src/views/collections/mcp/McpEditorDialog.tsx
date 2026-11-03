@@ -34,6 +34,7 @@ import type {
   McpServerConfig,
   McpTestResult,
 } from "@/types/bindings";
+import { plural } from "@/lib/format-utils";
 
 const EMPTY: McpServerConfig = {
   name: "",
@@ -748,9 +749,7 @@ export function TestOutcome({ result }: { result: McpTestResult | null }) {
       >
         <CircleCheck className="size-3.5 shrink-0" />
         <span className="truncate">
-          {result.tools.length
-            ? `Connected: ${result.tools.length} tool${result.tools.length === 1 ? "" : "s"}`
-            : "Connected"}
+          {result.tools.length ? `Connected: ${plural(result.tools.length, "tool")}` : "Connected"}
         </span>
       </TooltipTrigger>
       <TooltipContent>{result.tools.join(", ")}</TooltipContent>

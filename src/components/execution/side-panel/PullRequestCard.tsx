@@ -79,9 +79,7 @@ export function PullRequestFacts({ pullRequest }: { pullRequest: SessionPullRequ
       // number and leave it sitting off the baseline of the word beside it.
       <span key="files" className="flex items-center gap-1 text-muted-foreground">
         <FileDiff className="size-3" />
-        <span className="tabular-nums">
-          {changed_files} {changed_files === 1 ? "file" : "files"}
-        </span>
+        <span className="tabular-nums">{plural(changed_files, "file")}</span>
       </span>,
     );
   }
@@ -242,7 +240,7 @@ export function CheckRollup({
 
   const headline =
     running === 0 && failed === 0
-      ? `All ${total} check${total === 1 ? "" : "s"} passed`
+      ? `All ${plural(total, "check")} passed`
       : `${done} of ${total} checks done`;
 
   const counts = [

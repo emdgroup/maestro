@@ -1,6 +1,6 @@
 import { Check, History, Pencil, RefreshCw, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatTimeAgoCompact } from "@/lib/format-utils";
+import { formatTimeAgoCompact, plural } from "@/lib/format-utils";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { ScrollArea } from "@/ui/scroll-area";
@@ -239,7 +239,7 @@ export function SessionHistoryList({
             </Button>
           )}
           <span className="text-xs text-muted-foreground">
-            {ticked.size} session{ticked.size !== 1 ? "s" : ""} selected
+            {plural(ticked.size, "session")} selected
           </span>
           <div className="flex items-center gap-2">
             <Button

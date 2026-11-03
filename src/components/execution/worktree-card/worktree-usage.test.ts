@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   groupWorktrees,
   pathIsWithin,
-  relativeAge,
   relativeWorktreePath,
   sessionsByWorktree,
   worktreeUsage,
@@ -189,37 +188,6 @@ describe("worktreeUsage", () => {
   // The row survives its task being renamed to nothing; the card still has to link somewhere.
   it("names a task with no title by its id", () => {
     expect(worktreeUsage(worktree({ task_id: 9 }), []).task).toEqual({ id: 9, name: "Task 9" });
-  });
-});
-
-describe("relativeAge", () => {
-  const now = Date.parse("2026-08-29T12:00:00Z");
-  const ago = (ms: number) => new Date(now - ms).toISOString();
-
-  /**
-   * `formatDistanceToNow` renders anything under a minute as "less than a minute ago" — four words
-   * for the least informative case, and the label the card used to show.
-   */
-  it("floors at one minute", () => {
-    expect(relativeAge(ago(2_000), now)).toBe("1 min");
-    expect(relativeAge(ago(59_000), now)).toBe("1 min");
-  });
-
-  it("steps up through the units", () => {
-    expect(relativeAge(ago(5 * 60_000), now)).toBe("5 min");
-    expect(relativeAge(ago(3 * 3_600_000), now)).toBe("3 h");
-    expect(relativeAge(ago(2 * 86_400_000), now)).toBe("2 d");
-    expect(relativeAge(ago(21 * 86_400_000), now)).toBe("3 w");
-  });
-
-  // Clock skew between a remote worktree's host and this one must not read as "in 3 minutes".
-  it("floors a timestamp from the future rather than counting forward", () => {
-    expect(relativeAge(ago(-5 * 60_000), now)).toBe("1 min");
-  });
-
-  it("returns nothing it cannot parse", () => {
-    expect(relativeAge(null, now)).toBeNull();
-    expect(relativeAge("not a date", now)).toBeNull();
   });
 });
 

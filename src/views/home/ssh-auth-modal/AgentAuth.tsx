@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { ShieldUser, ChevronDown, ChevronUp } from "lucide-react";
 import type { AuthProps } from "./ssh-auth-utils";
-import { OS } from "./ssh-auth-utils";
+import { hostPlatform } from "@/lib/platform-utils";
 import { AuthFooter } from "./PasswordAuth";
 
 export function AgentAuth({ loading, onSubmit }: AuthProps) {
@@ -41,7 +41,7 @@ export function AgentAuth({ loading, onSubmit }: AuthProps) {
             <p className="font-sans font-medium text-foreground text-xs mb-2">
               On your local environment:
             </p>
-            {OS === "windows" && (
+            {hostPlatform === "windows" && (
               <>
                 <p># Enable and start the SSH agent service (run as Admin)</p>
                 <p className="text-foreground">
@@ -54,7 +54,7 @@ export function AgentAuth({ loading, onSubmit }: AuthProps) {
                 <p className="text-foreground">ssh-add $env:USERPROFILE\.ssh\id_ed25519</p>
               </>
             )}
-            {OS === "macos" && (
+            {hostPlatform === "macos" && (
               <>
                 <p># macOS starts ssh-agent automatically</p>
                 <p className="mt-1"># Verify key is loaded</p>
@@ -63,7 +63,7 @@ export function AgentAuth({ loading, onSubmit }: AuthProps) {
                 <p className="text-foreground">ssh-add --apple-use-keychain ~/.ssh/id_ed25519</p>
               </>
             )}
-            {OS === "linux" && (
+            {hostPlatform === "linux" && (
               <>
                 <p># Start the SSH agent</p>
                 <p className="text-foreground">eval "$(ssh-agent -s)"</p>

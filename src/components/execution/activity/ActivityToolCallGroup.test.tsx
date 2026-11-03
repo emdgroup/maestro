@@ -261,7 +261,7 @@ describe("ActivityToolCallGroup", () => {
     render(<ActivityToolCallGroup items={[compaction]} />);
     expect(screen.getByText("Compacted")).toBeTruthy();
     expect(screen.getByText("auto")).toBeTruthy();
-    expect(screen.getByText("182k → 41k tokens")).toBeTruthy();
+    expect(screen.getByText("182K → 41K tokens")).toBeTruthy();
   });
 
   it("renders a compaction summary as markdown, not as raw output", () => {

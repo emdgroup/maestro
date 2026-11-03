@@ -11,7 +11,7 @@ import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import type { AuthProps, SavedKeyFile } from "./ssh-auth-utils";
-import { OS } from "./ssh-auth-utils";
+import { hostPlatform } from "@/lib/platform-utils";
 import { AuthFooter } from "./PasswordAuth";
 import { basename } from "@/lib/path-utils";
 
@@ -234,7 +234,7 @@ export function KeyFileAuth({
               <p className="font-sans text-muted-foreground leading-relaxed">
                 Keys are saved to{" "}
                 <span className="font-mono text-foreground">
-                  {OS === "windows" ? `$env:USERPROFILE\\.ssh\\` : `~/.ssh/`}
+                  {hostPlatform === "windows" ? `$env:USERPROFILE\\.ssh\\` : `~/.ssh/`}
                 </span>{" "}
                 by default
               </p>
