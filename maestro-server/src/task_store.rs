@@ -19,6 +19,7 @@ pub mod worktrees;
 pub use threads::*;
 
 use chrono::Utc;
+use maestro_protocol::completion::{review_rounds_remain, REVIEW_ROUND_CAP};
 use maestro_protocol::{
     BranchMode, CloseRefinementRequest, CreateTaskRequest, EndTaskTurnRequest, LoopConfig,
     RequestTaskExecutionRequest, RunMode, Task, TaskPhase, TaskStatus, TaskTransition, TaskUpdate,
@@ -130,9 +131,6 @@ CREATE TABLE IF NOT EXISTS task_attachments (
 );
 CREATE INDEX IF NOT EXISTS idx_task_attachments_task_id ON task_attachments(project_path, task_id);
 ";
-
-/// How many times a review agent may send a task back, as the app's `acp::completion` has it.
-const REVIEW_ROUND_CAP: i32 = 3;
 
 const TASK_SELECT: &str = "SELECT * FROM tasks";
 
@@ -829,7 +827,7 @@ fn review_verdict_event(
             |row| row.get(0),
         )
         .unwrap_or(REVIEW_ROUND_CAP);
-    if rounds >= REVIEW_ROUND_CAP {
+    if !review_rounds_remain(rounds) {
         crate::send_diag(
             "info",
             format!(

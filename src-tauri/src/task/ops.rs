@@ -489,7 +489,7 @@ async fn reviewer_should_run(
     app_state: &crate::core::AppState,
     task: &crate::models::Task,
 ) -> bool {
-    use crate::acp::completion::review_rounds_remain;
+    use maestro_protocol::completion::review_rounds_remain;
 
     if !review_rounds_remain(task.review_rounds) {
         return false;

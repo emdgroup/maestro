@@ -285,7 +285,8 @@ pub struct AcpProcess {
     /// emitting `replay-drained` before the session is ready (empty buffer race).
     pub initialized: Arc<std::sync::Mutex<bool>>,
     /// Strips the completion marker from `agent_message_chunk` text before it is shown.
-    pub completion_filter: Arc<std::sync::Mutex<super::completion::CompletionMarkerFilter>>,
+    pub completion_filter:
+        Arc<std::sync::Mutex<maestro_protocol::completion::CompletionMarkerFilter>>,
     /// Session capability flags from SpawnOk. Used by get_active_sessions.
     pub session_capabilities: SessionCapabilitiesInfo,
     /// Raw config_options catalog from SpawnOk/SessionLoadOk/config updates.
@@ -406,7 +407,8 @@ pub struct ReaderTaskContext {
     pub acp_session_id_cache: Arc<std::sync::Mutex<Option<String>>>,
     pub replay_buffer: ReplayBuffer,
     pub initialized: Arc<std::sync::Mutex<bool>>,
-    pub completion_filter: Arc<std::sync::Mutex<super::completion::CompletionMarkerFilter>>,
+    pub completion_filter:
+        Arc<std::sync::Mutex<maestro_protocol::completion::CompletionMarkerFilter>>,
 }
 
 impl AcpProcess {
@@ -432,7 +434,7 @@ impl AcpProcess {
         }));
         let initialized = Arc::new(std::sync::Mutex::new(false));
         let completion_filter = Arc::new(std::sync::Mutex::new(
-            super::completion::CompletionMarkerFilter::new(),
+            maestro_protocol::completion::CompletionMarkerFilter::new(),
         ));
         let ctx = ReaderTaskContext {
             session_id,
