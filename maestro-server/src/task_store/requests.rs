@@ -8,8 +8,7 @@
 use maestro_protocol::{
     LoopCheckList, LoopIterationList, OptionalTask, OptionalWorktree, ProjectRef,
     RequestTaskExecutionResponse, SaveTaskReviewResponse, ServerRequest, ServerResponse,
-    TaskAttachmentList, TaskCommentList, TaskInstructionList, TaskList, TaskRef,
-    TaskRelationshipList, WorktreeList,
+    TaskAttachmentList, TaskCommentList, TaskList, TaskRef, WorktreeList,
 };
 use rusqlite::Connection;
 
@@ -154,19 +153,6 @@ pub fn answer(
                 Changed::default(),
             )
         }
-        Q::ImportTasks(mut r) => {
-            canonical(&mut r.project_path);
-            let tasks = super::import(conn, &r)?;
-            let changed = Changed {
-                tasks: !tasks.is_empty(),
-                ..Changed::default()
-            };
-            (
-                r.project_path,
-                A::ImportTasksOk(TaskList { tasks }),
-                changed,
-            )
-        }
         Q::ListTaskComments(mut r) => {
             canonical(&mut r.project_path);
             let comments = super::list_comments(conn, &r.project_path, r.task_id)?;
@@ -194,7 +180,7 @@ pub fn answer(
                 thread(r.task_id),
             )
         }
-        // Attachments, relationships and instructions are not the thread: a window learns of them
+        // Attachments are not the thread: a window learns of them
         // from `TasksChanged`, as it does of anything else about a task.
         Q::ListTaskAttachments(mut r) => {
             canonical(&mut r.project_path);
@@ -212,44 +198,6 @@ pub fn answer(
             canonical(&mut r.project_path);
             super::delete_attachment(conn, &r.project_path, r.attachment_id)?;
             (r.project_path, A::DeleteTaskAttachmentOk, tasks)
-        }
-        Q::ListTaskRelationships(mut r) => {
-            canonical(&mut r.project_path);
-            let relationships = super::list_relationships(conn, &r.project_path, r.task_id)?;
-            let reply = A::ListTaskRelationshipsOk(TaskRelationshipList { relationships });
-            (r.project_path, reply, Changed::default())
-        }
-        Q::AddTaskRelationship(mut r) => {
-            canonical(&mut r.project_path);
-            let relationship = super::add_relationship(
-                conn,
-                &r.project_path,
-                r.from_task_id,
-                r.to_task_id,
-                &r.relationship_type,
-            )?;
-            (
-                r.project_path,
-                A::AddTaskRelationshipOk(relationship),
-                tasks,
-            )
-        }
-        Q::DeleteTaskRelationship(mut r) => {
-            canonical(&mut r.project_path);
-            super::delete_relationship(conn, &r.project_path, r.relationship_id)?;
-            (r.project_path, A::DeleteTaskRelationshipOk, tasks)
-        }
-        Q::ListTaskInstructions(mut r) => {
-            canonical(&mut r.project_path);
-            let instructions = super::list_instructions(conn, &r.project_path, r.task_id)?;
-            let reply = A::ListTaskInstructionsOk(TaskInstructionList { instructions });
-            (r.project_path, reply, Changed::default())
-        }
-        Q::AddTaskInstruction(mut r) => {
-            canonical(&mut r.project_path);
-            let instruction =
-                super::add_instruction(conn, &r.project_path, r.task_id, &r.content, &r.source)?;
-            (r.project_path, A::AddTaskInstructionOk(instruction), tasks)
         }
         Q::ListWorktrees(mut r) => {
             canonical(&mut r.project_path);

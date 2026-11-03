@@ -124,7 +124,7 @@ impl Summaries {
         }
     }
 
-    /// Every canonical path, paired with itself as `ListProjectLocks` takes them.
+    /// Every canonical path, paired with itself as `ClientSink::list_projects` takes them.
     pub fn lock_query(&self) -> Vec<(String, String)> {
         self.0
             .keys()
@@ -132,7 +132,7 @@ impl Summaries {
             .collect()
     }
 
-    /// `locks` as `ListProjectLocks` answers [`Self::lock_query`]: by canonical path.
+    /// `locks` as `ClientSink::list_projects` answers [`Self::lock_query`]: by canonical path.
     pub fn locks(&mut self, locks: Vec<ProjectLockInfo>) {
         for lock in locks {
             let summary = self.entry(lock.project_path);

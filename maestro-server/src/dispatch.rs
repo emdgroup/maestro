@@ -38,18 +38,6 @@ fn server_status(
     }
 }
 
-fn tool_config_error(tool: String, error: String) -> maestro_protocol::ToolCheckResult {
-    maestro_protocol::ToolCheckResult {
-        tool,
-        available: false,
-        version: None,
-        configured_path: None,
-        resolved_path: None,
-        source: maestro_protocol::ToolPathSource::NotFound,
-        error: Some(error),
-    }
-}
-
 /// The requests a session sent a client and is still waiting on.
 pub(crate) async fn pending_requests(
     session: &ActiveSession,
@@ -1397,37 +1385,6 @@ pub(crate) async fn dispatch_message(
             });
         }
 
-        // `tools.json` is written under a file lock, so two of these at once cannot lose a write.
-        ServerRequest::SetToolPath(req) => {
-            answer_off_loop(stdout, async move {
-                let result = if let Some(path) = req.path {
-                    let tested =
-                        crate::tool_check::test_tool_path(req.tool.clone(), path.clone()).await;
-                    if tested.available {
-                        match crate::tool_config::set(&req.tool, Some(path)) {
-                            Ok(()) => crate::tool_check::check_tool(req.tool).await,
-                            Err(error) => tool_config_error(req.tool, error),
-                        }
-                    } else {
-                        tested
-                    }
-                } else {
-                    match crate::tool_config::set(&req.tool, None) {
-                        Ok(()) => crate::tool_check::check_tool(req.tool).await,
-                        Err(error) => tool_config_error(req.tool, error),
-                    }
-                };
-                ServerResponse::SetToolPathOk(result)
-            });
-        }
-
-        ServerRequest::TestToolPath(req) => {
-            answer_off_loop(stdout, async move {
-                let result = crate::tool_check::test_tool_path(req.tool, req.path).await;
-                ServerResponse::TestToolPathOk(result)
-            });
-        }
-
         // The probe scans PATH for every bundled agent, which is slow on Windows. What it finds
         // is applied to the agent list back on the loop, which owns it.
         ServerRequest::DetectInstalledAgents(_req) => {
@@ -1439,13 +1396,6 @@ pub(crate) async fn dispatch_message(
             });
         }
 
-        ServerRequest::DetectProjectAgents(req) => {
-            answer_off_loop(stdout, async move {
-                let response = agent::detection::detect_project_agents(&req.cwd).await;
-                ServerResponse::DetectProjectAgentsOk(response)
-            });
-        }
-
         ServerRequest::AcquireProjectLock(req) => {
             let path = crate::automations::canonical_project_path(&req.project_path);
             let resp = stdout.lock().await.acquire_project(path, req.label).await;
@@ -1454,25 +1404,6 @@ pub(crate) async fn dispatch_message(
 
         ServerRequest::ReleaseProjectLock => {
             stdout.lock().await.release_project().await;
-        }
-
-        ServerRequest::ListProjectLocks(req) => {
-            let paths = req
-                .project_paths
-                .into_iter()
-                .map(|sent| {
-                    let canonical = crate::automations::canonical_project_path(&sent);
-                    (sent, canonical)
-                })
-                .collect();
-            let locks = stdout.lock().await.list_projects(paths).await;
-            reply(
-                stdout,
-                &ServerResponse::ProjectLocksOk(maestro_protocol::ListProjectLocksResponse {
-                    locks,
-                }),
-            )
-            .await;
         }
 
         ServerRequest::HomeSummary(req) => {
@@ -1553,17 +1484,11 @@ pub(crate) async fn dispatch_message(
         | ServerRequest::CloseRefinement(_)
         | ServerRequest::RequestTaskExecution(_)
         | ServerRequest::ListTasksAwaitingMerge(_)
-        | ServerRequest::ImportTasks(_)
         | ServerRequest::ListTaskComments(_)
         | ServerRequest::AddTaskComment(_)
         | ServerRequest::ListTaskAttachments(_)
         | ServerRequest::AddTaskAttachment(_)
         | ServerRequest::DeleteTaskAttachment(_)
-        | ServerRequest::ListTaskRelationships(_)
-        | ServerRequest::AddTaskRelationship(_)
-        | ServerRequest::DeleteTaskRelationship(_)
-        | ServerRequest::ListTaskInstructions(_)
-        | ServerRequest::AddTaskInstruction(_)
         | ServerRequest::ListWorktrees(_)
         | ServerRequest::GetWorktree(_)
         | ServerRequest::InsertWorktree(_)

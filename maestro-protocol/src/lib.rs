@@ -191,8 +191,6 @@ pub enum ServerRequest {
     Authenticate(AuthenticateRequest),
     Logout(LogoutRequest),
     CheckTools(CheckToolsRequest),
-    SetToolPath(SetToolPathRequest),
-    TestToolPath(TestToolPathRequest),
     InstallSkills(InstallSkillsRequest),
     /// The MCP servers the user manages for this machine, secrets blanked, and the ones a
     /// project's own `.mcp.json` declares.
@@ -212,7 +210,6 @@ pub enum ServerRequest {
     /// Remove a skill from every agent, and from the library.
     DeleteSkill(DeleteSkillRequest),
     DetectInstalledAgents(DetectInstalledAgentsRequest),
-    DetectProjectAgents(DetectProjectAgentsRequest),
     SpawnAuthTerminal(SpawnAuthTerminalRequest),
     KillAuthTerminal(KillAuthTerminalRequest),
     AuthTerminalInput(AuthTerminalInputRequest),
@@ -223,8 +220,6 @@ pub enum ServerRequest {
     AcquireProjectLock(AcquireProjectLockRequest),
     /// Let go of whatever project this client holds.
     ReleaseProjectLock,
-    /// Who holds each of these projects, for the picker.
-    ListProjectLocks(ListProjectLocksRequest),
     /// This server's status and what each of its projects is doing, for Home.
     HomeSummary(HomeSummaryRequest),
     /// Ask the holder of a project to hand it over. Answered with `TakeoverResultOk` once the
@@ -249,7 +244,6 @@ pub enum ServerRequest {
     /// Queued tasks with no phase, deferred first, then by priority and age.
     /// Unarchived tasks at `AwaitingMerge` with a pull request number, for the forge sweep.
     ListTasksAwaitingMerge(ProjectRef),
-    ImportTasks(ImportTasksRequest),
     /// A task's thread, oldest first.
     ListTaskComments(TaskRef),
     /// A `proposal` or `plan` replaces the task's previous one of that kind.
@@ -257,11 +251,6 @@ pub enum ServerRequest {
     ListTaskAttachments(TaskRef),
     AddTaskAttachment(AddTaskAttachmentRequest),
     DeleteTaskAttachment(DeleteTaskAttachmentRequest),
-    ListTaskRelationships(TaskRef),
-    AddTaskRelationship(AddTaskRelationshipRequest),
-    DeleteTaskRelationship(DeleteTaskRelationshipRequest),
-    ListTaskInstructions(TaskRef),
-    AddTaskInstruction(AddTaskInstructionRequest),
     ListWorktrees(ListWorktreesRequest),
     GetWorktree(WorktreeRef),
     InsertWorktree(InsertWorktreeRequest),
@@ -578,19 +567,6 @@ pub struct CheckToolsRequest {
     pub tools: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct SetToolPathRequest {
-    pub tool: String,
-    /// `None` removes the override and restores automatic detection.
-    pub path: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct TestToolPathRequest {
-    pub tool: String,
-    pub path: String,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolPathSource {
@@ -791,11 +767,6 @@ pub struct DeleteSkillRequest {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct DetectInstalledAgentsRequest {}
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct DetectProjectAgentsRequest {
-    pub cwd: String,
-}
-
 /// Info about an ACP agent whose underlying tool was detected on the host.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DetectedAgentInfo {
@@ -816,17 +787,6 @@ pub struct DetectInstalledAgentsResponse {
     /// All agent IDs that the detection table has an entry for (found OR not found).
     /// Tauri uses this to distinguish "not installed" from "not in detection table".
     pub all_checked_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ProjectAgentMarker {
-    pub agent_id: String,
-    pub markers_found: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct DetectProjectAgentsResponse {
-    pub agents: Vec<ProjectAgentMarker>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -1150,17 +1110,6 @@ pub struct AcquireProjectLockResponse {
     /// Who holds it, when `acquired` is false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub holder_label: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct ListProjectLocksRequest {
-    pub project_paths: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct ListProjectLocksResponse {
-    /// Only the projects somebody holds.
-    pub locks: Vec<ProjectLockInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2179,28 +2128,6 @@ pub struct TaskList {
     pub tasks: Vec<Task>,
 }
 
-/// Create a task per issue not already imported into the project.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct ImportTasksRequest {
-    pub project_path: String,
-    pub base_branch: String,
-    pub issues: Vec<ImportedIssue>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ImportedIssue {
-    pub external_id: String,
-    pub title: String,
-    #[serde(default)]
-    pub body: Option<String>,
-    pub url: String,
-    #[serde(default)]
-    pub labels: Vec<String>,
-    #[serde(default)]
-    pub updated_at: Option<String>,
-    pub priority: TaskPriority,
-}
-
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct AddTaskCommentRequest {
     pub project_path: String,
@@ -2246,39 +2173,6 @@ pub struct DeleteTaskAttachmentRequest {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct TaskAttachmentList {
     pub attachments: Vec<TaskAttachment>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct AddTaskRelationshipRequest {
-    pub project_path: String,
-    pub from_task_id: i32,
-    pub to_task_id: i32,
-    pub relationship_type: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct DeleteTaskRelationshipRequest {
-    pub project_path: String,
-    pub relationship_id: i32,
-}
-
-/// Every relationship the task is on either end of.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct TaskRelationshipList {
-    pub relationships: Vec<TaskRelationship>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct AddTaskInstructionRequest {
-    pub project_path: String,
-    pub task_id: i32,
-    pub content: String,
-    pub source: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct TaskInstructionList {
-    pub instructions: Vec<TaskInstruction>,
 }
 
 /// One check of the user's list. `id` names a check it keeps, which goes back to `Pending` when
@@ -2681,8 +2575,6 @@ pub enum ServerResponse {
     LogoutOk,
     AuthTerminalExit(AuthTerminalExitResponse),
     CheckToolsOk(CheckToolsResponse),
-    SetToolPathOk(ToolCheckResult),
-    TestToolPathOk(ToolCheckResult),
     InstallSkillsOk(InstallSkillsResponse),
     ListMcpServersOk(McpServerList),
     SaveMcpServersOk,
@@ -2692,12 +2584,10 @@ pub enum ServerResponse {
     ApplySkillOk,
     DeleteSkillOk,
     DetectInstalledAgentsOk(DetectInstalledAgentsResponse),
-    DetectProjectAgentsOk(DetectProjectAgentsResponse),
     /// An agent called a Maestro MCP tool the host has to answer. Tauri replies with
     /// `ServerRequest::HostToolResult` carrying the same `request_id`.
     HostToolCall(HostToolCall),
     AcquireProjectLockOk(AcquireProjectLockResponse),
-    ProjectLocksOk(ListProjectLocksResponse),
     HomeSummaryOk(HomeSummaryResponse),
     /// The answer to `RequestTakeover`, sent once the holder has been dealt with.
     TakeoverResultOk(TakeoverResult),
@@ -2721,18 +2611,11 @@ pub enum ServerResponse {
     CloseRefinementOk(Task),
     RequestTaskExecutionOk(RequestTaskExecutionResponse),
     ListTasksAwaitingMergeOk(TaskList),
-    /// The tasks created, not the issues skipped.
-    ImportTasksOk(TaskList),
     ListTaskCommentsOk(TaskCommentList),
     AddTaskCommentOk(TaskComment),
     ListTaskAttachmentsOk(TaskAttachmentList),
     AddTaskAttachmentOk(TaskAttachment),
     DeleteTaskAttachmentOk,
-    ListTaskRelationshipsOk(TaskRelationshipList),
-    AddTaskRelationshipOk(TaskRelationship),
-    DeleteTaskRelationshipOk,
-    ListTaskInstructionsOk(TaskInstructionList),
-    AddTaskInstructionOk(TaskInstruction),
     ListWorktreesOk(WorktreeList),
     GetWorktreeOk(OptionalWorktree),
     InsertWorktreeOk(Worktree),
@@ -2849,8 +2732,6 @@ impl ServerResponse {
             | Self::AuthenticateOk
             | Self::LogoutOk
             | Self::CheckToolsOk(_)
-            | Self::SetToolPathOk(_)
-            | Self::TestToolPathOk(_)
             | Self::InstallSkillsOk(_)
             | Self::ListMcpServersOk(_)
             | Self::SaveMcpServersOk
@@ -2860,9 +2741,7 @@ impl ServerResponse {
             | Self::ApplySkillOk
             | Self::DeleteSkillOk
             | Self::DetectInstalledAgentsOk(_)
-            | Self::DetectProjectAgentsOk(_)
             | Self::AcquireProjectLockOk(_)
-            | Self::ProjectLocksOk(_)
             | Self::HomeSummaryOk(_)
             | Self::TakeoverResultOk(_)
             | Self::ListTasksOk(_)
@@ -2877,17 +2756,11 @@ impl ServerResponse {
             | Self::CloseRefinementOk(_)
             | Self::RequestTaskExecutionOk(_)
             | Self::ListTasksAwaitingMergeOk(_)
-            | Self::ImportTasksOk(_)
             | Self::ListTaskCommentsOk(_)
             | Self::AddTaskCommentOk(_)
             | Self::ListTaskAttachmentsOk(_)
             | Self::AddTaskAttachmentOk(_)
             | Self::DeleteTaskAttachmentOk
-            | Self::ListTaskRelationshipsOk(_)
-            | Self::AddTaskRelationshipOk(_)
-            | Self::DeleteTaskRelationshipOk
-            | Self::ListTaskInstructionsOk(_)
-            | Self::AddTaskInstructionOk(_)
             | Self::ListWorktreesOk(_)
             | Self::GetWorktreeOk(_)
             | Self::InsertWorktreeOk(_)
@@ -3759,19 +3632,6 @@ mod tests {
                         config_dir_found: true,
                     }],
                     all_checked_ids: vec!["claude-acp".to_string(), "codex-acp".to_string()],
-                },
-            )),
-            AnyMessage::Request(ServerRequest::DetectProjectAgents(
-                DetectProjectAgentsRequest {
-                    cwd: "/home/user/project".to_string(),
-                },
-            )),
-            AnyMessage::Response(ServerResponse::DetectProjectAgentsOk(
-                DetectProjectAgentsResponse {
-                    agents: vec![ProjectAgentMarker {
-                        agent_id: "claude-acp".to_string(),
-                        markers_found: vec!["CLAUDE.md".to_string(), ".claude/".to_string()],
-                    }],
                 },
             )),
             AnyMessage::Request(ServerRequest::Pong { seq: 42 }),
