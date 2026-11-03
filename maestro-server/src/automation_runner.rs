@@ -11,15 +11,18 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use maestro_protocol::{
-    AutomationRun, AutomationRunStatus, AutomationWorkspace, RunTrigger, ServerResponse,
+    AutomationRun, AutomationRunStatus, AutomationWorkspace, RunTrigger, ServerRequest,
+    ServerResponse,
 };
 use rusqlite::Connection;
 
 use crate::automations;
-use crate::helpers::{ensure_and_get_connection, resolve_agent_spawn_params, send_response};
+use crate::helpers::{
+    ensure_and_get_connection, error_response, reply, resolve_agent_spawn_params, send_response,
+};
 use crate::send_diag;
 use crate::session::create_session_on_connection;
-use crate::sessions::{ActiveSession, SessionCommand};
+use crate::sessions::{ActiveSession, SessionCommand, SessionMap};
 
 /// Shared because the clock writes runs from a spawned task while requests read them on the main
 /// loop. A tokio mutex rather than a std one: the writes sit inside async paths either side.
@@ -32,6 +35,100 @@ pub struct Spawner<'a> {
     pub agent_connections: &'a crate::sessions::SharedAgentConnections,
     pub stdout: &'a crate::ClientOut,
     pub spawn_result_tx: &'a tokio::sync::mpsc::Sender<(String, ActiveSession)>,
+}
+
+/// Answer an automation or webhook request through `spawner.stdout`. Starting a run, deleting
+/// one, trimming runs and rebinding the webhook are answered here; the rest only touch the store.
+pub async fn answer(
+    store: &Store,
+    request: ServerRequest,
+    sessions: &SessionMap,
+    spawner: Spawner<'_>,
+) {
+    let stdout = spawner.stdout;
+    let answered = match request {
+        ServerRequest::RunAutomation(req) => {
+            // The run is announced by the runner, whether it starts or fails, so there is nothing
+            // to answer with here beyond an error the request itself could not get past.
+            if let Err(e) =
+                start(store, &req.automation_id, RunTrigger::Manual, None, spawner).await
+            {
+                reply(stdout, &error_response(e)).await;
+            }
+            return;
+        }
+        ServerRequest::DeleteAutomationRun(req) => {
+            let run = automations::get_run(&*store.lock().await, &req.run_id);
+            // A run still going, or one whose session is still open, has an agent working in its
+            // worktree: removing that from under it is not deleting history.
+            match run {
+                Ok(None) => Ok(ServerResponse::DeleteAutomationRunOk),
+                Ok(Some(run)) if matches!(run.status, AutomationRunStatus::Running) => {
+                    Err("Stop this run before deleting it".to_string())
+                }
+                Ok(Some(run))
+                    if run
+                        .session_id
+                        .as_ref()
+                        .is_some_and(|session_id| sessions.contains_key(session_id)) =>
+                {
+                    Err(
+                        "This run's session is still open. Close it before deleting the run"
+                            .to_string(),
+                    )
+                }
+                Ok(Some(run)) => {
+                    // Answered from its own task: removing a worktree is a git process, and the
+                    // loop every session's traffic goes through must not wait on one.
+                    let store = Arc::clone(store);
+                    let stdout = Arc::clone(stdout);
+                    tokio::spawn(async move {
+                        let response = match discard_run(&store, &run).await {
+                            Ok(()) => ServerResponse::DeleteAutomationRunOk,
+                            Err(e) => error_response(e),
+                        };
+                        reply(&stdout, &response).await;
+                    });
+                    return;
+                }
+                Err(e) => Err(e),
+            }
+        }
+        ServerRequest::SetRunRetention(req) => {
+            let project_path = crate::project_path::canonical_project_path(&req.project_path);
+            let saved =
+                automations::set_retention(&*store.lock().await, &project_path, req.retention);
+            match saved {
+                Ok(()) => {
+                    // Answered once trimmed, so the client's next read of the list is already the
+                    // short one. From its own task, because trimming removes worktrees.
+                    let store = Arc::clone(store);
+                    let stdout = Arc::clone(stdout);
+                    tokio::spawn(async move {
+                        apply_retention(&store, &project_path).await;
+                        reply(&stdout, &ServerResponse::SetRunRetentionOk).await;
+                    });
+                    return;
+                }
+                Err(e) => Err(e),
+            }
+        }
+        ServerRequest::SetWebhookSettings(settings) => {
+            let saved = crate::webhook::save_settings(&*store.lock().await, &settings);
+            match saved {
+                Ok(()) => {
+                    // Rebound straight away, so the answer already says whether the new address
+                    // works.
+                    crate::webhook::restart(store).await;
+                    let status = crate::webhook::status(&*store.lock().await);
+                    Ok(ServerResponse::WebhookSettingsOk(status))
+                }
+                Err(e) => Err(e),
+            }
+        }
+        request => automations::answer(&*store.lock().await, request),
+    };
+    reply(stdout, &answered.unwrap_or_else(error_response)).await;
 }
 
 /// Where this automation's agent runs, provisioning a worktree when that is what it asked for.

@@ -11,8 +11,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
-use maestro_protocol::{ProjectSession, SessionMeta};
+use maestro_protocol::{ProjectSession, ServerRequest, ServerResponse, SessionMeta};
 use rusqlite::{params, Connection, OptionalExtension};
+
+use crate::project_path::canonical_project_path;
+use crate::sessions::SessionMap;
 
 /// Shared like the automation store, and for the same reason: request handlers and the loop's own
 /// timers both write it. Never held across a request to an agent.
@@ -27,6 +30,72 @@ const CLOSED_RETENTION_DAYS: i64 = 90;
 
 pub const UNAVAILABLE: &str =
     "The project store could not be opened, so sessions and tasks are not recorded on this machine";
+
+/// The reply to a request answered from this store, and the pushes to broadcast after it: the
+/// session rows, the tasks and their worktrees, prompts, a board import and the pipeline settings.
+pub async fn answer(
+    store: &Store,
+    request: ServerRequest,
+    sessions: &SessionMap,
+) -> Result<(ServerResponse, Vec<ServerResponse>), String> {
+    use crate::task_store::project_import;
+    match request {
+        ServerRequest::RenameSession(req) => {
+            let project_path = canonical_project_path(&req.project_path);
+            rename(&*store.lock().await, &req, &project_path, Utc::now())?;
+            Ok((ServerResponse::RenameSessionOk, Vec::new()))
+        }
+        ServerRequest::CloseProjectSession(req) => {
+            // A session running under this key was loaded by somebody after the failure that
+            // prompted this. Closing its row would hide a running session from every client
+            // opening the project, and `Cancel` is how a running one is closed.
+            if !crate::dispatch::runs_under_key(sessions, &req.agent_id, &req.acp_session_id) {
+                close_dormant(
+                    &*store.lock().await,
+                    &req.agent_id,
+                    &req.acp_session_id,
+                    Utc::now(),
+                )?;
+            }
+            Ok((ServerResponse::CloseProjectSessionOk, Vec::new()))
+        }
+        request @ (ServerRequest::ListPrompts(_)
+        | ServerRequest::GetPrompt(_)
+        | ServerRequest::CreatePrompt(_)
+        | ServerRequest::UpdatePrompt(_)
+        | ServerRequest::SetPromptFavorite(_)
+        | ServerRequest::DeletePrompt(_)) => {
+            crate::prompt_store::answer(&*store.lock().await, request)
+        }
+        ServerRequest::BeginImport(request) => {
+            let live =
+                project_import::live(&canonical_project_path(&request.project_path), sessions);
+            project_import::begin(&mut *store.lock().await, request, &live).map(|r| (r, Vec::new()))
+        }
+        ServerRequest::ImportChunk(request) => {
+            project_import::chunk(request).map(|r| (r, Vec::new()))
+        }
+        ServerRequest::CommitImport(request) => {
+            let staged = project_import::take_staged(&request.import_id)?;
+            let live = project_import::live(staged.project_path(), sessions);
+            project_import::answer(&mut *store.lock().await, staged, &live)
+        }
+        request @ (ServerRequest::GetCapacity
+        | ServerRequest::SetCapacity(_)
+        | ServerRequest::GetAutoMode(_)
+        | ServerRequest::SetAutoMode(_)
+        | ServerRequest::GetLoopWaitCap(_)
+        | ServerRequest::SetLoopWaitCap(_)) => {
+            let (mut response, pushes) =
+                crate::pipeline_settings::answer(&*store.lock().await, request)?;
+            if let ServerResponse::GetCapacityOk(status) = &mut response {
+                status.used = crate::pipeline_settings::taken_slots(sessions) as u32;
+            }
+            Ok((response, pushes))
+        }
+        request => crate::task_store::requests::answer(&mut *store.lock().await, request),
+    }
+}
 
 const V1_SESSIONS: &str = "
 CREATE TABLE IF NOT EXISTS sessions (

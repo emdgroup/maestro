@@ -14,9 +14,16 @@ use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use maestro_protocol::{
     Automation, AutomationRun, AutomationRunStatus, AutomationWorkspace, RunRetention, RunTrigger,
-    WebhookOverlap,
+    ServerRequest, ServerResponse, WebhookOverlap,
 };
 use rusqlite::{params, Connection, OptionalExtension};
+
+use crate::project_path::canonical_project_path;
+
+/// What every automation request answers with when the store could not be opened. Said plainly
+/// rather than as an empty list, which would look like a project with no automations.
+pub const UNAVAILABLE: &str =
+    "The automation store could not be opened, so automations are unavailable on this machine";
 
 /// Cap on what a run list hands back, whatever the client asks for.
 const RUN_LIMIT: u32 = 200;
@@ -130,6 +137,50 @@ CREATE TABLE IF NOT EXISTS webhook_settings (
     public_url    TEXT
 );
 ";
+
+/// The reply to an automation request that only reads or writes the store.
+pub fn answer(conn: &Connection, request: ServerRequest) -> Result<ServerResponse, String> {
+    use ServerRequest as Q;
+    use ServerResponse as A;
+    Ok(match request {
+        Q::ListAutomations(r) => {
+            let project_path = canonical_project_path(&r.project_path);
+            A::ListAutomationsOk(maestro_protocol::ListAutomationsResponse {
+                automations: list(conn, &project_path)?,
+                server_timezone: server_timezone(),
+                retention: retention(conn, &project_path)?,
+            })
+        }
+        Q::SaveAutomation(r) => {
+            // Canonicalized here rather than trusted from the client: this is the process on the
+            // machine the path exists on, and every later lookup has to agree with this one.
+            let project_path = canonical_project_path(&r.project_path);
+            let mut automation = r.automation;
+            automation.project_path = project_path.clone();
+            A::SaveAutomationOk(save(conn, &project_path, &automation)?)
+        }
+        Q::DeleteAutomation(r) => {
+            delete(conn, &r.automation_id)?;
+            A::DeleteAutomationOk
+        }
+        Q::ListAutomationRuns(r) => {
+            let project_path = canonical_project_path(&r.project_path);
+            let runs = list_runs(conn, &project_path, r.limit)?;
+            A::ListAutomationRunsOk(maestro_protocol::ListAutomationRunsResponse { runs })
+        }
+        Q::GetWebhookSettings => A::WebhookSettingsOk(crate::webhook::status(conn)),
+        Q::RollWebhookSecret(r) => {
+            A::RollWebhookSecretOk(roll_webhook_secret(conn, &r.automation_id)?)
+        }
+        Q::ListWebhookDeliveries(r) => {
+            let deliveries = crate::webhook::list_deliveries(conn, &r.automation_id)?;
+            A::ListWebhookDeliveriesOk(maestro_protocol::ListWebhookDeliveriesResponse {
+                deliveries,
+            })
+        }
+        _ => return Err("not an automation request".to_string()),
+    })
+}
 
 /// Open, or create, the daemon's automation database.
 ///

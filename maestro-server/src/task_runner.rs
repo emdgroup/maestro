@@ -397,6 +397,46 @@ pub(crate) struct Launcher {
     pub reply: crate::ClientOut,
 }
 
+/// `StartTask`: steps one to four on the loop, then the launch on a task of its own, which answers
+/// once the session is in the map or the start has failed.
+pub(crate) async fn answer_start(
+    launcher: Launcher,
+    request: StartTaskRequest,
+    sessions: &SessionMap,
+    agents: &mut Vec<DiscoveredAgentWithSpawn>,
+) {
+    // A custom agent added since startup is merged before it is looked for, as `ListAgents` does
+    // on every call.
+    crate::agent::registry::apply_custom_agents(agents);
+    let mut pushes = Vec::new();
+    let begun = begin(
+        &mut *launcher.store.lock().await,
+        &request,
+        crate::pipeline_settings::taken_slots(sessions),
+        agents,
+        &mut pushes,
+    );
+    for push in pushes {
+        broadcast(&launcher.reply, push).await;
+    }
+    match begun {
+        Ok(Begun::Deferred | Begun::Gated) => {
+            let response = ServerResponse::StartTaskOk(StartTaskResponse {
+                session_id: None,
+                skipped_attachments: vec![],
+            });
+            crate::helpers::reply(&launcher.reply, &response).await
+        }
+        Ok(Begun::Claimed(claimed)) => {
+            tokio::spawn(Box::pin(launch(launcher, claimed)));
+        }
+        Err(e) => {
+            let response = crate::helpers::error_response(e.to_string());
+            crate::helpers::reply(&launcher.reply, &response).await
+        }
+    }
+}
+
 /// Steps five onwards, off the loop. Hands a started session to the loop, or releases the claim
 /// and answers with why.
 pub(crate) async fn launch(launcher: Launcher, mut claimed: Box<Claimed>) {
