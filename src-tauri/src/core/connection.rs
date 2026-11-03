@@ -110,9 +110,9 @@ pub struct AcpState {
     /// One long-lived maestro-server process per connection.
     /// All sessions for a connection share this process instead of spawning their own.
     pub connection_servers: tokio::sync::Mutex<HashMap<ConnectionKey, ConnectionServer>>,
-    /// Per-connection deploy serialization locks. Prevents concurrent ensure_remote_server
-    /// calls (from prefetch_agent_discovery and preflight_connection racing) for the same
-    /// connection from running SFTP uploads simultaneously.
+    /// Per-connection deploy serialization locks. Keeps concurrent `ensure_connection_server`
+    /// calls (preflight, opening a project and discovery racing) for the same SSH connection from
+    /// running SFTP uploads simultaneously.
     pub deploy_locks: tokio::sync::Mutex<HashMap<i32, Arc<tokio::sync::Mutex<()>>>>,
     /// Connections whose next server spawn may retire a busy daemon from another build. Set by
     /// `preflight_connection` when the user chose to update anyway, taken by the spawn.

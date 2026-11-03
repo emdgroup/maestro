@@ -60,8 +60,9 @@ const MAESTRO_REQUIRED_TOOLS: [(&str, &str); 2] = [
 /// Start the relay to a connection's resident server unless one is already up, deploying the
 /// server first where the connection needs it.
 ///
-/// Preflight is the usual caller, but not the only one: opening a project and the picker's lock
-/// badges attach too, so neither depends on a preflight having run first.
+/// Every path that needs a connection's server comes through here: preflight, opening a project,
+/// the picker's lock badges, agent discovery and starting a session, so none of them depends on
+/// another having run first.
 pub async fn ensure_connection_server(
     app_state: &Arc<AppState>,
     connection_key: ConnectionKey,
@@ -157,25 +158,11 @@ pub async fn ensure_connection_server(
             };
             #[cfg(windows)]
             {
-                let cached_path = app_state
-                    .acp
-                    .discovery_cache
-                    .lock()
-                    .await
-                    .get(&connection_key)
-                    .and_then(|e| e.maestro_server_path.clone());
-                let maestro_path = match cached_path {
-                    Some(p) => p,
-                    None => {
-                        let deploy =
-                            crate::acp::deploy::ensure_wsl_server(&distro, &app_state.app_handle)
-                                .await
-                                .map_err(|e| {
-                                    format!("Failed to deploy maestro-server to WSL: {}", e)
-                                })?;
-                        deploy.path
-                    }
-                };
+                let maestro_path =
+                    crate::acp::deploy::ensure_wsl_server(&distro, &app_state.app_handle)
+                        .await
+                        .map_err(|e| format!("Failed to deploy maestro-server to WSL: {}", e))?
+                        .path;
                 crate::acp::spawn_connection_server(
                     connection_key,
                     crate::acp::TransportTarget::Wsl {
@@ -221,26 +208,14 @@ pub async fn ensure_connection_server(
             };
             let cli = crate::connectivity::docker::ContainerCli::detect()
                 .map_err(|e| format!("No container CLI found: {}", e))?;
-            let cached_path = app_state
-                .acp
-                .discovery_cache
-                .lock()
-                .await
-                .get(&connection_key)
-                .and_then(|e| e.maestro_server_path.clone());
-            let maestro_path = match cached_path {
-                Some(p) => p,
-                None => {
-                    crate::acp::deploy::ensure_container_server(
-                        &cli,
-                        &container_name,
-                        &app_state.app_handle,
-                    )
-                    .await
-                    .map_err(|e| format!("Failed to deploy maestro-server to container: {}", e))?
-                    .path
-                }
-            };
+            let maestro_path = crate::acp::deploy::ensure_container_server(
+                &cli,
+                &container_name,
+                &app_state.app_handle,
+            )
+            .await
+            .map_err(|e| format!("Failed to deploy maestro-server to container: {}", e))?
+            .path;
             crate::acp::spawn_connection_server(
                 connection_key,
                 crate::acp::TransportTarget::Docker {
@@ -394,24 +369,16 @@ pub async fn preflight_connection(
         });
     }
 
-    {
-        let mut cache = app_state.acp.discovery_cache.lock().await;
-        let maestro_server_path = cache
-            .get(&connection_key)
-            .and_then(|e| e.maestro_server_path.clone());
-        cache.insert(
-            connection_key,
-            AgentDiscoveryCacheEntry {
-                result: AgentDiscoveryResult {
-                    maestro_server_available: true,
-                    agents: agents.clone(),
-                    error: None,
-                },
-                maestro_server_path,
-                fetched_at: std::time::Instant::now(),
-            },
-        );
-    }
+    cache_discovery(
+        &app_state,
+        connection_key,
+        AgentDiscoveryResult {
+            maestro_server_available: true,
+            agents: agents.clone(),
+            error: None,
+        },
+    )
+    .await;
 
     Ok(PreflightResult {
         agents,
@@ -476,383 +443,52 @@ pub(crate) async fn fetch_and_filter_agents(
     (agents, list_error)
 }
 
-pub async fn prefetch_agent_discovery(
-    app_state: Arc<AppState>,
+/// Record what discovery found for a connection, keeping the server path a deploy cached there.
+async fn cache_discovery(
+    app_state: &AppState,
     connection_key: ConnectionKey,
-    known_maestro_path: Option<String>,
+    result: AgentDiscoveryResult,
 ) {
+    let mut cache = app_state.acp.discovery_cache.lock().await;
+    let maestro_server_path = cache
+        .get(&connection_key)
+        .and_then(|e| e.maestro_server_path.clone());
+    cache.insert(
+        connection_key,
+        AgentDiscoveryCacheEntry {
+            result,
+            maestro_server_path,
+            fetched_at: std::time::Instant::now(),
+        },
+    );
+}
+
+/// Fill the discovery cache for a connection, starting its server first if it is not running.
+pub async fn prefetch_agent_discovery(
+    app_state: &Arc<AppState>,
+    connection_key: ConnectionKey,
+) -> Result<(), String> {
     {
         let cache = app_state.acp.discovery_cache.lock().await;
         if let Some(entry) = cache.get(&connection_key) {
             if !entry.result.agents.is_empty() {
-                return;
+                return Ok(());
             }
         }
     }
-    match connection_key {
-        ConnectionKey::Ssh { id: conn_id } => {
-            let conn_key = ConnectionKey::Ssh { id: conn_id };
-            let has_connection_server = app_state
-                .acp
-                .connection_servers
-                .lock()
-                .await
-                .contains_key(&conn_key);
-            if has_connection_server {
-                let maestro_path = known_maestro_path.or_else(|| {
-                    let cache = app_state.acp.discovery_cache.try_lock().ok();
-                    cache.and_then(|c| c.get(&conn_key).and_then(|e| e.maestro_server_path.clone()))
-                });
-                let (agents, error) = fetch_and_filter_agents(conn_key, &app_state).await;
-                let maestro_server_available = error.is_none();
-                let entry = AgentDiscoveryCacheEntry {
-                    result: AgentDiscoveryResult {
-                        maestro_server_available,
-                        agents,
-                        error,
-                    },
-                    maestro_server_path: maestro_path,
-                    fetched_at: std::time::Instant::now(),
-                };
-                app_state
-                    .acp
-                    .discovery_cache
-                    .lock()
-                    .await
-                    .insert(conn_key, entry);
-                return;
-            }
-
-            let Some(ssh) = app_state.ssh.get_session(conn_id).await else {
-                return;
-            };
-            let maestro_path = if let Some(p) = known_maestro_path {
-                Some(p)
-            } else {
-                let deploy_lock = {
-                    let mut locks = app_state.acp.deploy_locks.lock().await;
-                    locks
-                        .entry(conn_id)
-                        .or_insert_with(|| std::sync::Arc::new(tokio::sync::Mutex::new(())))
-                        .clone()
-                };
-                let _deploy_guard = deploy_lock.lock().await;
-                let cached = app_state
-                    .acp
-                    .discovery_cache
-                    .lock()
-                    .await
-                    .get(&conn_key)
-                    .and_then(|e| e.maestro_server_path.clone());
-                if let Some(p) = cached {
-                    Some(p)
-                } else {
-                    crate::acp::deploy::ensure_remote_server(&ssh, &app_state.app_handle, conn_id)
-                        .await
-                        .ok()
-                        .map(|r| r.path)
-                }
-            };
-            let Some(path) = maestro_path else {
-                app_state.acp.discovery_cache.lock().await.insert(
-                    conn_key,
-                    AgentDiscoveryCacheEntry {
-                        result: AgentDiscoveryResult {
-                            maestro_server_available: false,
-                            agents: Vec::new(),
-                            error: None,
-                        },
-                        maestro_server_path: None,
-                        fetched_at: std::time::Instant::now(),
-                    },
-                );
-                return;
-            };
-            if crate::acp::spawn_connection_server(
-                conn_key,
-                crate::acp::TransportTarget::Remote {
-                    ssh: &ssh,
-                    server_path: &path,
-                },
-                &app_state,
-            )
-            .await
-            .is_err()
-            {
-                return;
-            }
-            let (agents, error) = fetch_and_filter_agents(conn_key, &app_state).await;
-            let maestro_server_available = error.is_none();
-            app_state.acp.discovery_cache.lock().await.insert(
-                conn_key,
-                AgentDiscoveryCacheEntry {
-                    result: AgentDiscoveryResult {
-                        maestro_server_available,
-                        agents,
-                        error,
-                    },
-                    maestro_server_path: Some(path),
-                    fetched_at: std::time::Instant::now(),
-                },
-            );
-        }
-        ConnectionKey::Wsl { id: wsl_id } => {
-            let wsl_key = ConnectionKey::Wsl { id: wsl_id };
-            let has_connection_server = app_state
-                .acp
-                .connection_servers
-                .lock()
-                .await
-                .contains_key(&wsl_key);
-            if has_connection_server {
-                let (agents, error) = fetch_and_filter_agents(wsl_key, &app_state).await;
-                let maestro_server_available = error.is_none();
-                app_state.acp.discovery_cache.lock().await.insert(
-                    wsl_key,
-                    AgentDiscoveryCacheEntry {
-                        result: AgentDiscoveryResult {
-                            maestro_server_available,
-                            agents,
-                            error,
-                        },
-                        maestro_server_path: None,
-                        fetched_at: std::time::Instant::now(),
-                    },
-                );
-                return;
-            }
-            let distro = {
-                let Ok(conn) = app_state.db.lock() else {
-                    return;
-                };
-                match conn.query_row(
-                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                    [wsl_id],
-                    |row| row.get::<_, String>(0),
-                ) {
-                    Ok(d) => d,
-                    Err(_) => return,
-                }
-            };
-            #[cfg(windows)]
-            {
-                let maestro_path =
-                    match crate::acp::deploy::ensure_wsl_server(&distro, &app_state.app_handle)
-                        .await
-                    {
-                        Ok(r) => r.path,
-                        Err(_) => {
-                            app_state.acp.discovery_cache.lock().await.insert(
-                                wsl_key,
-                                AgentDiscoveryCacheEntry {
-                                    result: AgentDiscoveryResult {
-                                        maestro_server_available: false,
-                                        agents: Vec::new(),
-                                        error: None,
-                                    },
-                                    maestro_server_path: None,
-                                    fetched_at: std::time::Instant::now(),
-                                },
-                            );
-                            return;
-                        }
-                    };
-                if crate::acp::spawn_connection_server(
-                    wsl_key,
-                    crate::acp::TransportTarget::Wsl {
-                        distro: &distro,
-                        server_path: &maestro_path,
-                    },
-                    &app_state,
-                )
-                .await
-                .is_err()
-                {
-                    return;
-                }
-                let (agents, error) = fetch_and_filter_agents(wsl_key, &app_state).await;
-                let maestro_server_available = error.is_none();
-                app_state.acp.discovery_cache.lock().await.insert(
-                    wsl_key,
-                    AgentDiscoveryCacheEntry {
-                        result: AgentDiscoveryResult {
-                            maestro_server_available,
-                            agents,
-                            error,
-                        },
-                        maestro_server_path: Some(maestro_path),
-                        fetched_at: std::time::Instant::now(),
-                    },
-                );
-            }
-            #[cfg(not(windows))]
-            {
-                let _ = distro;
-                app_state.acp.discovery_cache.lock().await.insert(
-                    wsl_key,
-                    AgentDiscoveryCacheEntry {
-                        result: AgentDiscoveryResult {
-                            maestro_server_available: false,
-                            agents: Vec::new(),
-                            error: None,
-                        },
-                        maestro_server_path: None,
-                        fetched_at: std::time::Instant::now(),
-                    },
-                );
-            }
-        }
-        ConnectionKey::Local => {
-            let server_path = crate::acp::deploy::ensure_local_server(&app_state.app_handle).await;
-            if server_path.is_err() {
-                app_state.acp.discovery_cache.lock().await.insert(
-                    ConnectionKey::Local,
-                    AgentDiscoveryCacheEntry {
-                        result: AgentDiscoveryResult {
-                            maestro_server_available: false,
-                            agents: Vec::new(),
-                            error: None,
-                        },
-                        maestro_server_path: None,
-                        fetched_at: std::time::Instant::now(),
-                    },
-                );
-                return;
-            }
-            if crate::acp::spawn_connection_server(
-                ConnectionKey::Local,
-                crate::acp::TransportTarget::Local,
-                &app_state,
-            )
-            .await
-            .is_err()
-            {
-                return;
-            }
-            let (agents, error) = fetch_and_filter_agents(ConnectionKey::Local, &app_state).await;
-            app_state.acp.discovery_cache.lock().await.insert(
-                ConnectionKey::Local,
-                AgentDiscoveryCacheEntry {
-                    result: AgentDiscoveryResult {
-                        maestro_server_available: true,
-                        agents,
-                        error,
-                    },
-                    maestro_server_path: None,
-                    fetched_at: std::time::Instant::now(),
-                },
-            );
-        }
-        ConnectionKey::Docker { id: docker_id } => {
-            let docker_key = ConnectionKey::Docker { id: docker_id };
-            let has_connection_server = app_state
-                .acp
-                .connection_servers
-                .lock()
-                .await
-                .contains_key(&docker_key);
-            if has_connection_server {
-                let (agents, error) = fetch_and_filter_agents(docker_key, &app_state).await;
-                let maestro_server_available = error.is_none();
-                app_state.acp.discovery_cache.lock().await.insert(
-                    docker_key,
-                    AgentDiscoveryCacheEntry {
-                        result: AgentDiscoveryResult {
-                            maestro_server_available,
-                            agents,
-                            error,
-                        },
-                        maestro_server_path: None,
-                        fetched_at: std::time::Instant::now(),
-                    },
-                );
-                return;
-            }
-            let container_name = {
-                let Ok(conn) = app_state.db.lock() else {
-                    return;
-                };
-                match conn.query_row(
-                    "SELECT container_name FROM docker_connections WHERE id = ?",
-                    [docker_id],
-                    |row| row.get::<_, String>(0),
-                ) {
-                    Ok(name) => name,
-                    Err(_) => return,
-                }
-            };
-            let cli = match crate::connectivity::docker::ContainerCli::detect() {
-                Ok(c) => c,
-                Err(_) => {
-                    app_state.acp.discovery_cache.lock().await.insert(
-                        docker_key,
-                        AgentDiscoveryCacheEntry {
-                            result: AgentDiscoveryResult {
-                                maestro_server_available: false,
-                                agents: Vec::new(),
-                                error: None,
-                            },
-                            maestro_server_path: None,
-                            fetched_at: std::time::Instant::now(),
-                        },
-                    );
-                    return;
-                }
-            };
-            let maestro_path = match crate::acp::deploy::ensure_container_server(
-                &cli,
-                &container_name,
-                &app_state.app_handle,
-            )
-            .await
-            {
-                Ok(r) => r.path,
-                Err(_) => {
-                    app_state.acp.discovery_cache.lock().await.insert(
-                        docker_key,
-                        AgentDiscoveryCacheEntry {
-                            result: AgentDiscoveryResult {
-                                maestro_server_available: false,
-                                agents: Vec::new(),
-                                error: None,
-                            },
-                            maestro_server_path: None,
-                            fetched_at: std::time::Instant::now(),
-                        },
-                    );
-                    return;
-                }
-            };
-            if crate::acp::spawn_connection_server(
-                docker_key,
-                crate::acp::TransportTarget::Docker {
-                    cli: &cli,
-                    container_name: &container_name,
-                    server_path: &maestro_path,
-                },
-                &app_state,
-            )
-            .await
-            .is_err()
-            {
-                return;
-            }
-            let (agents, error) = fetch_and_filter_agents(docker_key, &app_state).await;
-            let maestro_server_available = error.is_none();
-            app_state.acp.discovery_cache.lock().await.insert(
-                docker_key,
-                AgentDiscoveryCacheEntry {
-                    result: AgentDiscoveryResult {
-                        maestro_server_available,
-                        agents,
-                        error,
-                    },
-                    maestro_server_path: Some(maestro_path),
-                    fetched_at: std::time::Instant::now(),
-                },
-            );
-        }
-    }
+    ensure_connection_server(app_state, connection_key).await?;
+    let (agents, error) = fetch_and_filter_agents(connection_key, app_state).await;
+    cache_discovery(
+        app_state,
+        connection_key,
+        AgentDiscoveryResult {
+            maestro_server_available: error.is_none(),
+            agents,
+            error,
+        },
+    )
+    .await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -871,8 +507,7 @@ pub async fn discover_agents(
         }
     }
 
-    let arc = Arc::clone(app_state.inner());
-    prefetch_agent_discovery(arc, connection_key, None).await;
+    prefetch_agent_discovery(&app_state, connection_key).await?;
 
     app_state
         .acp
@@ -881,20 +516,5 @@ pub async fn discover_agents(
         .await
         .get(&connection_key)
         .map(|e| e.result.clone())
-        .ok_or_else(|| match connection_key {
-            ConnectionKey::Local => {
-                "Local agent discovery failed. Is maestro-server installed?".to_string()
-            }
-            ConnectionKey::Ssh { id } => format!(
-                "No active SSH session for connection_id {}. Connect first.",
-                id
-            ),
-            ConnectionKey::Wsl { id } => {
-                format!("WSL discovery failed for wsl_connection_id {}.", id)
-            }
-            ConnectionKey::Docker { id } => format!(
-                "Container discovery failed for docker_connection_id {}.",
-                id
-            ),
-        })
+        .ok_or_else(|| format!("Agent discovery found nothing for {connection_key:?}."))
 }

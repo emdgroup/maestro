@@ -1514,8 +1514,6 @@ async setProjectAccentColor(projectId: number, accentColor: string | null) : Pro
  * 
  * The frontend should call this fire-and-forget after a successful `open_project`.
  * Failures are benign — subsequent session spawns fall back to the cold path.
- * 
- * Only applies to local (non-SSH) projects.
  */
 async primeProjectServer(projectId: number) : Promise<Result<null, string>> {
     try {
