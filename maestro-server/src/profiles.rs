@@ -75,14 +75,6 @@ impl ProfilesDocument {
     }
 }
 
-/// The subset of `.maestro/settings.json` a stage needs.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default)]
-struct ProjectSettings {
-    default_agent: Option<String>,
-    remote_name: Option<String>,
-}
-
 fn role_key(role: AgentRole) -> &'static str {
     match role {
         AgentRole::Refiner => "Refiner",
@@ -116,12 +108,12 @@ pub fn read_profiles(project_path: &str) -> ProfilesDocument {
 }
 
 pub fn default_agent(project_path: &str) -> Option<String> {
-    read_maestro_json::<ProjectSettings>(project_path, "settings.json").default_agent
+    crate::project_settings::read(project_path).default_agent
 }
 
 /// The git remote the project's branches live on, when the user chose one.
 pub fn remote_name(project_path: &str) -> Option<String> {
-    read_maestro_json::<ProjectSettings>(project_path, "settings.json")
+    crate::project_settings::read(project_path)
         .remote_name
         .filter(|name| !name.trim().is_empty())
 }

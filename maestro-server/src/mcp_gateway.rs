@@ -851,16 +851,6 @@ impl LoopFields {
 
 const NOT_A_LOOP: &str = "checks and budgets are a loop's: pass run_mode \"Loop\" with them";
 
-/// The keys of `.maestro/settings.json` a new task's defaults come from. The app owns the file.
-#[derive(Default, serde::Deserialize)]
-#[serde(default)]
-struct ProjectSettings {
-    base_branch: Option<String>,
-    default_workspace_mode: Option<WorkspaceMode>,
-    /// The key `default_workspace_mode` replaced: `false` meant the repository directory.
-    default_worktree: Option<bool>,
-}
-
 /// One task tool, answered from the store. Every one is scoped to the session's project: ids are
 /// small integers, so without that an agent could read or move another project's board by
 /// guessing. Returns the result and the pushes the change owes every window.
@@ -1396,12 +1386,7 @@ fn parse_priority(arguments: &Value) -> Result<Option<TaskPriority>, String> {
 /// configured defaults, else whatever the repository is on and a worktree of its own. The daemon
 /// is on the project's machine, so both are read here.
 async fn task_defaults(project_path: &str) -> (String, WorkspaceMode) {
-    let settings: ProjectSettings =
-        tokio::fs::read_to_string(format!("{project_path}/.maestro/settings.json"))
-            .await
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default();
+    let settings = crate::project_settings::read(project_path);
     let workspace_mode =
         settings
             .default_workspace_mode
