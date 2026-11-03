@@ -38,7 +38,8 @@ import {
 import { STAGE_NAMES } from "@/lib/default-profiles";
 import { useAgentProfilesQuery } from "@/services/project.service";
 import { useAutomationRunsQuery } from "@/services/automation.service";
-import { ACTIVITY_DOT, ElapsedTime } from "@/components/execution/shared/activityStatus";
+import { ACTIVITY_DOT } from "@/components/execution/shared/activityStatus";
+import { ElapsedTime } from "@/components/execution/shared/ElapsedTime";
 import { AgentIcon } from "@/components/common/AgentIcon";
 
 const STATUS_FALLBACK: Record<SessionActivityStatus, string> = {

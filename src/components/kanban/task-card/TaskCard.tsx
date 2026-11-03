@@ -47,11 +47,8 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { useSessionActivity, type SessionActivityInfo } from "@/store/sessionActivityStore";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
-import {
-  ACTIVITY_DOT,
-  ACTIVITY_TEXT,
-  ElapsedTime,
-} from "@/components/execution/shared/activityStatus";
+import { ACTIVITY_DOT, ACTIVITY_TEXT } from "@/components/execution/shared/activityStatus";
+import { ElapsedTime } from "@/components/execution/shared/ElapsedTime";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { shortBranchName } from "@/lib/generateSessionName";
 import { Repeat } from "lucide-react";
