@@ -1,11 +1,11 @@
 import { useMemo } from "react";
+import { connectionKeyStr } from "@/lib/connection-utils";
 import type { ConnectionKey } from "@/types/bindings";
 import {
   useDockerConnections,
   useSshConnections,
   useWslConnections,
 } from "@/services/connection.service";
-import { connectionKeyId } from "@/store/homeStore";
 import type { HomeConnection } from "./ConnectionPanel";
 
 const LOCAL: ConnectionKey = { type: "local" };
@@ -20,21 +20,21 @@ export function useHomeConnections(): HomeConnection[] {
       { key: LOCAL, id: "local", name: "This computer", detail: "" },
       ...ssh.map((connection) => ({
         key: { type: "ssh", id: connection.id } as ConnectionKey,
-        id: connectionKeyId({ type: "ssh", id: connection.id }),
+        id: connectionKeyStr({ type: "ssh", id: connection.id }),
         name: connection.display_name ?? connection.host,
         detail: `${connection.username}@${connection.host}`,
         ssh: connection,
       })),
       ...wsl.map((connection) => ({
         key: { type: "wsl", id: connection.id } as ConnectionKey,
-        id: connectionKeyId({ type: "wsl", id: connection.id }),
+        id: connectionKeyStr({ type: "wsl", id: connection.id }),
         name: connection.display_name ?? connection.distro_name,
         detail: "WSL",
         wsl: connection,
       })),
       ...docker.map((connection) => ({
         key: { type: "docker", id: connection.id } as ConnectionKey,
-        id: connectionKeyId({ type: "docker", id: connection.id }),
+        id: connectionKeyStr({ type: "docker", id: connection.id }),
         name: connection.display_name ?? connection.container_name,
         detail: connection.image_name ?? "Container",
         docker: connection,

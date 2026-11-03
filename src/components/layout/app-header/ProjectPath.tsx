@@ -4,11 +4,11 @@ import { toast } from "sonner";
 import { Check, ChevronDown, ChevronRight, House, Loader2, Plus } from "lucide-react";
 import type { Project } from "@/types/bindings";
 import { cn } from "@/lib/utils";
-import { connectionKeyFromProject } from "@/lib/connection-utils";
+import { connectionKeyFromProject, connectionKeyStr } from "@/lib/connection-utils";
 import { getErrorMessage } from "@/lib/error-utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { useSelectedProjectActions } from "@/store/projectStore";
-import { connectionKeyId, projectKey, useHomeStore } from "@/store/homeStore";
+import { projectKey, useHomeStore } from "@/store/homeStore";
 import type { ConnectionPhase } from "@/store/homeStore";
 import { AddProjectDialog } from "@/views/home/AddProjectDialog";
 import { CONNECTION_ICONS } from "@/views/home/ConnectionPanel";
@@ -202,7 +202,7 @@ function ConnectionEntry({
   onHome,
 }: ConnectionEntryProps) {
   const Icon = CONNECTION_ICONS[connection.key.type];
-  const isHere = connectionKeyId(connectionKeyFromProject(current)) === connection.id;
+  const isHere = connectionKeyStr(connectionKeyFromProject(current)) === connection.id;
   const needsYou = cards?.some((card) => card.needsYou && card.projectId !== current.id);
   const line = phaseLine(phase, cards);
   return (
@@ -312,7 +312,7 @@ export function ProjectPath({ project }: { project: Project }) {
   const [signInFor, setSignInFor] = useState<HomeConnection | null>(null);
   const [signingIn, setSigningIn] = useState(false);
 
-  const hereId = connectionKeyId(connectionKeyFromProject(project));
+  const hereId = connectionKeyStr(connectionKeyFromProject(project));
   const here = connections.find((connection) => connection.id === hereId) ?? connections[0];
   const HereIcon = CONNECTION_ICONS[here.key.type];
   const up = connections.filter((connection) => phases[connection.id]?.kind === "up");

@@ -2,11 +2,12 @@ import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
+import { connectionKeyStr } from "@/lib/connection-utils";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { executionQueryKeys } from "@/services/execution.service";
 import { useNavigationStore } from "@/store/navigationStore";
-import { connectionKeyId, useHomeStore } from "@/store/homeStore";
+import { useHomeStore } from "@/store/homeStore";
 import type {
   Automation,
   AutomationRun,
@@ -301,19 +302,19 @@ export function useStopBackgroundServerMutation() {
     // Hook-level, so these still run once the caller has left the project and unmounted. Home
     // shows the connection stopping meanwhile, and puts it back if the stop fails.
     onMutate: (connection) => {
-      const id = connectionKeyId(connection);
+      const id = connectionKeyStr(connection);
       const before = useHomeStore.getState().phases[id];
       useHomeStore.getState().setPhase(id, { kind: "stopping" });
       return { before };
     },
     onSuccess: (_, connection) => {
       queryClient.removeQueries({ queryKey: automationQueryKeys.base });
-      useHomeStore.getState().setPhase(connectionKeyId(connection), { kind: "stopped" });
+      useHomeStore.getState().setPhase(connectionKeyStr(connection), { kind: "stopped" });
     },
     onError: (error, connection, context) => {
       useHomeStore
         .getState()
-        .setPhase(connectionKeyId(connection), context?.before ?? { kind: "idle" });
+        .setPhase(connectionKeyStr(connection), context?.before ?? { kind: "idle" });
       showStopError(error);
     },
   });

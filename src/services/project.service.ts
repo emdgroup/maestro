@@ -6,6 +6,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
+import { connectionKeyStr } from "@/lib/connection-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
 import type {
@@ -14,7 +15,6 @@ import type {
   ProjectConfigResponse,
   ProfilesDocument,
 } from "@/types/bindings";
-const localConnectionId = "local";
 
 /**
  * Project service providing type-safe operations for project management.
@@ -28,30 +28,22 @@ const localConnectionId = "local";
 export const projectQueryKeys = {
   base: ["projects"] as const,
   list: () => [...projectQueryKeys.base, "list"] as const,
-  listByConnection: (connectionId: number | string) =>
-    [...projectQueryKeys.list(), connectionId] as const,
+  listByConnection: (connectionId: string) => [...projectQueryKeys.list(), connectionId] as const,
   details: (id: number) => [...projectQueryKeys.base, "details", id] as const,
   settings: () => [...projectQueryKeys.base, "settings"] as const,
   settingsDetail: (projectId: number | null) =>
     [...projectQueryKeys.settings(), projectId] as const,
   locks: () => [...projectQueryKeys.base, "locks"] as const,
-  locksFor: (connectionId: number | string, ids: number[]) =>
+  locksFor: (connectionId: string, ids: number[]) =>
     [...projectQueryKeys.locks(), connectionId, ids] as const,
   home: () => [...projectQueryKeys.base, "home"] as const,
-  homeFor: (connectionId: number | string) => [...projectQueryKeys.home(), connectionId] as const,
+  homeFor: (connectionId: string) => [...projectQueryKeys.home(), connectionId] as const,
   profiles: (projectId: number | null) =>
     [...projectQueryKeys.base, "profiles", projectId] as const,
   remotes: (projectId: number | null) => [...projectQueryKeys.base, "remotes", projectId] as const,
   branches: (projectId: number | null) =>
     [...projectQueryKeys.base, "branches", projectId] as const,
 };
-
-export function connectionQueryKey(connection: ConnectionKey): number | string {
-  if (connection.type === "docker") return `docker-${connection.id}`;
-  if (connection.type === "wsl") return `wsl-${connection.id}`;
-  if (connection.type === "ssh") return connection.id;
-  return localConnectionId;
-}
 
 /**
  * Open a project in this window: take its lock and answer with the project. Imperative, since what
@@ -142,7 +134,7 @@ export function useProjectRemotes(projectId: number | null) {
 export function useHomeSummaries(connections: ConnectionKey[]) {
   return useQueries({
     queries: connections.map((connection) => ({
-      queryKey: projectQueryKeys.homeFor(connectionQueryKey(connection)),
+      queryKey: projectQueryKeys.homeFor(connectionKeyStr(connection)),
       queryFn: () => api.getHomeSummary(connection),
       refetchInterval: 5000,
     })),
@@ -183,7 +175,7 @@ export function useCreateProject() {
       api.createProject(path, connection),
     onSuccess: (_data, { connection }) => {
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.homeFor(connectionQueryKey(connection)),
+        queryKey: projectQueryKeys.homeFor(connectionKeyStr(connection)),
       });
     },
     onError: createErrorToastHandler("Failed to create project"),

@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { useAcpActivity } from "../activity/useAcpActivity";
 import { useAcpSessionLifecycle } from "../activity/useAcpSessionLifecycle";
+import { connectionKeyStr } from "@/lib/connection-utils";
 import { useSelectedProject } from "@/store/projectStore";
 import { ActivityPlanPanel } from "../activity/ActivityPlanPanel";
 import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
@@ -23,7 +24,6 @@ import {
 import { ElicitationPrompt, parseElicitationFields } from "../activity/ElicitationPrompt";
 import { deriveTaskDraft } from "../activity/task-draft";
 import { planLimitsKey, usePlanLimitsStore } from "../activity/planLimits";
-import { connectionKeyId } from "@/store/homeStore";
 import { StopSubagentContext } from "../activity/subagent-stop";
 import type { TaskDraft } from "../activity/task-draft";
 import { CreateTaskModal } from "@/components/kanban/create-task-modal/CreateTaskModal";
@@ -217,7 +217,7 @@ export function AgentActivityPanel({
 
   // Every session of this agent on this connection shares its account's limits, so the header
   // shows the latest any of them heard.
-  const connectionId = connectionKeyId(connection);
+  const connectionId = connectionKeyStr(connection);
   useEffect(() => {
     if (planLimits && agentId) {
       usePlanLimitsStore.getState().record(planLimitsKey(connectionId, agentId), planLimits);

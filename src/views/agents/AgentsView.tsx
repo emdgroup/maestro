@@ -28,6 +28,7 @@ import {
 } from "@/services/execution.service";
 import { authQueryKeys } from "@/services/acp-auth.service";
 import { useTauriEvent } from "@/services/tauri-events";
+import { connectionChannelId } from "@/lib/connection-utils";
 import { cleanupWorktreeIfClean, useWorktreesQuery } from "@/services/worktree.service";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import type { ConnectionKey } from "@/types/bindings";
@@ -62,23 +63,6 @@ interface AgentsViewProps {
   projectId?: number;
   repoPath?: string;
   connection: ConnectionKey;
-}
-
-function connKeyToId(connection: ConnectionKey): string {
-  switch (connection.type) {
-    case "local":
-      return "local";
-    case "ssh":
-      return `ssh-${connection.id}`;
-    case "wsl":
-      return `wsl-${connection.id}`;
-    case "docker":
-      return `docker-${connection.id}`;
-  }
-}
-
-function connIdMatches(connection: ConnectionKey, connId: string): boolean {
-  return connKeyToId(connection) === connId;
 }
 
 export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, connection }) => {
@@ -176,11 +160,11 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   });
   const spawnAcpMutation = useSpawnAcpSessionMutation();
 
-  const connId = connKeyToId(connection);
+  const connId = connectionChannelId(connection);
   useTauriEvent<{ exit_code: number | null }>(`acp://auth-pty-exit/${connId}`, (payload) => {
     const tasks = authRequiredTasksRef.current;
     const found = Object.entries(tasks).find(
-      ([, e]) => e.terminalState === "running" && connIdMatches(e.connection, connId),
+      ([, e]) => e.terminalState === "running" && connectionChannelId(e.connection) === connId,
     );
     if (!found) return;
     // A task's entry is keyed by its task id, a manual session's by its session id.

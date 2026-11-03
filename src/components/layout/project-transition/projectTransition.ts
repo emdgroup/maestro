@@ -1,8 +1,7 @@
 import { flushSync } from "react-dom";
 import type { useAnimationControls } from "framer-motion";
 import type { Project } from "@/types/bindings";
-import { connectionKeyFromProject } from "@/lib/connection-utils";
-import { connectionKeyId } from "@/store/homeStore";
+import { connectionKeyFromProject, connectionKeyStr } from "@/lib/connection-utils";
 import { PAGE_TRANSITION_DURATION, PAGE_TRANSITION_EASING } from "@/utils/constants/animations";
 
 /**
@@ -16,7 +15,7 @@ const ZOOM = "project-zoom";
 
 /** The project's tile on Home, or its chip on a minimized panel. */
 function tileOf(project: Project): HTMLElement | null {
-  const connection = connectionKeyId(connectionKeyFromProject(project));
+  const connection = connectionKeyStr(connectionKeyFromProject(project));
   const panel = document.querySelector(`[data-home-connection="${CSS.escape(connection)}"]`);
   return (
     panel?.querySelector<HTMLElement>(`[data-home-project="${CSS.escape(project.path)}"]`) ?? null

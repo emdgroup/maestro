@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { connectionKeyStr } from "@/lib/connection-utils";
 import { Rolling } from "@/components/common/Rolling";
 import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { endOfMonth, format as formatDate, min } from "date-fns";
@@ -6,7 +7,6 @@ import { X } from "lucide-react";
 import type { ConnectionKey, UsageProjectRef, UsageSplit } from "@/types/bindings";
 import { useUsageReport, useUsageSync } from "@/services/usage.service";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
-import { connectionKeyId } from "@/store/homeStore";
 import { SEGMENT_GROUP } from "@/lib/segmented";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
@@ -96,7 +96,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
 
   const format = formatMetric(metric);
   const coverage = report?.coverage ?? [];
-  const attachedIds = attached.map(connectionKeyId);
+  const attachedIds = attached.map(connectionKeyStr);
   const connectionName = (key: string) => {
     const line = coverage.find((c) => c.connection_key === key);
     if (!line) return key;

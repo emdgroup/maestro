@@ -3,11 +3,12 @@ import { join, tempDir } from "@tauri-apps/api/path";
 import { open as openDirPicker } from "@tauri-apps/plugin-dialog";
 import { useQuery, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
+import { connectionKeyStr } from "@/lib/connection-utils";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler, getErrorMessage } from "@/lib/error-utils";
 import { toast } from "sonner";
 import { useConfigStore } from "@/store/configStore";
-import { connectionKeyId, useHomeStore } from "@/store/homeStore";
+import { useHomeStore } from "@/store/homeStore";
 import type { ConnectionPhase } from "@/store/homeStore";
 import type { ConnectionKey, SshAuthMethod } from "@/types/bindings";
 import type { AuthSubmission } from "@/views/home/ssh-auth-modal/ssh-auth-utils";
@@ -405,7 +406,7 @@ export function useDeleteConnectionMutation() {
       if (connection.type === "docker") await api.deleteDockerConnection(connection.id);
     },
     onSuccess: (_data, connection) => {
-      useHomeStore.getState().setPhase(connectionKeyId(connection), { kind: "idle" });
+      useHomeStore.getState().setPhase(connectionKeyStr(connection), { kind: "idle" });
       return invalidateConnections(queryClient);
     },
   });
@@ -454,7 +455,7 @@ const setPhase = (id: string, phase: ConnectionPhase) =>
  * check the tools agents need. `replace` updates a server from another build that is in use.
  */
 export async function attach(connection: ConnectionKey, replace = false) {
-  const id = connectionKeyId(connection);
+  const id = connectionKeyStr(connection);
   const before = useHomeStore.getState().phases[id]?.kind;
   setPhase(id, {
     kind: "connecting",
@@ -487,11 +488,11 @@ export async function attach(connection: ConnectionKey, replace = false) {
  */
 export async function connect(connection: ConnectionKey) {
   if (connection.type === "ssh") {
-    setPhase(connectionKeyId(connection), { kind: "connecting", step: 0 });
+    setPhase(connectionKeyStr(connection), { kind: "connecting", step: 0 });
     try {
       await api.connectSshWithoutCredentials(connection.id);
     } catch {
-      setPhase(connectionKeyId(connection), { kind: "signin", error: null });
+      setPhase(connectionKeyStr(connection), { kind: "signin", error: null });
       return;
     }
   }
@@ -504,7 +505,7 @@ export async function signIn(
   remember: boolean,
   host: string,
 ) {
-  const id = connectionKeyId(connection);
+  const id = connectionKeyStr(connection);
   if (!password) {
     setPhase(id, { kind: "signin", error: `Enter the password for ${host}.` });
     return;
@@ -540,7 +541,7 @@ export async function signInWith(
 export function useConnectionLossEvents() {
   useEffect(() => {
     const markUnreachable = (connection: ConnectionKey) => {
-      const id = connectionKeyId(connection);
+      const id = connectionKeyStr(connection);
       if (useHomeStore.getState().phases[id]?.kind === "up") {
         setPhase(id, { kind: "unreachable" });
       }

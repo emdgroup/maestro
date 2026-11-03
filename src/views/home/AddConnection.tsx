@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Check, Container, Loader2, Server, SquareTerminal } from "lucide-react";
+import { connectionKeyStr } from "@/lib/connection-utils";
 import type { ConnectionKey, SshAuthMethod } from "@/types/bindings";
 import { getErrorMessage } from "@/lib/error-utils";
 import { cn } from "@/lib/utils";
@@ -16,7 +17,7 @@ import {
   useWslConnections,
   useWslDistros,
 } from "@/services/connection.service";
-import { connectionKeyId, useHomeStore } from "@/store/homeStore";
+import { useHomeStore } from "@/store/homeStore";
 import { HomeSheet } from "./HomeSheet";
 import { Segmented } from "./Segmented";
 import { Button } from "@/ui/button";
@@ -316,7 +317,7 @@ export function AddConnectionPanel() {
     try {
       const key = await add();
       await invalidateConnections(queryClient);
-      setConnecting({ host, target: connectionKeyId(key) });
+      setConnecting({ host, target: connectionKeyStr(key) });
       await attach(key);
     } catch (failure) {
       setError(getErrorMessage(failure));

@@ -28,7 +28,7 @@ import { Button } from "@/ui/button";
 /** A connection as Home lists it. */
 export interface HomeConnection {
   key: ConnectionKey;
-  /** `connectionKeyId(key)`, the id phases and minimized state are kept under. */
+  /** `connectionKeyStr(key)`, the id phases and minimized state are kept under. */
   id: string;
   name: string;
   /** The host under the name: the machine, `user@host`, `WSL`, or the container's image. */

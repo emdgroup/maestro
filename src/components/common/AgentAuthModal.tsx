@@ -10,6 +10,7 @@ import {
   useAcpAuthenticateMutation,
 } from "@/services/acp-auth.service";
 import { useTauriEvent } from "@/services/tauri-events";
+import { connectionChannelId } from "@/lib/connection-utils";
 import { useNavigate } from "@/store/navigationStore";
 import { useBoardActions } from "@/store/boardStore";
 
@@ -27,13 +28,6 @@ interface AgentAuthModalProps {
 }
 
 const URL_RE = /https?:\/\/\S+/g;
-
-function connectionKeyId(key: ConnectionKey): string {
-  if (key.type === "local") return "local";
-  if (key.type === "ssh") return `ssh-${key.id}`;
-  if (key.type === "wsl") return `wsl-${key.id}`;
-  return `docker-${key.id}`;
-}
 
 function linkifyLine(line: string): React.ReactNode {
   const parts: React.ReactNode[] = [];
@@ -89,7 +83,7 @@ export function AgentAuthModal({
 
   // Only while a sign-in runs. Cancel-safe, so closing mid-sign-in cannot leak the listener.
   useTauriEvent<{ level: string; message: string }>(
-    authenticate.isPending ? `acp://auth-output/${connectionKeyId(connection)}` : null,
+    authenticate.isPending ? `acp://auth-output/${connectionChannelId(connection)}` : null,
     (payload) => setOutputLines((prev) => [...prev, payload.message]),
   );
 

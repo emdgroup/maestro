@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { connectionKeyStr } from "@/lib/connection-utils";
 import { cn } from "@/lib/utils";
 import { humanizeTokenCount } from "@/lib/format-utils";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/ui/hover-card";
@@ -22,7 +23,6 @@ import {
   type WindowTone,
 } from "@/components/execution/activity/planLimits";
 import { useSessionUsageQuery } from "@/services/execution.service";
-import { connectionKeyId } from "@/store/homeStore";
 import type { ConnectionKey, UsageTurn } from "@/types/bindings";
 
 /** The context window popover's colours, so both popups speak one language. */
@@ -134,7 +134,7 @@ export function SessionUsageMeters({
   agentId: string | null;
   connection: ConnectionKey;
 }) {
-  const connectionId = connectionKeyId(connection);
+  const connectionId = connectionKeyStr(connection);
   const subscribe = useCallback((fn: () => void) => subscribeSession(sessionId, fn), [sessionId]);
   const cost = useSyncExternalStore(subscribe, () => getLifecycle(sessionId).usageState?.cost);
   const limits = usePlanLimitsStore((s) =>
