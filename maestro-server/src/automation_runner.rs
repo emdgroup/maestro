@@ -80,7 +80,10 @@ async fn resolve_cwd(
                     &automation.project_path,
                     &provisioned.branch,
                     Some(&provisioned.base),
-                    &crate::worktree::relative_path(&slug, i64::from(ordinal)),
+                    &maestro_protocol::worktree_names::automation_worktree_path(
+                        &slug,
+                        i64::from(ordinal),
+                    ),
                 );
                 match adopted {
                     Ok(true) => {

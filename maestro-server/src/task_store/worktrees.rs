@@ -322,7 +322,9 @@ pub(super) mod tests {
                 project_path: PROJECT.to_string(),
                 worktree_id: reserved.id,
                 branch_name: Some("maestro/session".to_string()),
-                path: Some(format!(".maestro/worktrees/session-{}", reserved.id)),
+                path: Some(maestro_protocol::worktree_names::worktree_path_for_session(
+                    reserved.id,
+                )),
             },
         )
         .expect("update");

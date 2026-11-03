@@ -1896,15 +1896,13 @@ pub(crate) async fn sweep_sandboxes(store: &Store) {
         }
     };
     for (project, _) in projects {
-        let root = Path::new(&project).join(".maestro/worktrees");
+        let root = Path::new(&project).join(maestro_protocol::worktree_names::WORKTREE_DIR);
         let Ok(mut entries) = tokio::fs::read_dir(&root).await else {
             continue;
         };
         while let Ok(Some(entry)) = entries.next_entry().await {
             let name = entry.file_name().to_string_lossy().into_owned();
-            let Some(task_id) = name
-                .strip_prefix("loop-")
-                .and_then(|id| id.parse::<i32>().ok())
+            let Some(task_id) = maestro_protocol::worktree_names::loop_sandbox_task_id(&name)
             else {
                 continue;
             };
