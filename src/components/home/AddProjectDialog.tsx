@@ -7,9 +7,9 @@ import {
   useWslHome,
 } from "@/services/connection.service";
 import { useCloneProject, useCreateNewProject } from "@/services/project.service";
-import { FilePicker } from "@/views/home/file-picker/FilePicker";
-import { ProviderRepoPicker } from "@/views/home/provider-repo-picker/ProviderRepoPicker";
-import type { HomeConnection } from "./ConnectionPanel";
+import { FilePicker } from "@/components/home/file-picker/FilePicker";
+import { ProviderRepoPicker } from "@/components/home/provider-repo-picker/ProviderRepoPicker";
+import type { HomeConnection } from "./useHomeConnections";
 import { HomeSheet } from "./HomeSheet";
 import { Segmented } from "@/components/common/Segmented";
 import { Button } from "@/ui/button";

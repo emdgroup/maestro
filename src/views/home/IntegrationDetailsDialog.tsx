@@ -6,7 +6,7 @@ import { useSaveIntegration, PROVIDER_NAMES } from "@/services/integration.servi
 import type { IntegrationStatus } from "@/services/integration.service";
 import { getProviderFields } from "@/views/home/integrations/integration-provider-config";
 import { CapabilityTags } from "./IntegrationsPanel";
-import { HomeSheet } from "./HomeSheet";
+import { HomeSheet } from "@/components/home/HomeSheet";
 import { Spinner } from "@/ui/spinner";
 
 interface IntegrationDetailsDialogProps {

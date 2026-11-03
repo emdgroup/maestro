@@ -131,7 +131,7 @@ export function useProjectRemotes(projectId: number | null) {
  * automation run or a lock changed. Only ask for attached connections: the rest fail with "No
  * connection server".
  */
-export function useHomeSummaries(connections: ConnectionKey[]) {
+export function useHomeSummaryQueries(connections: ConnectionKey[]) {
   return useQueries({
     queries: connections.map((connection) => ({
       queryKey: projectQueryKeys.homeFor(connectionKeyStr(connection)),

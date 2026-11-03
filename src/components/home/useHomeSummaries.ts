@@ -1,6 +1,6 @@
 import { connectionKeyStr } from "@/lib/connection-utils";
 import type { ConnectionKey, HomeProject } from "@/types/bindings";
-import { useHomeSummaries as useSummaryQueries } from "@/services/project.service";
+import { useHomeSummaryQueries } from "@/services/project.service";
 import type { ProjectCard } from "./ProjectTile";
 
 export interface ConnectionSummary {
@@ -27,7 +27,7 @@ export function toCard(project: HomeProject): ProjectCard {
 
 /** Home's view of each attached connection, keyed by `connectionKeyStr`. */
 export function useHomeSummaries(connections: ConnectionKey[]): Map<string, ConnectionSummary> {
-  const results = useSummaryQueries(connections);
+  const results = useHomeSummaryQueries(connections);
   const summaries = new Map<string, ConnectionSummary>();
   connections.forEach((connection, index) => {
     const data = results[index]?.data;

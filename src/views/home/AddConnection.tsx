@@ -18,7 +18,7 @@ import {
   useWslDistros,
 } from "@/services/connection.service";
 import { useHomeStore } from "@/store/homeStore";
-import { HomeSheet } from "./HomeSheet";
+import { HomeSheet } from "@/components/home/HomeSheet";
 import { Segmented } from "@/components/common/Segmented";
 import { Button } from "@/ui/button";
 import { Spinner } from "@/ui/spinner";

@@ -7,11 +7,11 @@ import {
   PROVIDER_NAMES,
   PROVIDER_CAPABILITIES,
 } from "@/services/integration.service";
-import { GitHubRepoForm } from "./provider-forms/GithubRepoForm";
-import { GitLabRepoForm } from "./provider-forms/GitlabRepoForm";
-import { OwnerRepoForm } from "./provider-forms/OwnerRepoForm";
-import { AzureDevOpsRepoForm } from "./provider-forms/AzureDevOpsRepoForm";
-import { BitbucketRepoForm } from "./provider-forms/BitbucketRepoForm";
+import { GitHubRepoForm } from "@/components/home/provider-repo-picker/provider-forms/GithubRepoForm";
+import { GitLabRepoForm } from "@/components/home/provider-repo-picker/provider-forms/GitlabRepoForm";
+import { OwnerRepoForm } from "@/components/home/provider-repo-picker/provider-forms/OwnerRepoForm";
+import { AzureDevOpsRepoForm } from "@/components/home/provider-repo-picker/provider-forms/AzureDevOpsRepoForm";
+import { BitbucketRepoForm } from "@/components/home/provider-repo-picker/provider-forms/BitbucketRepoForm";
 import { Spinner } from "@/ui/spinner";
 
 interface ProviderRepoPickerProps {

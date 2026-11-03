@@ -22,6 +22,14 @@ Notes for working in this directory. The repository-wide rules are in the root `
 | `homeStore`            | Each connection's phase on Home (idle, signing in, connecting, up, failed, stopped, unreachable), attach order, minimized panels                              |
 | `fileSessionStore`     | Files sessions, which have no process behind them and so are not in the backend's session list; `AgentsView` merges them into the rows it shows               |
 
+## Layers
+
+`src/views/` may import from `src/components/`, never the reverse: `.oxlintrc.json` rejects
+`@/views/*` under `src/components/`. What a view and a component both need lives in
+`src/components/` (the pieces Home shares with the header's project path are in
+`components/home/`), in `src/services/` or in `src/utils/`. A test that renders a whole view sits
+beside that view.
+
 ## Services, query keys and events
 
 Components and views never call IPC. `.oxlintrc.json` rejects `@/lib/tauri-utils` and the

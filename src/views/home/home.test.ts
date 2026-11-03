@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import type { HomeProject } from "@/types/bindings";
-import { deriveRepoName } from "./AddProjectDialog";
+import { deriveRepoName } from "@/components/home/AddProjectDialog";
 
-import { displayPath, projectStatus } from "./ProjectTile";
-import { toCard } from "./useHomeSummaries";
+import { displayPath, projectStatus } from "@/components/home/ProjectTile";
+import { toCard } from "@/components/home/useHomeSummaries";
 
 const project: HomeProject = {
   project_id: 3,

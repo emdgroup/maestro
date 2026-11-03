@@ -20,7 +20,7 @@ import {
   isProjectLockedError,
   projectLockHolder,
 } from "@/lib/error-utils";
-import { GitInitDialog } from "@/views/home/GitInitDialog";
+import { GitInitDialog } from "./GitInitDialog";
 import {
   AlertDialog,
   AlertDialogAction,

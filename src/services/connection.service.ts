@@ -11,7 +11,7 @@ import { useConfigStore } from "@/store/configStore";
 import { useHomeStore } from "@/store/homeStore";
 import type { ConnectionPhase } from "@/store/homeStore";
 import type { ConnectionKey, SshAuthMethod } from "@/types/bindings";
-import type { AuthSubmission } from "@/views/home/ssh-auth-modal/ssh-auth-utils";
+import type { AuthSubmission } from "@/components/home/ssh-auth-modal/ssh-auth-utils";
 import { basename } from "@/lib/path-utils";
 
 /**

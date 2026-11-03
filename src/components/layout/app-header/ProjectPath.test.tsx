@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import type { Project } from "@/types/bindings";
 import { TooltipProvider } from "@/ui/tooltip";
 import { useHomeStore } from "@/store/homeStore";
-import type { ProjectCard } from "@/views/home/ProjectTile";
+import type { ProjectCard } from "@/components/home/ProjectTile";
 import { ProjectPath } from "./ProjectPath";
 
 const openProject = vi.hoisted(() => vi.fn());
@@ -18,12 +18,13 @@ vi.mock("@/components/layout/project-transition/projectTransition", async (impor
 vi.mock("@/store/projectStore", () => ({
   useSelectedProjectActions: () => ({ clearSelectedProject }),
 }));
-vi.mock("@/views/home/useOpenProject", () => ({
+vi.mock("@/components/home/useOpenProject", () => ({
   useOpenProject: () => ({ openProject, openPath: vi.fn(), opening: null, dialogs: null }),
 }));
-vi.mock("@/views/home/AddProjectDialog", () => ({ AddProjectDialog: () => null }));
-vi.mock("@/views/home/ssh-auth-modal/SshAuthModal", () => ({ SshAuthModal: () => null }));
-vi.mock("@/views/home/useHomeConnections", () => ({
+vi.mock("@/components/home/AddProjectDialog", () => ({ AddProjectDialog: () => null }));
+vi.mock("@/components/home/ssh-auth-modal/SshAuthModal", () => ({ SshAuthModal: () => null }));
+vi.mock("@/components/home/useHomeConnections", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/home/useHomeConnections")>()),
   useHomeConnections: () => [
     { key: { type: "local" }, id: "local", name: "This computer", detail: "" },
     { key: { type: "ssh", id: 4 }, id: "ssh:4", name: "devbox", detail: "billy@devbox" },
@@ -45,7 +46,7 @@ const card = (projectId: number, name: string, extra: Partial<ProjectCard> = {})
   ...extra,
 });
 
-vi.mock("@/views/home/useHomeSummaries", () => ({
+vi.mock("@/components/home/useHomeSummaries", () => ({
   useHomeSummaries: () =>
     new Map([
       ["local", { projects: [card(1, "maestro"), card(2, "scratch")] }],

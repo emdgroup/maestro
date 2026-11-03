@@ -10,17 +10,16 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { useSelectedProjectActions } from "@/store/projectStore";
 import { projectKey, useHomeStore } from "@/store/homeStore";
 import type { ConnectionPhase } from "@/store/homeStore";
-import { AddProjectDialog } from "@/views/home/AddProjectDialog";
-import { CONNECTION_ICONS } from "@/views/home/ConnectionPanel";
-import type { HomeConnection } from "@/views/home/ConnectionPanel";
-import { displayPath, HeldLock, projectStatus } from "@/views/home/ProjectTile";
-import type { ProjectCard } from "@/views/home/ProjectTile";
-import { SshAuthModal } from "@/views/home/ssh-auth-modal/SshAuthModal";
-import type { AuthSubmission } from "@/views/home/ssh-auth-modal/ssh-auth-utils";
+import { AddProjectDialog } from "@/components/home/AddProjectDialog";
+import { CONNECTION_ICONS, type HomeConnection } from "@/components/home/useHomeConnections";
+import { displayPath, HeldLock, projectStatus } from "@/components/home/ProjectTile";
+import type { ProjectCard } from "@/components/home/ProjectTile";
+import { SshAuthModal } from "@/components/home/ssh-auth-modal/SshAuthModal";
+import type { AuthSubmission } from "@/components/home/ssh-auth-modal/ssh-auth-utils";
 import { attach, connect, signInWith } from "@/services/connection.service";
-import { useHomeConnections } from "@/views/home/useHomeConnections";
-import { useHomeSummaries } from "@/views/home/useHomeSummaries";
-import { useOpenProject } from "@/views/home/useOpenProject";
+import { useHomeConnections } from "@/components/home/useHomeConnections";
+import { useHomeSummaries } from "@/components/home/useHomeSummaries";
+import { useOpenProject } from "@/components/home/useOpenProject";
 import {
   slideBack,
   slideOut,

@@ -1,7 +1,7 @@
 import { PROVIDER_NAMES } from "@/services/integration.service";
 import { BrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { CapabilityTags } from "./IntegrationsPanel";
-import { HomeSheet } from "./HomeSheet";
+import { HomeSheet } from "@/components/home/HomeSheet";
 
 /** Every provider Maestro can connect, in the order the add flow lists them. */
 const PROVIDERS = [

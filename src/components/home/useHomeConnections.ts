@@ -1,12 +1,37 @@
 import { useMemo } from "react";
+import { Container, Monitor, Server, SquareTerminal } from "lucide-react";
 import { connectionKeyStr } from "@/lib/connection-utils";
-import type { ConnectionKey } from "@/types/bindings";
+import type {
+  ConnectionKey,
+  DockerConnection,
+  SshConnection,
+  WslConnection,
+} from "@/types/bindings";
 import {
   useDockerConnections,
   useSshConnections,
   useWslConnections,
 } from "@/services/connection.service";
-import type { HomeConnection } from "./ConnectionPanel";
+
+/** A connection as Home lists it. */
+export interface HomeConnection {
+  key: ConnectionKey;
+  /** `connectionKeyStr(key)`, the id phases and minimized state are kept under. */
+  id: string;
+  name: string;
+  /** The host under the name: the machine, `user@host`, `WSL`, or the container's image. */
+  detail: string;
+  ssh?: SshConnection;
+  wsl?: WslConnection;
+  docker?: DockerConnection;
+}
+
+export const CONNECTION_ICONS = {
+  local: Monitor,
+  ssh: Server,
+  wsl: SquareTerminal,
+  docker: Container,
+};
 
 const LOCAL: ConnectionKey = { type: "local" };
 

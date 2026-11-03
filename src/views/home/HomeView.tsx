@@ -11,8 +11,8 @@ import { ThemeToggle } from "@/components/common/theme-toggle/ThemeToggle";
 import { GlobalAccentColorPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
 import { WindowControls } from "@/components/layout/window-chrome/WindowControls";
 import { SettingsPage } from "@/views/settings/settings-page/SettingsPage";
-import { SshAuthModal } from "@/views/home/ssh-auth-modal/SshAuthModal";
-import type { AuthSubmission } from "@/views/home/ssh-auth-modal/ssh-auth-utils";
+import { SshAuthModal } from "@/components/home/ssh-auth-modal/SshAuthModal";
+import type { AuthSubmission } from "@/components/home/ssh-auth-modal/ssh-auth-utils";
 import {
   attach,
   connect,
@@ -24,17 +24,17 @@ import {
 import { getErrorMessage } from "@/lib/error-utils";
 import { projectKey, useHomeStore } from "@/store/homeStore";
 import { AddConnectionPanel } from "./AddConnection";
-import { AddProjectDialog } from "./AddProjectDialog";
+import { AddProjectDialog } from "@/components/home/AddProjectDialog";
 import { ConnectionMenu } from "./ConnectionMenu";
 import { ConnectionPanel } from "./ConnectionPanel";
-import type { HomeConnection } from "./ConnectionPanel";
+import type { HomeConnection } from "@/components/home/useHomeConnections";
 import { Hero } from "./Hero";
 import { IntegrationsPanel } from "./IntegrationsPanel";
-import type { ProjectCard } from "./ProjectTile";
+import type { ProjectCard } from "@/components/home/ProjectTile";
 import { VersionBadge } from "./VersionBadge";
-import { useHomeConnections } from "./useHomeConnections";
-import { useHomeSummaries } from "./useHomeSummaries";
-import { useOpenProject } from "./useOpenProject";
+import { useHomeConnections } from "@/components/home/useHomeConnections";
+import { useHomeSummaries } from "@/components/home/useHomeSummaries";
+import { useOpenProject } from "@/components/home/useOpenProject";
 import { zoomIntoProject } from "@/components/layout/project-transition/projectTransition";
 import { UsageTile } from "@/views/usage/UsageTile";
 import { UsageView } from "@/views/usage/UsageView";

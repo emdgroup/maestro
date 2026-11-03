@@ -1,41 +1,21 @@
 import { useRef, useState, type ReactNode } from "react";
-import { Check, Container, Monitor, Pencil, Server, ServerOff, SquareTerminal } from "lucide-react";
-import type {
-  ConnectionKey,
-  DockerConnection,
-  SshConnection,
-  WslConnection,
-} from "@/types/bindings";
+import { Check, Pencil, ServerOff } from "lucide-react";
+import { CONNECTION_ICONS, type HomeConnection } from "@/components/home/useHomeConnections";
 import { useSshReachable, useUpdateSshConnection } from "@/services/connection.service";
 import { useHomeStore } from "@/store/homeStore";
 import type { ConnectionPhase } from "@/store/homeStore";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { AddProjectTile, ProjectChip, ProjectTile, projectStatus } from "./ProjectTile";
-import type { ProjectCard } from "./ProjectTile";
+import {
+  AddProjectTile,
+  ProjectChip,
+  ProjectTile,
+  projectStatus,
+} from "@/components/home/ProjectTile";
+import type { ProjectCard } from "@/components/home/ProjectTile";
 import { attach, connect, signIn } from "@/services/connection.service";
 import { Button } from "@/ui/button";
 import { Spinner } from "@/ui/spinner";
-
-/** A connection as Home lists it. */
-export interface HomeConnection {
-  key: ConnectionKey;
-  /** `connectionKeyStr(key)`, the id phases and minimized state are kept under. */
-  id: string;
-  name: string;
-  /** The host under the name: the machine, `user@host`, `WSL`, or the container's image. */
-  detail: string;
-  ssh?: SshConnection;
-  wsl?: WslConnection;
-  docker?: DockerConnection;
-}
-
-export const CONNECTION_ICONS = {
-  local: Monitor,
-  ssh: Server,
-  wsl: SquareTerminal,
-  docker: Container,
-};
 
 const SERVER_BUSY = "server_busy: ";
 
