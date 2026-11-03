@@ -35,9 +35,7 @@ struct StoreFile {
 }
 
 fn store_path() -> Result<PathBuf, String> {
-    Ok(crate::tool_config::home_dir()?
-        .join(".maestro")
-        .join("mcp-servers.json"))
+    Ok(maestro_protocol::paths::maestro_home()?.join("mcp-servers.json"))
 }
 
 pub(crate) fn list() -> Result<Vec<ManagedMcpServer>, String> {
@@ -276,7 +274,7 @@ async fn probe(server: ManagedMcpServer) -> Result<Vec<String>, String> {
 
 async fn probe_stdio(stdio: acp::schema::v1::McpServerStdio) -> Result<Vec<String>, String> {
     let env: HashMap<String, String> = stdio.env.into_iter().map(|v| (v.name, v.value)).collect();
-    let home = crate::tool_config::home_dir()?;
+    let home = maestro_protocol::paths::home_dir()?;
     // ponytail: `kill_on_drop` stops the direct child only; a launcher such as `npx` can leave its
     // node child behind until it notices stdin closed. A process-group kill fixes that if it bites.
     let mut child = crate::agent::spawn_agent_subprocess(

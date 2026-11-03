@@ -57,10 +57,7 @@ pub(crate) fn dir() -> Result<PathBuf, String> {
     {
         return Ok(custom);
     }
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map_err(|_| "cannot resolve home directory".to_string())?;
-    Ok(Path::new(&home).join(DAEMON_DIR_DEFAULT))
+    Ok(maestro_protocol::paths::home_dir()?.join(DAEMON_DIR_DEFAULT))
 }
 
 fn read_runtime(dir: &Path) -> Option<DaemonRuntime> {

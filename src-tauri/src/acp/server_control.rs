@@ -155,14 +155,6 @@ async fn login_arguments(app_state: &AppState) -> Result<Vec<String>, String> {
     ])
 }
 
-#[cfg(not(windows))]
-fn home() -> Result<PathBuf, String> {
-    std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map(PathBuf::from)
-        .map_err(|_| "cannot resolve the home directory".to_string())
-}
-
 #[cfg(windows)]
 const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 
@@ -219,14 +211,19 @@ fn windows_command_line(args: &[String]) -> String {
 fn entry_path(app_state: &AppState) -> Result<PathBuf, String> {
     let name = entry_name(app_state);
     #[cfg(target_os = "macos")]
-    return Ok(home()?.join(format!("Library/LaunchAgents/{name}.plist")));
+    return Ok(
+        maestro_protocol::paths::home_dir()?.join(format!("Library/LaunchAgents/{name}.plist"))
+    );
     #[cfg(not(target_os = "macos"))]
     {
         let config = std::env::var("XDG_CONFIG_HOME")
             .ok()
             .filter(|value| !value.is_empty())
             .map(PathBuf::from)
-            .map_or_else(|| home().map(|home| home.join(".config")), Ok)?;
+            .map_or_else(
+                || maestro_protocol::paths::home_dir().map(|home| home.join(".config")),
+                Ok,
+            )?;
         Ok(config.join("autostart").join(format!("{name}.desktop")))
     }
 }

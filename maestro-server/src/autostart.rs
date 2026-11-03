@@ -155,9 +155,9 @@ fn unit_path() -> Option<PathBuf> {
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
         .or_else(|| {
-            std::env::var("HOME")
+            maestro_protocol::paths::home_dir()
                 .ok()
-                .map(|home| Path::new(&home).join(".config"))
+                .map(|home| home.join(".config"))
         })?;
     Some(config.join("systemd").join("user").join(UNIT))
 }

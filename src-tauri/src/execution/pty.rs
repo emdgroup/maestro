@@ -19,7 +19,9 @@ fn resolve_command_path(command: &str) -> Result<PathBuf, String> {
 
     #[cfg(not(windows))]
     {
-        let home = std::env::var("HOME").unwrap_or_default();
+        let home = maestro_protocol::paths::home_dir()
+            .map(|home| home.display().to_string())
+            .unwrap_or_default();
         let candidates = [
             format!("{}/.local/bin/{}", home, command),
             format!("{}/.cargo/bin/{}", home, command),
@@ -36,7 +38,9 @@ fn resolve_command_path(command: &str) -> Result<PathBuf, String> {
 
     #[cfg(windows)]
     {
-        let profile = std::env::var("USERPROFILE").unwrap_or_default();
+        let profile = maestro_protocol::paths::home_dir()
+            .map(|home| home.display().to_string())
+            .unwrap_or_default();
         let candidates = [
             format!("{}\\.local\\bin\\{}.exe", profile, command),
             format!("{}\\AppData\\Local\\Programs\\{}.exe", profile, command),
@@ -125,12 +129,8 @@ pub async fn spawn_agent_cli_pty(
     // Enrich the child's PATH so tools it invokes (npm, cargo, nvm, etc.) are
     // found. This is scoped to the child environment only — the parent process
     // PATH is not modified, which avoids an EDR heuristic for PATH hijacking.
-    #[cfg(not(windows))]
-    let home_var = "HOME";
-    #[cfg(windows)]
-    let home_var = "USERPROFILE";
-
-    if let Ok(home) = std::env::var(home_var) {
+    if let Ok(home) = maestro_protocol::paths::home_dir() {
+        let home = home.display();
         let current_path = std::env::var("PATH").unwrap_or_default();
 
         #[cfg(not(windows))]

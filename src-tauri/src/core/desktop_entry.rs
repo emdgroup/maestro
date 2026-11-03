@@ -61,8 +61,8 @@ fn data_home() -> Option<std::path::PathBuf> {
         .map(std::path::PathBuf::from)
         .filter(|path| path.is_absolute())
         .or_else(|| {
-            std::env::var_os("HOME")
-                .map(std::path::PathBuf::from)
+            maestro_protocol::paths::home_dir()
+                .ok()
                 .map(|home| home.join(".local/share"))
         })
 }

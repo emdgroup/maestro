@@ -219,8 +219,7 @@ pub async fn spawn_interactive_execution(
         ];
         // cwd for wsl.exe process itself is irrelevant — --cd sets the WSL working dir.
         // Use a safe Windows path so the PTY spawn doesn't fail on a Linux path.
-        let windows_cwd = std::env::var("USERPROFILE")
-            .map(std::path::PathBuf::from)
+        let windows_cwd = maestro_protocol::paths::home_dir()
             .unwrap_or_else(|_| std::path::PathBuf::from("C:\\"));
         let pty_session =
             crate::execution::spawn_agent_cli_pty(&session_id, shell, args, windows_cwd).await?;
@@ -258,15 +257,8 @@ pub async fn spawn_interactive_execution(
         // path — `-w` above is what puts the shell in the worktree. Passing the container path
         // here would either fail the spawn or, when the worktree is bind-mounted at the same
         // path, silently open a shell on the host instead of inside the container.
-        let host_cwd = {
-            #[cfg(windows)]
-            let (var, fallback) = ("USERPROFILE", "C:\\");
-            #[cfg(not(windows))]
-            let (var, fallback) = ("HOME", "/");
-            std::env::var(var)
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|_| std::path::PathBuf::from(fallback))
-        };
+        let host_cwd = maestro_protocol::paths::home_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from(if cfg!(windows) { "C:\\" } else { "/" }));
         let pty_session = crate::execution::spawn_agent_cli_pty(
             &session_id,
             cli.binary().to_string(),

@@ -8,8 +8,8 @@ use std::time::Duration;
 /// Expand a leading `~` to the user's home directory
 pub(crate) fn expand_tilde(path: &str) -> String {
     if path == "~" || path.starts_with("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return path.replacen('~', &home, 1);
+        if let Ok(home) = maestro_protocol::paths::home_dir() {
+            return path.replacen('~', &home.to_string_lossy(), 1);
         }
     }
     path.to_string()

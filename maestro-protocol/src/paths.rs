@@ -1,7 +1,44 @@
 //! Paths as strings: the app and the daemon match projects, worktrees and session directories by
 //! comparing paths that were written down on different machines and at different times, so the
 //! tidying they do before comparing has to be the same on both sides. Nothing here touches the
-//! filesystem; resolving a path stays with whoever is on the machine it exists on.
+//! filesystem; resolving a path stays with whoever is on the machine it exists on. The one
+//! exception is where home is, read from the environment.
+
+use std::ffi::OsString;
+use std::path::PathBuf;
+
+/// Maestro's per-user directory under home, and its per-project directory under a repository.
+pub const MAESTRO_DIR: &str = ".maestro";
+
+/// The current user's home directory.
+///
+/// The platform's own variable first, `USERPROFILE` on Windows and `HOME` elsewhere, then the
+/// other; a variable set to nothing counts as unset. Native first because Git for Windows and
+/// MSYS users often have `HOME` set to somewhere else, and `~/.maestro` (tools, skills, MCP
+/// servers, custom agents) and the deploy script's `$env:USERPROFILE` were always the profile
+/// directory there.
+pub fn home_dir() -> Result<PathBuf, String> {
+    let (native, other) = if cfg!(windows) {
+        ("USERPROFILE", "HOME")
+    } else {
+        ("HOME", "USERPROFILE")
+    };
+    first_set([std::env::var_os(native), std::env::var_os(other)])
+        .ok_or_else(|| "Could not determine the home directory".to_string())
+}
+
+fn first_set(candidates: [Option<OsString>; 2]) -> Option<PathBuf> {
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
+/// `~/.maestro`, where the per-user state of Maestro on this machine lives.
+pub fn maestro_home() -> Result<PathBuf, String> {
+    Ok(home_dir()?.join(MAESTRO_DIR))
+}
 
 /// `path` without the verbatim prefix Windows' `canonicalize` adds, which no other part of Maestro
 /// ever shows or stores. A share comes back as `\\?\UNC\server\share`, whose plain spelling is
@@ -52,6 +89,21 @@ pub fn path_is_within(path: &str, root: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The daemon's `workspace_roots` already skipped an empty value; the other copies took it as
+    /// home and built paths at the filesystem root.
+    #[test]
+    fn an_empty_variable_counts_as_unset() {
+        assert_eq!(
+            first_set([Some(OsString::new()), Some("/home/me".into())]),
+            Some(PathBuf::from("/home/me"))
+        );
+        assert_eq!(
+            first_set([Some("/home/first".into()), Some("/home/second".into())]),
+            Some(PathBuf::from("/home/first"))
+        );
+        assert_eq!(first_set([None, Some(OsString::new())]), None);
+    }
 
     #[test]
     fn a_verbatim_share_keeps_its_two_slashes() {
