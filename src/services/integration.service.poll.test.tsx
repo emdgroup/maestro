@@ -13,7 +13,7 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 
 import type { Task } from "@/types/bindings";
-import { usePullRequestPoll, sweepInterval } from "./usePullRequestPoll";
+import { usePullRequestPoll, sweepInterval } from "./integration.service";
 
 const NO_TASKS: Task[] = [];
 

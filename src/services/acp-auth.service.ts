@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
+import { createErrorToastHandler } from "@/lib/error-utils";
 import type { ConnectionKey } from "@/types/bindings";
 
 export const authQueryKeys = {
@@ -65,5 +66,6 @@ export function useAcpLogoutMutation() {
     onSuccess: (_, { agentId, connection }) => {
       void queryClient.invalidateQueries({ queryKey: authQueryKeys.info(agentId, connection) });
     },
+    onError: createErrorToastHandler("Failed to sign out"),
   });
 }

@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { useTauriEvent } from "@/services/tauri-events";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   openProject as openProjectById,
   primeProjectServer,
+  projectSettingsOptions,
   releaseActiveProjectLock,
   useCheckIsGitRepo,
   useCreateProject,
   useGitInitProject,
   useRequestProjectTakeover,
 } from "@/services/project.service";
-import { useSelectedProjectActions, applyProjectStartupTab } from "@/store/projectStore";
+import { useSelectedProjectActions } from "@/store/projectStore";
 import type { ConnectionKey, Project } from "@/types/bindings";
 import {
   getErrorMessage,
@@ -62,6 +64,7 @@ export interface OpenProjectOptions {
  */
 export function useOpenProject(options: OpenProjectOptions = {}) {
   const { setSelectedProject } = useSelectedProjectActions();
+  const queryClient = useQueryClient();
   const { mutateAsync: createProject } = useCreateProject();
   const { mutateAsync: checkIsGitRepo } = useCheckIsGitRepo();
   const { mutateAsync: gitInitProject } = useGitInitProject();
@@ -122,7 +125,8 @@ export function useOpenProject(options: OpenProjectOptions = {}) {
             dockerConnectionId: project.docker_connection_id ?? null,
           }),
         primeProject(projectId),
-        applyProjectStartupTab(project.id),
+        // Read before the project shows, so `useProjectStartupTab` opens on its tab at once.
+        queryClient.prefetchQuery(projectSettingsOptions(project.id)),
       ]);
       const show = () => setSelectedProject(project, isGitRepo);
       await (options.switchTo ? options.switchTo(project, show) : show());

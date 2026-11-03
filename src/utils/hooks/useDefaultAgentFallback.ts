@@ -1,12 +1,13 @@
 import { useEffect, useRef } from "react";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import {
+  toProjectConfigRequest,
   useProjectSettings,
   useSeedAgentProfilesMutation,
   useUpdateProjectSettings,
 } from "@/services/project.service";
 import { starterProfiles } from "@/lib/default-profiles";
-import type { ConnectionKey, ProjectConfigResponse } from "@/types/bindings";
+import type { ConnectionKey } from "@/types/bindings";
 
 interface FallbackInputs {
   projectId: number | null;
@@ -85,7 +86,10 @@ export function useDefaultAgentFallback(projectId: number | null, connection: Co
     if (agentId == null || projectId == null || !settings) return;
 
     appliedRef.current.add(projectId);
-    updateSettings.mutate({ projectId, config: requestFrom(settings, agentId) });
+    updateSettings.mutate({
+      projectId,
+      config: toProjectConfigRequest(settings, { default_agent: agentId }),
+    });
     // `agentIds` is a fresh array every render; the query's own success flag and length are what
     // actually change, and depending on the array would re-run this on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -112,18 +116,4 @@ export function useDefaultAgentFallback(projectId: number | null, connection: Co
     settings?.default_agent,
     agentIds.length,
   ]);
-}
-
-/**
- * The update command takes the whole config, so every field the response carries and the request
- * also has must be copied across or it is written away. Same merge `SettingsPage` performs.
- */
-function requestFrom(settings: ProjectConfigResponse, defaultAgent: string) {
-  return {
-    default_agent: defaultAgent,
-    startup_tab: settings.startup_tab,
-    default_workspace_mode: settings.default_workspace_mode,
-    remote_name: settings.remote_name,
-    base_branch: settings.base_branch,
-  };
 }

@@ -185,7 +185,7 @@ export function WorkingFileContentView({
     connection,
     isAbsoluteOutsideCwd && !awaitingCwd ? absolutePath : null,
     isBinary,
-    isActive ? POLL_MS : undefined,
+    { refetchInterval: isActive ? POLL_MS : false },
   );
 
   const fileQuery = isAbsoluteOutsideCwd ? connectionFileQuery : sessionFileQuery;

@@ -44,8 +44,7 @@ import {
   DropdownMenuSeparator,
 } from "@/ui/dropdown-menu";
 import {
-  useReadFile,
-  useReadFileBinary,
+  useConnectionFileQuery,
   openFileWithConnection,
   downloadFileToFolder,
   opensViaHostCopy,
@@ -207,7 +206,7 @@ export function WorkspaceFilesPanel({
     isLoading: contentLoading,
     error: contentError,
     refetch,
-  } = useReadFile(connection, binaryMime ? null : fullPath, {
+  } = useConnectionFileQuery(connection, binaryMime ? null : fullPath, false, {
     refetchInterval: (query) =>
       filePollInterval({ hasError: query.state.error != null, isActive, mode }),
   });
@@ -215,7 +214,7 @@ export function WorkspaceFilesPanel({
     data: binaryContent,
     isLoading: binaryLoading,
     error: binaryError,
-  } = useReadFileBinary(connection, binaryMime ? fullPath : null);
+  } = useConnectionFileQuery(connection, binaryMime ? fullPath : null, true);
 
   useEffect(() => {
     if (isActive && fullPath && !binaryMime && mode === "view") {

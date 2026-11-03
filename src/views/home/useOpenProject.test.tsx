@@ -42,7 +42,6 @@ vi.mock("@/services/project.service", async (importOriginal) => {
 
 vi.mock("@/store/projectStore", () => ({
   useSelectedProjectActions: () => ({ setSelectedProject }),
-  applyProjectStartupTab: () => Promise.resolve(),
 }));
 
 function Harness() {

@@ -23,7 +23,7 @@ import type { RunMode, Task, TaskPriority } from "@/types/bindings";
 import { PRIORITIES } from "@/utils/constants/priority";
 import { CreateTaskModal } from "@/components/kanban/create-task-modal/CreateTaskModal";
 import { ArchiveModal } from "@/components/kanban/archive-modal/ArchiveModal";
-import { usePullRequestPoll } from "@/hooks/usePullRequestPoll";
+import { usePullRequestPoll } from "@/services/integration.service";
 import { QueueCapacityBadge } from "@/components/kanban/QueueCapacityBadge";
 import { AutoModeToggle } from "@/components/kanban/AutoModeToggle";
 import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";

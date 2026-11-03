@@ -1,4 +1,10 @@
-import { useQuery, useMutation, useMutationState, useQueryClient } from "@tanstack/react-query";
+import {
+  queryOptions,
+  useQuery,
+  useMutation,
+  useMutationState,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
@@ -57,10 +63,23 @@ export function useWorktreesQuery(
   options?: { refetchInterval?: number | false },
 ) {
   return useQuery({
+    ...worktreeListOptions(projectId, repoPath),
+    refetchInterval: options?.refetchInterval ?? false,
+  });
+}
+
+/**
+ * How the project's worktree list is read, shared by the hook and by one-off reads through
+ * `fetchQuery`/`prefetchQuery`, so all of them fill the same cache entry the same way.
+ */
+export function worktreeListOptions(
+  projectId: number | null | undefined,
+  repoPath: string | null | undefined,
+) {
+  return queryOptions({
     queryKey: worktreeQueryKeys.list(projectId ?? null),
     queryFn: () => api.listWorktreesWithStatus(projectId!, repoPath!),
     enabled: projectId != null && repoPath != null,
-    refetchInterval: options?.refetchInterval ?? false,
   });
 }
 
@@ -79,10 +98,7 @@ export function usePrefetchWorktrees() {
   const queryClient = useQueryClient();
   return useCallback(
     (projectId: number, repoPath: string) => {
-      void queryClient.prefetchQuery({
-        queryKey: worktreeQueryKeys.list(projectId),
-        queryFn: () => api.listWorktreesWithStatus(projectId, repoPath),
-      });
+      void queryClient.prefetchQuery(worktreeListOptions(projectId, repoPath));
     },
     [queryClient],
   );

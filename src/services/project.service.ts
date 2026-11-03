@@ -1,4 +1,10 @@
-import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  queryOptions,
+  useQuery,
+  useQueries,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
@@ -73,15 +79,36 @@ export function useProjectBranchesQuery(projectId: number | null) {
 }
 
 /**
+ * The request that writes `patch` over the stored settings. The update command takes the whole
+ * config, so every field the response carries and the request also has is copied across, or it is
+ * written away. With nothing loaded yet each field takes its default.
+ */
+export function toProjectConfigRequest(
+  settings: ProjectConfigResponse | undefined,
+  patch: Partial<ProjectConfigRequest>,
+): ProjectConfigRequest {
+  return {
+    default_agent: settings?.default_agent ?? null,
+    startup_tab: settings?.startup_tab ?? null,
+    default_workspace_mode: settings?.default_workspace_mode ?? "NewWorktree",
+    remote_name: settings?.remote_name ?? null,
+    base_branch: settings?.base_branch ?? null,
+    ...patch,
+  };
+}
+
+/**
  * Query hook for fetching project settings/configuration
  */
 export function useProjectSettings(projectId: number | null) {
-  return useQuery({
+  return useQuery(projectSettingsOptions(projectId));
+}
+
+/** How a project's settings are read, for the hook and for a prefetch ahead of opening it. */
+export function projectSettingsOptions(projectId: number | null) {
+  return queryOptions({
     queryKey: projectQueryKeys.settingsDetail(projectId),
-    queryFn: () => {
-      if (projectId == null) throw new Error("projectId required");
-      return api.getProjectSettings(projectId);
-    },
+    queryFn: () => api.getProjectSettings(projectId!),
     staleTime: Infinity,
     enabled: projectId != null,
   });
@@ -380,8 +407,6 @@ export function useCreateNewProject() {
       void queryClient.invalidateQueries({ queryKey: projectQueryKeys.home() });
       toast.success("Project created successfully");
     },
-    onError: (error) => {
-      console.error("Create project failed:", error);
-    },
+    onError: createErrorToastHandler("Failed to create project"),
   });
 }

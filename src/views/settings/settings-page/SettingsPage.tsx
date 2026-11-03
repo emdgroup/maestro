@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
+import {
+  toProjectConfigRequest,
+  useProjectSettings,
+  useUpdateProjectSettings,
+} from "@/services/project.service";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { useListIntegrations } from "@/services/integration.service";
 import { useIsGitRepo, useSelectedProject } from "@/store/projectStore";
@@ -201,14 +205,7 @@ function ProjectScopePane({
     if (!settings) return;
     updateProjectSettings.mutate({
       projectId,
-      config: {
-        default_agent: settings.default_agent,
-        startup_tab: settings.startup_tab,
-        default_workspace_mode: settings.default_workspace_mode,
-        remote_name: settings.remote_name,
-        base_branch: settings.base_branch,
-        ...patch,
-      },
+      config: toProjectConfigRequest(settings, patch),
     });
   }
 

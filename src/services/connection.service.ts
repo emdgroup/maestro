@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { join, tempDir } from "@tauri-apps/api/path";
 import { open as openDirPicker } from "@tauri-apps/plugin-dialog";
 import { useQuery, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
@@ -41,36 +41,34 @@ export const connectionQueryKeys = {
   ) => [...connectionQueryKeys.workspaceFilesOn(connection), path, includeHidden] as const,
   artifacts: (connection: ConnectionKey, cwd: string | null | undefined, sinceMs: number | null) =>
     [...connectionQueryKeys.fileBrowser(), "artifacts", connection, cwd, sinceMs] as const,
-  read: (connection: ConnectionKey | null | undefined, path: string | null) =>
-    [...connectionQueryKeys.fileBrowser(), "read", connection, path] as const,
-  readBinary: (connection: ConnectionKey | null | undefined, path: string | null) =>
-    [...connectionQueryKeys.fileBrowser(), "readBinary", connection, path] as const,
   defaultPath: () => [...connectionQueryKeys.fileBrowser(), "defaultPath"] as const,
   drives: () => [...connectionQueryKeys.fileBrowser(), "drives"] as const,
   status: (connectionId: number | null) =>
     [...connectionQueryKeys.base, "status", connectionId] as const,
-  file: (connection: ConnectionKey, path: string | null, binary: boolean) =>
+  file: (connection: ConnectionKey | null | undefined, path: string | null, binary: boolean) =>
     [...connectionQueryKeys.base, "file", connection, path, binary] as const,
   localImage: (path: string) => [...connectionQueryKeys.base, "localImage", path] as const,
 };
 
 /**
- * Contents of a file at an absolute path on a connection, for paths outside any session's
- * working directory. Pass `null` for the path to disable the query; `refetchIntervalMs`
- * polls a file that is still being written.
+ * A file's contents at an absolute path on a connection: text, or base64 for `binary`. Pass `null`
+ * for the path to disable it; `refetchInterval` polls a file that is still being written.
  */
 export function useConnectionFileQuery(
-  connection: ConnectionKey,
+  connection: ConnectionKey | null | undefined,
   path: string | null,
   binary: boolean,
-  refetchIntervalMs?: number,
+  options?: { refetchInterval?: RefetchInterval },
 ) {
   return useQuery({
     queryKey: connectionQueryKeys.file(connection, path, binary),
     queryFn: () =>
-      binary ? api.readFileBinary(connection, path!) : api.readFile(connection, path!),
-    enabled: path != null,
-    refetchInterval: refetchIntervalMs ?? false,
+      binary
+        ? api.readFileBinary(connection ?? LOCAL, path!)
+        : api.readFile(connection ?? LOCAL, path!),
+    enabled: !!path,
+    staleTime: 10_000,
+    refetchInterval: options?.refetchInterval,
   });
 }
 
@@ -185,34 +183,6 @@ type RefetchInterval =
   | false
   | ((query: { state: { error: unknown } }) => number | false | undefined);
 
-export function useReadFile(
-  connection: ConnectionKey | null | undefined,
-  path: string | null,
-  options?: { refetchInterval?: RefetchInterval },
-) {
-  return useQuery({
-    queryKey: connectionQueryKeys.read(connection, path),
-    queryFn: () => api.readFile(connection ?? LOCAL, path!),
-    enabled: !!path,
-    staleTime: 10_000,
-    refetchInterval: options?.refetchInterval,
-  });
-}
-
-export function useReadFileBinary(
-  connection: ConnectionKey | null | undefined,
-  path: string | null,
-  options?: { refetchInterval?: RefetchInterval },
-) {
-  return useQuery({
-    queryKey: connectionQueryKeys.readBinary(connection, path),
-    queryFn: () => api.readFileBinary(connection ?? LOCAL, path!),
-    enabled: !!path,
-    staleTime: 10_000,
-    refetchInterval: options?.refetchInterval,
-  });
-}
-
 /**
  * Replace a file's contents on whichever machine the connection points at.
  *
@@ -234,14 +204,23 @@ export function useWriteFile() {
 }
 
 /**
- * Invalidate every cached directory listing for a connection. The listings are keyed by directory,
- * and a create or rename can change a parent this hook does not know about, so it drops all of
- * them — only mounted queries (the tree root and expanded folders) actually refetch.
+ * Invalidate every cached directory listing for a connection, and the workspace file index the tree
+ * filters on. The listings are keyed by directory, and a create or rename can change a parent this
+ * hook does not know about, so it drops all of them — only mounted queries (the tree root and
+ * expanded folders) actually refetch.
  */
-function useInvalidateFileBrowser() {
+export function useInvalidateFileBrowser() {
   const queryClient = useQueryClient();
-  return (connection: ConnectionKey) =>
-    queryClient.invalidateQueries({ queryKey: connectionQueryKeys.dirContentsOn(connection) });
+  return useCallback(
+    (connection: ConnectionKey | null | undefined) =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: connectionQueryKeys.dirContentsOn(connection) }),
+        queryClient.invalidateQueries({
+          queryKey: connectionQueryKeys.workspaceFilesOn(connection),
+        }),
+      ]),
+    [queryClient],
+  );
 }
 
 export function useCreateFile() {

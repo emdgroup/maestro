@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/tauri-utils";
 import { isRoleSkipped, parseProfileOverrides, profileIdFor } from "@/lib/profile-overrides";
 import type { Task, ConnectionKey, AgentRole, WorktreeWithStatus } from "@/types/bindings";
-import { worktreeQueryKeys } from "@/services/worktree.service";
+import { worktreeListOptions } from "@/services/worktree.service";
 import { useActiveSessionsQuery, useAgentDiscoveryQuery } from "@/services/execution.service";
 import { startTask, useDeleteTaskAttachmentMutation } from "@/services/task.service";
 import { useNavigationActions } from "@/store/navigationStore";
@@ -65,10 +65,7 @@ export function useExecuteTask(
   const existingWorkspace = async (task: Task, id: number): Promise<string | null> => {
     if (task.workspace_mode === "RepositoryDirectory") return projectPath;
     const worktrees = await queryClient
-      .fetchQuery({
-        queryKey: worktreeQueryKeys.list(id),
-        queryFn: () => api.listWorktreesWithStatus(id, projectPath),
-      })
+      .fetchQuery(worktreeListOptions(id, projectPath))
       .catch(() => [] as WorktreeWithStatus[]);
     const found =
       task.workspace_mode === "ReuseWorkspace"
