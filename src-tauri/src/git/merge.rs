@@ -1,11 +1,13 @@
 use super::exec::{run_git_in_dir, run_git_in_dir_lossy};
 use crate::acp::connection_server::{query_project_store, reply};
+use crate::connectivity::GitConnection;
 use crate::core::{get_project_with_git_conn, AppState};
 use crate::git::worktree_lifecycle::{delete_worktree_rows, task_worktree};
-use crate::models::{GitConnection, MergeResult, Task};
+use crate::git::MergeResult;
 use crate::task::crud::get_task_on_server;
 use crate::task::models::RunMode;
 use crate::task::ops::{apply_transition_on_server, apply_transition_writing};
+use crate::task::Task;
 use maestro_protocol::{
     LoopCheck, LoopCheckKind, LoopCheckState, LoopIteration, SaveTaskReviewRequest, TaskRef,
     TaskTransition, TaskUpdate, TransitionGuard,

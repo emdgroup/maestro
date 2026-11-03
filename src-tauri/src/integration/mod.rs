@@ -6,7 +6,6 @@ pub mod issue_tracking_handlers;
 pub mod issue_tracking_models;
 pub mod keychain;
 pub mod lookup;
-pub mod lookup_handlers;
 pub mod providers;
 pub mod pull_request;
 pub mod pull_request_handlers;

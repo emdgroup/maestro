@@ -35,7 +35,7 @@ use self::github::{
 use self::gitlab::{
     checks_gitlab, ci_gitlab, create_gitlab, fetch_gitlab, find_gitlab, list_gitlab,
 };
-use crate::models::project::ProjectCodeHostingConfig;
+use crate::project::models::ProjectCodeHostingConfig;
 
 /// Where to open the pull request, and what to authenticate with.
 pub struct PullRequestTarget<'a> {

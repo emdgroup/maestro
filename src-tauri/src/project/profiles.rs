@@ -15,9 +15,9 @@ use specta::Type;
 use std::sync::Arc;
 use tauri::State;
 
+use crate::connectivity::GitConnection;
 use crate::core::project_storage::{read_maestro_json, write_maestro_json};
 use crate::core::AppState;
-use crate::models::GitConnection;
 
 pub use maestro_protocol::profiles::{
     role_is_skipped, AgentProfile, FallbackBehaviour, ProfilesDocument, PROFILES_FILE,

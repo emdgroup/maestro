@@ -1,5 +1,5 @@
 use crate::connectivity::exec_channel::{self, ExecTarget};
-use crate::models::GitConnection;
+use crate::connectivity::GitConnection;
 
 /// Prefix on git error messages, kept per connection type because it is what users see when a
 /// git command fails and it says which machine failed it.

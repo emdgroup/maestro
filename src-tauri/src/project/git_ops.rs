@@ -2,9 +2,9 @@ use super::crud::register_project_in_db;
 use crate::acp::ConnectionKey;
 use crate::connectivity::exec_channel::{run_on, ExecTarget};
 use crate::connectivity::files;
+use crate::connectivity::GitConnection;
 use crate::core::AppState;
 use crate::git::exec::git_prefix_args;
-use crate::models::GitConnection;
 use std::sync::Arc;
 use tauri::State;
 
@@ -169,7 +169,7 @@ pub async fn clone_project(
     wsl_connection_id: Option<i32>,
     docker_connection_id: Option<i32>,
     provider: Option<String>,
-) -> Result<crate::models::Project, String> {
+) -> Result<crate::project::Project, String> {
     let connection_key =
         ConnectionKey::from_all_ids(connection_id, wsl_connection_id, docker_connection_id);
     let auth_header = match provider.as_deref() {
@@ -217,7 +217,7 @@ pub async fn create_new_project(
     connection_id: Option<i32>,
     wsl_connection_id: Option<i32>,
     docker_connection_id: Option<i32>,
-) -> Result<crate::models::Project, String> {
+) -> Result<crate::project::Project, String> {
     let connection_key =
         ConnectionKey::from_all_ids(connection_id, wsl_connection_id, docker_connection_id);
     // Build full path string (works for both local and remote — remote paths are POSIX)

@@ -4,8 +4,8 @@ use tauri::State;
 
 use crate::connectivity::ssh::session::{SshAuthMethod, SshConnection};
 use crate::connectivity::ssh::{spawn_heartbeat_task, PasswordManager, RemoteSshSession};
+use crate::connectivity::ConnectionStatus;
 use crate::core::AppState;
-use crate::models::ConnectionStatus;
 
 /// Store SSH session in AppState, update DB timestamps, and kick off a background
 /// remote-agent availability check so the result is ready before the user opens a dialog.

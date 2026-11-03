@@ -12,7 +12,7 @@ use crate::git::remote::{
 };
 use crate::git::run_git_in_dir_lossy;
 use crate::integration::issue_tracking_handlers::{find_integration, provider_for_host};
-use crate::models::project::{LandingMode, ProjectCodeHostingConfig, ProjectConfig};
+use crate::project::models::{LandingMode, ProjectCodeHostingConfig, ProjectConfig};
 use crate::project::settings::{mutate_project_config, SETTINGS_FILE};
 
 /// How far up the capability ladder this project reaches.

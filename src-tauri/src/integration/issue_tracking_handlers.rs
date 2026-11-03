@@ -7,13 +7,11 @@ use crate::core::project_storage::read_maestro_json;
 use crate::core::AppState;
 use crate::git::remote::{parse_remote_url, pick_remote_url, ParsedRemote};
 use crate::git::run_git_in_dir_lossy;
+use crate::integration::integration_models::IntegrationCredentials;
+use crate::integration::issue_tracking_models::{DetectedIssueTracking, RemoteIssue};
 use crate::integration::keychain::{KeychainOutcome, KeychainStore};
-use crate::models::integration::IntegrationCredentials;
-use crate::models::issue_tracking::{DetectedIssueTracking, RemoteIssue};
-use crate::models::project::{ProjectConfig, ProjectIssueTrackingConfig};
+use crate::project::models::{ProjectConfig, ProjectIssueTrackingConfig};
 use crate::project::settings::{mutate_project_config, SETTINGS_FILE};
-
-pub use super::image_proxy::*;
 
 /// Read the ticketing field from .maestro/settings.json for the given project.
 #[tauri::command]

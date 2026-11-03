@@ -171,7 +171,7 @@ async fn resolve_target(
     project_id: i32,
 ) -> Result<
     (
-        crate::models::project::ProjectCodeHostingConfig,
+        crate::project::models::ProjectCodeHostingConfig,
         String,
         Option<String>,
     ),

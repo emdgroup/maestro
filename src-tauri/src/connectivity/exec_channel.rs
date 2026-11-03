@@ -85,8 +85,8 @@ pub enum ExecHost {
 impl<'a> ExecTarget<'a> {
     /// The one mapping from a resolved connection to where its commands run. Everything that
     /// holds a [`GitConnection`] goes through this instead of matching on it again.
-    pub fn of(conn: &'a crate::models::GitConnection) -> Self {
-        use crate::models::GitConnection;
+    pub fn of(conn: &'a crate::connectivity::GitConnection) -> Self {
+        use crate::connectivity::GitConnection;
         match conn {
             GitConnection::Local { .. } => ExecTarget::Local,
             GitConnection::Remote { ssh, .. } => ExecTarget::Ssh {
@@ -158,7 +158,7 @@ struct Channel {
 
 /// Run a command on whichever machine a connection points at.
 pub async fn run_on(
-    conn: &crate::models::GitConnection,
+    conn: &crate::connectivity::GitConnection,
     cwd: Option<&str>,
     program: &str,
     args: &[&str],

@@ -10,9 +10,10 @@ use crate::acp::registry::AgentDiscoveryCacheEntry;
 use crate::acp::session_types::AgentAuthInfo;
 use crate::acp::{AcpProcess, ConnectionKey, ConnectionServer, RestorableSession};
 use crate::connectivity::ssh::{RemoteSshSession, SshPtyHandle};
+use crate::connectivity::GitConnection;
 use crate::core::schema::initialize_schema;
 use crate::execution::PtySession;
-use crate::models::{GitConnection, Project};
+use crate::project::Project;
 
 /// Mint the id a session is known by, everywhere: the key of `AcpState::sessions` and of the three
 /// `PtyState` maps, the routing key maestro-server files an ACP session under, the suffix of every
@@ -147,7 +148,7 @@ pub struct PtyState {
     /// the spawn_blocking reader to exit cleanly before a new attach starts.
     pub attach_cancel: tokio::sync::Mutex<HashMap<String, Arc<AtomicBool>>>,
     /// In-memory metadata for active PTY sessions, keyed by session id.
-    pub session_meta: tokio::sync::Mutex<HashMap<String, crate::models::worktree::PtySessionMeta>>,
+    pub session_meta: tokio::sync::Mutex<HashMap<String, crate::execution::models::PtySessionMeta>>,
 }
 
 pub struct AppState {

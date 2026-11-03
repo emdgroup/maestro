@@ -4,7 +4,7 @@
 
 use crate::acp::connection_server::{query_project_store, reply};
 use crate::core::AppState;
-use crate::models::{BranchMode, Task, WorkspaceMode};
+use crate::task::{BranchMode, Task, WorkspaceMode};
 use maestro_protocol::{ProjectRef, TaskRef, TaskUpdate};
 use maestro_protocol::{ServerRequest, ServerResponse};
 use std::sync::Arc;

@@ -5,10 +5,12 @@ use rand::TryRng;
 use tauri::{Emitter, State};
 
 use crate::core::AppState;
+use crate::integration::integration_models::{
+    CredentialSource, IntegrationCredentials, IntegrationStatus,
+};
 use crate::integration::keychain::{KeychainOutcome, KeychainStore};
 use crate::integration::normalize_instance_url;
-use crate::models::integration::{CredentialSource, IntegrationCredentials, IntegrationStatus};
-use crate::models::project::now_rfc3339;
+use crate::project::models::now_rfc3339;
 
 const KNOWN_PROVIDERS: &[&str] = &[
     "github",

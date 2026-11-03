@@ -1,4 +1,4 @@
-use crate::models::issue_tracking::RemoteIssue;
+use crate::integration::issue_tracking_models::RemoteIssue;
 
 #[derive(serde::Deserialize)]
 struct GiteaIssueResponse {

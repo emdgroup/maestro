@@ -67,7 +67,7 @@ pub async fn docker_download_file(
         crate::acp::ConnectionKey::Docker { id: connection_id },
     )
     .await?;
-    let crate::models::GitConnection::Docker { container_name, .. } = conn else {
+    let crate::connectivity::GitConnection::Docker { container_name, .. } = conn else {
         return Err(format!("Connection {connection_id} is not a container"));
     };
 

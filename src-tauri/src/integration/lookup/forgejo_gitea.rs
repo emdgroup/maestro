@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::core::AppState;
-use crate::models::issue_tracking::RepoOption;
+use crate::integration::issue_tracking_models::RepoOption;
 
 /// List Forgejo repositories for the authenticated user or a given owner.
 #[tauri::command]

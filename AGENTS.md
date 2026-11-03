@@ -134,7 +134,6 @@ and logic, so a feature touches one directory rather than three.
 - `connectivity/` — SSH (`ssh/`), WSL, Docker, SFTP, filesystem handlers, `files.rs` (file operations and copies onto any connection), `exec_channel.rs` (remote commands, `shell_quote`), connection models
 - `integration/` — issue-tracking providers (`providers/`), `lookup/`, `keychain.rs`, `pull_request/` (forges), `pull_request_sweep.rs` (what became of the pull requests tasks wait on)
 - `settings/` — app settings handlers and models, `store.rs` (reading and writing the settings table)
-- `ipc/mod.rs`, `models/mod.rs` — thin re-export shims only (no code), kept so `lib.rs`'s `collect_commands![]` and older `crate::models::*` paths keep resolving. New code should import from the owning domain module directly.
 
 **maestro-server (`maestro-server/src/`):**
 
@@ -177,7 +176,7 @@ All IPC uses TanStack Query — components never call `invoke()` directly. The p
 Component → TanStack Query hook → service function (invoke()) → Rust #[tauri::command]
 ```
 
-Service functions in `src/services/` wrap `invoke()` and export TanStack Query hooks directly (useQuery/useMutation co-located with the invoke call). `src/utils/hooks/` contains non-query custom hooks (keyboard nav, path nav, etc.). Rust handlers marked `#[tauri::command]` live in the handler file of their owning domain module (e.g. `task/handlers.rs`, `git/review_handlers.rs`, `acp/session_handlers.rs`); `ipc/mod.rs` re-exports them all so `lib.rs` can register them via `tauri-specta`'s `collect_commands![]` (currently ~187 commands).
+Service functions in `src/services/` wrap `invoke()` and export TanStack Query hooks directly (useQuery/useMutation co-located with the invoke call). `src/utils/hooks/` contains non-query custom hooks (keyboard nav, path nav, etc.). Rust handlers marked `#[tauri::command]` live in the file of their owning domain module (e.g. `task/crud.rs`, `git/review.rs`, `acp/session_handlers.rs`), and `lib.rs` registers each by its full path (`crate::task::crud::create_task`) via `tauri-specta`'s `collect_commands![]` (currently 249 commands). Name the defining module there, not a re-export: the macro resolves hidden items `#[tauri::command]` generates beside the function, and a named re-export leaves them behind. Import models from their owning domain module too; there is no `crate::models` shim.
 
 `src/types/bindings.ts` is fully generated — do not edit manually. It exports both TypeScript types (all Rust model structs/enums annotated with `#[derive(TS)]`) and a `commands` const object (typed wrappers for every registered IPC command). Import types with `import type { Task } from "@/types/bindings"`.
 

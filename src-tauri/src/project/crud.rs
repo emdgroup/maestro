@@ -1,6 +1,6 @@
 use crate::acp::ConnectionKey;
 use crate::core::{project_storage, AppState};
-use crate::models::Project;
+use crate::project::Project;
 use chrono::Utc;
 use rusqlite::params;
 use std::path::Path;

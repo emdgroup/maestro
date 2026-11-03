@@ -205,7 +205,7 @@ pub async fn spawn_interactive_execution(
             .lock()
             .await
             .insert(session_id.clone(), pty_handle);
-    } else if let crate::models::GitConnection::Wsl { ref distro, .. } = git_conn {
+    } else if let crate::connectivity::GitConnection::Wsl { ref distro, .. } = git_conn {
         let shell = "wsl.exe".to_string();
         let args = vec![
             "-d".to_string(),
@@ -227,7 +227,7 @@ pub async fn spawn_interactive_execution(
             Arc::new(tokio::sync::Mutex::new(pty_session)),
         );
         drop(sessions);
-    } else if let crate::models::GitConnection::Docker {
+    } else if let crate::connectivity::GitConnection::Docker {
         ref container_name, ..
     } = git_conn
     {
@@ -294,7 +294,7 @@ pub async fn spawn_interactive_execution(
 
     // Store PTY session metadata for get_active_sessions
     {
-        use crate::models::worktree::PtySessionMeta;
+        use crate::execution::models::PtySessionMeta;
         let meta = PtySessionMeta {
             session_name: session_name.clone(),
             started_at: now.clone(),

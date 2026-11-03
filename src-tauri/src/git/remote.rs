@@ -189,7 +189,7 @@ async fn resolve_project_remote(app_state: &AppState, project_id: i32) -> String
         return DEFAULT_REMOTE.to_string();
     };
 
-    let config: crate::models::ProjectConfig = crate::core::project_storage::read_maestro_json(
+    let config: crate::project::ProjectConfig = crate::core::project_storage::read_maestro_json(
         &git_conn,
         crate::project::settings::SETTINGS_FILE,
     )
@@ -226,7 +226,7 @@ pub async fn list_project_branches(
     // rather than failing entirely.
     let git_conn = crate::core::get_git_connection(&project, &app_state)
         .await
-        .unwrap_or_else(|_| crate::models::GitConnection::Local {
+        .unwrap_or_else(|_| crate::connectivity::GitConnection::Local {
             path: project.path.clone(),
         });
 

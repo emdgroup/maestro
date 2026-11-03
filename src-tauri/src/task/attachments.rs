@@ -1,6 +1,6 @@
 use crate::acp::connection_server::{query_project_store, reply};
 use crate::core::AppState;
-use crate::models::TaskAttachment;
+use crate::task::TaskAttachment;
 use maestro_protocol::{AddTaskAttachmentRequest, DeleteTaskAttachmentRequest, TaskRef};
 use maestro_protocol::{ServerRequest, ServerResponse};
 use serde::{Deserialize, Serialize};

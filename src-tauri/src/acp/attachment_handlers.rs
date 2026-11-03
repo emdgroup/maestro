@@ -1,8 +1,8 @@
 //! External file attachment preparation for ACP sessions.
 
 use crate::acp::ConnectionKey;
+use crate::connectivity::GitConnection;
 use crate::core::AppState;
-use crate::models::GitConnection;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;

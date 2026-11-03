@@ -4,7 +4,7 @@ use tauri::State;
 
 use crate::acp::connection_server::{query_project_store, reply};
 use crate::core::AppState;
-use crate::models::Worktree;
+use crate::git::Worktree;
 use maestro_protocol::paths::path_is_within;
 use maestro_protocol::worktree_names::{
     is_maestro_created_worktree, tip_contained_elsewhere, worktree_path_for_session,
@@ -113,7 +113,7 @@ struct PullRequestCheckout {
 impl PullRequestCheckout {
     async fn create(
         &self,
-        git_conn: &crate::models::GitConnection,
+        git_conn: &crate::connectivity::GitConnection,
         relative_path: &str,
     ) -> Result<String, String> {
         crate::git::create_pull_request_worktree(
@@ -411,7 +411,7 @@ pub async fn delete_worktree(
 /// The commit check has to happen up front: `git branch -d` refuses an unmerged branch, but it
 /// runs after `git worktree remove --force` has already thrown the working tree away.
 async fn reason_to_keep(
-    git_conn: &crate::models::GitConnection,
+    git_conn: &crate::connectivity::GitConnection,
     worktree_path: &str,
     branch_name: &str,
 ) -> Result<Option<String>, String> {
@@ -516,7 +516,7 @@ pub async fn running_session_cwds(app_state: &Arc<AppState>) -> Vec<String> {
 /// "none" would delete the folder a dormant session loads into, and that session with it.
 pub async fn live_session_cwds(
     app_state: &Arc<AppState>,
-    project: &crate::models::Project,
+    project: &crate::project::Project,
 ) -> Result<Vec<String>, String> {
     let mut live_cwds = running_session_cwds(app_state).await;
     let connection_key = project.connection_key();
@@ -938,7 +938,7 @@ fn prunable_maestro_branches(
 /// git invocation costs a full interop spawn, and this runs whenever the Worktrees tab opens.
 /// Best-effort throughout — a branch whose stats cannot be read still lists, just without them.
 async fn fill_unmerged_branch_stats(
-    git_conn: &crate::models::GitConnection,
+    git_conn: &crate::connectivity::GitConnection,
     candidates: &mut [PrunableBranch],
 ) {
     let unmerged: Vec<usize> = candidates

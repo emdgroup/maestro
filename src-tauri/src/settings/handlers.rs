@@ -3,8 +3,8 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::acp::connection_server::{query_project_store, query_via_server, reply};
 use crate::core::{logging, AppState};
-use crate::models::{AppSettings, ConnectionCapacitySettings};
 use crate::settings::models::LogLocation;
+use crate::settings::models::{AppSettings, ConnectionCapacitySettings};
 use maestro_protocol::{ServerRequest, ServerResponse};
 
 #[tauri::command]

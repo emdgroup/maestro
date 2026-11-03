@@ -1,5 +1,4 @@
 pub mod capacity;
-pub mod handlers;
 pub mod models;
 pub mod pty;
 pub mod pty_ops;

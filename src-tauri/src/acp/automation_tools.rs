@@ -216,7 +216,7 @@ pub(super) async fn create_automation(
             .unwrap_or_default(),
     };
     let workspace = match config.default_workspace_mode() {
-        crate::models::WorkspaceMode::NewWorktree => AutomationWorkspace::NewWorktree {
+        crate::task::WorkspaceMode::NewWorktree => AutomationWorkspace::NewWorktree {
             base_branch: super::host_tools::default_base_branch(app_state, project.id, &config)
                 .await,
         },

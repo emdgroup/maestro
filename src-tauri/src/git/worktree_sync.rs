@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use tauri::State;
 
+use crate::connectivity::GitConnection;
 use crate::core::AppState;
-use crate::models::GitConnection;
 
 /// Rewrite the git failures a user can act on, and pass everything else through.
 ///

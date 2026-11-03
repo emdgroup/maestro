@@ -15,9 +15,9 @@ use crate::acp::connection_server::{query_project_store, reply};
 use crate::core::AppState;
 use crate::git::merge::finalize_successful_merge;
 use crate::git::worktree_lifecycle::task_worktree;
-use crate::models::{PullRequestCi, Task, TaskBall};
 use crate::task::crud::{get_task_on_server, update_task_on_server};
 use crate::task::ops::{apply_transition_on_server, apply_transition_writing};
+use crate::task::{PullRequestCi, Task, TaskBall};
 
 /// Ask the forge what became of every pull request this project is waiting on, and act on it.
 ///

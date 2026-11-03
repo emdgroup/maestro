@@ -325,8 +325,8 @@ mod tests {
     /// has never written the file as one holding defaults.
     #[tokio::test]
     async fn a_settings_save_replaces_existing_json() {
+        use crate::connectivity::GitConnection;
         use crate::core::project_storage::{read_maestro_json, write_maestro_json};
-        use crate::models::GitConnection;
 
         let dir = tempfile::tempdir().expect("temp directory");
         let maestro_dir = dir.path().join(".maestro");

@@ -15,7 +15,7 @@ pub struct DetectedIssueTracking {
     pub applied: bool,
     /// Fields recovered from the remote URL — used to prefill the settings form when
     /// the config was not applied.
-    pub config: crate::models::project::ProjectIssueTrackingConfig,
+    pub config: crate::project::models::ProjectIssueTrackingConfig,
 }
 
 /// Ticketing integration configuration stored in .maestro/issue_tracking.json

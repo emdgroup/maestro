@@ -1,6 +1,6 @@
 use crate::acp::connection_server::{query_project_store, reply};
 use crate::core::AppState;
-use crate::models::Task;
+use crate::task::Task;
 use maestro_protocol::{
     ApplyTaskTransitionRequest, CloseRefinementRequest, TaskPhase, TaskTransition, TransitionGuard,
 };
@@ -441,7 +441,7 @@ pub struct StartTaskResult {
 /// evidence" and treats the same as a non-git project.
 async fn task_has_changes(
     app_state: &Arc<crate::core::AppState>,
-    task: &crate::models::Task,
+    task: &crate::task::Task,
 ) -> Option<bool> {
     let (project_id, task_id) = (task.project_id, task.id);
     let worktree_path = match crate::acp::connection_server::query_project_store(
@@ -470,7 +470,7 @@ async fn task_has_changes(
 
     // Both worktree modes leave the row here: a reused workspace is claimed by the task when it
     // starts, exactly so that lookups like this one keep working.
-    let isolated = task.workspace_mode != crate::models::WorkspaceMode::RepositoryDirectory;
+    let isolated = task.workspace_mode != crate::task::WorkspaceMode::RepositoryDirectory;
 
     // An isolated task whose worktree row has gone missing must report no evidence rather than
     // fall through to the project root: the root is a different tree, and any unrelated dirt in
@@ -501,7 +501,7 @@ async fn task_has_changes(
     match crate::git::worktree_query::diff_stats_in(
         &git_conn,
         &cwd,
-        &crate::models::DiffTarget::Commit { sha: start_sha },
+        &crate::git::DiffTarget::Commit { sha: start_sha },
         &remote,
     )
     .await

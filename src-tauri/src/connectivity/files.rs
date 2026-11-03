@@ -16,8 +16,8 @@ use crate::connectivity::docker_handlers::run_blocking;
 use crate::connectivity::exec_channel::shell_quote;
 use crate::connectivity::exec_channel::{run_on, run_with_stdin, ExecTarget};
 use crate::connectivity::filesystem_handlers::{self, FileEntry};
+use crate::connectivity::GitConnection;
 use crate::core::AppState;
-use crate::models::GitConnection;
 
 /// Text files above this are refused rather than streamed into the UI.
 pub(crate) const TEXT_LIMIT: usize = 512 * 1024;

@@ -52,7 +52,7 @@ pub async fn wsl_download_file(
         crate::acp::ConnectionKey::Wsl { id: connection_id },
     )
     .await?;
-    let crate::models::GitConnection::Wsl { distro, .. } = conn else {
+    let crate::connectivity::GitConnection::Wsl { distro, .. } = conn else {
         return Err(format!("Connection {connection_id} is not a WSL distro"));
     };
 

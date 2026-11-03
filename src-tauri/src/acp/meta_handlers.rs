@@ -5,14 +5,10 @@ use tauri::State;
 
 use crate::acp::connection_server::{query_via_server, query_via_server_within, reply};
 use crate::core::AppState;
-use crate::models::worktree::{
+use crate::execution::models::{
     ActiveSessionInfo, ExecutionMode, SessionListEntryDto, SessionListResult,
 };
 use maestro_protocol::{ServerRequest, ServerResponse, SessionDeleteRequest, SessionListRequest};
-
-// Re-export attachment types and handlers (including macro-generated tauri/specta symbols)
-// so ipc/mod.rs glob import still resolves them.
-pub use crate::acp::attachment_handlers::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]

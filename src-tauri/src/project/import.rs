@@ -6,8 +6,8 @@
 
 use crate::acp::connection_server::{query_via_server_within, reply};
 use crate::acp::ConnectionKey;
+use crate::connectivity::GitConnection;
 use crate::core::AppState;
-use crate::models::GitConnection;
 use crate::task::attachments::{
     attachment_relative_path, on_project_machine, TASK_ATTACHMENTS_DIR,
 };
