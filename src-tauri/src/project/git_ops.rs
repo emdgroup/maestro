@@ -255,3 +255,29 @@ pub async fn create_new_project(
     )
     .await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// What a `.git` existence check got wrong, and why sending a task to review asks git instead:
+    /// a project opened at a subdirectory of a repository is still in one.
+    #[tokio::test]
+    async fn a_subdirectory_of_a_repository_is_inside_its_work_tree() {
+        let temp = tempfile::tempdir().expect("create temporary directory");
+        let repo = temp.path().join("repo");
+        let subdirectory = repo.join("packages").join("app");
+        std::fs::create_dir_all(&subdirectory).expect("create subdirectory");
+        let init = std::process::Command::new("git")
+            .args(["init", "-b", "main"])
+            .arg(&repo)
+            .output()
+            .expect("run git init");
+        assert!(init.status.success(), "git init failed");
+
+        let path = subdirectory.to_string_lossy().into_owned();
+        let conn = GitConnection::Local { path: path.clone() };
+        assert!(!subdirectory.join(".git").exists());
+        assert!(inside_work_tree(&conn, &path).await);
+    }
+}

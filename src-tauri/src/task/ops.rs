@@ -554,35 +554,22 @@ async fn task_has_changes(
     }
 }
 
-/// `(path, connection_id, wsl_connection_id, docker_connection_id)`
-type ProjectLocationRow = (String, Option<i32>, Option<i32>, Option<i32>);
-
+/// Whether the project's folder is inside a git work tree, asked on the machine it lives on.
 async fn is_project_git_repo(app_state: &crate::core::AppState, project_id: i32) -> bool {
-    let result: Option<ProjectLocationRow> = app_state.db.lock().ok().and_then(|conn| {
-        conn.query_row(
-            "SELECT path, connection_id, wsl_connection_id, docker_connection_id \
-             FROM projects WHERE id = ?",
-            [project_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-        )
-        .ok()
-    });
-
-    let Some((path, connection_id, wsl_connection_id, docker_connection_id)) = result else {
-        return true;
-    };
-
-    if connection_id.is_none() && wsl_connection_id.is_none() && docker_connection_id.is_none() {
-        return std::path::Path::new(&path).join(".git").exists();
-    }
-
-    match crate::core::get_project_with_git_conn(app_state, project_id).await {
-        Ok((_project, git_conn)) => {
-            crate::git::run_git_in_dir(&git_conn, &path, &["rev-parse", "--is-inside-work-tree"])
-                .await
-                .map(|output| output.trim() == "true")
-                .unwrap_or(false)
+    let project = match crate::project::crud::load_project(app_state, project_id) {
+        Ok(project) => project,
+        Err(e) => {
+            log::warn!("[task] cannot tell whether project {project_id} is a git repository: {e}");
+            return false;
         }
-        Err(_) => false,
-    }
+    };
+    crate::project::git_ops::is_git_repo(
+        app_state,
+        project.path,
+        project.connection_id,
+        project.wsl_connection_id,
+        project.docker_connection_id,
+    )
+    .await
+    .unwrap_or(false)
 }
