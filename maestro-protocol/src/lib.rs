@@ -1447,6 +1447,7 @@ pub struct Task {
 
 /// The automation run a task came from.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct TaskDraft {
     pub automation: String,
     /// The run's number among its automation's runs, `None` for a run recorded before runs were
@@ -1457,6 +1458,7 @@ pub struct TaskDraft {
 
 /// A loop as its card and its detail's meters show it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct LoopSummary {
     /// The number of the latest iteration, running or ended; 0 before the first.
     pub iteration: i32,
@@ -1483,6 +1485,7 @@ pub struct LoopSummary {
 
 /// Why a loop stopped for the user.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum LoopHalt {
     Flaky,
     Failing,
@@ -1498,6 +1501,7 @@ pub enum LoopHalt {
 
 /// An agent's closed usage-limit gate.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct AgentGateState {
     pub agent_id: String,
     /// RFC 3339.
@@ -1556,6 +1560,7 @@ impl Default for LoopConfig {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum LoopCheckKind {
     /// A shell command; exit 0 passes.
     Command,
@@ -1569,6 +1574,7 @@ pub enum LoopCheckKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum LoopCheckState {
     Pending,
     Pass,
@@ -1579,6 +1585,7 @@ pub enum LoopCheckState {
 
 /// One item of a loop's done criteria.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct LoopCheck {
     pub id: i32,
     pub position: i32,
@@ -1606,6 +1613,7 @@ pub struct LoopCheck {
 
 /// What the user writes of a check. The rest is the loop's.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct LoopCheckSpec {
     pub kind: LoopCheckKind,
     pub label: String,
@@ -1616,6 +1624,7 @@ pub struct LoopCheckSpec {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum LoopIterationOutcome {
     Running,
     /// Ended and its checks ran.
@@ -1633,6 +1642,7 @@ pub enum LoopIterationOutcome {
 /// One attempt at one iteration. An interrupted iteration runs again as the next `attempt` of the
 /// same `n`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct LoopIteration {
     pub n: i32,
     pub attempt: i32,
@@ -1665,12 +1675,12 @@ pub struct LoopIteration {
     pub blocked: Option<String>,
     /// What each check concluded after this iteration, passing ones included. Filled for the
     /// newest attempt of its number, and only in `ListLoopIterations`: the engine never reads it.
-    #[serde(default)]
     pub results: Vec<LoopCheckResult>,
 }
 
 /// One check's result after one iteration, as it was run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct LoopCheckResult {
     pub check_id: i32,
     pub state: LoopCheckState,
@@ -2276,6 +2286,7 @@ pub struct TaskAttachmentList {
 /// One check of the user's list. `id` names a check it keeps, which goes back to `Pending` when
 /// its spec changed; no `id` adds one. A check the list leaves out is deleted.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct LoopCheckEntry {
     #[serde(default)]
     pub id: Option<i32>,

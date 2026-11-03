@@ -3032,15 +3032,19 @@ export type AgentAuthInfo = { authMethods: AuthMethodDto[]; supportsLogout: bool
  */
 export type AgentDiscoveryResult = { maestro_server_available: boolean; agents: DiscoveredAgent[]; error?: string | null }
 /**
- * An agent's closed usage-limit gate, which a waiting task is held by.
+ * An agent's closed usage-limit gate.
  */
-export type AgentGateState = { agent_id: string; resume_at: string; 
+export type AgentGateState = { agent_id: string; 
 /**
- * `five_hour` or `seven_day...`, when the agent named it.
+ * RFC 3339.
+ */
+resume_at: string; 
+/**
+ * The window the limit belongs to, `five_hour` or `seven_day...`, when the agent named it.
  */
 window?: string | null; 
 /**
- * No reset time was known: the gate tries again at `resume_at`.
+ * No reset time was known: the gate backs off and tries again at `resume_at`.
  */
 backoff: boolean }
 export type AgentProfile = { id: string; name: string; role: AgentRole; agent_id: string; model?: string | null; 
@@ -3728,9 +3732,13 @@ configured_directory: string }
 /**
  * One item of a loop's done criteria.
  */
-export type LoopCheck = { id: number; position: number; kind: LoopCheckKind; label: string; command?: string | null; 
+export type LoopCheck = { id: number; position: number; kind: LoopCheckKind; label: string; 
 /**
- * Its own time limit, in seconds. None takes the loop's `check_timeout_secs`.
+ * What a `Command` check or a `Setup` step runs. `None` for the other kinds.
+ */
+command?: string | null; 
+/**
+ * Its own time limit, in seconds. `None` takes the loop's `check_timeout_secs`.
  */
 timeout_secs?: number | null; state: LoopCheckState; 
 /**
@@ -3738,16 +3746,38 @@ timeout_secs?: number | null; state: LoopCheckState;
  */
 detail?: string | null; 
 /**
- * Proposed by the agent. Waiting for the user while `accepted` is false.
+ * Proposed by the worker rather than written by the user.
  */
-proposed: boolean; accepted: boolean; passed_at_sha?: string | null; updated_at: string }
+proposed: boolean; 
 /**
- * One check of the user's list: `id` keeps a check, none adds one.
+ * A proposal the user accepted. A proposal not accepted is waiting for an answer.
  */
-export type LoopCheckEntry = { id?: number | null; kind: LoopCheckKind; label: string; command?: string | null; timeout_secs?: number | null }
-export type LoopCheckKind = "Command" | "Judge" | "Manual" | 
+accepted: boolean; 
 /**
- * A command run before the checks, in list order.
+ * The commit a `Judge` check last passed on.
+ */
+passed_at_sha?: string | null; updated_at: string }
+/**
+ * One check of the user's list. `id` names a check it keeps, which goes back to `Pending` when
+ * its spec changed; no `id` adds one. A check the list leaves out is deleted.
+ */
+export type LoopCheckEntry = ({ kind: LoopCheckKind; label: string; command?: string | null; timeout_secs?: number | null }) & { id?: number | null }
+export type LoopCheckKind = 
+/**
+ * A shell command; exit 0 passes.
+ */
+"Command" | 
+/**
+ * A sentence a separate agent judges against the diff.
+ */
+"Judge" | 
+/**
+ * The user ticks it.
+ */
+"Manual" | 
+/**
+ * A shell command run before the checks, in list order. Not a check: a failing one stops the
+ * steps after it, and no check runs.
  */
 "Setup"
 /**
@@ -3759,14 +3789,18 @@ export type LoopCheckResult = { check_id: number; state: LoopCheckState;
  */
 detail?: string | null; 
 /**
- * What a command check ran.
+ * What a `Command` check ran.
  */
 command?: string | null }
 /**
- * What the user writes of a check.
+ * What the user writes of a check. The rest is the loop's.
  */
 export type LoopCheckSpec = { kind: LoopCheckKind; label: string; command?: string | null; timeout_secs?: number | null }
-export type LoopCheckState = "Pending" | "Pass" | "Fail" | "Flaky"
+export type LoopCheckState = "Pending" | "Pass" | "Fail" | 
+/**
+ * Failed, then passed on the same commit, or the reverse.
+ */
+"Flaky"
 /**
  * A loop's budget and how its checks run, stored as JSON on the task. A field the stored JSON
  * lacks takes its default, so adding one needs no migration.
@@ -3798,30 +3832,107 @@ check_timeout_secs: number;
  * comment is copied into a TypeScript block comment, which that would close.)
  */
 sealed_paths: string[] }
-export type LoopHalt = "Flaky" | "Failing" | "Stalled" | "OutOfIterations" | "Paused" | "Stopped" | "Blocked" | "Conflict"
 /**
- * One attempt at one iteration.
+ * Why a loop stopped for the user.
  */
-export type LoopIteration = { n: number; attempt: number; acp_session_id?: string | null; agent_id?: string | null; started_at: string; ended_at?: string | null; outcome: LoopIterationOutcome; counted: boolean; commit_sha?: string | null; files: number; added: number; removed: number; summary?: string | null; check_output?: string | null; tokens?: number | null; 
+export type LoopHalt = "Flaky" | "Failing" | "Stalled" | "OutOfIterations" | "Paused" | "Stopped" | 
 /**
- * Why the worker said it cannot go on.
+ * The worker called `loop_blocked`.
+ */
+"Blocked" | 
+/**
+ * An iteration's commit could not be merged back into the loop's worktree.
+ */
+"Conflict"
+/**
+ * One attempt at one iteration. An interrupted iteration runs again as the next `attempt` of the
+ * same `n`.
+ */
+export type LoopIteration = { n: number; attempt: number; acp_session_id?: string | null; agent_id?: string | null; started_at: string; ended_at?: string | null; outcome: LoopIterationOutcome; 
+/**
+ * Whether it counts against `max_iterations`.
+ */
+counted: boolean; commit_sha?: string | null; files: number; added: number; removed: number; 
+/**
+ * The agent's final message.
+ */
+summary?: string | null; 
+/**
+ * The tail of the checks' output.
+ */
+check_output?: string | null; 
+/**
+ * Tokens its session's turns used, from the usage record, while that still has them.
+ */
+tokens?: number | null; 
+/**
+ * Why the worker said it cannot go on, through `loop_blocked`.
  */
 blocked?: string | null; 
 /**
- * What each check concluded after this iteration, on the newest attempt of its number.
+ * What each check concluded after this iteration, passing ones included. Filled for the
+ * newest attempt of its number, and only in `ListLoopIterations`: the engine never reads it.
  */
 results: LoopCheckResult[] }
-export type LoopIterationOutcome = "Running" | "Checked" | "Interrupted" | "Empty" | "Failed" | "Blocked"
+export type LoopIterationOutcome = "Running" | 
 /**
- * A loop as its card and its detail's meters show it, read with the task.
+ * Ended and its checks ran.
  */
-export type LoopSummary = { iteration: number; counted: number; agent_secs: number; no_change: number; last_summary?: string | null; checks: LoopCheckState[]; proposals: number; 
+"Checked" | 
 /**
- * Why it last stopped for the user. Read only while it waits on the user.
+ * Cut off by a usage limit or the user; it runs again without counting.
+ */
+"Interrupted" | 
+/**
+ * Ended with nothing to commit.
+ */
+"Empty" | 
+/**
+ * The agent failed.
+ */
+"Failed" | 
+/**
+ * The worker called `loop_blocked`: committed, and its checks did not run.
+ */
+"Blocked"
+/**
+ * A loop as its card and its detail's meters show it.
+ */
+export type LoopSummary = { 
+/**
+ * The number of the latest iteration, running or ended; 0 before the first.
+ */
+iteration: number; 
+/**
+ * Iterations that count against `max_iterations`.
+ */
+counted: number; 
+/**
+ * The agent time those iterations took, in seconds.
+ */
+agent_secs: number; 
+/**
+ * Iterations in a row with no progress, as the stall limit counts them.
+ */
+no_change: number; 
+/**
+ * The latest iteration's closing words.
+ */
+last_summary?: string | null; 
+/**
+ * Every check's state in list order, proposals still waiting left out.
+ */
+checks: LoopCheckState[]; 
+/**
+ * Proposals waiting for the user's answer.
+ */
+proposals: number; 
+/**
+ * Why the loop last stopped for the user. Read only while it waits on the user.
  */
 halt?: LoopHalt | null; 
 /**
- * A pause or stop asked for, taken once the running step ends.
+ * A pause or stop the user asked for, which takes effect once the current step ends.
  */
 hold?: LoopHalt | null }
 export type McpCatalogEntry = { id: string; name: string; description: string; icon_url: string | null; stars: number | null; repo_url: string | null; 
@@ -4386,9 +4497,14 @@ export type TaskComment = { id: number; task_id: number; kind: string; author: s
  */
 export type TaskCompletion = "Merged" | "MergedViaPR" | "LocalOnly" | "NoChanges"
 /**
- * The automation run whose agent created a task.
+ * The automation run a task came from.
  */
-export type TaskDraft = { automation: string; run?: number | null }
+export type TaskDraft = { automation: string; 
+/**
+ * The run's number among its automation's runs, `None` for a run recorded before runs were
+ * numbered.
+ */
+run?: number | null }
 /**
  * What the pipeline is doing to a task right now, independent of which column it sits in.
  * 
