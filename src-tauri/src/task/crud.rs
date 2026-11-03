@@ -137,15 +137,15 @@ pub async fn create_task(
                 agent_id: request.agent_id,
                 priority,
                 auto_approve: request.auto_approve,
-                workspace_mode: request.workspace_mode.into(),
+                workspace_mode: request.workspace_mode,
                 workspace_worktree_id: request.workspace_worktree_id,
-                workspace_branch_mode: request.workspace_branch_mode.into(),
+                workspace_branch_mode: request.workspace_branch_mode,
                 workspace_branch: request.workspace_branch,
                 model_override: request.model_override,
                 run_mode: request
                     .run_mode
                     .map_or(maestro_protocol::RunMode::Pipeline, Into::into),
-                loop_config: request.loop_config.map(Into::into),
+                loop_config: request.loop_config,
             })
         },
         reply!(ServerResponse::CreateTaskOk(task) => task),
@@ -208,11 +208,11 @@ pub async fn update_task(
         agent_id: updates.agent_id,
         labels: updates.labels,
         auto_approve: updates.auto_approve,
-        workspace_mode: updates.workspace_mode.map(Into::into),
+        workspace_mode: updates.workspace_mode,
         workspace_worktree_id: updates.workspace_worktree_id,
-        workspace_branch_mode: updates.workspace_branch_mode.map(Into::into),
+        workspace_branch_mode: updates.workspace_branch_mode,
         workspace_branch: updates.workspace_branch,
-        loop_config: updates.loop_config.map(Into::into),
+        loop_config: updates.loop_config,
         ..TaskUpdate::default()
     };
     update_task_on_server(&app_state, project_id, task_id, update).await

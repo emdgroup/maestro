@@ -1019,7 +1019,7 @@ async fn record_pull_request_ci(
         task.project_id,
         task.id,
         TaskUpdate {
-            pull_request_ci: Some(ci.map(Into::into)),
+            pull_request_ci: Some(ci),
             ..Default::default()
         },
     )
@@ -1266,11 +1266,9 @@ mod tests {
             CiState::Unknown,
         ] {
             let seen = cached_ci(&state);
-            let wire = serde_json::to_string(&seen.map(maestro_protocol::PullRequestCi::from))
-                .expect("serialize");
+            let wire = serde_json::to_string(&seen).expect("serialize");
             let stored: Option<maestro_protocol::PullRequestCi> =
                 serde_json::from_str(&wire).expect("deserialize");
-            let stored = stored.map(PullRequestCi::from);
             assert!(!ci_is_news(stored, seen), "for {state:?}");
         }
         assert!(ci_is_news(

@@ -3630,6 +3630,7 @@ dependencies = [
  "image",
  "serde",
  "serde_json",
+ "specta",
  "tokio",
 ]
 

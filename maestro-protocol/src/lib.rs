@@ -1166,8 +1166,8 @@ pub enum KickReason {
 //
 // Rows of the daemon's `projects.db`, keyed by project path where the app's tables carried a
 // `projects.id`. Task ids are per project, so every request naming one names the project too.
-// Plain serde: the app mirrors these with its own `specta::Type` structs, as it does `Automation`,
-// so the binary deployed to every remote host does not compile specta in.
+// The ones the app hands its frontend derive `specta::Type` behind the `specta` feature, which
+// only the app turns on, so the binary deployed to every remote host does not compile specta in.
 
 /// Deserializes a present `null` as `Some(None)`, so an update can tell "clear this column" from
 /// "leave it alone". Paired with `default`, which gives the absent field its `None`.
@@ -1180,6 +1180,7 @@ where
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum TaskStatus {
     Planning,
     Queue,
@@ -1190,6 +1191,7 @@ pub enum TaskStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum TaskPriority {
     Urgent,
     High,
@@ -1198,20 +1200,39 @@ pub enum TaskPriority {
     None,
 }
 
+/// Where an agent works: a worktree of its own, the project directory, or a worktree that already
+/// exists. Shared by tasks and by the project default that seeds them.
+///
+/// This replaced a boolean, which could only say the first two. `ReuseWorkspace` is the one that
+/// needs a companion, the worktree it names, which is why a task carries
+/// `workspace_worktree_id` beside the mode rather than encoding everything here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum WorkspaceMode {
     NewWorktree,
     RepositoryDirectory,
     ReuseWorkspace,
 }
 
+/// Which branch a `NewWorktree` workspace ends up on: one created for it, or one that already
+/// exists.
+///
+/// Only `Create` needs a companion, the name to give the branch, which is why the task carries
+/// `workspace_branch` beside this rather than encoding the name here. `Checkout` needs nothing: the
+/// branch it checks out is the task's `base_branch`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum BranchMode {
     Create,
     Checkout,
 }
 
+/// What the pipeline is doing to a task right now, independent of which column it sits in.
+///
+/// A phase says nothing about which column the task is in. `Spawning` sits in Queue, which is what
+/// lets a failed spawn be an ordinary active row rather than an exception to the phase invariant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum TaskPhase {
     Spawning,
     Refining,
@@ -1230,7 +1251,14 @@ pub enum TaskPhase {
     Judging,
 }
 
+/// How the current phase is going.
+///
+/// `Blocked` and `Waiting` both mean the user has to act, and are deliberately distinct: `Blocked`
+/// is an agent stopped mid-phase that cannot continue without an answer, and drives the animated
+/// card treatment. `Waiting` is a gate with nothing running, and is static. Collapsing the two
+/// would make every waiting card pulse and turn the animation into wallpaper.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum PhaseStatus {
     Running,
     Blocked,
@@ -1238,7 +1266,16 @@ pub enum PhaseStatus {
     Failed,
 }
 
+/// Who the pipeline is blocked on, not who owns the ticket.
+///
+/// A Planning backlog and a queued task are `None`, because nothing is waiting on anyone. That is
+/// what keeps the "Needs me" filter showing genuine gates rather than the whole board.
+///
+/// `External` is a task waiting on something outside Maestro: a PR waiting on CI and a human
+/// reviewer on GitHub. Folding that into `User` would list tasks in "Needs me" that our user
+/// cannot act on, which is the one thing that filter has to get right.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum TaskBall {
     Agent,
     User,
@@ -1246,7 +1283,15 @@ pub enum TaskBall {
     None,
 }
 
+/// How a task reached `Done`, and therefore what is left over.
+///
+/// Only meaningful on a Done task, and only in a git project. A non-git task has no merge, no
+/// worktree and no PR, so its completion is `None` rather than a variant meaning "not applicable".
+///
+/// `LocalOnly` is the one that carries unfinished business: the changes were committed and
+/// approved but never merged, and the worktree is still alive holding them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum TaskCompletion {
     Merged,
     MergedViaPR,
@@ -1254,15 +1299,33 @@ pub enum TaskCompletion {
     NoChanges,
 }
 
+/// What the forge's CI last said about an open pull request's head commit.
+///
+/// A display cache rather than a lifecycle field: the sweep runs every three minutes, and this is
+/// what lets the card answer "can this land" in between. Nothing branches on it: `CiState` is what
+/// the fix loop reads, freshly, from the forge.
+///
+/// `None` covers all three ways there is nothing to say: no CI configured, a forge that will not
+/// answer, and a pull request not swept yet. They are one silence on the card, so a fourth variant
+/// distinguishing them would render identically to its own absence.
+///
+/// Conflicts are deliberately not in here. `AwaitingMerge` with `Waiting` and the ball on the user
+/// is a conflict and nothing else, so storing it would be a second copy of a fact the lifecycle
+/// fields already carry, and one a sweep that learned nothing could overwrite.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum PullRequestCi {
     Passing,
     Failing,
     Pending,
 }
 
-/// The pipeline role a session was started for.
+/// The pipeline role a session was started for, and the role a profile is written for.
+///
+/// Selecting by role is what lets a task say "plan with the planner" without naming a profile, and
+/// what makes a project's default reviewer a project-level fact.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum AgentRole {
     Refiner,
     Planner,
@@ -1275,6 +1338,21 @@ pub enum AgentRole {
     Preparer,
     /// Works a loop's iterations, each in a fresh session, as the coder works a pipeline task.
     Worker,
+}
+
+impl AgentRole {
+    /// Whether the role is allowed to modify the repository.
+    ///
+    /// Only the coder and a loop's worker write, and a loop's preparer, which commits the loop's
+    /// tests. This is the single place that says so: a profile claiming otherwise is corrected
+    /// rather than trusted, because the read-only guarantee is what the plan and proposal gates are
+    /// built on.
+    pub fn is_read_only(self) -> bool {
+        !matches!(
+            self,
+            AgentRole::Coder | AgentRole::Worker | AgentRole::Preparer
+        )
+    }
 }
 
 /// One task, every column the app reads.
@@ -1434,6 +1512,7 @@ pub struct AgentGateState {
 /// How a task runs once it is started: the stage pipeline, or a loop of fresh coder sessions that
 /// ends when its checks pass. See `docs/loops-plan.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum RunMode {
     #[default]
     Pipeline,
@@ -1443,6 +1522,7 @@ pub enum RunMode {
 /// A loop's budget and how its checks run, stored as JSON on the task. A field the stored JSON
 /// lacks takes its default, so adding one needs no migration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(default)]
 pub struct LoopConfig {
     /// Iterations that count. One a usage limit cut off does not.
@@ -1456,9 +1536,10 @@ pub struct LoopConfig {
     /// killed and fails.
     pub check_timeout_secs: u32,
     /// What the worker's worktree leaves out, as ordered patterns: anchored at the repository root
-    /// unless they start with `**/`, `*` within one folder, `**/` any number of folders, a
-    /// trailing `/` a folder and everything under it. `!pattern` makes matching files visible
-    /// again, and a later entry wins over an earlier one.
+    /// unless they start with a `**` segment, `*` within one folder, a `**` segment any number of
+    /// folders, a trailing slash a folder and everything under it. `!pattern` makes matching files
+    /// visible again, and a later entry wins over an earlier one. (No literal star-slash here: this
+    /// comment is copied into a TypeScript block comment, which that would close.)
     pub sealed_paths: Vec<String>,
 }
 
@@ -1620,7 +1701,15 @@ pub struct TaskInstruction {
 }
 
 /// One entry in a task's outcome thread.
+///
+/// `kind` is what a gate points at: `proposal`, `plan`, `verdict`, `outcome`, `note`. Kept as a
+/// string rather than an enum because the pipeline adds kinds as roles land, and an unknown one
+/// arriving from an older or newer build should render as itself, not fail to deserialise the
+/// whole thread.
+///
+/// `body` and `external_ref` are the inline-or-reference pair: exactly one carries the content.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct TaskComment {
     pub id: i32,
     pub task_id: i32,
@@ -1636,6 +1725,7 @@ pub struct TaskComment {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct TaskAttachment {
     pub id: i32,
     pub task_id: i32,

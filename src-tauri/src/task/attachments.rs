@@ -54,7 +54,7 @@ pub(crate) fn on_project_machine(project_path: &str, file_path: &str) -> String 
 }
 
 fn resolved(attachment: maestro_protocol::TaskAttachment, project_path: &str) -> TaskAttachment {
-    let mut attachment: TaskAttachment = attachment.into();
+    let mut attachment: TaskAttachment = attachment;
     attachment.file_path = on_project_machine(project_path, &attachment.file_path);
     attachment
 }
