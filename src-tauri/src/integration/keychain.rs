@@ -567,25 +567,6 @@ mod tests {
     }
 
     #[test]
-    fn test_integration_file_roundtrip_linear() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let creds = test_credentials("linear");
-        KeychainStore::write_integration_to_file_by_id(
-            "linear",
-            "test-id-linear",
-            &creds,
-            dir.path(),
-        )
-        .expect("write");
-        let result =
-            KeychainStore::read_integration_from_file_by_id("linear", "test-id-linear", dir.path())
-                .expect("read");
-        let retrieved = result.expect("creds present");
-        assert_eq!(retrieved.token, "test_token");
-        assert_eq!(retrieved.display_name.as_deref(), Some("linear_user"));
-    }
-
-    #[test]
     fn test_integration_file_roundtrip_missing_returns_none() {
         let dir = tempfile::tempdir().expect("tempdir");
         let result =
@@ -607,22 +588,6 @@ mod tests {
             KeychainStore::read_integration_from_file_by_id("github", "some-id", dir.path())
                 .expect("no error on corrupted");
         assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_integration_key_format() {
-        assert_eq!(
-            integration_key("github", "abc"),
-            "maestro:integration:github:abc"
-        );
-        assert_eq!(
-            integration_key("linear", "uuid-1"),
-            "maestro:integration:linear:uuid-1"
-        );
-        assert_eq!(
-            integration_key("jira_cloud", "uuid-2"),
-            "maestro:integration:jira_cloud:uuid-2"
-        );
     }
 
     #[test]

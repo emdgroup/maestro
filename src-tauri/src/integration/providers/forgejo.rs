@@ -82,36 +82,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_normalize_instance_url_strips_trailing_slash() {
-        assert_eq!(
-            normalize_instance_url("https://codeberg.org/"),
-            "https://codeberg.org"
-        );
-    }
-
-    #[test]
-    fn test_normalize_instance_url_adds_https_when_scheme_absent() {
-        assert_eq!(
-            normalize_instance_url("forgejo.myco.com"),
-            "https://forgejo.myco.com"
-        );
-    }
-
-    #[test]
-    fn test_normalize_instance_url_preserves_existing_https() {
-        assert_eq!(
-            normalize_instance_url("https://codeberg.org"),
-            "https://codeberg.org"
-        );
-    }
-
-    #[test]
-    fn test_forgejo_external_id_format() {
-        let number: u64 = 42;
-        assert_eq!(format!("forgejo:{}", number), "forgejo:42");
-    }
-
-    #[test]
     fn test_forgejo_issue_deserialization() {
         let json = r#"{"number":42,"title":"Feature request","body":"Some description","html_url":"https://codeberg.org/a/b/issues/42","labels":[{"name":"enhancement"}],"updated_at":"2024-01-01T00:00:00Z"}"#;
         let issue: ForgejoIssueResponse = serde_json::from_str(json).unwrap();

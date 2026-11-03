@@ -254,12 +254,6 @@ mod tests {
     }
 
     #[test]
-    fn test_azdo_external_id_format() {
-        let id: i32 = 42;
-        assert_eq!(format!("azuredevops:{}", id), "azuredevops:42");
-    }
-
-    #[test]
     fn test_normalize_azdo_strips_trailing_slash() {
         assert_eq!(
             normalize_azdo_org_url("https://dev.azure.com/myorg/"),

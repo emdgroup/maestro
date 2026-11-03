@@ -143,12 +143,6 @@ mod tests {
     }
 
     #[test]
-    fn test_github_external_id_format() {
-        let number: u64 = 42;
-        assert_eq!(format!("github:{}", number), "github:42");
-    }
-
-    #[test]
     fn test_github_label_deserialization() {
         let json = r#"{"number":1,"title":"T","body":null,"html_url":"","labels":[{"name":"bug"},{"name":"help wanted"}],"updated_at":null}"#;
         let issue: GitHubIssueResponse = serde_json::from_str(json).unwrap();

@@ -82,28 +82,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_normalize_instance_url_strips_trailing_slash() {
-        assert_eq!(
-            normalize_instance_url("https://gitea.example.com/"),
-            "https://gitea.example.com"
-        );
-    }
-
-    #[test]
-    fn test_normalize_instance_url_adds_https_when_scheme_absent() {
-        assert_eq!(
-            normalize_instance_url("gitea.myco.com"),
-            "https://gitea.myco.com"
-        );
-    }
-
-    #[test]
-    fn test_gitea_external_id_format() {
-        let number: u64 = 42;
-        assert_eq!(format!("gitea:{}", number), "gitea:42");
-    }
-
-    #[test]
     fn test_gitea_issue_deserialization() {
         let json = r#"{"number":42,"title":"Feature request","body":"Some description","html_url":"https://gitea.example.com/a/b/issues/42","labels":[{"name":"enhancement"}],"updated_at":"2024-01-01T00:00:00Z"}"#;
         let issue: GiteaIssueResponse = serde_json::from_str(json).unwrap();

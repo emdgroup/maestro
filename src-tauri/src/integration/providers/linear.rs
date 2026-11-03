@@ -222,11 +222,6 @@ mod tests {
     }
 
     #[test]
-    fn test_linear_external_id_format() {
-        assert_eq!(format!("linear:{}", "ENG-42"), "linear:ENG-42");
-    }
-
-    #[test]
     fn test_labels_extraction() {
         let json = r#"{
             "data": {

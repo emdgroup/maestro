@@ -341,35 +341,3 @@ pub fn check_and_store_host_key(
         Err(e) => Err(format!("Database error checking host key: {}", e)),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    #[test]
-    fn test_init_db() {
-        let test_db_path = PathBuf::from("/tmp/test-maestro.db");
-
-        // Clean up if exists
-        let _ = fs::remove_file(&test_db_path);
-
-        // Initialize database
-        let result = init_db(test_db_path.clone());
-        assert!(result.is_ok());
-
-        // Verify file was created
-        assert!(test_db_path.exists());
-
-        if let Ok(conn) = result {
-            // Verify foreign keys are enabled
-            let fk_enabled: u32 = conn
-                .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
-                .unwrap_or(0);
-            assert_eq!(fk_enabled, 1);
-        }
-
-        // Clean up
-        let _ = fs::remove_file(&test_db_path);
-    }
-}

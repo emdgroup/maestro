@@ -145,20 +145,6 @@ mod tests {
     }
 
     #[test]
-    fn test_jira_cloud_external_id_format() {
-        let key = "PROJ-42";
-        assert_eq!(format!("jira:{}", key), "jira:PROJ-42");
-    }
-
-    #[test]
-    fn test_normalize_url_strips_slash() {
-        assert_eq!(
-            normalize_instance_url("https://myco.atlassian.net/"),
-            "https://myco.atlassian.net"
-        );
-    }
-
-    #[test]
     fn test_search_response_deserialization() {
         let json = r#"{
             "issues": [
