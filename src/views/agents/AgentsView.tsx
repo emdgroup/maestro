@@ -26,6 +26,7 @@ import {
   sendAcpPrompt,
   sendAcpPromptStructured,
 } from "@/services/execution.service";
+import { authQueryKeys } from "@/services/acp-auth.service";
 import { cleanupWorktreeIfClean, useWorktreesQuery } from "@/services/worktree.service";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import type { ConnectionKey } from "@/types/bindings";
@@ -217,7 +218,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
     const connId = connKeyToId(connection);
     const unlisten = listen<{ agentId: string }>(`acp://auth-state-changed/${connId}`, (event) => {
       void queryClient.invalidateQueries({
-        queryKey: ["agentAuthInfo", event.payload.agentId, connection],
+        queryKey: authQueryKeys.info(event.payload.agentId, connection),
       });
     }).catch(console.error);
     return () => {

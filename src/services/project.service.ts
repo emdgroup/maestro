@@ -28,14 +28,18 @@ export const projectQueryKeys = {
     [...projectQueryKeys.list(), connectionId] as const,
   details: (id: number) => [...projectQueryKeys.base, "details", id] as const,
   settings: () => [...projectQueryKeys.base, "settings"] as const,
-  settingsDetail: (projectId: number) => [...projectQueryKeys.settings(), projectId] as const,
+  settingsDetail: (projectId: number | null) =>
+    [...projectQueryKeys.settings(), projectId] as const,
   locks: () => [...projectQueryKeys.base, "locks"] as const,
   locksFor: (connectionId: number | string, ids: number[]) =>
     [...projectQueryKeys.locks(), connectionId, ids] as const,
   home: () => [...projectQueryKeys.base, "home"] as const,
   homeFor: (connectionId: number | string) => [...projectQueryKeys.home(), connectionId] as const,
-  profiles: (projectId: number) => [...projectQueryKeys.base, "profiles", projectId] as const,
-  remotes: (projectId: number) => [...projectQueryKeys.base, "remotes", projectId] as const,
+  profiles: (projectId: number | null) =>
+    [...projectQueryKeys.base, "profiles", projectId] as const,
+  remotes: (projectId: number | null) => [...projectQueryKeys.base, "remotes", projectId] as const,
+  branches: (projectId: number | null) =>
+    [...projectQueryKeys.base, "branches", projectId] as const,
 };
 
 export function connectionQueryKey(connection: ConnectionKey): number | string {
@@ -58,11 +62,24 @@ export const primeProjectServer = (projectId: number) => api.primeProjectServer(
 export const releaseActiveProjectLock = () => api.releaseActiveProjectLock();
 
 /**
+ * The project's git branches, as `[BranchList, currentBranch]` where `BranchList` holds the local
+ * and remote names.
+ */
+export function useProjectBranchesQuery(projectId: number | null) {
+  return useQuery({
+    queryKey: projectQueryKeys.branches(projectId),
+    queryFn: () => api.listProjectBranches(projectId!),
+    enabled: projectId !== null,
+    staleTime: 60000, // 1 minute — branches don't change that often
+  });
+}
+
+/**
  * Query hook for fetching project settings/configuration
  */
 export function useProjectSettings(projectId: number | null) {
   return useQuery({
-    queryKey: projectQueryKeys.settingsDetail(projectId ?? -1),
+    queryKey: projectQueryKeys.settingsDetail(projectId),
     queryFn: () => {
       if (projectId == null) throw new Error("projectId required");
       return api.getProjectSettings(projectId);
@@ -80,7 +97,7 @@ export function useProjectSettings(projectId: number | null) {
  */
 export function useProjectRemotes(projectId: number | null) {
   return useQuery({
-    queryKey: projectQueryKeys.remotes(projectId ?? -1),
+    queryKey: projectQueryKeys.remotes(projectId),
     queryFn: () => {
       if (projectId == null) throw new Error("projectId required");
       return api.listProjectRemotes(projectId);
@@ -173,7 +190,7 @@ export function useCreateProject() {
  */
 export function useAgentProfilesQuery(projectId: number | null) {
   return useQuery({
-    queryKey: projectQueryKeys.profiles(projectId!),
+    queryKey: projectQueryKeys.profiles(projectId),
     queryFn: () => api.listAgentProfiles(projectId!),
     enabled: projectId != null,
   });
@@ -245,7 +262,7 @@ export function useUpdateProjectSettings() {
       // `remote_name` decides which refs the branch lists contain, and that query caches for a
       // minute — without this, changing the remote leaves the picker showing the old one's
       // branches with nothing to suggest a refresh is needed.
-      void queryClient.invalidateQueries({ queryKey: ["tasks", "branches", projectId] });
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.branches(projectId) });
     },
   });
 }

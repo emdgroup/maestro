@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { createElement, type ReactNode } from "react";
 import { act, renderHook } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, partialMatchKey } from "@tanstack/react-query";
 import { useAnnotationStore } from "@/store/annotationStore";
 
 vi.mock("@/lib/tauri-utils", () => ({ api: { cancelAcpSession: vi.fn(async () => {}) } }));
@@ -33,6 +33,23 @@ describe("executionQueryKeys.agentConfig", () => {
   it("gives an unset model a key of its own", () => {
     expect(executionQueryKeys.agentConfig("codex", "/repo", { type: "local" }, "")).not.toEqual(
       executionQueryKeys.agentConfig("codex", "/repo", { type: "local" }, "gpt-5-codex"),
+    );
+  });
+});
+
+describe("executionQueryKeys.sessionListsOf", () => {
+  /** What renaming a session refetches: that agent's history everywhere, nobody else's. */
+  it("reaches the agent's lists in every directory and no other agent's", () => {
+    const prefix = executionQueryKeys.sessionListsOf("codex");
+    const local = { type: "local" } as const;
+    expect(partialMatchKey(executionQueryKeys.sessionList("codex", "/a", local), prefix)).toBe(
+      true,
+    );
+    expect(partialMatchKey(executionQueryKeys.sessionList("codex", "/b", local), prefix)).toBe(
+      true,
+    );
+    expect(partialMatchKey(executionQueryKeys.sessionList("claude", "/a", local), prefix)).toBe(
+      false,
     );
   });
 });

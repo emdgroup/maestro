@@ -10,7 +10,7 @@ import {
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { cn } from "@/lib/utils";
 import { MAESTRO_BRANCH_PREFIX, validateBranchSuffix } from "@/lib/generateSessionName";
-import { useProjectBranchesQuery } from "@/services/task.service";
+import { useProjectBranchesQuery } from "@/services/project.service";
 import { useSelectedProject } from "@/store/projectStore";
 import type { BranchMode, WorktreeWithStatus } from "@/types/bindings";
 import { findBranchConflict, type BranchConflict } from "./branch-conflict";

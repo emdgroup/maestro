@@ -16,7 +16,7 @@ import {
   validateBranchSuffix,
   MAESTRO_BRANCH_PREFIX,
 } from "@/lib/generateSessionName";
-import { useProjectBranchesQuery, taskQueryKeys } from "@/services/task.service";
+import { projectQueryKeys, useProjectBranchesQuery } from "@/services/project.service";
 import { useDefaultBaseBranch } from "@/hooks/useDefaultBaseBranch";
 import {
   useCreateWorktreeMutation,
@@ -62,7 +62,7 @@ export function CreateWorktreeDialog({
   useEffect(() => {
     if (!open) return;
     void queryClient.invalidateQueries({
-      queryKey: [...taskQueryKeys.base, "branches", projectId],
+      queryKey: projectQueryKeys.branches(projectId),
     });
     // The conflict check is only as fresh as this list, and a worktree may have been created since
     // the view last loaded.

@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { concernsProject, taskQueryKeys } from "@/services/task.service";
-import { LOOP_QUERY_KINDS } from "@/services/loop.service";
+import { loopQueryKeys } from "@/services/loop.service";
 import { worktreeQueryKeys } from "@/services/worktree.service";
 import { executionQueryKeys } from "@/services/execution.service";
 import { automationQueryKeys } from "@/services/automation.service";
@@ -53,9 +53,14 @@ export function useServerEventSync(projectId: number | undefined) {
       "tasks-changed",
       (payload) => {
         void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+        // Each prefix takes the project id next, so naming it narrows the refetch to that project.
         const id = payload.project_id ?? null;
-        for (const kind of ["attachments", "commitMessage", ...LOOP_QUERY_KINDS]) {
-          const queryKey = [...taskQueryKeys.base, kind];
+        const prefixes = [
+          taskQueryKeys.attachmentsAll(),
+          taskQueryKeys.commitMessagesAll(),
+          loopQueryKeys.base,
+        ];
+        for (const queryKey of prefixes) {
           void queryClient.invalidateQueries({
             queryKey: id === null ? queryKey : [...queryKey, id],
           });
@@ -78,7 +83,7 @@ export function useServerEventSync(projectId: number | undefined) {
     });
 
     subscribe("templates-changed", () => {
-      void queryClient.invalidateQueries({ queryKey: templateQueryKeys.list });
+      void queryClient.invalidateQueries({ queryKey: templateQueryKeys.list() });
     });
 
     // `collection` says which one changed. A project's push with no `project_id` names a path this
@@ -87,9 +92,9 @@ export function useServerEventSync(projectId: number | undefined) {
       const id = payload.project_id ?? null;
       const queryKey =
         payload.collection === "shared"
-          ? promptQueryKeys.shared
+          ? promptQueryKeys.shared()
           : id === null
-            ? promptQueryKeys.projects
+            ? promptQueryKeys.projects()
             : promptQueryKeys.project(id);
       void queryClient.invalidateQueries({ queryKey });
     });

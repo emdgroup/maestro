@@ -4,10 +4,12 @@ import { createErrorToastHandler } from "@/lib/error-utils";
 import type { ConnectionKey, McpOAuthSettings, McpServerConfig } from "@/types/bindings";
 
 export const mcpQueryKeys = {
-  list: (connection: ConnectionKey) => ["mcp-servers", connection] as const,
+  base: ["mcp"] as const,
+  list: (connection: ConnectionKey) => [...mcpQueryKeys.base, "servers", connection] as const,
   listFor: (connection: ConnectionKey, projectPath: string) =>
-    ["mcp-servers", connection, projectPath] as const,
-  catalog: ["mcp-catalog"] as const,
+    [...mcpQueryKeys.list(connection), projectPath] as const,
+  catalog: () => [...mcpQueryKeys.base, "catalog"] as const,
+  requiresOauth: (url: string) => [...mcpQueryKeys.base, "requiresOauth", url] as const,
 };
 
 /**
@@ -26,7 +28,7 @@ export function useMcpServersQuery(connection: ConnectionKey, projectPath: strin
  */
 export function useMcpCatalogQuery() {
   return useQuery({
-    queryKey: mcpQueryKeys.catalog,
+    queryKey: mcpQueryKeys.catalog(),
     queryFn: () => api.mcpCatalog(),
     staleTime: Infinity,
     gcTime: Infinity,
@@ -113,7 +115,7 @@ export function discardMcpAuthorization(id: string) {
  */
 export function useMcpRequiresOauthQuery(url: string) {
   return useQuery({
-    queryKey: ["mcp-requires-oauth", url] as const,
+    queryKey: mcpQueryKeys.requiresOauth(url),
     queryFn: () => api.mcpRequiresOauth(url),
     enabled: /^https?:\/\/\S+$/.test(url),
     staleTime: Infinity,

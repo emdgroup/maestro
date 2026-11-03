@@ -7,10 +7,15 @@ import type { ConnectionKey } from "@/types/bindings";
 export type SkillAgents = Partial<Record<string, boolean>>;
 
 export const skillQueryKeys = {
-  list: (connection: ConnectionKey) => ["skills", connection] as const,
+  base: ["skills"] as const,
+  list: (connection: ConnectionKey) => [...skillQueryKeys.base, "list", connection] as const,
   listFor: (connection: ConnectionKey, projectPath: string) =>
-    ["skills", connection, projectPath] as const,
-  catalog: (query: string) => ["skills-catalog", query] as const,
+    [...skillQueryKeys.list(connection), projectPath] as const,
+  catalog: (query: string) => [...skillQueryKeys.base, "catalog", query] as const,
+  summary: (source: string, skillId: string) =>
+    [...skillQueryKeys.base, "summary", source, skillId] as const,
+  description: (source: string, skillId: string) =>
+    [...skillQueryKeys.base, "description", source, skillId] as const,
 };
 
 /**
@@ -103,7 +108,7 @@ export function useInstallCatalogSkillMutation(connection: ConnectionKey) {
  */
 export function useSkillSummaryQuery(source: string, skillId: string, enabled: boolean) {
   return useQuery({
-    queryKey: ["skill-summary", source, skillId] as const,
+    queryKey: skillQueryKeys.summary(source, skillId),
     queryFn: () => api.skillSummary(source, skillId),
     enabled,
     staleTime: Infinity,
@@ -117,7 +122,7 @@ export function useSkillSummaryQuery(source: string, skillId: string, enabled: b
  */
 export function useSkillDescriptionQuery(source: string, skillId: string) {
   return useQuery({
-    queryKey: ["skill-description", source, skillId] as const,
+    queryKey: skillQueryKeys.description(source, skillId),
     queryFn: () => api.skillDescription(source, skillId),
     staleTime: Infinity,
     retry: false,

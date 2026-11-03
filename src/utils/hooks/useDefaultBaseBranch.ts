@@ -1,5 +1,4 @@
-import { useProjectSettings } from "@/services/project.service";
-import { useProjectBranchesQuery } from "@/services/task.service";
+import { useProjectBranchesQuery, useProjectSettings } from "@/services/project.service";
 
 /**
  * The branch a new worktree should start from, before the user has said otherwise.

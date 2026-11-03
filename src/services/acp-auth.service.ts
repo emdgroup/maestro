@@ -3,13 +3,14 @@ import { api } from "@/lib/tauri-utils";
 import type { ConnectionKey } from "@/types/bindings";
 
 export const authQueryKeys = {
-  info: (agentId: string, connection: ConnectionKey) =>
-    ["agentAuthInfo", agentId, connection] as const,
+  base: ["agentAuth"] as const,
+  info: (agentId: string | null, connection: ConnectionKey) =>
+    [...authQueryKeys.base, "info", agentId, connection] as const,
 };
 
 export function useAgentAuthInfoQuery(agentId: string | null, connection: ConnectionKey) {
   return useQuery({
-    queryKey: authQueryKeys.info(agentId ?? "", connection),
+    queryKey: authQueryKeys.info(agentId, connection),
     queryFn: () => api.getAgentAuthInfo(agentId!, connection),
     enabled: !!agentId,
     staleTime: 30_000,

@@ -97,7 +97,7 @@ export function useFileTreeState({
   useEffect(() => {
     if (!isActive) return;
     void queryClient.invalidateQueries({
-      queryKey: [...connectionQueryKeys.fileBrowser(), "dir", connection],
+      queryKey: connectionQueryKeys.dirContentsOn(connection),
     });
   }, [isActive, queryClient, connection]);
 
@@ -119,7 +119,7 @@ export function useFileTreeState({
 
   function handleRefresh() {
     void queryClient.invalidateQueries({
-      queryKey: [...connectionQueryKeys.fileBrowser(), "dir", connection],
+      queryKey: connectionQueryKeys.dirContentsOn(connection),
     });
   }
 

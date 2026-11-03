@@ -17,18 +17,41 @@ import type { AuthSubmission } from "@/views/home/ssh-auth-modal/ssh-auth-utils"
  * Ensures consistent cache invalidation across components
  */
 export const connectionQueryKeys = {
-  base: ["ssh-connections"] as const,
+  base: ["connections"] as const,
   list: () => [...connectionQueryKeys.base, "list"] as const,
   details: (connectionId: number | string) =>
     [...connectionQueryKeys.base, "detail", connectionId] as const,
-  fileBrowser: () => [...connectionQueryKeys.base, "file-browser"] as const,
+  fileBrowser: () => [...connectionQueryKeys.base, "fileBrowser"] as const,
   dirs: (connectionId: number | null | undefined, path: string) =>
     [...connectionQueryKeys.fileBrowser(), connectionId ?? "local", path] as const,
-  defaultPath: () => [...connectionQueryKeys.fileBrowser(), "default-path"] as const,
+  /** Every listing on one connection, for a write that can change a parent nobody named. */
+  dirContentsOn: (connection: ConnectionKey | null | undefined) =>
+    [...connectionQueryKeys.fileBrowser(), "dir", connection] as const,
+  dirContents: (
+    connection: ConnectionKey | null | undefined,
+    path: string,
+    includeHidden: boolean,
+  ) => [...connectionQueryKeys.dirContentsOn(connection), path, includeHidden] as const,
+  workspaceFilesOn: (connection: ConnectionKey | null | undefined) =>
+    [...connectionQueryKeys.fileBrowser(), "workspace", connection] as const,
+  workspaceFiles: (
+    connection: ConnectionKey | null | undefined,
+    path: string,
+    includeHidden: boolean,
+  ) => [...connectionQueryKeys.workspaceFilesOn(connection), path, includeHidden] as const,
+  artifacts: (connection: ConnectionKey, cwd: string | null | undefined, sinceMs: number | null) =>
+    [...connectionQueryKeys.fileBrowser(), "artifacts", connection, cwd, sinceMs] as const,
+  read: (connection: ConnectionKey | null | undefined, path: string | null) =>
+    [...connectionQueryKeys.fileBrowser(), "read", connection, path] as const,
+  readBinary: (connection: ConnectionKey | null | undefined, path: string | null) =>
+    [...connectionQueryKeys.fileBrowser(), "readBinary", connection, path] as const,
+  defaultPath: () => [...connectionQueryKeys.fileBrowser(), "defaultPath"] as const,
   drives: () => [...connectionQueryKeys.fileBrowser(), "drives"] as const,
-  status: (connectionId: number) => [...connectionQueryKeys.base, "status", connectionId] as const,
-  file: (connection: ConnectionKey, path: string, binary: boolean) =>
+  status: (connectionId: number | null) =>
+    [...connectionQueryKeys.base, "status", connectionId] as const,
+  file: (connection: ConnectionKey, path: string | null, binary: boolean) =>
     [...connectionQueryKeys.base, "file", connection, path, binary] as const,
+  localImage: (path: string) => [...connectionQueryKeys.base, "localImage", path] as const,
 };
 
 /**
@@ -43,7 +66,7 @@ export function useConnectionFileQuery(
   refetchIntervalMs?: number,
 ) {
   return useQuery({
-    queryKey: connectionQueryKeys.file(connection, path ?? "", binary),
+    queryKey: connectionQueryKeys.file(connection, path, binary),
     queryFn: () =>
       binary ? api.readFileBinary(connection, path!) : api.readFile(connection, path!),
     enabled: path != null,
@@ -68,7 +91,7 @@ export function useSshConnections() {
  */
 export function useSshReachable(connectionId: number | null) {
   return useQuery({
-    queryKey: connectionQueryKeys.status(connectionId ?? 0),
+    queryKey: connectionQueryKeys.status(connectionId),
     queryFn: async () => (await api.getSshConnectionStatus(connectionId!)).connected,
     enabled: connectionId !== null,
     refetchInterval: 15_000,
@@ -119,7 +142,7 @@ export function useListDirContents(
   includeHidden = false,
 ) {
   return useQuery({
-    queryKey: [...connectionQueryKeys.fileBrowser(), "dir", connection, path, includeHidden],
+    queryKey: connectionQueryKeys.dirContents(connection, path, includeHidden),
     queryFn: () => api.listContents(connection ?? LOCAL, path, includeHidden),
     enabled: !!path,
     staleTime: 10_000,
@@ -132,7 +155,7 @@ export function useListWorkspaceFiles(
   includeHidden = false,
 ) {
   return useQuery({
-    queryKey: [...connectionQueryKeys.fileBrowser(), "workspace", connection, path, includeHidden],
+    queryKey: connectionQueryKeys.workspaceFiles(connection, path, includeHidden),
     queryFn: () => api.listWorkspaceFiles(connection ?? LOCAL, path, includeHidden),
     enabled: !!path,
     staleTime: 30_000,
@@ -150,7 +173,7 @@ export function useArtifactFiles(
   poll: boolean,
 ) {
   return useQuery({
-    queryKey: [...connectionQueryKeys.fileBrowser(), "artifacts", connection, cwd, sinceMs],
+    queryKey: connectionQueryKeys.artifacts(connection, cwd, sinceMs),
     queryFn: () => api.listArtifactFiles(connection, cwd!, sinceMs!),
     enabled: !!cwd && sinceMs != null,
     refetchInterval: poll ? 10_000 : false,
@@ -168,7 +191,7 @@ export function useReadFile(
   options?: { refetchInterval?: RefetchInterval },
 ) {
   return useQuery({
-    queryKey: [...connectionQueryKeys.fileBrowser(), "read", connection, path],
+    queryKey: connectionQueryKeys.read(connection, path),
     queryFn: () => api.readFile(connection ?? LOCAL, path!),
     enabled: !!path,
     staleTime: 10_000,
@@ -182,7 +205,7 @@ export function useReadFileBinary(
   options?: { refetchInterval?: RefetchInterval },
 ) {
   return useQuery({
-    queryKey: [...connectionQueryKeys.fileBrowser(), "read-binary", connection, path],
+    queryKey: connectionQueryKeys.readBinary(connection, path),
     queryFn: () => api.readFileBinary(connection ?? LOCAL, path!),
     enabled: !!path,
     staleTime: 10_000,
@@ -218,9 +241,7 @@ export function useWriteFile() {
 function useInvalidateFileBrowser() {
   const queryClient = useQueryClient();
   return (connection: ConnectionKey) =>
-    queryClient.invalidateQueries({
-      queryKey: [...connectionQueryKeys.fileBrowser(), "dir", connection],
-    });
+    queryClient.invalidateQueries({ queryKey: connectionQueryKeys.dirContentsOn(connection) });
 }
 
 export function useCreateFile() {
@@ -568,7 +589,7 @@ export const readFile = (connection: ConnectionKey, path: string) => api.readFil
 /** A local image as a `data:` URL, for a preview of a file that is not uploaded yet. */
 export function useLocalImageDataUrl(localAbsPath: string, mime: string) {
   return useQuery({
-    queryKey: [...connectionQueryKeys.base, "localImage", localAbsPath],
+    queryKey: connectionQueryKeys.localImage(localAbsPath),
     queryFn: async () => `data:${mime};base64,${await api.readLocalFileBinary(localAbsPath)}`,
     staleTime: Infinity,
   });

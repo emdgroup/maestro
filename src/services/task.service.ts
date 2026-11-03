@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
+import { projectQueryKeys } from "@/services/project.service";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import type { ProfileOverrides } from "@/lib/profile-overrides";
 import { toast } from "sonner";
@@ -24,14 +25,17 @@ import type {
 export const taskQueryKeys = {
   base: ["tasks"] as const,
   lists: () => [...taskQueryKeys.base, "list"] as const,
-  list: (projectId: number) => [...taskQueryKeys.lists(), { projectId }] as const,
-  // Task ids are per project, so every key naming a task names its project too.
-  comments: (projectId: number, taskId: number) =>
+  list: (projectId: number | null) => [...taskQueryKeys.lists(), { projectId }] as const,
+  // Task ids are per project, so every key naming a task names its project too, right after the
+  // kind: `[...attachmentsAll(), projectId]` is the prefix for one project's.
+  comments: (projectId: number | null, taskId: number | null) =>
     [...taskQueryKeys.base, "comments", projectId, taskId] as const,
-  attachments: (projectId: number, taskId: number) =>
-    [...taskQueryKeys.base, "attachments", projectId, taskId] as const,
+  attachmentsAll: () => [...taskQueryKeys.base, "attachments"] as const,
+  attachments: (projectId: number | null, taskId: number | null) =>
+    [...taskQueryKeys.attachmentsAll(), projectId, taskId] as const,
+  commitMessagesAll: () => [...taskQueryKeys.base, "commitMessage"] as const,
   commitMessage: (projectId: number, taskId: number) =>
-    [...taskQueryKeys.base, "commitMessage", projectId, taskId] as const,
+    [...taskQueryKeys.commitMessagesAll(), projectId, taskId] as const,
   proxyImage: (projectId: number, filePath: string) =>
     [...taskQueryKeys.base, "proxyImage", projectId, filePath] as const,
 };
@@ -60,7 +64,7 @@ export function concernsProject(
  */
 export function useTasksQuery(projectId: number | null) {
   return useQuery({
-    queryKey: taskQueryKeys.list(projectId!),
+    queryKey: taskQueryKeys.list(projectId),
     queryFn: () => api.getTasks(projectId!),
     enabled: projectId !== null,
     staleTime: 30000,
@@ -316,44 +320,11 @@ export function useDeleteTaskMutation() {
 }
 
 /**
- * Query hook for listing git branches of a project
- * Returns [BranchList, currentBranch] tuple where BranchList has local and remote arrays
- */
-export function useProjectBranchesQuery(projectId: number | null) {
-  return useQuery({
-    queryKey: [...taskQueryKeys.base, "branches", projectId],
-    queryFn: () => api.listProjectBranches(projectId!),
-    enabled: projectId !== null,
-    staleTime: 60000, // 1 minute — branches don't change that often
-  });
-}
-
-export const issueTrackingQueryKeys = {
-  remoteIssues: (projectId: number) => ["issue_tracking", "remote-issues", projectId] as const,
-};
-
-/**
- * Fetches remote issues from the connected issue tracking provider.
- * Only runs while the modal is open (enabled: isModalOpen).
- * Automatically refetches every 5 minutes while open; stops when closed.
- */
-export function useListRemoteIssuesQuery(projectId: number | null, isModalOpen: boolean) {
-  return useQuery({
-    queryKey: issueTrackingQueryKeys.remoteIssues(projectId!),
-    queryFn: () => api.listRemoteIssues(projectId!),
-    enabled: isModalOpen && projectId !== null,
-    staleTime: 60_000,
-    refetchInterval: isModalOpen ? 5 * 60 * 1000 : false,
-    retry: 1,
-  });
-}
-
-/**
  * Query hook for fetching attachments for a task
  */
 export function useTaskAttachmentsQuery(projectId: number | null, taskId: number | null) {
   return useQuery<TaskAttachment[]>({
-    queryKey: taskQueryKeys.attachments(projectId!, taskId!),
+    queryKey: taskQueryKeys.attachments(projectId, taskId),
     queryFn: () => api.listTaskAttachments(projectId!, taskId!),
     enabled: projectId !== null && taskId !== null,
   });
@@ -461,8 +432,10 @@ export function useRestartTaskMutation() {
       taskId: number;
       status: TaskStatus;
     }) => api.restartTask(projectId, taskId, status),
-    onSuccess: () => {
+    onSuccess: (_data, { projectId }) => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.base });
+      // Starting over can drop the task's branch, and the branch list is kept beside the project.
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.branches(projectId) });
     },
     onError: createErrorToastHandler("Failed to start the task over"),
   });
@@ -540,7 +513,7 @@ export function useTaskCommentsQuery(projectId: number | null, taskId: number | 
   }, [projectId, taskId, queryClient]);
 
   return useQuery({
-    queryKey: taskQueryKeys.comments(projectId ?? -1, taskId ?? -1),
+    queryKey: taskQueryKeys.comments(projectId, taskId ?? null),
     queryFn: () => api.listTaskComments(projectId!, taskId!),
     enabled: projectId !== null && taskId !== undefined,
   });

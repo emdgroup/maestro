@@ -3,16 +3,40 @@ import { useCallback, useMemo } from "react";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
-import { taskQueryKeys } from "@/services/task.service";
+import { projectQueryKeys } from "@/services/project.service";
 import type { DiffTarget } from "@/types/bindings";
 
 export const worktreeQueryKeys = {
   base: ["worktrees"] as const,
-  list: (projectId: number) => [...worktreeQueryKeys.base, "list", projectId] as const,
-  diff: (worktreePath: string, diffTarget: DiffTarget) =>
+  list: (projectId: number | null) => [...worktreeQueryKeys.base, "list", projectId] as const,
+  diff: (worktreePath: string | null, diffTarget: DiffTarget) =>
     [...worktreeQueryKeys.base, "diff", worktreePath, diffTarget] as const,
-  prunableBranches: (projectId: number) =>
-    [...worktreeQueryKeys.base, "prunable-branches", projectId] as const,
+  diffStats: (worktreePath: string | null, diffTarget: DiffTarget) =>
+    [...worktreeQueryKeys.base, "diffStats", worktreePath, diffTarget] as const,
+  untrackedContent: (worktreePath: string | null, filePath: string | null) =>
+    [...worktreeQueryKeys.base, "untrackedContent", worktreePath, filePath] as const,
+  contentAtBase: (worktreePath: string | null, diffTarget: DiffTarget, filePath: string | null) =>
+    [...worktreeQueryKeys.base, "contentAtBase", worktreePath, diffTarget, filePath] as const,
+  binaryInfo: (
+    worktreePath: string | null,
+    diffTarget: DiffTarget | null,
+    filePath: string | null,
+    wantPreview: boolean,
+  ) =>
+    [
+      ...worktreeQueryKeys.base,
+      "binaryInfo",
+      worktreePath,
+      diffTarget,
+      filePath,
+      wantPreview,
+    ] as const,
+  commits: (worktreePath: string | null, baseBranch: string | null) =>
+    [...worktreeQueryKeys.base, "commits", worktreePath, baseBranch] as const,
+  prunableBranches: (projectId: number | null) =>
+    [...worktreeQueryKeys.base, "prunableBranches", projectId] as const,
+  /** The delete mutation's own key, which `useDeletingWorktreePaths` watches. */
+  deleting: () => [...worktreeQueryKeys.base, "delete"] as const,
 };
 
 /**
@@ -33,7 +57,7 @@ export function useWorktreesQuery(
   options?: { refetchInterval?: number | false },
 ) {
   return useQuery({
-    queryKey: worktreeQueryKeys.list(projectId ?? 0),
+    queryKey: worktreeQueryKeys.list(projectId ?? null),
     queryFn: () => api.listWorktreesWithStatus(projectId!, repoPath!),
     enabled: projectId != null && repoPath != null,
     refetchInterval: options?.refetchInterval ?? false,
@@ -70,7 +94,7 @@ export function useUntrackedFileContentQuery(
   filePath: string | null,
 ) {
   return useQuery({
-    queryKey: [...worktreeQueryKeys.base, "untracked-content", worktreePath, filePath] as const,
+    queryKey: worktreeQueryKeys.untrackedContent(worktreePath, filePath),
     queryFn: () => api.getUntrackedFileContent(projectId!, worktreePath!, filePath!),
     enabled: projectId != null && worktreePath != null && filePath != null,
     staleTime: 30000,
@@ -93,13 +117,7 @@ export function useFileContentAtBaseQuery(
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: [
-      ...worktreeQueryKeys.base,
-      "content-at-base",
-      worktreePath ?? "",
-      diffTarget,
-      filePath,
-    ] as const,
+    queryKey: worktreeQueryKeys.contentAtBase(worktreePath, diffTarget, filePath),
     queryFn: () => api.getFileContentAtBase(projectId!, worktreePath!, diffTarget, filePath!),
     enabled: enabled && projectId != null && worktreePath != null && filePath != null,
     staleTime: Infinity,
@@ -121,14 +139,7 @@ export function useBinaryFileInfoQuery(
   wantPreview: boolean,
 ) {
   return useQuery({
-    queryKey: [
-      ...worktreeQueryKeys.base,
-      "binary-info",
-      worktreePath ?? "",
-      diffTarget,
-      filePath,
-      wantPreview,
-    ] as const,
+    queryKey: worktreeQueryKeys.binaryInfo(worktreePath, diffTarget, filePath, wantPreview),
     queryFn: () =>
       api.getBinaryFileInfo(projectId!, worktreePath!, diffTarget, filePath!, wantPreview),
     enabled: projectId != null && worktreePath != null && filePath != null,
@@ -147,7 +158,7 @@ export function useWorktreeDiffQuery(
   options?: { refetchInterval?: number | false },
 ) {
   return useQuery({
-    queryKey: worktreeQueryKeys.diff(worktreePath ?? "", diffTarget),
+    queryKey: worktreeQueryKeys.diff(worktreePath, diffTarget),
     queryFn: () => api.getWorktreeDiff(projectId!, worktreePath!, diffTarget),
     enabled: projectId != null && worktreePath != null,
     refetchInterval: options !== undefined ? options.refetchInterval : 10000,
@@ -167,7 +178,7 @@ export function useWorktreeDiffStatsQuery(
   options?: { refetchInterval?: number | false },
 ) {
   return useQuery({
-    queryKey: [...worktreeQueryKeys.base, "diff-stats", worktreePath ?? "", diffTarget] as const,
+    queryKey: worktreeQueryKeys.diffStats(worktreePath, diffTarget),
     queryFn: () => api.getWorktreeDiffStats(projectId!, worktreePath!, diffTarget),
     enabled: projectId != null && worktreePath != null,
     refetchInterval: options !== undefined ? options.refetchInterval : 10000,
@@ -175,7 +186,7 @@ export function useWorktreeDiffStatsQuery(
   });
 }
 
-const deleteWorktreeKey = [...worktreeQueryKeys.base, "delete"] as const;
+const deleteWorktreeKey = worktreeQueryKeys.deleting();
 
 /**
  * Mutation hook for deleting a worktree.
@@ -338,7 +349,7 @@ export function useCleanupZombieWorktreesMutation() {
  */
 export function usePrunableBranchesQuery(projectId: number | undefined) {
   return useQuery({
-    queryKey: worktreeQueryKeys.prunableBranches(projectId ?? 0),
+    queryKey: worktreeQueryKeys.prunableBranches(projectId ?? null),
     queryFn: () => api.listPrunableBranches(projectId!),
     enabled: projectId != null,
   });
@@ -367,9 +378,7 @@ export function usePruneBranchesMutation() {
     onSuccess: (deleted, { projectId, branches }) => {
       void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
       // The base-branch picker reads its own list; without this it keeps offering deleted branches.
-      void queryClient.invalidateQueries({
-        queryKey: [...taskQueryKeys.base, "branches", projectId],
-      });
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.branches(projectId) });
       const plural = deleted.length === 1 ? "branch" : "branches";
       toast.success(
         deleted.length === branches.length
@@ -437,7 +446,7 @@ export function useWorktreeCommitsQuery(
   baseBranch: string | null,
 ) {
   return useQuery({
-    queryKey: [...worktreeQueryKeys.base, "commits", worktreePath, baseBranch] as const,
+    queryKey: worktreeQueryKeys.commits(worktreePath, baseBranch),
     queryFn: () => api.getWorktreeCommits(projectId!, worktreePath!, baseBranch!),
     enabled: projectId != null && worktreePath != null && baseBranch != null,
     staleTime: 10000,

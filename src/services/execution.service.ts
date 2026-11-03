@@ -11,21 +11,35 @@ import type { ConfigOption } from "@/components/execution/activity/types";
 import type { ConnectionKey, ExternalFileRequest, JsonValue, SessionRole } from "@/types/bindings";
 
 export const executionQueryKeys = {
-  activeSessions: (projectId: number) => ["activeSessions", projectId] as const,
-  sessionList: (agentId: string, cwd: string, connection: ConnectionKey) =>
-    ["sessionList", agentId, cwd, connection] as const,
-  agentDiscovery: (connection: ConnectionKey) => ["agentDiscovery", connection] as const,
-  sessionMeta: (sessionId: string | null) => ["acpSessionMeta", sessionId] as const,
+  base: ["execution"] as const,
+  /** Every project's session list, for a change that cannot say which project it touched. */
+  activeSessionsAll: () => [...executionQueryKeys.base, "activeSessions"] as const,
+  activeSessions: (projectId: number | null) =>
+    [...executionQueryKeys.activeSessionsAll(), projectId] as const,
+  /** One agent's history in every directory and on every connection. */
+  sessionListsOf: (agentId: string) =>
+    [...executionQueryKeys.base, "sessionList", agentId] as const,
+  sessionList: (agentId: string | null, cwd: string | null, connection: ConnectionKey) =>
+    [...executionQueryKeys.base, "sessionList", agentId, cwd, connection] as const,
+  agentDiscovery: (connection: ConnectionKey) =>
+    [...executionQueryKeys.base, "agentDiscovery", connection] as const,
+  sessionMeta: (sessionId: string | null) =>
+    [...executionQueryKeys.base, "sessionMeta", sessionId] as const,
   sessionUsage: (connection: ConnectionKey, agentId: string | null, acpSessionId: string | null) =>
-    ["sessionUsage", connection, agentId, acpSessionId] as const,
-  sessionFile: (sessionId: string, relativePath: string, binary: boolean) =>
-    ["sessionFile", sessionId, relativePath, binary] as const,
+    [...executionQueryKeys.base, "sessionUsage", connection, agentId, acpSessionId] as const,
+  sessionFile: (sessionId: string, relativePath: string | null, binary: boolean) =>
+    [...executionQueryKeys.base, "sessionFile", sessionId, relativePath, binary] as const,
   // `modelId` is part of the key because the effort list is a property of the model, not the
   // agent: the same harness offers different reasoning budgets per model, so a probe answered
   // against the agent's default model is the wrong answer for a profile naming another one.
-  agentConfig: (agentId: string, cwd: string, connection: ConnectionKey, modelId: string) =>
-    ["agentConfig", agentId, cwd, connection, modelId] as const,
-  queueCapacity: (projectId: number | null) => ["queueCapacity", projectId] as const,
+  agentConfig: (
+    agentId: string | null,
+    cwd: string | null,
+    connection: ConnectionKey,
+    modelId: string | null,
+  ) => [...executionQueryKeys.base, "agentConfig", agentId, cwd, connection, modelId] as const,
+  queueCapacity: (projectId: number | null) =>
+    [...executionQueryKeys.base, "queueCapacity", projectId] as const,
 };
 
 /**
@@ -281,7 +295,7 @@ export function useAgentConfigQuery(
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: executionQueryKeys.agentConfig(agentId ?? "", cwd ?? "", connection, modelId ?? ""),
+    queryKey: executionQueryKeys.agentConfig(agentId, cwd, connection, modelId),
     queryFn: () => probeAgentConfig(agentId!, cwd!, projectId!, connection, modelId),
     enabled: enabled && !!agentId && !!cwd && projectId != null,
     staleTime: Infinity,
@@ -300,10 +314,7 @@ export function useAgentConfigQuery(
  */
 export function useActiveSessionsQuery(projectId: number | undefined) {
   return useQuery({
-    queryKey:
-      projectId !== undefined
-        ? executionQueryKeys.activeSessions(projectId)
-        : ["activeSessions-disabled"],
+    queryKey: executionQueryKeys.activeSessions(projectId ?? null),
     queryFn: () => api.getActiveSessions(projectId!),
     enabled: projectId !== undefined,
     refetchInterval: 10000,
@@ -323,7 +334,7 @@ export function useSessionListQuery(
   enabled: boolean = true,
 ) {
   return useQuery({
-    queryKey: executionQueryKeys.sessionList(agentId ?? "", cwd ?? "", connection),
+    queryKey: executionQueryKeys.sessionList(agentId, cwd, connection),
     queryFn: () => api.listAcpSessions(projectId!, agentId!, cwd!, connection, null),
     enabled: enabled && agentId != null && cwd != null && projectId != null,
     staleTime: 30_000,
@@ -395,7 +406,9 @@ export function useLoadAcpSessionMutation() {
     onSuccess: (_data, { projectId }) => {
       void queryClient.invalidateQueries({
         queryKey:
-          projectId != null ? executionQueryKeys.activeSessions(projectId) : ["activeSessions"],
+          projectId != null
+            ? executionQueryKeys.activeSessions(projectId)
+            : executionQueryKeys.activeSessionsAll(),
       });
     },
     onError: createErrorToastHandler("Failed to load session"),
@@ -534,7 +547,7 @@ export function useRenameAcpSessionMutation() {
         queryKey: executionQueryKeys.activeSessions(projectId),
       });
       void queryClient.invalidateQueries({
-        predicate: (query) => query.queryKey[0] === "sessionList" && query.queryKey[1] === agentId,
+        queryKey: executionQueryKeys.sessionListsOf(agentId),
       });
     },
     onError: createErrorToastHandler("Failed to rename session"),
@@ -578,7 +591,7 @@ export function useSessionFileQuery(
   refetchIntervalMs?: number,
 ) {
   return useQuery({
-    queryKey: executionQueryKeys.sessionFile(sessionId, relativePath ?? "", binary),
+    queryKey: executionQueryKeys.sessionFile(sessionId, relativePath, binary),
     queryFn: () =>
       binary
         ? api.readSessionFileBinary(sessionId, relativePath!)
@@ -667,7 +680,7 @@ export function useCancelActiveSessionMutation() {
     onSuccess: (_result, { sessionId }) => {
       useAnnotationStore.getState().clearSession(sessionId);
       // projectId not available here; prefix match intentionally invalidates all projects.
-      void queryClient.invalidateQueries({ queryKey: ["activeSessions"] });
+      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessionsAll() });
     },
     onError: createErrorToastHandler("Failed to close session"),
   });

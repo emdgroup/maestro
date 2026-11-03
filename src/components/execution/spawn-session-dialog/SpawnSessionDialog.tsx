@@ -22,8 +22,7 @@ import {
   useLoadAcpSessionMutation,
   useAgentDiscoveryQuery,
 } from "@/services/execution.service";
-import { useProjectSettings } from "@/services/project.service";
-import { useProjectBranchesQuery } from "@/services/task.service";
+import { useProjectBranchesQuery, useProjectSettings } from "@/services/project.service";
 import { useDeletingWorktreePaths } from "@/services/worktree.service";
 import { useDefaultBaseBranch } from "@/hooks/useDefaultBaseBranch";
 import { useResolveWorktree, type CreatedWorktree } from "@/hooks/useResolveWorktree";

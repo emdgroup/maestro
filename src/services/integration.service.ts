@@ -2,7 +2,6 @@ import { useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
-import { issueTrackingQueryKeys } from "@/services/task.service";
 import type {
   BranchPullRequestInfo,
   IntegrationStatus,
@@ -41,28 +40,30 @@ export const integrationQueryKeys = {
   base: ["integrations"] as const,
   list: () => [...integrationQueryKeys.base, "list"] as const,
   projectIssueTracking: (projectId: number) =>
-    [...integrationQueryKeys.base, "issue_tracking", projectId] as const,
+    [...integrationQueryKeys.base, "issueTracking", projectId] as const,
   detectIssueTracking: (projectId: number) =>
-    [...integrationQueryKeys.base, "issue_tracking_detect", projectId] as const,
+    [...integrationQueryKeys.base, "issueTrackingDetect", projectId] as const,
+  remoteIssues: (projectId: number | null) =>
+    [...integrationQueryKeys.base, "remoteIssues", projectId] as const,
   /**
    * Every project's code-hosting status, for invalidating after a credential changes. Connecting
    * a forge is not scoped to a project, so this prefix is what a connect has to reach.
    */
-  codeHostingStatusAll: () => [...integrationQueryKeys.base, "code_hosting_status"] as const,
+  codeHostingStatusAll: () => [...integrationQueryKeys.base, "codeHostingStatus"] as const,
   codeHostingStatus: (projectId: number) =>
-    [...integrationQueryKeys.base, "code_hosting_status", projectId] as const,
+    [...integrationQueryKeys.codeHostingStatusAll(), projectId] as const,
   // Keyed on the branch, not on a pull request number. The number is the *answer*, so keying on it
   // would mean holding it somewhere to ask the question — and a session whose #10 was closed and
   // replaced by a #11 opened on the forge would go on asking about #10 forever.
-  branchPullRequest: (projectId: number, branch: string) =>
-    [...integrationQueryKeys.base, "branch_pull_request", projectId, branch] as const,
+  branchPullRequest: (projectId: number | null, branch: string | null) =>
+    [...integrationQueryKeys.base, "branchPullRequest", projectId, branch] as const,
   /**
    * One page of the project's open pull requests. The prefix is what a refresh invalidates, so it
    * reaches every page and every search the user has looked at.
    */
-  projectPullRequests: (projectId: number) =>
-    [...integrationQueryKeys.base, "project_pull_requests", projectId] as const,
-  projectPullRequestPage: (projectId: number, cursor: string | null, search: string) =>
+  projectPullRequests: (projectId: number | null) =>
+    [...integrationQueryKeys.base, "projectPullRequests", projectId] as const,
+  projectPullRequestPage: (projectId: number | null, cursor: string | null, search: string) =>
     [...integrationQueryKeys.projectPullRequests(projectId), cursor ?? "", search] as const,
   /**
    * One row's counts and CI verdict.
@@ -71,11 +72,32 @@ export const integrationQueryKeys = {
    * held instead of polled: a CI run starting or finishing moves neither the number nor the commit,
    * so a key without it would leave a row on its first answer until the user hit refresh.
    */
-  pullRequestRowDetails: (projectId: number) =>
-    [...integrationQueryKeys.base, "pull_request_row_detail", projectId] as const,
-  pullRequestRowDetail: (projectId: number, number: number, headSha: string, updatedAt: string) =>
+  pullRequestRowDetails: (projectId: number | null) =>
+    [...integrationQueryKeys.base, "pullRequestRowDetail", projectId] as const,
+  pullRequestRowDetail: (
+    projectId: number | null,
+    number: number,
+    headSha: string | null,
+    updatedAt: string | null,
+  ) =>
     [...integrationQueryKeys.pullRequestRowDetails(projectId), number, headSha, updatedAt] as const,
 };
+
+/**
+ * Fetches remote issues from the connected issue tracking provider.
+ * Only runs while the modal is open (enabled: isModalOpen).
+ * Automatically refetches every 5 minutes while open; stops when closed.
+ */
+export function useListRemoteIssuesQuery(projectId: number | null, isModalOpen: boolean) {
+  return useQuery({
+    queryKey: integrationQueryKeys.remoteIssues(projectId),
+    queryFn: () => api.listRemoteIssues(projectId!),
+    enabled: isModalOpen && projectId !== null,
+    staleTime: 60_000,
+    refetchInterval: isModalOpen ? 5 * 60 * 1000 : false,
+    retry: 1,
+  });
+}
 
 export function useListIntegrations() {
   return useQuery({
@@ -239,7 +261,7 @@ export function useBranchPullRequest(
   const burst = useRef<{ key: string; left: number } | null>(null);
 
   return useQuery({
-    queryKey: integrationQueryKeys.branchPullRequest(projectId ?? -1, branch ?? ""),
+    queryKey: integrationQueryKeys.branchPullRequest(projectId, branch),
     queryFn: () => api.fetchBranchPullRequest(projectId!, branch!),
     enabled: enabled && projectId != null && branch != null,
     refetchInterval: (query) => {
@@ -287,7 +309,7 @@ export function useProjectPullRequestPage(
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: integrationQueryKeys.projectPullRequestPage(projectId ?? -1, cursor, search),
+    queryKey: integrationQueryKeys.projectPullRequestPage(projectId, cursor, search),
     queryFn: () => api.listProjectPullRequests(projectId!, cursor, search || null),
     enabled: enabled && projectId != null,
     refetchInterval: PULL_REQUEST_PAGE_POLL_MS,
@@ -329,12 +351,7 @@ export function usePullRequestRowDetail(
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: integrationQueryKeys.pullRequestRowDetail(
-      projectId ?? -1,
-      number,
-      headSha ?? "",
-      updatedAt ?? "",
-    ),
+    queryKey: integrationQueryKeys.pullRequestRowDetail(projectId, number, headSha, updatedAt),
     queryFn: () => api.fetchPullRequestRowDetail(projectId!, number, headSha),
     enabled: enabled && projectId != null,
     refetchInterval: (query) => rowDetailPollInterval(query.state.data),
@@ -446,7 +463,7 @@ export function useSaveProjectIssueTrackingConfig() {
         queryKey: integrationQueryKeys.projectIssueTracking(projectId),
       });
       void queryClient.invalidateQueries({
-        queryKey: issueTrackingQueryKeys.remoteIssues(projectId),
+        queryKey: integrationQueryKeys.remoteIssues(projectId),
       });
       void queryClient.invalidateQueries({
         queryKey: integrationQueryKeys.detectIssueTracking(projectId),

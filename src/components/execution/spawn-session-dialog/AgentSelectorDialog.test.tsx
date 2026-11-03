@@ -32,8 +32,8 @@ vi.mock("@/services/worktree.service", async (importOriginal) => ({
 }));
 
 // Only the two hooks the spawn dialog reads — everything else stays real.
-vi.mock("@/services/task.service", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/services/task.service")>()),
+vi.mock("@/services/project.service", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/services/project.service")>()),
   useProjectBranchesQuery: vi.fn(() => ({
     data: [{ local: ["main", "dev"], remote: [] }, "main"],
     isFetching: false,

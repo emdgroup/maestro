@@ -19,7 +19,7 @@ import {
   ComboboxItem,
   ComboboxEmpty,
 } from "@/ui/combobox";
-import { useProjectBranchesQuery } from "@/services/task.service";
+import { useProjectBranchesQuery } from "@/services/project.service";
 import { useOpenPullRequestForBranch } from "@/services/integration.service";
 
 interface Props {

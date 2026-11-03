@@ -30,6 +30,11 @@ import { taskQueryKeys } from "./task.service";
 import { worktreeQueryKeys } from "./worktree.service";
 import { executionQueryKeys } from "./execution.service";
 import { promptQueryKeys } from "./prompt.service";
+import { loopQueryKeys } from "./loop.service";
+
+// The module is mocked above for `useQueryClient`; the key matcher is wanted for real.
+const { partialMatchKey } =
+  await vi.importActual<typeof import("@tanstack/react-query")>("@tanstack/react-query");
 
 /** `listen` resolves on a microtask, so nothing is registered until the queue drains. */
 async function flush() {
@@ -89,6 +94,23 @@ describe("useServerEventSync", () => {
     expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ["tasks", "comments", 7] });
   });
 
+  /** The loop rows moved under one prefix, ids before the kind; this pins what that prefix reaches. */
+  it("refetches the project's loop rows, and nothing of another project or branch", async () => {
+    renderHook(() => useServerEventSync(7));
+    await flush();
+
+    fire("tasks-changed", { project_id: 7 });
+
+    const prefixes = invalidateQueries.mock.calls.map(([filter]) => filter.queryKey as unknown[]);
+    const reached = (key: readonly unknown[]) =>
+      prefixes.some((prefix) => partialMatchKey(key, prefix));
+    expect(reached(loopQueryKeys.checks(7, 3))).toBe(true);
+    expect(reached(loopQueryKeys.iterations(7, 3))).toBe(true);
+    expect(reached(loopQueryKeys.notes(7, 3))).toBe(true);
+    expect(reached(loopQueryKeys.checks(8, 3))).toBe(false);
+    expect(reached(loopQueryKeys.branchFiles(7, "main"))).toBe(false);
+  });
+
   it("invalidates every project's per-task queries when tasks-changed names none", async () => {
     renderHook(() => useServerEventSync(7));
     await flush();
@@ -135,14 +157,14 @@ describe("useServerEventSync", () => {
     await flush();
 
     fire("prompts-changed", { collection: "shared", project_id: null });
-    expect(invalidateQueries).toHaveBeenLastCalledWith({ queryKey: promptQueryKeys.shared });
+    expect(invalidateQueries).toHaveBeenLastCalledWith({ queryKey: promptQueryKeys.shared() });
 
     fire("prompts-changed", { collection: "project", project_id: 7 });
     expect(invalidateQueries).toHaveBeenLastCalledWith({ queryKey: promptQueryKeys.project(7) });
 
     // A project the app could not name: every project's list, never the shared one.
     fire("prompts-changed", { collection: "project", project_id: null });
-    expect(invalidateQueries).toHaveBeenLastCalledWith({ queryKey: promptQueryKeys.projects });
+    expect(invalidateQueries).toHaveBeenLastCalledWith({ queryKey: promptQueryKeys.projects() });
     expect(invalidateQueries).toHaveBeenCalledTimes(3);
   });
 

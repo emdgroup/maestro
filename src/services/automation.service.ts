@@ -17,14 +17,16 @@ import type {
 
 export const automationQueryKeys = {
   base: ["automations"] as const,
-  list: (projectId: number) => [...automationQueryKeys.base, "list", projectId] as const,
-  runs: (projectId: number) => [...automationQueryKeys.base, "runs", projectId] as const,
-  deliveries: (projectId: number, automationId: string) =>
+  list: (projectId: number | null) => [...automationQueryKeys.base, "list", projectId] as const,
+  runs: (projectId: number | null) => [...automationQueryKeys.base, "runs", projectId] as const,
+  preview: (projectId: number | null, cron: string | null, timezone: string | null) =>
+    [...automationQueryKeys.base, "preview", projectId, cron, timezone] as const,
+  deliveries: (projectId: number, automationId: string | null) =>
     [...automationQueryKeys.base, "deliveries", projectId, automationId] as const,
-  webhookSettings: (connection: ConnectionKey) =>
-    [...automationQueryKeys.base, "webhook-settings", connection] as const,
-  backgroundServer: (connection: ConnectionKey) =>
-    [...automationQueryKeys.base, "background-server", connection] as const,
+  webhookSettings: (connection: ConnectionKey | null) =>
+    [...automationQueryKeys.base, "webhookSettings", connection] as const,
+  backgroundServer: (connection: ConnectionKey | null) =>
+    [...automationQueryKeys.base, "backgroundServer", connection] as const,
 };
 
 /**
@@ -35,7 +37,7 @@ export const automationQueryKeys = {
  */
 export function useAutomationsQuery(projectId: number | null) {
   return useQuery({
-    queryKey: automationQueryKeys.list(projectId!),
+    queryKey: automationQueryKeys.list(projectId),
     queryFn: () => api.listAutomations(projectId!),
     enabled: projectId != null,
     // The list is only stale in one way that matters — `next_due_at` moves past — and a run
@@ -58,7 +60,7 @@ export function usePreviewScheduleQuery(
   timezone: string,
 ) {
   return useQuery({
-    queryKey: [...automationQueryKeys.base, "preview", projectId, cron, timezone] as const,
+    queryKey: automationQueryKeys.preview(projectId, cron, timezone),
     queryFn: () => api.previewSchedule(projectId!, cron!, timezone),
     enabled: projectId != null && cron != null && cron.trim().length > 0,
     staleTime: 30_000,
@@ -69,7 +71,7 @@ export function usePreviewScheduleQuery(
 /** What this project's automations have done, newest first. */
 export function useAutomationRunsQuery(projectId: number | null) {
   return useQuery({
-    queryKey: automationQueryKeys.runs(projectId!),
+    queryKey: automationQueryKeys.runs(projectId),
     queryFn: () => api.listAutomationRuns(projectId!, null),
     enabled: projectId != null,
   });
@@ -212,7 +214,7 @@ export function useSetRunRetentionMutation() {
 /** This machine's webhook listener: its address, and whether it is listening. */
 export function useWebhookSettingsQuery(connection: ConnectionKey | null) {
   return useQuery({
-    queryKey: automationQueryKeys.webhookSettings(connection!),
+    queryKey: automationQueryKeys.webhookSettings(connection),
     queryFn: () => api.getWebhookSettings(connection!),
     enabled: connection != null,
   });
@@ -257,7 +259,7 @@ export function useRollWebhookSecretMutation() {
  */
 export function useWebhookDeliveriesQuery(projectId: number, automationId: string | null) {
   return useQuery({
-    queryKey: automationQueryKeys.deliveries(projectId, automationId!),
+    queryKey: automationQueryKeys.deliveries(projectId, automationId),
     queryFn: () => api.listWebhookDeliveries(projectId, automationId!),
     enabled: automationId != null,
     refetchInterval: 5_000,
@@ -267,7 +269,7 @@ export function useWebhookDeliveriesQuery(projectId: number, automationId: strin
 /** The connection's background server: since when, how busy, and whether it starts on its own. */
 export function useBackgroundServerQuery(connection: ConnectionKey | null) {
   return useQuery({
-    queryKey: automationQueryKeys.backgroundServer(connection!),
+    queryKey: automationQueryKeys.backgroundServer(connection),
     queryFn: () => api.getBackgroundServer(connection!),
     enabled: connection != null,
     refetchInterval: 10_000,
