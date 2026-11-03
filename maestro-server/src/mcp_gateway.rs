@@ -29,6 +29,7 @@ use crate::helpers::send_response;
 use crate::project_store::Store;
 use crate::send_diag;
 use crate::sessions::SessionMap;
+use crate::task_store::requests::answer_into;
 use maestro_protocol::mcp_args::{
     bool_argument, enum_argument, required_text, string_argument, string_list_argument,
 };
@@ -908,7 +909,8 @@ async fn task_tool(
                 loop_config,
             });
             let mut conn = store.lock().await;
-            let ServerResponse::CreateTaskOk(task) = ask(&mut conn, request, &mut pushes)? else {
+            let ServerResponse::CreateTaskOk(task) = answer_into(&mut conn, request, &mut pushes)?
+            else {
                 return Err(UNEXPECTED.to_string());
             };
             if let Some(checks) = fields.checks.filter(|_| looping) {
@@ -921,7 +923,7 @@ async fn task_tool(
                             .map(|spec| LoopCheckEntry { id: None, spec })
                             .collect(),
                     });
-                ask(&mut conn, request, &mut pushes)?;
+                answer_into(&mut conn, request, &mut pushes)?;
             }
             if let Some(draft) = draft {
                 crate::task_store::set_drafted_by(&conn, &task.project_path, task.id, &draft)?;
@@ -931,15 +933,9 @@ async fn task_tool(
                     ServerRequest::AddTaskComment(maestro_protocol::AddTaskCommentRequest {
                         project_path,
                         task_id: task.id,
-                        comment: NewTaskComment {
-                            kind: "note".to_string(),
-                            author: "maestro".to_string(),
-                            body: Some(body),
-                            external_ref: None,
-                            phase: None,
-                        },
+                        comment: crate::task_store::requests::note(body),
                     });
-                ask(&mut conn, request, &mut pushes)?;
+                answer_into(&mut conn, request, &mut pushes)?;
             }
             json!({
                 "id": task.id,
@@ -958,7 +954,7 @@ async fn task_tool(
             };
             let request = ServerRequest::ListTasks(ProjectRef { project_path });
             let ServerResponse::ListTasksOk(list) =
-                ask(&mut *store.lock().await, request, &mut pushes)?
+                answer_into(&mut *store.lock().await, request, &mut pushes)?
             else {
                 return Err(UNEXPECTED.to_string());
             };
@@ -985,7 +981,8 @@ async fn task_tool(
                 project_path,
                 task_id,
             });
-            let ServerResponse::ListTaskCommentsOk(thread) = ask(&mut conn, request, &mut pushes)?
+            let ServerResponse::ListTaskCommentsOk(thread) =
+                answer_into(&mut conn, request, &mut pushes)?
             else {
                 return Err(UNEXPECTED.to_string());
             };
@@ -1093,7 +1090,8 @@ async fn task_tool(
                 task_id,
                 update,
             });
-            let ServerResponse::UpdateTaskOk(task) = ask(&mut conn, request, &mut pushes)? else {
+            let ServerResponse::UpdateTaskOk(task) = answer_into(&mut conn, request, &mut pushes)?
+            else {
                 return Err(UNEXPECTED.to_string());
             };
             if let Some(checks) = fields.checks {
@@ -1106,7 +1104,7 @@ async fn task_tool(
                             .map(|spec| LoopCheckEntry { id: None, spec })
                             .collect(),
                     });
-                ask(&mut conn, request, &mut pushes)?;
+                answer_into(&mut conn, request, &mut pushes)?;
             }
             task_summary(&task)
         }
@@ -1129,7 +1127,8 @@ async fn task_tool(
                     phase: None,
                 },
             });
-            let ServerResponse::AddTaskCommentOk(comment) = ask(&mut conn, request, &mut pushes)?
+            let ServerResponse::AddTaskCommentOk(comment) =
+                answer_into(&mut conn, request, &mut pushes)?
             else {
                 return Err(UNEXPECTED.to_string());
             };
@@ -1143,16 +1142,6 @@ async fn task_tool(
 const UNEXPECTED: &str = "the task store answered with the wrong reply";
 
 /// One request through the same path a window's takes, so canonicalization and pushes match.
-fn ask(
-    conn: &mut Connection,
-    request: ServerRequest,
-    pushes: &mut Vec<ServerResponse>,
-) -> Result<ServerResponse, String> {
-    let (reply, more) = crate::task_store::requests::answer(conn, request)?;
-    pushes.extend(more);
-    Ok(reply)
-}
-
 fn task_in_project(
     conn: &mut Connection,
     project_path: &str,

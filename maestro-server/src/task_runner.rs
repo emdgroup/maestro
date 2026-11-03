@@ -15,10 +15,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use maestro_protocol::{
-    AddTaskCommentRequest, AgentRole, ApplyTaskTransitionRequest, ConcurrencyMode, ErrorResponse,
-    NewTaskComment, PhaseStatus, RequestTaskExecutionRequest, ServerRequest, ServerResponse,
-    StartTaskRequest, StartTaskResponse, Task, TaskPhase, TaskSessionStarted, TaskStatus,
-    TaskTransition, TransitionGuard, AUTH_REQUIRED_ERROR,
+    AddTaskCommentRequest, AgentRole, ConcurrencyMode, ErrorResponse, NewTaskComment, PhaseStatus,
+    RequestTaskExecutionRequest, ServerRequest, ServerResponse, StartTaskRequest,
+    StartTaskResponse, Task, TaskPhase, TaskSessionStarted, TaskStatus, TaskTransition,
+    TransitionGuard, AUTH_REQUIRED_ERROR,
 };
 use rusqlite::Connection;
 
@@ -26,6 +26,7 @@ use crate::agent::registry::DiscoveredAgentWithSpawn;
 use crate::helpers::{broadcast, send_diag, send_response};
 use crate::profiles;
 use crate::sessions::{ActiveSession, SessionCommand, SessionMap, SharedAgentConnections};
+use crate::task_store::requests::{self, answer_into, note};
 
 type SpawnParams = (String, Vec<String>, HashMap<String, String>);
 
@@ -137,27 +138,6 @@ fn stage(role: AgentRole) -> &'static str {
     }
 }
 
-/// A store request answered as a window's would be, its pushes collected for the caller to send.
-fn store_request(
-    conn: &mut Connection,
-    request: ServerRequest,
-    pushes: &mut Vec<ServerResponse>,
-) -> Result<ServerResponse, String> {
-    let (reply, more) = crate::task_store::requests::answer(conn, request)?;
-    pushes.extend(more);
-    Ok(reply)
-}
-
-fn note(body: String) -> NewTaskComment {
-    NewTaskComment {
-        kind: "note".to_string(),
-        author: "maestro".to_string(),
-        body: Some(body),
-        external_ref: None,
-        phase: None,
-    }
-}
-
 fn add_note(
     conn: &mut Connection,
     project_path: &str,
@@ -170,7 +150,7 @@ fn add_note(
         task_id,
         comment: note(body),
     });
-    if let Err(e) = store_request(conn, request, pushes) {
+    if let Err(e) = answer_into(conn, request, pushes) {
         send_diag("warn", format!("[task] could not file a note: {e}"));
     }
 }
@@ -184,15 +164,8 @@ fn transition(
     comment: Option<NewTaskComment>,
     pushes: &mut Vec<ServerResponse>,
 ) -> Result<Option<Task>, String> {
-    let request = ServerRequest::ApplyTaskTransition(ApplyTaskTransitionRequest {
-        project_path: project_path.to_string(),
-        task_id,
-        event,
-        guard,
-        update: None,
-        comment,
-    });
-    match store_request(conn, request, pushes)? {
+    let request = requests::transition(project_path, task_id, event, guard, None, comment);
+    match answer_into(conn, request, pushes)? {
         ServerResponse::ApplyTaskTransitionOk(reply) => Ok(reply.task),
         _ => Err("unexpected reply to a transition".to_string()),
     }
@@ -283,7 +256,7 @@ pub(crate) fn begin(
                     task_id: task.id,
                 });
                 if let ServerResponse::RequestTaskExecutionOk(reply) =
-                    store_request(conn, ask, pushes)?
+                    answer_into(conn, ask, pushes)?
                 {
                     if reply.deferred {
                         return Ok(Begun::Deferred);
@@ -850,7 +823,7 @@ async fn prepare(
                 project_path: project_path.to_string(),
                 task_id: task.id,
             });
-            if let Err(e) = store_request(&mut conn, clear, &mut pushes) {
+            if let Err(e) = answer_into(&mut conn, clear, &mut pushes) {
                 send_diag("warn", format!("[task] could not clear a review: {e}"));
             }
         }

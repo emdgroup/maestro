@@ -12,14 +12,15 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use maestro_protocol::{
-    ApplyTaskTransitionRequest, LoopCheck, LoopCheckState, LoopConfig, LoopHalt, LoopIteration,
-    LoopIterationOutcome, LoopSummary, NewTaskComment, PhaseStatus, RunMode, ServerRequest,
-    ServerResponse, Task, TaskBall, TaskPhase, TaskRef, TaskTransition, TransitionGuard,
+    LoopCheck, LoopCheckState, LoopConfig, LoopHalt, LoopIteration, LoopIterationOutcome,
+    LoopSummary, NewTaskComment, PhaseStatus, RunMode, ServerRequest, ServerResponse, Task,
+    TaskBall, TaskPhase, TaskRef, TaskTransition, TransitionGuard,
 };
 
 use crate::helpers::{broadcast, send_diag};
 use crate::project_store::Store;
 use crate::task_store::loops::{self, Committed};
+use crate::task_store::requests;
 use crate::turn::TurnFacts;
 use crate::worktree::git;
 use maestro_protocol::command_ext::NoConsoleWindow;
@@ -523,7 +524,7 @@ async fn finish(
             task_id,
             TaskTransition::LoopHalted,
             TransitionGuard::Phase(TaskPhase::Iterating),
-            Some(note_entry(note)),
+            Some(requests::note(note)),
         )
         .await;
         return;
@@ -614,7 +615,7 @@ async fn conflict(
         task_id,
         TaskTransition::LoopHalted,
         TransitionGuard::Phase(TaskPhase::Iterating),
-        Some(note_entry(note)),
+        Some(requests::note(note)),
     )
     .await;
 }
@@ -731,7 +732,7 @@ async fn hold_loop(
         Some(PhaseStatus::Running | PhaseStatus::Blocked)
     );
     let waiting = task.phase_status == Some(PhaseStatus::Waiting) && task.ball == TaskBall::Agent;
-    let note = Some(note_entry(format!(
+    let note = Some(requests::note(format!(
         "{}, as you asked.",
         halted_words(Some(halt))
     )));
@@ -830,7 +831,7 @@ async fn answer_proposal(
     }
     request.seal = sealing;
     let sealed = !request.seal.is_empty();
-    let answered = crate::task_store::requests::answer(
+    let answered = requests::answer(
         &mut *store.lock().await,
         ServerRequest::AnswerLoopProposal(request),
     )?;
@@ -1170,7 +1171,7 @@ async fn conclude(
         task_id,
         event,
         TransitionGuard::Phase(phase),
-        Some(note_entry(note)),
+        Some(requests::note(note)),
     )
     .await;
 }
@@ -1386,10 +1387,6 @@ fn entry(kind: &str, author: &str, body: String) -> NewTaskComment {
     }
 }
 
-pub(crate) fn note_entry(body: String) -> NewTaskComment {
-    entry("note", "maestro", body)
-}
-
 /// One guarded transition with an entry in the thread, pushed. Whether it applied.
 async fn apply(
     store: &Store,
@@ -1400,15 +1397,8 @@ async fn apply(
     guard: TransitionGuard,
     comment: Option<NewTaskComment>,
 ) -> bool {
-    let request = ServerRequest::ApplyTaskTransition(ApplyTaskTransitionRequest {
-        project_path: path.to_string(),
-        task_id,
-        event,
-        guard,
-        update: None,
-        comment,
-    });
-    let answered = crate::task_store::requests::answer(&mut *store.lock().await, request);
+    let request = requests::transition(path, task_id, event, guard, None, comment);
+    let answered = requests::answer(&mut *store.lock().await, request);
     match answered {
         Ok((reply, pushes)) => {
             for push in pushes {
@@ -1436,7 +1426,7 @@ async fn stop(
     why: &str,
 ) {
     let guard = TransitionGuard::Phase(phase);
-    let note = Some(note_entry(why.to_string()));
+    let note = Some(requests::note(why.to_string()));
     apply(
         store,
         everyone,

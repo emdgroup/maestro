@@ -14,13 +14,14 @@ use std::collections::HashSet;
 use std::sync::{Arc, LazyLock, Mutex};
 
 use maestro_protocol::{
-    AgentRole, ApplyTaskTransitionRequest, NewTaskComment, PhaseStatus, ProjectSession, RunMode,
-    ServerRequest, TaskPhase, TaskSessionStarted, TaskTransition, TransitionGuard,
+    AgentRole, PhaseStatus, ProjectSession, RunMode, TaskPhase, TaskSessionStarted, TaskTransition,
+    TransitionGuard,
 };
 use rusqlite::Connection;
 
 use crate::helpers::{broadcast, send_diag};
 use crate::sessions::SessionCommand;
+use crate::task_store::requests::{self, note};
 use crate::task_turn::Driver;
 
 /// What `useAutoResume` sends a task session whose turn was cut off.
@@ -181,16 +182,6 @@ pub(crate) fn plan(conn: &Connection) -> Vec<(String, i32, Action)> {
     planned
 }
 
-fn note(body: String) -> NewTaskComment {
-    NewTaskComment {
-        kind: "note".to_string(),
-        author: "maestro".to_string(),
-        body: Some(body),
-        external_ref: None,
-        phase: None,
-    }
-}
-
 /// Move the task under `guard`, with a note in its thread, and push the change.
 async fn transition(
     driver: &Driver,
@@ -200,14 +191,7 @@ async fn transition(
     guard: TransitionGuard,
     body: String,
 ) {
-    let request = ServerRequest::ApplyTaskTransition(ApplyTaskTransitionRequest {
-        project_path: path.to_string(),
-        task_id,
-        event,
-        guard,
-        update: None,
-        comment: Some(note(body)),
-    });
+    let request = requests::transition(path, task_id, event, guard, None, Some(note(body)));
     let answered = crate::task_store::requests::answer(&mut *driver.store.lock().await, request);
     match answered {
         Ok((_, pushes)) => {

@@ -6,9 +6,10 @@
 //! a transition its guard refused, owes no push.
 
 use maestro_protocol::{
-    LoopCheckList, LoopIterationList, OptionalTask, OptionalWorktree, ProjectRef,
-    RequestTaskExecutionResponse, SaveTaskReviewResponse, ServerRequest, ServerResponse,
-    TaskAttachmentList, TaskCommentList, TaskList, TaskRef, WorktreeList,
+    ApplyTaskTransitionRequest, LoopCheckList, LoopIterationList, NewTaskComment, OptionalTask,
+    OptionalWorktree, ProjectRef, RequestTaskExecutionResponse, SaveTaskReviewResponse,
+    ServerRequest, ServerResponse, TaskAttachmentList, TaskCommentList, TaskList, TaskRef,
+    TaskTransition, TaskUpdate, TransitionGuard, WorktreeList,
 };
 use rusqlite::Connection;
 
@@ -21,6 +22,47 @@ struct Changed {
     tasks: bool,
     worktrees: bool,
     comments_of: Option<i32>,
+}
+
+/// A request answered as a window's would be, its pushes added to `pushes` for the caller to send.
+pub fn answer_into(
+    conn: &mut Connection,
+    request: ServerRequest,
+    pushes: &mut Vec<ServerResponse>,
+) -> Result<ServerResponse, String> {
+    let (reply, more) = answer(conn, request)?;
+    pushes.extend(more);
+    Ok(reply)
+}
+
+/// A note from Maestro in a task's thread.
+pub fn note(body: impl Into<String>) -> NewTaskComment {
+    NewTaskComment {
+        kind: "note".to_string(),
+        author: "maestro".to_string(),
+        body: Some(body.into()),
+        external_ref: None,
+        phase: None,
+    }
+}
+
+/// The request to move one task under `guard`.
+pub fn transition(
+    project_path: &str,
+    task_id: i32,
+    event: TaskTransition,
+    guard: TransitionGuard,
+    update: Option<TaskUpdate>,
+    comment: Option<NewTaskComment>,
+) -> ServerRequest {
+    ServerRequest::ApplyTaskTransition(ApplyTaskTransitionRequest {
+        project_path: project_path.to_string(),
+        task_id,
+        event,
+        guard,
+        update,
+        comment,
+    })
 }
 
 /// The reply to `request`, and the pushes to broadcast after it.

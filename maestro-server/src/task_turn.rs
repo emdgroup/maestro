@@ -7,12 +7,13 @@
 use std::sync::Arc;
 
 use maestro_protocol::{
-    AgentRole, ApplyTaskTransitionRequest, EndTaskTurnRequest, NewTaskComment, PhaseStatus,
-    ServerRequest, ServerResponse, StartTaskRequest, Task, TaskBall, TaskPhase, TaskTransition,
-    TaskUpdate, TransitionGuard, TurnEnding, WorkspaceMode,
+    AgentRole, EndTaskTurnRequest, NewTaskComment, PhaseStatus, ServerRequest, ServerResponse,
+    StartTaskRequest, Task, TaskBall, TaskPhase, TaskTransition, TaskUpdate, TransitionGuard,
+    TurnEnding, WorkspaceMode,
 };
 
 use crate::helpers::{broadcast, send_diag};
+use crate::task_store::requests::{answer_into, note, transition};
 use crate::turn::{classify_turn, classify_verdict, ReviewVerdict, TurnFacts, TurnOutcome};
 use crate::worktree::git;
 
@@ -149,34 +150,6 @@ pub(crate) async fn push_branch(
     .map(|_| ())
 }
 
-fn store_write(
-    conn: &mut rusqlite::Connection,
-    request: ServerRequest,
-    pushes: &mut Vec<ServerResponse>,
-) -> Result<ServerResponse, String> {
-    let (reply, more) = crate::task_store::requests::answer(conn, request)?;
-    pushes.extend(more);
-    Ok(reply)
-}
-
-fn transition(
-    project_path: &str,
-    task_id: i32,
-    event: TaskTransition,
-    guard: TransitionGuard,
-    update: Option<TaskUpdate>,
-    comment: Option<NewTaskComment>,
-) -> ServerRequest {
-    ServerRequest::ApplyTaskTransition(ApplyTaskTransitionRequest {
-        project_path: project_path.to_string(),
-        task_id,
-        event,
-        guard,
-        update,
-        comment,
-    })
-}
-
 /// Resolve the turn and write it. Returns the stage to start next, if any, and the pushes owed.
 /// `role` is the one the session was started for. `limited_until` is set when the agent refused
 /// the turn for a usage limit, with when its gate opens.
@@ -229,7 +202,7 @@ pub(crate) async fn resolve(
             None,
             Some(crate::agent_gate::note(until)),
         );
-        if let Err(e) = store_write(&mut *store.lock().await, request, &mut pushes) {
+        if let Err(e) = answer_into(&mut *store.lock().await, request, &mut pushes) {
             send_diag("warn", format!("[task] usage limit of task {task_id}: {e}"));
         }
         return (None, pushes);
@@ -287,11 +260,8 @@ pub(crate) async fn resolve(
                     TransitionGuard::Phase(TaskPhase::AwaitingMerge),
                     None,
                     Some(NewTaskComment {
-                        kind: "note".to_string(),
-                        author: "maestro".to_string(),
-                        body: Some(format!("The CI fix could not be pushed: {e}")),
-                        external_ref: None,
                         phase: Some("AwaitingMerge".to_string()),
+                        ..note(format!("The CI fix could not be pushed: {e}"))
                     }),
                 ),
             }
@@ -308,7 +278,7 @@ pub(crate) async fn resolve(
         }
     };
 
-    let written = store_write(&mut *store.lock().await, request, &mut pushes);
+    let written = answer_into(&mut *store.lock().await, request, &mut pushes);
     let task = match written {
         Ok(ServerResponse::EndTaskTurnOk(ended)) => ended.task,
         Ok(ServerResponse::ApplyTaskTransitionOk(applied)) => applied.task,
@@ -451,7 +421,7 @@ async fn apply(
 ) {
     let mut pushes = Vec::new();
     let request = transition(project_path, task_id, event, guard, None, comment);
-    if let Err(e) = store_write(&mut *store.lock().await, request, &mut pushes) {
+    if let Err(e) = answer_into(&mut *store.lock().await, request, &mut pushes) {
         send_diag("warn", format!("[task] cannot move task {task_id}: {e}"));
     }
     let everyone = crate::client_sink::ClientSink::everyone(stdout).await;
@@ -498,13 +468,9 @@ async fn on_window_action(
         (
             TaskTransition::PhaseFailed,
             TransitionGuard::AgentRunning,
-            Some(NewTaskComment {
-                kind: "note".to_string(),
-                author: "maestro".to_string(),
-                body: Some("The session was ended while the agent was still working.".to_string()),
-                external_ref: None,
-                phase: None,
-            }),
+            Some(note(
+                "The session was ended while the agent was still working.",
+            )),
         )
     } else {
         (TaskTransition::Unblocked, TransitionGuard::Blocked, None)
@@ -661,7 +627,7 @@ mod tests {
                 TransitionGuard::Always,
             ),
         ] {
-            store_write(
+            answer_into(
                 &mut conn,
                 transition(&project, task.id, event, guard, None, None),
                 &mut pushes,
@@ -802,7 +768,7 @@ mod tests {
             Some(PhaseStatus::Running)
         );
 
-        store_write(
+        answer_into(
             &mut *store.lock().await,
             transition(
                 &project,
