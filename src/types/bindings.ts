@@ -1025,7 +1025,7 @@ async seedAgentProfiles(projectId: number, document: ProfilesDocument) : Promise
     else return { status: "error", error: e  as any };
 }
 },
-async listAutomations(projectId: number) : Promise<Result<AutomationList, string>> {
+async listAutomations(projectId: number) : Promise<Result<ListAutomationsResponse, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_automations", { projectId }) };
 } catch (e) {
@@ -3173,12 +3173,14 @@ rejection: string | null }
  */
 export type AuthMethodDto = { id: string; name: string; description: string | null; methodType: string; args?: string[] }
 /**
- * TS-exportable version of `maestro_protocol::Automation` — the protocol crate derives no `Type`,
- * and giving it one would compile specta into the binary deployed to every remote host.
+ * One automation, whole.
+ * 
+ * The agent settings are the automation's own rather than a reference to an agent profile.
+ * Profiles say what a *pipeline role* means on a project, and an automation has no role.
  */
 export type Automation = { id: string; 
 /**
- * Canonicalized by the server, so this is the server's answer rather than anything sent to it.
+ * Canonicalized path of the project this belongs to, as the daemon resolved it.
  */
 project_path: string; name: string; 
 /**
@@ -3186,7 +3188,10 @@ project_path: string; name: string;
  */
 prompt: string; agent_id: string; 
 /**
- * Five-field cron. `None` for an automation that only runs when the user asks.
+ * Five-field cron, or `None` for an automation that only runs when asked.
+ * 
+ * Cron rather than the editor's presets because the daemon is what evaluates it, and a preset
+ * is a shape the UI can compile to this rather than a second thing to store.
  */
 cron?: string | null; 
 /**
@@ -3194,8 +3199,8 @@ cron?: string | null;
  */
 timezone: string; 
 /**
- * Whether the schedule is live. Disabling stops the clock; Run now still works, which is what
- * makes this a pause rather than a second kind of delete.
+ * Whether the schedule is live. Disabling stops the clock; running it by hand still works,
+ * which is what makes this a pause rather than a second kind of delete.
  */
 enabled: boolean; model?: string | null; 
 /**
@@ -3204,75 +3209,87 @@ enabled: boolean; model?: string | null;
  */
 permission_mode?: string | null; effort?: string | null; workspace: AutomationWorkspace; 
 /**
- * Whether `POST /hooks/<id>` starts this. `enabled` off stops the webhook too.
+ * Whether `POST /hooks/<id>` starts this. Independent of `enabled` above only in one
+ * direction: with `enabled` off, nothing automatic fires, webhook included.
  */
-webhook_enabled: boolean; webhook_overlap: WebhookOverlap; 
+webhook_enabled: boolean; 
 /**
- * Made by the server and only ever replaced by `roll_webhook_secret`; whatever is sent here
- * on save is ignored.
+ * What a delivery does while a run of this automation is already going.
+ */
+webhook_overlap: WebhookOverlap; 
+/**
+ * What a webhook sender signs with, or presents as a bearer token. Made by the server when
+ * the webhook is first turned on and changed only by `RollWebhookSecret`, so a save from a
+ * client never touches it.
  */
 webhook_secret?: string | null; 
 /**
- * When this next comes round, RFC 3339, as the server computed it. Nothing here parses cron.
+ * When this next comes round, RFC 3339. Computed on read and never stored — a stored one
+ * would be wrong the moment the clock or the timezone database moved.
  */
 next_due_at?: string | null }
-/**
- * A project's automations, and the one thing about the machine running them the editor has to
- * know: what "09:00" means there.
- */
-export type AutomationList = { automations: Automation[]; 
-/**
- * The IANA zone the background server's machine is set to. The same as this machine's for a
- * local project, and the only reason the editor offers a choice when it is not.
- */
-server_timezone: string; retention: RunRetention }
-/**
- * What happened to one firing of an automation.
- */
 export type AutomationRun = { id: string; automation_id: string; project_path: string; 
 /**
- * Copied by the server rather than joined, so a run still says what it was after the
- * automation that produced it is renamed or deleted.
+ * Copied rather than joined, so a run still says what it was even after the automation that
+ * produced it is renamed or deleted.
  */
-automation_name: string; status: AutomationRunStatus; trigger: RunTrigger; started_at: string; finished_at?: string | null; 
+automation_name: string; status: AutomationRunStatus; 
 /**
- * The session the run is happening in. This is how the app finds a session it did not start.
+ * What started it: the clock, somebody pressing Run now, or a webhook.
+ */
+trigger: RunTrigger; started_at: string; finished_at?: string | null; 
+/**
+ * The session the run is happening in, absent when the spawn itself failed. This is how a
+ * client finds a session the daemon started, since nothing the host wrote is attached to it.
  */
 session_id?: string | null; error?: string | null; 
 /**
- * What it takes to open this run again once the idle sweep has closed its session: the
- * agent's own id for the conversation, which agent it was, and where it ran.
+ * The agent's own id for this conversation, which is what `session/load` resumes from.
+ * 
+ * `session_id` above names a live session and stops resolving the moment the idle sweep
+ * closes it. These three are what it takes to open the run again afterwards, and this row is
+ * the only place they outlive the session.
  */
 agent_session_id?: string | null; agent_id?: string | null; cwd?: string | null; 
 /**
- * Whether that agent answers `session/load`. A run whose agent cannot is shown without a way
- * in, rather than with one that fails.
+ * Whether that agent answers `session/load`. `None` for a run recorded before this was kept.
  */
 can_reload?: boolean | null; 
 /**
- * The worktree this run made, while it is still on disk. Cleared by the server once it has
- * removed it, so a value here means a directory somebody still has to deal with — which is
- * also what the app adopts a `worktrees` row from.
+ * The worktree this run provisioned, while it is still on disk. Cleared once the daemon has
+ * removed it, so a value here means there is a directory somebody still has to deal with —
+ * which is also what the app adopts a `worktrees` row from. `cwd` above keeps the record of
+ * where the run happened either way.
  */
-worktree_path?: string | null; worktree_branch?: string | null; 
+worktree_path?: string | null; 
 /**
- * What that branch was cut from, so an adopted row can say how much the run committed.
+ * The local branch created with it, and deleted with it.
+ */
+worktree_branch?: string | null; 
+/**
+ * What that branch was cut from, resolved at creation. Carried so the app's adopted row can
+ * say how many commits the run made, which is the question a kept workspace raises.
  */
 worktree_base?: string | null; 
 /**
- * Why that worktree was kept rather than removed. `None` means nothing was kept, which is
- * also true of a run still going.
+ * Why that worktree was kept rather than removed, in words meant for the person who has to
+ * act on it. `None` means nothing was kept, which is also true of a run still going.
  */
 worktree_kept?: string | null; 
 /**
- * Which run of its automation this is, counting from 1, so a session opened from it can be
- * matched to its entry in run history.
+ * Which run of its automation this is, counting from 1. `None` for a run recorded before
+ * runs were numbered. It is what a session opened from this run is labelled with, and the
+ * number in the name of the worktree it made.
  */
 ordinal?: number | null; 
 /**
- * The agent's last message, recorded when the run ends.
+ * The agent's last message, the text after its final tool call, recorded when the run ends.
+ * What a finished run is read by, so nobody has to open a session to see what it concluded.
  */
 result?: string | null }
+/**
+ * What happened to one firing of an automation.
+ */
 export type AutomationRunStatus = "running" | "succeeded" | "failed"
 /**
  * What an automation template keeps: what to do and what starts it.
@@ -3284,8 +3301,8 @@ export type AutomationTemplate = { prompt: string; cron?: string | null; timezon
 /**
  * Where an automation's agent runs.
  * 
- * A path rather than a worktree row id: the server acts on this, and it has no access to this
- * app's database — for an SSH, WSL or container project, not even to the machine it is on.
+ * A path rather than the app's worktree row id: the daemon has to act on this with no access to
+ * the app's database, and on a remote project not even to the machine that database is on.
  */
 export type AutomationWorkspace = 
 /**
@@ -3297,9 +3314,11 @@ export type AutomationWorkspace =
  */
 { mode: "path"; path: string } | 
 /**
- * A fresh worktree per run, branched from `base_branch`. Made and unmade by the server, which
- * is the process on the machine the repository is on; this app adopts a `worktrees` row for
- * one that outlives its run.
+ * A fresh worktree per run, branched from `base_branch`.
+ * 
+ * Created and removed by the daemon, which is the process on the machine the repository is
+ * on. The app adopts a `worktrees` row for one that outlives its run; see phase 4 of
+ * `docs/automations-plan.md`.
  */
 { mode: "new_worktree"; base_branch: string }
 export type Autostart = 
@@ -3549,7 +3568,22 @@ run_mode: RunMode | null;
  */
 loop_config: LoopConfig | null }
 export type CredentialSource = "manual" | "gh_cli" | "glab_cli"
-export type DeliveryOutcome = "started" | "queued" | "busy" | "queue_full" | "rate_limited" | "unauthorized" | "duplicate" | "disabled" | "too_large" | "failed"
+/**
+ * What became of one delivery.
+ */
+export type DeliveryOutcome = "started" | "queued" | 
+/**
+ * A run was going and the automation refuses overlap.
+ */
+"busy" | "queue_full" | "rate_limited" | "unauthorized" | "duplicate" | 
+/**
+ * The webhook, or everything automatic about the automation, is switched off.
+ */
+"disabled" | "too_large" | 
+/**
+ * Authorized and accepted, but the run could not be opened.
+ */
+"failed"
 /**
  * What `detect_project_issue_tracking` worked out from the project's git remote.
  */
@@ -3702,6 +3736,19 @@ export type LandingMode =
  * A Linear team, exported to TypeScript bindings for the team picker (Phase 55).
  */
 export type LinearTeam = { id: string; name: string; key: string }
+export type ListAutomationsResponse = { automations: Automation[]; 
+/**
+ * The IANA zone this server's own machine is set to.
+ * 
+ * Sent with the list because it is what the editor has to offer: an automation on a remote
+ * project runs on that machine, so "09:00" means one thing there and another where the window
+ * is. Falls back to `UTC` when the machine cannot say.
+ */
+server_timezone: string; 
+/**
+ * How much of this project's run history is kept.
+ */
+retention: RunRetention }
 /**
  * A skill Maestro lists but does not manage: one of its own, or one the project carries.
  */
@@ -4271,9 +4318,9 @@ export type ReviewResult = { success: boolean; review_id: number; task_status: s
  */
 export type RunMode = "Pipeline" | "Loop"
 /**
- * Which finished runs a project keeps, per automation. A run is deleted once it is past the newest
- * `keep_last` **and** older than `max_age_days`; a limit left unset does not apply, and both unset
- * keeps everything. Deleting a run removes its worktree and branch, whatever they hold.
+ * Which finished runs a project keeps, per automation. A run is deleted only once it breaks every
+ * limit that is set: past the newest `keep_last` **and** older than `max_age_days`. Both `None`
+ * keeps everything. A running run is never deleted.
  */
 export type RunRetention = { keep_last: number | null; max_age_days: number | null }
 /**
@@ -4643,22 +4690,47 @@ export type UsageTurn = { model_id: string | null;
  * RFC 3339.
  */
 started_at: string; ended_at: string; total_tokens: number | null; input_tokens: number | null; output_tokens: number | null; thought_tokens: number | null; cached_read_tokens: number | null; cached_write_tokens: number | null }
-export type WebhookDelivery = { id: string; received_at: string; status: number; outcome: DeliveryOutcome; detail?: string | null; run_id?: string | null }
+export type WebhookDelivery = { id: string; automation_id: string; received_at: string; 
+/**
+ * The HTTP status the sender got.
+ */
+status: number; outcome: DeliveryOutcome; detail?: string | null; 
+/**
+ * The run it started, once it has one. A queued delivery gets it when its turn comes.
+ */
+run_id?: string | null }
 /**
  * What a webhook delivery does while a run of the same automation is already going.
  */
-export type WebhookOverlap = "refuse" | "queue" | "parallel"
+export type WebhookOverlap = 
 /**
- * One machine's webhook listener, shared by every project on it.
+ * Answer 409 and run nothing.
  */
-export type WebhookSettings = { port: number; bind_address: string; 
+"refuse" | 
 /**
- * What senders call, a tunnel's or a reverse proxy's address. Webhook URLs are built from it.
+ * Wait in line, up to a cap, and run once the current run ends.
+ */
+"queue" | 
+/**
+ * Start another run beside it.
+ */
+"parallel"
+/**
+ * The webhook listener of one machine's server, shared by every project on it.
+ */
+export type WebhookSettings = { port: number; 
+/**
+ * `127.0.0.1` unless a proxy on another machine has to reach it.
+ */
+bind_address: string; 
+/**
+ * The address senders actually call, a tunnel's or a reverse proxy's. Webhook URLs are built
+ * from it; `None` means they are shown on the local address.
  */
 public_url?: string | null }
 export type WebhookStatus = { settings: WebhookSettings; 
 /**
- * Why the listener is not listening, or absent when it is.
+ * Why the listener is not listening, or `None` when it is.
  */
 error?: string | null }
 /**

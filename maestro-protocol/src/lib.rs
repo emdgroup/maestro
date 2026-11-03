@@ -864,6 +864,7 @@ pub struct LogoutRequest {
 /// A path rather than the app's worktree row id: the daemon has to act on this with no access to
 /// the app's database, and on a remote project not even to the machine that database is on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum AutomationWorkspace {
     /// The project directory itself.
@@ -883,6 +884,7 @@ pub enum AutomationWorkspace {
 /// The agent settings are the automation's own rather than a reference to an agent profile.
 /// Profiles say what a *pipeline role* means on a project, and an automation has no role.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct Automation {
     pub id: String,
     /// Canonicalized path of the project this belongs to, as the daemon resolved it.
@@ -913,10 +915,8 @@ pub struct Automation {
     pub workspace: AutomationWorkspace,
     /// Whether `POST /hooks/<id>` starts this. Independent of `enabled` above only in one
     /// direction: with `enabled` off, nothing automatic fires, webhook included.
-    #[serde(default)]
     pub webhook_enabled: bool,
     /// What a delivery does while a run of this automation is already going.
-    #[serde(default)]
     pub webhook_overlap: WebhookOverlap,
     /// What a webhook sender signs with, or presents as a bearer token. Made by the server when
     /// the webhook is first turned on and changed only by `RollWebhookSecret`, so a save from a
@@ -931,6 +931,7 @@ pub struct Automation {
 
 /// What happened to one firing of an automation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum AutomationRunStatus {
     Running,
@@ -939,6 +940,7 @@ pub enum AutomationRunStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct AutomationRun {
     pub id: String,
     pub automation_id: String,
@@ -1008,6 +1010,7 @@ pub struct ListAutomationsRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct ListAutomationsResponse {
     pub automations: Vec<Automation>,
     /// The IANA zone this server's own machine is set to.
@@ -1015,10 +1018,8 @@ pub struct ListAutomationsResponse {
     /// Sent with the list because it is what the editor has to offer: an automation on a remote
     /// project runs on that machine, so "09:00" means one thing there and another where the window
     /// is. Falls back to `UTC` when the machine cannot say.
-    #[serde(default = "utc")]
     pub server_timezone: String,
     /// How much of this project's run history is kept.
-    #[serde(default)]
     pub retention: RunRetention,
 }
 
@@ -1026,10 +1027,9 @@ pub struct ListAutomationsResponse {
 /// limit that is set: past the newest `keep_last` **and** older than `max_age_days`. Both `None`
 /// keeps everything. A running run is never deleted.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct RunRetention {
-    #[serde(default)]
     pub keep_last: Option<u32>,
-    #[serde(default)]
     pub max_age_days: Option<u32>,
 }
 
@@ -1053,10 +1053,6 @@ pub struct DeleteAutomationRunRequest {
 pub struct SetRunRetentionRequest {
     pub project_path: String,
     pub retention: RunRetention,
-}
-
-fn utc() -> String {
-    "UTC".to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -4637,6 +4633,7 @@ mod tests {
 
 /// What started a run.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum RunTrigger {
     Schedule,
@@ -4647,6 +4644,7 @@ pub enum RunTrigger {
 
 /// What a webhook delivery does while a run of the same automation is already going.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum WebhookOverlap {
     /// Answer 409 and run nothing.
@@ -4660,6 +4658,7 @@ pub enum WebhookOverlap {
 
 /// The webhook listener of one machine's server, shared by every project on it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct WebhookSettings {
     pub port: u16,
     /// `127.0.0.1` unless a proxy on another machine has to reach it.
@@ -4671,6 +4670,7 @@ pub struct WebhookSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct WebhookStatus {
     pub settings: WebhookSettings,
     /// Why the listener is not listening, or `None` when it is.
@@ -4680,6 +4680,7 @@ pub struct WebhookStatus {
 
 /// What became of one delivery.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum DeliveryOutcome {
     Started,
@@ -4698,6 +4699,7 @@ pub enum DeliveryOutcome {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct WebhookDelivery {
     pub id: String,
     pub automation_id: String,

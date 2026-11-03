@@ -127,10 +127,7 @@ async fn project_automations(
 ) -> Result<(Vec<Automation>, String), String> {
     let response =
         query_list_automations_via_server(project.key, project.path.clone(), app_state).await?;
-    Ok((
-        response.automations.into_iter().map(Into::into).collect(),
-        response.server_timezone,
-    ))
+    Ok((response.automations, response.server_timezone))
 }
 
 /// The automation `arguments[key]` names, if it is one of this session's project.
@@ -155,14 +152,9 @@ async fn save(
     project: &Project,
     automation: Automation,
 ) -> Result<Value, String> {
-    let saved: Automation = query_save_automation_via_server(
-        project.key,
-        project.path.clone(),
-        automation.into(),
-        app_state,
-    )
-    .await?
-    .into();
+    let saved: Automation =
+        query_save_automation_via_server(project.key, project.path.clone(), automation, app_state)
+            .await?;
     app_state.app_handle.emit("automations-changed", ()).ok();
     Ok(automation_json(&saved))
 }
@@ -420,7 +412,6 @@ pub(super) async fn list_automation_runs(
     let runs: Vec<Value> = response
         .runs
         .into_iter()
-        .map(AutomationRun::from)
         .filter(|run| automation_id.is_none_or(|id| run.automation_id == id))
         .take(limit)
         .map(|run| run_summary(&run))
@@ -440,7 +431,6 @@ pub(super) async fn get_automation_run(
     let run = response
         .runs
         .into_iter()
-        .map(AutomationRun::from)
         .find(|run| run.id == id)
         .ok_or_else(|| format!("no run {id} in this project"))?;
     let mut value = run_summary(&run);
