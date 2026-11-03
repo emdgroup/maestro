@@ -22,9 +22,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::time::Duration;
 
-use maestro_protocol::{
-    AgentRole, ListQueueCandidatesRequest, ServerRequest, ServerResponse, StartTaskRequest, Task,
-};
+use maestro_protocol::{AgentRole, ServerRequest, ServerResponse, StartTaskRequest, Task};
 use rusqlite::Connection;
 use tokio::sync::{mpsc, oneshot};
 
@@ -299,14 +297,11 @@ fn projects_with_candidates(conn: &Connection) -> Result<Vec<String>, String> {
 /// The tasks a drain may start, best first: auto mode decides whether undeferred tasks count,
 /// and a held or refused task is left alone.
 fn candidates(conn: &Connection, project_path: &str) -> Result<Vec<i32>, String> {
-    let request = ListQueueCandidatesRequest {
-        project_path: project_path.to_string(),
-        include_undeferred: crate::pipeline_settings::auto_mode(conn, project_path)?,
-    };
+    let include_undeferred = crate::pipeline_settings::auto_mode(conn, project_path)?;
     let queued = under_loop_cap(
         conn,
         project_path,
-        crate::task_store::queue_candidates(conn, &request)?,
+        crate::task_store::queue_candidates(conn, project_path, include_undeferred)?,
     )?;
     let mut refused = refused();
     // Any write changes the row, leaving the queue or a hand-off included, and a deleted task

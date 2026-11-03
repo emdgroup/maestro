@@ -557,9 +557,7 @@ pub async fn prepare_task_workspace(
     role: maestro_protocol::AgentRole,
 ) -> Result<TaskWorkspace, String> {
     use crate::task_store::worktrees;
-    use maestro_protocol::{
-        AgentRole, BranchMode, ClaimWorktreeForTaskRequest, InsertWorktreeRequest, WorkspaceMode,
-    };
+    use maestro_protocol::{AgentRole, BranchMode, InsertWorktreeRequest, WorkspaceMode};
 
     let project_path = task.project_path.as_str();
     let looping = task.run_mode == maestro_protocol::RunMode::Loop;
@@ -579,11 +577,9 @@ pub async fn prepare_task_workspace(
             })?;
             let claimed = worktrees::claim_for_task(
                 &mut *store.lock().await,
-                &ClaimWorktreeForTaskRequest {
-                    project_path: project_path.to_string(),
-                    task_id: task.id,
-                    worktree_id,
-                },
+                project_path,
+                task.id,
+                worktree_id,
             )?;
             (
                 absolute(project_path, &claimed.path),

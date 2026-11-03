@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 17;
+pub const PROTOCOL_VERSION: u32 = 18;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 ///
@@ -85,9 +85,7 @@ impl ServerResponse {
             Self::TurnStarted(r) => &r.session_id,
             Self::TurnEnded(r) => &r.session_id,
             Self::HostToolCall(r) => &r.session_id,
-            Self::SetModelOk(r) => &r.session_id,
             Self::SetModeOk(r) => &r.session_id,
-            Self::SetConfigOptionOk(r) => &r.session_id,
             Self::ConfigOptionUpdated(r) => &r.session_id,
             Self::SessionLoadOk(r) => &r.session_id,
             Self::Error(err) => return err.session_id.as_deref(),
@@ -249,7 +247,6 @@ pub enum ServerRequest {
     CloseRefinement(CloseRefinementRequest),
     RequestTaskExecution(RequestTaskExecutionRequest),
     /// Queued tasks with no phase, deferred first, then by priority and age.
-    ListQueueCandidates(ListQueueCandidatesRequest),
     /// Unarchived tasks at `AwaitingMerge` with a pull request number, for the forge sweep.
     ListTasksAwaitingMerge(ProjectRef),
     ImportTasks(ImportTasksRequest),
@@ -270,8 +267,6 @@ pub enum ServerRequest {
     InsertWorktree(InsertWorktreeRequest),
     UpdateWorktree(UpdateWorktreeRequest),
     DeleteWorktrees(DeleteWorktreesRequest),
-    ClaimWorktreeForTask(ClaimWorktreeForTaskRequest),
-    GetTaskReview(TaskRef),
     SaveTaskReview(SaveTaskReviewRequest),
     ClearTaskReview(TaskRef),
     /// A loop task's checks in list order, pending proposals included.
@@ -2180,19 +2175,6 @@ pub struct PipelineSettingsChanged {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct ListQueueCandidatesRequest {
-    pub project_path: String,
-    /// Auto mode. Without it only deferred tasks are candidates.
-    #[serde(default)]
-    pub include_undeferred: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct TaskIdList {
-    pub task_ids: Vec<i32>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct TaskList {
     pub tasks: Vec<Task>,
 }
@@ -2468,21 +2450,6 @@ pub struct DeleteWorktreesRequest {
     pub worktree_ids: Vec<i32>,
 }
 
-/// Hand a worktree to a task, releasing any other the task owned. An error when the worktree is
-/// gone.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct ClaimWorktreeForTaskRequest {
-    pub project_path: String,
-    pub task_id: i32,
-    pub worktree_id: i32,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct OptionalTaskReview {
-    #[serde(default)]
-    pub review: Option<TaskReview>,
-}
-
 /// Write a task's review.
 ///
 /// With `comments` the review is replaced, and its comments with it. Without, it is updated in
@@ -2699,9 +2666,7 @@ pub enum ServerResponse {
     /// A run started or finished. Pushed unasked to whoever is attached, because the client that
     /// cares did not ask for it: the clock did.
     AutomationRunChanged(AutomationRun),
-    SetModelOk(SetModelOkResponse),
     SetModeOk(SetModeOkResponse),
-    SetConfigOptionOk(SetConfigOptionOkResponse),
     ConfigOptionUpdated(ConfigOptionUpdatedResponse),
     FileSearchOk(FileSearchResponse),
     FileReadOk(FileReadResponse),
@@ -2715,7 +2680,6 @@ pub enum ServerResponse {
     AuthenticateOk,
     LogoutOk,
     AuthTerminalExit(AuthTerminalExitResponse),
-    AgentConnectionLost(AgentConnectionLost),
     CheckToolsOk(CheckToolsResponse),
     SetToolPathOk(ToolCheckResult),
     TestToolPathOk(ToolCheckResult),
@@ -2756,7 +2720,6 @@ pub enum ServerResponse {
     EndTaskTurnOk(OptionalTask),
     CloseRefinementOk(Task),
     RequestTaskExecutionOk(RequestTaskExecutionResponse),
-    ListQueueCandidatesOk(TaskIdList),
     ListTasksAwaitingMergeOk(TaskList),
     /// The tasks created, not the issues skipped.
     ImportTasksOk(TaskList),
@@ -2775,8 +2738,6 @@ pub enum ServerResponse {
     InsertWorktreeOk(Worktree),
     UpdateWorktreeOk(Worktree),
     DeleteWorktreesOk,
-    ClaimWorktreeForTaskOk(Worktree),
-    GetTaskReviewOk(OptionalTaskReview),
     SaveTaskReviewOk(SaveTaskReviewResponse),
     ClearTaskReviewOk,
     ListLoopChecksOk(LoopCheckList),
@@ -2844,7 +2805,6 @@ impl ServerResponse {
             | Self::TurnStarted(_)
             | Self::TurnEnded(_)
             | Self::AuthTerminalExit(_)
-            | Self::AgentConnectionLost(_)
             | Self::HostToolCall(_)
             | Self::ProjectLocksChanged
             | Self::TakeoverRequested(_)
@@ -2878,9 +2838,7 @@ impl ServerResponse {
             | Self::UsageHoursOk(_)
             | Self::ServerStatusOk(_)
             | Self::PreviewScheduleOk(_)
-            | Self::SetModelOk(_)
             | Self::SetModeOk(_)
-            | Self::SetConfigOptionOk(_)
             | Self::FileSearchOk(_)
             | Self::FileReadOk(_)
             | Self::SessionListOk(_)
@@ -2918,7 +2876,6 @@ impl ServerResponse {
             | Self::EndTaskTurnOk(_)
             | Self::CloseRefinementOk(_)
             | Self::RequestTaskExecutionOk(_)
-            | Self::ListQueueCandidatesOk(_)
             | Self::ListTasksAwaitingMergeOk(_)
             | Self::ImportTasksOk(_)
             | Self::ListTaskCommentsOk(_)
@@ -2936,8 +2893,6 @@ impl ServerResponse {
             | Self::InsertWorktreeOk(_)
             | Self::UpdateWorktreeOk(_)
             | Self::DeleteWorktreesOk
-            | Self::ClaimWorktreeForTaskOk(_)
-            | Self::GetTaskReviewOk(_)
             | Self::SaveTaskReviewOk(_)
             | Self::ClearTaskReviewOk
             | Self::ListLoopChecksOk(_)
@@ -3028,12 +2983,6 @@ pub struct SetModelRequest {
     pub model_id: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct SetModelOkResponse {
-    pub session_id: String,
-    pub model_id: String,
-}
-
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct ModeInfo {
     pub mode_id: String,
@@ -3062,13 +3011,6 @@ pub struct SetModeOkResponse {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SetConfigOptionRequest {
-    pub session_id: String,
-    pub config_id: String,
-    pub value: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct SetConfigOptionOkResponse {
     pub session_id: String,
     pub config_id: String,
     pub value: String,
@@ -3241,13 +3183,6 @@ pub struct AuthTerminalExitResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct AgentConnectionLost {
-    pub agent_id: String,
-    pub reason: String,
-    pub affected_session_ids: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct DiagnosticPayload {
     /// "info" | "warn" | "error"
     pub level: String,
@@ -3387,20 +3322,6 @@ pub async fn read_message<M: Message, R: AsyncRead + Unpin>(
     Ok(read_message_with_id(stream).await?.1)
 }
 
-/// Synchronous version of [`read_message`] for use in `spawn_blocking` reader threads.
-///
-/// On Windows, anonymous pipes don't support overlapped I/O (IOCP), so the async
-/// version uses `spawn_blocking` internally. If the future is dropped while a read
-/// is in flight (e.g. when a `tokio::select!` picks another arm), the blocking thread
-/// continues and the 4-byte length prefix gets silently discarded — causing framing
-/// desync. This function is meant to run in a dedicated blocking thread that is never
-/// dropped, writing results to an mpsc channel instead.
-pub fn read_message_sync<M: Message, R: std::io::Read>(
-    stream: &mut R,
-) -> Result<M, Box<dyn std::error::Error + Send + Sync>> {
-    Ok(read_message_with_id_sync(stream)?.1)
-}
-
 /// Pairs a reply with the request it answers. Rides as the frame's `rpc_id` key beside its
 /// `request` or `response`, and is absent on anything unprompted.
 pub type RequestId = u64;
@@ -3507,7 +3428,14 @@ pub async fn read_message_with_id<M: Message, R: AsyncRead + Unpin>(
     Ok(M::decode(&read_body(stream).await?)?)
 }
 
-/// [`read_message_sync`], keeping the request id the frame carried.
+/// Synchronous version of [`read_message_with_id`] for use in `spawn_blocking` reader threads.
+///
+/// On Windows, anonymous pipes don't support overlapped I/O (IOCP), so the async
+/// version uses `spawn_blocking` internally. If the future is dropped while a read
+/// is in flight (e.g. when a `tokio::select!` picks another arm), the blocking thread
+/// continues and the 4-byte length prefix gets silently discarded, causing framing
+/// desync. This function is meant to run in a dedicated blocking thread that is never
+/// dropped, writing results to an mpsc channel instead.
 pub fn read_message_with_id_sync<M: Message, R: std::io::Read>(
     stream: &mut R,
 ) -> Result<(Option<RequestId>, M), Box<dyn std::error::Error + Send + Sync>> {
@@ -4222,10 +4150,6 @@ mod tests {
         // The id-unaware readers must keep working against a peer that sends ids.
         let plain: M = read_message(&mut frame.as_slice()).await.unwrap();
         assert_eq!(plain, read);
-        assert_eq!(
-            read_message_sync::<M, _>(&mut frame.as_slice()).unwrap(),
-            read
-        );
         assert_eq!(decode_message(body).unwrap(), (id, message));
     }
 
@@ -4588,17 +4512,6 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip_set_model_ok_response() {
-        let msg = AnyMessage::Response(ServerResponse::SetModelOk(SetModelOkResponse {
-            session_id: "sess-1".to_string(),
-            model_id: "claude-opus-4-7".to_string(),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
     fn roundtrip_error_response() {
         let msg = AnyMessage::Response(ServerResponse::Error(ErrorResponse {
             message: "agent not found".to_string(),
@@ -4952,18 +4865,6 @@ mod tests {
             supports_session_delete: false,
             auth_methods: vec![],
             supports_auth_logout: false,
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_agent_connection_lost() {
-        let msg = AnyMessage::Response(ServerResponse::AgentConnectionLost(AgentConnectionLost {
-            agent_id: "claude-acp".to_string(),
-            reason: "agent process exited unexpectedly".to_string(),
-            affected_session_ids: vec!["session-1".to_string(), "session-2".to_string()],
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: AnyMessage = serde_json::from_str(&json).unwrap();

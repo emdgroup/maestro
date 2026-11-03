@@ -6,10 +6,10 @@
 //! a transition its guard refused, owes no push.
 
 use maestro_protocol::{
-    LoopCheckList, LoopIterationList, OptionalTask, OptionalTaskReview, OptionalWorktree,
-    ProjectRef, RequestTaskExecutionResponse, SaveTaskReviewResponse, ServerRequest,
-    ServerResponse, TaskAttachmentList, TaskCommentList, TaskIdList, TaskInstructionList, TaskList,
-    TaskRef, TaskRelationshipList, WorktreeList,
+    LoopCheckList, LoopIterationList, OptionalTask, OptionalWorktree, ProjectRef,
+    RequestTaskExecutionResponse, SaveTaskReviewResponse, ServerRequest, ServerResponse,
+    TaskAttachmentList, TaskCommentList, TaskInstructionList, TaskList, TaskRef,
+    TaskRelationshipList, WorktreeList,
 };
 use rusqlite::Connection;
 
@@ -144,15 +144,6 @@ pub fn answer(
             };
             let reply = A::RequestTaskExecutionOk(RequestTaskExecutionResponse { deferred });
             (r.project_path, reply, changed)
-        }
-        Q::ListQueueCandidates(mut r) => {
-            canonical(&mut r.project_path);
-            let task_ids = super::queue_candidates(conn, &r)?;
-            (
-                r.project_path,
-                A::ListQueueCandidatesOk(TaskIdList { task_ids }),
-                Changed::default(),
-            )
         }
         Q::ListTasksAwaitingMerge(mut r) => {
             canonical(&mut r.project_path);
@@ -296,22 +287,7 @@ pub fn answer(
             };
             (r.project_path, A::DeleteWorktreesOk, changed)
         }
-        Q::ClaimWorktreeForTask(mut r) => {
-            canonical(&mut r.project_path);
-            let worktree = worktrees::claim_for_task(conn, &r)?;
-            (
-                r.project_path,
-                A::ClaimWorktreeForTaskOk(worktree),
-                worktree_rows,
-            )
-        }
         // A review is about its task, so its change is the task's.
-        Q::GetTaskReview(mut r) => {
-            canonical(&mut r.project_path);
-            let review = reviews::get_review(conn, &r.project_path, r.task_id)?;
-            let reply = A::GetTaskReviewOk(OptionalTaskReview { review });
-            (r.project_path, reply, Changed::default())
-        }
         Q::SaveTaskReview(mut r) => {
             canonical(&mut r.project_path);
             let review_id = reviews::save_review(conn, &r)?;

@@ -463,9 +463,6 @@ function create(sessionId: string): Runtime {
         ),
       );
     }),
-    listen<string>(`acp://model-changed/${sessionId}`, (event) => {
-      updateLifecycle((l) => ({ ...l, configValues: { ...l.configValues, model: event.payload } }));
-    }),
     listen<string>(`acp://mode-changed/${sessionId}`, (event) => {
       updateLifecycle((l) => ({ ...l, configValues: { ...l.configValues, mode: event.payload } }));
     }),

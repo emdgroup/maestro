@@ -21,8 +21,8 @@ pub use threads::*;
 use chrono::Utc;
 use maestro_protocol::{
     BranchMode, CloseRefinementRequest, CreateTaskRequest, EndTaskTurnRequest, ImportTasksRequest,
-    ListQueueCandidatesRequest, LoopConfig, RequestTaskExecutionRequest, RunMode, Task, TaskPhase,
-    TaskStatus, TaskTransition, TaskUpdate, TransitionGuard, TurnEnding, WorkspaceMode,
+    LoopConfig, RequestTaskExecutionRequest, RunMode, Task, TaskPhase, TaskStatus, TaskTransition,
+    TaskUpdate, TransitionGuard, TurnEnding, WorkspaceMode,
 };
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{de::DeserializeOwned, Serialize};
@@ -695,7 +695,8 @@ pub fn request_execution(
 /// mode may start. `phase IS NULL` keeps a task already being spawned, or failed at it, out.
 pub fn queue_candidates(
     conn: &Connection,
-    request: &ListQueueCandidatesRequest,
+    project_path: &str,
+    include_undeferred: bool,
 ) -> Result<Vec<i32>, String> {
     let mut statement = conn
         .prepare(
@@ -716,10 +717,7 @@ pub fn queue_candidates(
         )
         .map_err(|e| format!("Failed to prepare query: {e}"))?;
     let ids = statement
-        .query_map(
-            params![request.project_path, request.include_undeferred],
-            |row| row.get(0),
-        )
+        .query_map(params![project_path, include_undeferred], |row| row.get(0))
         .map_err(|e| format!("Failed to query ready tasks: {e}"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Failed to read ready tasks: {e}"))?;
@@ -1370,14 +1368,7 @@ mod tests {
     }
 
     fn candidates(conn: &Connection, project_path: &str, include_undeferred: bool) -> Vec<i32> {
-        queue_candidates(
-            conn,
-            &ListQueueCandidatesRequest {
-                project_path: project_path.to_string(),
-                include_undeferred,
-            },
-        )
-        .expect("candidates")
+        queue_candidates(conn, project_path, include_undeferred).expect("candidates")
     }
 
     #[test]
