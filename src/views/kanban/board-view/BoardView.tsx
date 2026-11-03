@@ -1,11 +1,9 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { DragDropProvider, DragOverlay } from "@dnd-kit/react";
 import { move } from "@dnd-kit/helpers";
-import { useActiveTerminalTaskId, useIsTerminalOpen, useBoardActions } from "@/store/boardStore";
 import { useIsGitRepo } from "@/store/projectStore";
 import { Task, TaskStatus } from "@/types/bindings";
 import { KanbanColumn } from "@/components/kanban/kanban-column/KanbanColumn";
-import { ExecutionTerminal } from "@/components/execution/terminal/ExecutionTerminal";
 import { useUpdateTask } from "@/services/task.service";
 import { priorityAfterDrop } from "@/lib/queue-priority";
 import { useCardMotion } from "./useCardMotion";
@@ -35,9 +33,6 @@ interface BoardViewProps {
 }
 
 export function BoardView({ tasks }: BoardViewProps) {
-  const activeTerminalTaskId = useActiveTerminalTaskId();
-  const isTerminalOpen = useIsTerminalOpen();
-  const { closeTerminal } = useBoardActions();
   const updateTask = useUpdateTask();
   const isGitRepo = useIsGitRepo();
 
@@ -191,18 +186,6 @@ export function BoardView({ tasks }: BoardViewProps) {
           )}
         </DragOverlay>
       </DragDropProvider>
-
-      {isTerminalOpen && activeTerminalTaskId !== null && (
-        <ExecutionTerminal
-          taskId={activeTerminalTaskId}
-          taskName={
-            tasks.find((t) => t.id === activeTerminalTaskId)?.title ||
-            `Task ${activeTerminalTaskId}`
-          }
-          isActive={true}
-          onClose={closeTerminal}
-        />
-      )}
     </div>
   );
 }
