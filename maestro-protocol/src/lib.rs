@@ -5,6 +5,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 pub mod attachments;
 pub mod completion;
 pub mod exec;
+pub mod mcp_args;
 pub mod worktree_names;
 
 pub const MSG_LEN_SIZE: usize = 4;

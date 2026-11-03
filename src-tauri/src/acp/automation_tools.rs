@@ -10,6 +10,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use maestro_protocol::mcp_args::required_text;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
 use tauri::Emitter;
@@ -63,15 +64,6 @@ const TEMPLATE_FIELDS: [&str; 5] = [
 /// Default number of runs `list_automation_runs` returns, and the most it will.
 const DEFAULT_RUNS: u64 = 20;
 const MAX_RUNS: u64 = 100;
-
-fn required_str<'a>(arguments: &'a Value, key: &str) -> Result<&'a str, String> {
-    arguments
-        .get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| format!("{key} is required"))
-}
 
 /// `base` with every one of `fields` the agent passed written over it, `null` included, so an
 /// agent clears a schedule the same way it sets one. Going through serde means a wrong type is
@@ -148,7 +140,7 @@ async fn find_automation(
     arguments: &Value,
     key: &str,
 ) -> Result<(Project, Automation), String> {
-    let id = required_str(arguments, key)?;
+    let id = required_text(arguments, key)?;
     let project = project(app_state, session_id).await?;
     let (automations, _) = project_automations(app_state, &project).await?;
     let automation = automations
@@ -441,7 +433,7 @@ pub(super) async fn get_automation_run(
     session_id: &str,
     arguments: &Value,
 ) -> Result<Value, String> {
-    let id = required_str(arguments, "id")?;
+    let id = required_text(arguments, "id")?;
     let project = project(app_state, session_id).await?;
     let response =
         query_automation_runs_via_server(project.key, project.path, None, app_state).await?;
@@ -526,7 +518,7 @@ fn find_template(
     arguments: &Value,
     key: &str,
 ) -> Result<FoundTemplate, String> {
-    let id = required_str(arguments, key)?;
+    let id = required_text(arguments, key)?;
     all_templates(app_state)?
         .into_iter()
         .find(|template| template.id == id)
@@ -605,7 +597,7 @@ pub(super) fn update_template(
     let body: AutomationTemplate = overlay(body, arguments, &TEMPLATE_FIELDS)?;
     let name = match arguments.get("name") {
         None | Some(Value::Null) => template.name.clone(),
-        Some(_) => required_str(arguments, "name")?.to_string(),
+        Some(_) => required_text(arguments, "name")?,
     };
     let tag = tag_argument(arguments, template.tag)?;
     save_template(
@@ -626,7 +618,7 @@ pub(super) async fn save_as_template(
         find_automation(app_state, session_id, arguments, "automation_id").await?;
     let name = match arguments.get("name") {
         None | Some(Value::Null) => automation.name.clone(),
-        Some(_) => required_str(arguments, "name")?.to_string(),
+        Some(_) => required_text(arguments, "name")?,
     };
     let tag = tag_argument(arguments, None)?;
     let body = TemplateBody::Automation(AutomationTemplate {
