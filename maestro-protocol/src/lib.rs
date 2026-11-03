@@ -3227,18 +3227,8 @@ pub async fn write_frame<W: AsyncWrite + Unpin, T: Serialize>(
     stream: &mut W,
     msg: &T,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let bytes = serde_json::to_vec(msg)?;
-    if bytes.len() > MAX_MESSAGE_SIZE {
-        return Err(format!(
-            "Message too large to send: {} bytes (max {})",
-            bytes.len(),
-            MAX_MESSAGE_SIZE
-        )
-        .into());
-    }
-    let len = bytes.len() as u32;
-    stream.write_all(&len.to_le_bytes()).await?;
-    stream.write_all(&bytes).await?;
+    let frame = frame(serde_json::to_vec(msg)?).map_err(|e| e as Box<dyn std::error::Error>)?;
+    stream.write_all(&frame).await?;
     Ok(())
 }
 
@@ -3254,17 +3244,9 @@ pub async fn read_frame<R: AsyncRead + Unpin, T: serde::de::DeserializeOwned>(
 async fn read_body<R: AsyncRead + Unpin>(
     stream: &mut R,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let mut len_buf = [0u8; MSG_LEN_SIZE];
-    stream.read_exact(&mut len_buf).await?;
-    let len = u32::from_le_bytes(len_buf) as usize;
-    if len > MAX_MESSAGE_SIZE {
-        return Err(format!(
-            "Message too large: {} bytes (max {})",
-            len, MAX_MESSAGE_SIZE
-        )
-        .into());
-    }
-    let mut body = vec![0u8; len];
+    let mut prefix = [0u8; MSG_LEN_SIZE];
+    stream.read_exact(&mut prefix).await?;
+    let mut body = vec![0u8; body_len(prefix)?];
     stream.read_exact(&mut body).await?;
     Ok(body)
 }
@@ -3273,19 +3255,39 @@ async fn read_body<R: AsyncRead + Unpin>(
 fn read_body_sync<R: std::io::Read>(
     stream: &mut R,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    let mut len_buf = [0u8; MSG_LEN_SIZE];
-    stream.read_exact(&mut len_buf)?;
-    let len = u32::from_le_bytes(len_buf) as usize;
-    if len > MAX_MESSAGE_SIZE {
-        return Err(format!(
-            "Message too large: {} bytes (max {})",
-            len, MAX_MESSAGE_SIZE
-        )
-        .into());
-    }
-    let mut body = vec![0u8; len];
+    let mut prefix = [0u8; MSG_LEN_SIZE];
+    stream.read_exact(&mut prefix)?;
+    let mut body = vec![0u8; body_len(prefix)?];
     stream.read_exact(&mut body)?;
     Ok(body)
+}
+
+/// One whole frame's body taken off the front of `buffer`, for a reader that receives bytes in
+/// chunks rather than reading a stream. `Ok(None)` until a whole frame has arrived. An error when
+/// the length prefix exceeds `MAX_MESSAGE_SIZE`: the stream cannot be resynchronized after that,
+/// so the caller has to drop the connection.
+pub fn take_frame(buffer: &mut Vec<u8>) -> Result<Option<Vec<u8>>, String> {
+    let Some(prefix) = buffer.first_chunk::<MSG_LEN_SIZE>() else {
+        return Ok(None);
+    };
+    let end = MSG_LEN_SIZE + body_len(*prefix)?;
+    if buffer.len() < end {
+        return Ok(None);
+    }
+    let body = buffer[MSG_LEN_SIZE..end].to_vec();
+    buffer.drain(..end);
+    Ok(Some(body))
+}
+
+/// The body length a frame's prefix announces, refused past `MAX_MESSAGE_SIZE`.
+fn body_len(prefix: [u8; MSG_LEN_SIZE]) -> Result<usize, String> {
+    let len = u32::from_le_bytes(prefix) as usize;
+    if len > MAX_MESSAGE_SIZE {
+        return Err(format!(
+            "Message too large: {len} bytes (max {MAX_MESSAGE_SIZE})"
+        ));
+    }
+    Ok(len)
 }
 
 pub async fn write_message<M: Message, W: AsyncWrite + Unpin>(
@@ -4571,6 +4573,20 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("Message too large"));
+    }
+
+    #[test]
+    fn take_frame_waits_for_a_whole_frame_and_rejects_an_oversized_prefix() {
+        let mut buffer = 3u32.to_le_bytes().to_vec();
+        buffer.extend_from_slice(b"ab");
+        assert_eq!(take_frame(&mut buffer), Ok(None));
+        buffer.push(b'c');
+        assert_eq!(take_frame(&mut buffer), Ok(Some(b"abc".to_vec())));
+        assert!(buffer.is_empty());
+
+        // A corrupt prefix must fail rather than leave the reader buffering toward it.
+        let mut buffer = ((MAX_MESSAGE_SIZE + 1) as u32).to_le_bytes().to_vec();
+        assert!(take_frame(&mut buffer).is_err());
     }
 
     #[test]
