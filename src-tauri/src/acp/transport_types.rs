@@ -1,7 +1,9 @@
 //! Low-level ACP transport primitives: frame parsing, serialization, and read/write sources.
 
 use crate::acp::transport::{write_message, ServerRequest, ServerResponse};
-use maestro_protocol::{decode_message, encode_message, read_message_with_id, RequestId};
+use maestro_protocol::{
+    decode_message, encode_message, read_message_with_id, RequestId, MAX_MESSAGE_SIZE,
+};
 use russh::ChannelMsg;
 use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::ChildStdin;
@@ -56,32 +58,28 @@ impl AcpReadSource {
                     Ok(msg) => {
                         return Some(msg);
                     }
+                    // Only a parse error is recoverable: read_message consumed the frame bytes
+                    // before failing to deserialize, so the stream is positioned at the next
+                    // frame. EOF, a read failure, or an oversized length prefix leaves nothing
+                    // to resynchronize on.
+                    Err(e) if e.is::<serde_json::Error>() => {}
                     Err(e) => {
-                        // Only EOF is terminal. Parse errors are recoverable: read_message
-                        // consumed the frame bytes via read_exact before failing to deserialize,
-                        // so the stream is correctly positioned for the next frame.
-                        let is_eof = e
-                            .downcast_ref::<std::io::Error>()
-                            .map(|io| io.kind() == std::io::ErrorKind::UnexpectedEof)
-                            .unwrap_or(false);
-                        if is_eof {
-                            return None;
-                        }
-                        // Loop and try next frame
+                        log::debug!("[acp] read failed, closing: {e}");
+                        return None;
                     }
                 }
             },
             AcpReadSource::Remote { read_half, msg_buf } => loop {
-                if let Some(msg) = try_parse_message(msg_buf) {
-                    return Some(msg);
+                match try_parse_message(msg_buf) {
+                    Ok(Some(msg)) => return Some(msg),
+                    Ok(None) => {}
+                    Err(e) => {
+                        log::warn!("[acp] {e}, closing the connection");
+                        return None;
+                    }
                 }
                 match read_half.wait().await {
-                    Some(ChannelMsg::Data { data }) => {
-                        msg_buf.extend_from_slice(&data);
-                        if let Some(msg) = try_parse_message(msg_buf) {
-                            return Some(msg);
-                        }
-                    }
+                    Some(ChannelMsg::Data { data }) => msg_buf.extend_from_slice(&data),
                     Some(ChannelMsg::ExtendedData { .. })
                     | Some(ChannelMsg::WindowAdjusted { .. }) => {}
                     Some(ChannelMsg::Eof)
@@ -112,31 +110,42 @@ pub(crate) async fn perform_handshake(source: &mut AcpReadSource) -> Result<(), 
 }
 
 /// Parse one complete framed message from `buf`, always consuming its bytes.
-/// Returns None on parse failure (corrupt frame skipped) or incomplete frame.
+/// Returns `Ok(None)` on parse failure (corrupt frame skipped) or incomplete frame, and an error
+/// when the length prefix exceeds `MAX_MESSAGE_SIZE`: the stream cannot be resynchronized after
+/// that, so the caller must drop the connection.
 ///
 /// Generic over the message type so the exec channel, which shares this framing but carries its
 /// own messages, can reuse it.
-pub(crate) fn try_parse_acp_frame<T: serde::de::DeserializeOwned>(buf: &mut Vec<u8>) -> Option<T> {
-    serde_json::from_slice::<T>(&take_frame_body(buf)?).ok()
+pub(crate) fn try_parse_acp_frame<T: serde::de::DeserializeOwned>(
+    buf: &mut Vec<u8>,
+) -> Result<Option<T>, String> {
+    Ok(take_frame_body(buf)?.and_then(|body| serde_json::from_slice::<T>(&body).ok()))
 }
 
 /// [`try_parse_acp_frame`] for the server's own messages, keeping the request id beside them.
-fn try_parse_message(buf: &mut Vec<u8>) -> Option<(Option<RequestId>, ServerResponse)> {
-    decode_message(&take_frame_body(buf)?).ok()
+fn try_parse_message(
+    buf: &mut Vec<u8>,
+) -> Result<Option<(Option<RequestId>, ServerResponse)>, String> {
+    Ok(take_frame_body(buf)?.and_then(|body| decode_message(&body).ok()))
 }
 
-fn take_frame_body(buf: &mut Vec<u8>) -> Option<Vec<u8>> {
-    if buf.len() < 4 {
-        return None;
+fn take_frame_body(buf: &mut Vec<u8>) -> Result<Option<Vec<u8>>, String> {
+    let Some(prefix) = buf.first_chunk::<4>() else {
+        return Ok(None);
+    };
+    let len = u32::from_le_bytes(*prefix) as usize;
+    if len > MAX_MESSAGE_SIZE {
+        return Err(format!(
+            "Message too large: {len} bytes (max {MAX_MESSAGE_SIZE})"
+        ));
     }
-    let len = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
     if buf.len() < 4 + len {
-        return None;
+        return Ok(None);
     }
     // Drain first so a corrupt frame never loops — caller retries with the next frame.
     let frame_bytes = buf[4..4 + len].to_vec();
     buf.drain(..4 + len);
-    Some(frame_bytes)
+    Ok(Some(frame_bytes))
 }
 
 /// Low-level write + flush to a `BufWriter<ChildStdin>`.
@@ -152,4 +161,24 @@ pub(crate) async fn write_to_acp_session_raw(
         .await
         .map_err(|e| format!("flush failed: {}", e))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::take_frame_body;
+    use maestro_protocol::MAX_MESSAGE_SIZE;
+
+    #[test]
+    fn frame_body_waits_for_a_whole_frame_and_rejects_an_oversized_prefix() {
+        let mut buf = 3u32.to_le_bytes().to_vec();
+        buf.extend_from_slice(b"ab");
+        assert_eq!(take_frame_body(&mut buf), Ok(None));
+        buf.push(b'c');
+        assert_eq!(take_frame_body(&mut buf), Ok(Some(b"abc".to_vec())));
+        assert!(buf.is_empty());
+
+        // A corrupt prefix must fail rather than leave the reader buffering toward it.
+        let mut buf = ((MAX_MESSAGE_SIZE + 1) as u32).to_le_bytes().to_vec();
+        assert!(take_frame_body(&mut buf).is_err());
+    }
 }

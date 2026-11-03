@@ -367,8 +367,16 @@ async fn start_child(mut command: tokio::process::Command) -> Result<Channel, St
         let mut buffer = Vec::new();
         let mut scratch = [0u8; 64 * 1024];
         loop {
-            while let Some(event) = try_parse_acp_frame::<ExecEvent>(&mut buffer) {
-                deliver(&pending, event);
+            match try_parse_acp_frame::<ExecEvent>(&mut buffer) {
+                Ok(Some(event)) => {
+                    deliver(&pending, event);
+                    continue;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    log::warn!("exec channel: {e}, closing it");
+                    break;
+                }
             }
             match reader.read(&mut scratch).await {
                 Ok(0) | Err(_) => break,
@@ -410,8 +418,16 @@ async fn start_over_ssh(session: &RemoteSshSession, launch: &str) -> Result<Chan
         use russh::ChannelMsg;
         let mut buffer = Vec::new();
         loop {
-            while let Some(event) = try_parse_acp_frame::<ExecEvent>(&mut buffer) {
-                deliver(&pending, event);
+            match try_parse_acp_frame::<ExecEvent>(&mut buffer) {
+                Ok(Some(event)) => {
+                    deliver(&pending, event);
+                    continue;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    log::warn!("exec channel: {e}, closing it");
+                    break;
+                }
             }
             match read_half.wait().await {
                 Some(ChannelMsg::Data { data }) => buffer.extend_from_slice(&data),
