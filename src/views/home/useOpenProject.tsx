@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import {
+  openProject as openProjectById,
+  primeProjectServer,
+  releaseActiveProjectLock,
   useCheckIsGitRepo,
   useCreateProject,
   useGitInitProject,
@@ -9,7 +12,6 @@ import {
 } from "@/services/project.service";
 import { useSelectedProjectActions, applyProjectStartupTab } from "@/store/projectStore";
 import type { ConnectionKey, Project } from "@/types/bindings";
-import { api } from "@/lib/tauri-utils";
 import {
   getErrorMessage,
   importFailure,
@@ -94,7 +96,7 @@ export function useOpenProject(options: OpenProjectOptions = {}) {
   // Any other prime failure is benign, but a failed import keeps the project closed.
   const primeProject = (projectId: number) => {
     openingId.current = projectId;
-    return api.primeProjectServer(projectId).catch((error: unknown) => {
+    return primeProjectServer(projectId).catch((error: unknown) => {
       if (importFailure(error) !== null) throw error;
     });
   };
@@ -106,7 +108,7 @@ export function useOpenProject(options: OpenProjectOptions = {}) {
       return;
     }
     // The open took the project's lock before the import failed; Retry takes it again.
-    void api.releaseActiveProjectLock().catch(console.error);
+    void releaseActiveProjectLock().catch(console.error);
     toast.error(failure, {
       action: { label: "Retry", onClick: () => void openProject(projectId) },
     });
@@ -115,7 +117,7 @@ export function useOpenProject(options: OpenProjectOptions = {}) {
   const openProject = async (projectId: number, knownGitRepo?: boolean) => {
     setOpening(projectId);
     try {
-      const project = await api.openProject(projectId);
+      const project = await openProjectById(projectId);
       const [isGitRepo] = await Promise.all([
         knownGitRepo ??
           checkIsGitRepo({

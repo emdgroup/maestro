@@ -46,6 +46,18 @@ export function connectionQueryKey(connection: ConnectionKey): number | string {
 }
 
 /**
+ * Open a project in this window: take its lock and answer with the project. Imperative, since what
+ * follows (priming its server, switching to it) is the caller's sequence.
+ */
+export const openProject = (projectId: number) => api.openProject(projectId);
+
+/** Start the project's server and bring its board over if it has not moved yet. */
+export const primeProjectServer = (projectId: number) => api.primeProjectServer(projectId);
+
+/** Give up the lock `openProject` took, for an open that failed after taking it. */
+export const releaseActiveProjectLock = () => api.releaseActiveProjectLock();
+
+/**
  * Query hook for fetching project settings/configuration
  */
 export function useProjectSettings(projectId: number | null) {

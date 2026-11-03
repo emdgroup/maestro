@@ -21,8 +21,12 @@ import {
   useSpawnAcpSessionMutation,
   useAgentDiscoveryQuery,
   useCancelActiveSessionMutation,
+  discardFailedSpawn,
+  getAcpSessionMeta,
+  sendAcpPrompt,
+  sendAcpPromptStructured,
 } from "@/services/execution.service";
-import { useWorktreesQuery } from "@/services/worktree.service";
+import { cleanupWorktreeIfClean, useWorktreesQuery } from "@/services/worktree.service";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import type { ConnectionKey } from "@/types/bindings";
 import { useBoardStore, useBoardActions } from "@/store/boardStore";
@@ -41,7 +45,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
-import { api } from "@/lib/tauri-utils";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
@@ -229,9 +232,9 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
     void (async () => {
       const session = sessionsRef.current.find((s) => s.session_id === sessionId);
       if (!session) return;
-      const meta = await api.getAcpSessionMeta(sessionId).catch(() => null);
+      const meta = await getAcpSessionMeta(sessionId).catch(() => null);
       if (!meta) return;
-      await api.discardFailedSpawn(sessionId).catch(() => {});
+      await discardFailedSpawn(sessionId).catch(() => {});
       const result = await spawnAcpMutation.mutateAsync({
         agentId: session.agent_id ?? "",
         cwd: meta.cwd,
@@ -248,9 +251,9 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
             unlisten();
             try {
               if (Array.isArray(lastPrompt)) {
-                await api.sendAcpPromptStructured(sessionId, lastPrompt);
+                await sendAcpPromptStructured(sessionId, lastPrompt);
               } else {
-                await api.sendAcpPrompt(sessionId, lastPrompt as string);
+                await sendAcpPrompt(sessionId, lastPrompt as string);
               }
             } catch (e) {
               console.error("[auth-retry] sendAcpPrompt failed:", e);
@@ -357,8 +360,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
             );
           } else if (projectId != null) {
             autoWorktrees.current.delete(session.session_id);
-            void api
-              .cleanupWorktreeIfClean(projectId, auto.path, auto.branchName, auto.id)
+            void cleanupWorktreeIfClean(projectId, auto.path, auto.branchName, auto.id)
               .then((keptBecause) => {
                 if (keptBecause === null) {
                   toast.success(`Removed empty worktree ${auto.branchName}`);

@@ -40,6 +40,17 @@ export function useWorktreesQuery(
   });
 }
 
+/**
+ * Remove a worktree a closed session made, unless it holds work. Answers why it was kept, or null
+ * once it is gone.
+ */
+export const cleanupWorktreeIfClean = (
+  projectId: number,
+  worktreePath: string,
+  branchName: string,
+  worktreeId: number | null,
+) => api.cleanupWorktreeIfClean(projectId, worktreePath, branchName, worktreeId);
+
 export function usePrefetchWorktrees() {
   const queryClient = useQueryClient();
   return useCallback(
