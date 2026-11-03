@@ -4,11 +4,11 @@ use std::sync::Arc;
 use tauri::Emitter;
 use tauri::State;
 
-use crate::acp::transport::{SessionDeleteRequest, SessionListRequest};
 use crate::core::AppState;
 use crate::models::worktree::{
     ActiveSessionInfo, ExecutionMode, SessionListEntryDto, SessionListResult,
 };
+use maestro_protocol::{SessionDeleteRequest, SessionListRequest};
 
 // Re-export attachment types and handlers (including macro-generated tauri/specta symbols)
 // so ipc/mod.rs glob import still resolves them.

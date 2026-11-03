@@ -3,10 +3,10 @@
 //! refetches the board.
 
 use crate::acp::connection_server::{query_project_store, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 use crate::models::{BranchMode, Task, WorkspaceMode};
 use maestro_protocol::{ProjectRef, TaskRef, TaskUpdate};
+use maestro_protocol::{ServerRequest, ServerResponse};
 use std::sync::Arc;
 use tauri::State;
 

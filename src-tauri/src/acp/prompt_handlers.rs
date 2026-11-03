@@ -1,11 +1,11 @@
 use std::sync::Arc;
 use tauri::State;
 
-use crate::acp::transport::{
+use crate::core::AppState;
+use maestro_protocol::{
     ElicitationResponse, PermissionResponse, PromptRequest, ServerRequest, SetConfigOptionRequest,
     SetModeRequest, SetModelRequest,
 };
-use crate::core::AppState;
 
 async fn send_prompt_impl(
     app_state: &Arc<AppState>,
@@ -171,7 +171,7 @@ pub async fn set_acp_config_option(
 
 #[cfg(test)]
 mod tests {
-    use crate::acp::transport::{PermissionResponse, PromptRequest, ServerRequest};
+    use maestro_protocol::{PermissionResponse, PromptRequest, ServerRequest};
 
     #[test]
     fn test_send_acp_prompt_message_structure() {

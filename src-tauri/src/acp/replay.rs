@@ -1,7 +1,7 @@
 //! Session-update delivery for ACP reader tasks: straight to the frontend, or into the replay
 //! buffer that a restored session drains once its listener has registered.
 
-use crate::acp::transport::{SessionModeState, SessionModelState};
+use maestro_protocol::{SessionModeState, SessionModelState};
 use tauri::Emitter;
 
 /// Serialize a payload for the replay buffer, logging and yielding `None` on failure.

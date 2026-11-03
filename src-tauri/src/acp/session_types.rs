@@ -1,7 +1,7 @@
 //! Core ACP session and transport data types.
 
-use crate::acp::transport::{PromptCapabilitiesInfo, ServerResponse};
 use maestro_protocol::RequestId;
+use maestro_protocol::{PromptCapabilitiesInfo, ServerResponse};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -485,7 +485,7 @@ impl AcpProcess {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::acp::transport::ErrorResponse;
+    use maestro_protocol::ErrorResponse;
 
     fn error(message: &str) -> ServerResponse {
         ServerResponse::Error(ErrorResponse {

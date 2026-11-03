@@ -4,10 +4,10 @@ use tauri::State;
 use tokio::sync::oneshot;
 
 use crate::acp::connection_server::{reply, request_via_server, UNEXPECTED_REPLY};
-use crate::acp::transport::{FileReadRequest, FileSearchRequest, ServerRequest, ServerResponse};
 use crate::acp::ConnectionKey;
 use crate::connectivity::files::BINARY_LIMIT;
 use crate::core::AppState;
+use maestro_protocol::{FileReadRequest, FileSearchRequest, ServerRequest, ServerResponse};
 
 /// Send a request to a session and await a oneshot response with a 15-second timeout.
 async fn session_file_rpc<T>(

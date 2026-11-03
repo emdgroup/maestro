@@ -3,7 +3,6 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::acp::connection_server::{query_project_store, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 use crate::models::Worktree;
 use maestro_protocol::paths::path_is_within;
@@ -15,6 +14,7 @@ use maestro_protocol::{
     DeleteWorktreesRequest, InsertWorktreeRequest, ListWorktreesRequest, ProjectRef,
     UpdateWorktreeRequest,
 };
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 /// The project's worktree rows, or only the one a task owns: the daemon keeps a task to one.
 pub(crate) async fn list_worktree_rows(

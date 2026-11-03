@@ -1,6 +1,5 @@
 use super::exec::{run_git_in_dir, run_git_in_dir_lossy};
 use crate::acp::connection_server::{query_project_store, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::acp::ConnectionKey;
 use crate::core::{get_project_with_git_conn, AppState};
 use crate::git::worktree_lifecycle::{delete_worktree_rows, task_worktree};
@@ -12,6 +11,7 @@ use maestro_protocol::{
     LoopCheck, LoopCheckKind, LoopCheckState, LoopIteration, NewTaskComment, ProjectRef,
     SaveTaskReviewRequest, TaskRef, TaskTransition, TaskUpdate, TransitionGuard,
 };
+use maestro_protocol::{ServerRequest, ServerResponse};
 use std::sync::Arc;
 use tauri::State;
 

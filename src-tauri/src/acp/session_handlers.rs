@@ -281,7 +281,7 @@ async fn branch_of_worktree_at(
     cwd: &str,
 ) -> Option<String> {
     use crate::acp::connection_server::{query_project_store, reply};
-    use crate::acp::transport::{ServerRequest, ServerResponse};
+    use maestro_protocol::{ServerRequest, ServerResponse};
 
     let basename = std::path::Path::new(cwd).file_name()?.to_str()?;
     let list = query_project_store(
@@ -349,7 +349,7 @@ pub(crate) async fn tear_down_session(
     app_state: &Arc<AppState>,
     session_id: &str,
 ) -> Option<TaskKey> {
-    use crate::acp::transport::{CancelRequest, ServerRequest};
+    use maestro_protocol::{CancelRequest, ServerRequest};
 
     let cancel_msg = ServerRequest::Cancel(CancelRequest {
         session_id: session_id.to_string(),
@@ -476,7 +476,7 @@ pub async fn interrupt_acp_turn(
     app_state: State<'_, Arc<AppState>>,
     session_id: &str,
 ) -> Result<(), String> {
-    use crate::acp::transport::{InterruptTurnRequest, ServerRequest};
+    use maestro_protocol::{InterruptTurnRequest, ServerRequest};
 
     let msg = ServerRequest::InterruptTurn(InterruptTurnRequest {
         session_id: session_id.to_string(),

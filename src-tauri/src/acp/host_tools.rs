@@ -9,8 +9,8 @@ use std::sync::Arc;
 use tauri::Emitter;
 
 use crate::acp::automation_tools;
-use crate::acp::transport::{HostToolCall, HostToolResult, ServerRequest};
 use crate::core::AppState;
+use maestro_protocol::{HostToolCall, HostToolResult, ServerRequest};
 use serde_json::{json, Value};
 
 /// Ceiling on one `canvas_await`, matching the tool's own schema. The shim's gateway connection

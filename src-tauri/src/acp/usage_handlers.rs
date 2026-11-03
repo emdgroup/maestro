@@ -6,9 +6,9 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::acp::connection_server::{query_via_server, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 /// One recorded turn. The token counts are `None` when the agent reported none for it.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

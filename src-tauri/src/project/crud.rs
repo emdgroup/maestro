@@ -226,7 +226,7 @@ pub async fn release_active_project_lock(
     app_state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     if let Some((_, key)) = app_state.release_active_project_lock() {
-        let release = crate::acp::transport::ServerRequest::ReleaseProjectLock;
+        let release = maestro_protocol::ServerRequest::ReleaseProjectLock;
         if let Err(e) =
             crate::acp::connection_server::send_via_server(key, &app_state, release).await
         {

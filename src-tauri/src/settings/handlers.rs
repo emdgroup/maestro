@@ -2,10 +2,10 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::acp::connection_server::{query_project_store, query_via_server, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::{logging, AppState};
 use crate::models::{AppSettings, ConnectionCapacitySettings};
 use crate::settings::models::LogLocation;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 #[tauri::command]
 #[specta::specta]

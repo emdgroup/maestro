@@ -5,7 +5,6 @@
 //! the old `restorable_sessions` and `session_folders` of `.maestro/state.json`.
 
 use crate::acp::connection_server::{query_via_server, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
 use crate::models::GitConnection;
@@ -17,6 +16,7 @@ use maestro_protocol::{
     ImportRef, ImportedSession, Prompt, ReviewComment, SessionMeta, Task, TaskAttachment,
     TaskComment, TaskInstruction, TaskRelationship, TaskReview, Worktree, IMPORT_CHUNK_BYTES,
 };
+use maestro_protocol::{ServerRequest, ServerResponse};
 use rusqlite::types::{FromSql, Value, ValueRef};
 use rusqlite::{params, Connection, OptionalExtension, Row, RowIndex};
 use serde::de::DeserializeOwned;

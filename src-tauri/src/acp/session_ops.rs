@@ -5,11 +5,11 @@ use crate::acp::reader_task::spawn_reader_task;
 use crate::acp::session_types::{
     AcpProcess, AcpProcessParams, AcpTransportWriter, SessionRequest, TaskMetadata, TransportTarget,
 };
-use crate::acp::transport::{ServerRequest, SessionLoadRequest, SpawnRequest};
 #[cfg(windows)]
 use crate::acp::transport_setup::open_wsl_transport;
 use crate::acp::transport_setup::{open_local_transport, open_remote_transport};
 use crate::acp::transport_types::{serialize_message, write_to_acp_session_raw};
+use maestro_protocol::{ServerRequest, SessionLoadRequest, SpawnRequest};
 use std::sync::Arc;
 use tauri::Emitter;
 use tokio::io::BufWriter;
@@ -346,7 +346,7 @@ pub async fn attach_project_sessions(
             // follows genuinely is a fresh load. A failed close leaves the session as it was.
             match crate::acp::connection_server::query_session_close_via_server(
                 connection_key,
-                crate::acp::transport::SessionCloseRequest {
+                maestro_protocol::SessionCloseRequest {
                     agent_id: row.agent_id.clone(),
                     session_id: row.acp_session_id.clone(),
                     cwd: row.cwd.clone(),
@@ -442,11 +442,11 @@ pub async fn attach_project_sessions(
         let mut replayed: std::collections::HashSet<String> = std::collections::HashSet::new();
         for msg in unclaimed {
             match &msg {
-                crate::acp::transport::ServerResponse::PermissionRequest(request) => {
+                maestro_protocol::ServerResponse::PermissionRequest(request) => {
                     replayed.insert(request.request_id.clone());
                 }
 
-                crate::acp::transport::ServerResponse::ElicitationRequest(request) => {
+                maestro_protocol::ServerResponse::ElicitationRequest(request) => {
                     replayed.insert(request.request_id.clone());
                 }
                 _ => {}
@@ -472,10 +472,10 @@ pub async fn attach_project_sessions(
             }
             let msg = match request {
                 maestro_protocol::PendingSessionRequest::Permission(request) => {
-                    crate::acp::transport::ServerResponse::PermissionRequest(request)
+                    maestro_protocol::ServerResponse::PermissionRequest(request)
                 }
                 maestro_protocol::PendingSessionRequest::Elicitation(request) => {
-                    crate::acp::transport::ServerResponse::ElicitationRequest(request)
+                    maestro_protocol::ServerResponse::ElicitationRequest(request)
                 }
             };
             crate::acp::reader_task::handle_shared_server_message(

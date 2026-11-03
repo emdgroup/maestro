@@ -6,9 +6,9 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::acp::connection_server::{query_via_server, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct HomeSummary {

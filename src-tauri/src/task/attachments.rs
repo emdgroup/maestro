@@ -1,8 +1,8 @@
 use crate::acp::connection_server::{query_project_store, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 use crate::models::TaskAttachment;
 use maestro_protocol::{AddTaskAttachmentRequest, DeleteTaskAttachmentRequest, TaskRef};
+use maestro_protocol::{ServerRequest, ServerResponse};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashSet;

@@ -1,10 +1,10 @@
 use crate::acp::connection_server::{query_project_store, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 use crate::models::Task;
 use maestro_protocol::{
     ApplyTaskTransitionRequest, CloseRefinementRequest, TaskPhase, TaskTransition, TransitionGuard,
 };
+use maestro_protocol::{ServerRequest, ServerResponse};
 use std::sync::Arc;
 use tauri::{Emitter, State};
 

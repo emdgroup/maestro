@@ -2,17 +2,17 @@
 
 use crate::acp::reader_task::spawn_shared_reader_task;
 use crate::acp::session_types::{ConnectionServer, PendingRequests, TransportTarget};
-use crate::acp::transport::{
-    CheckToolsRequest, CheckToolsResponse, ListAgentsRequest, PreInitializeRequest,
-    PreInitializeResponse, ServerRequest, ServerResponse, SessionCloseRequest,
-    SessionDeleteRequest, SessionListOkResponse,
-};
 #[cfg(windows)]
 use crate::acp::transport_setup::open_wsl_transport;
 use crate::acp::transport_setup::{
     open_local_transport, open_remote_transport, spawn_stdin_writer_task,
 };
 use crate::acp::transport_types::{serialize_message, serialize_message_with_id};
+use maestro_protocol::{
+    CheckToolsRequest, CheckToolsResponse, ListAgentsRequest, PreInitializeRequest,
+    PreInitializeResponse, ServerRequest, ServerResponse, SessionCloseRequest,
+    SessionDeleteRequest, SessionListOkResponse,
+};
 use maestro_protocol::{
     DetectInstalledAgentsRequest, DetectInstalledAgentsResponse, InstallSkillsRequest,
     InstallSkillsResponse, RequestId, SkillFile,
@@ -630,7 +630,7 @@ pub async fn query_automation_runs_via_server(
 /// Send `SessionList` through the running connection server and return the result.
 pub async fn query_session_list_via_server(
     connection_key: crate::acp::ConnectionKey,
-    request: crate::acp::transport::SessionListRequest,
+    request: maestro_protocol::SessionListRequest,
     app_state: &Arc<crate::core::AppState>,
 ) -> Result<SessionListOkResponse, String> {
     query_via_server(
