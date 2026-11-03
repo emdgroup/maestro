@@ -208,6 +208,10 @@ impl AppState {
 
     /// Forget the project this window holds, and say which it was. The server lets go of it when
     /// told to with `ReleaseProjectLock`, or when the relay that took it detaches.
+    pub fn db(&self) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
+        self.db.lock().map_err(|e| format!("Lock failed: {e}"))
+    }
+
     pub fn release_active_project_lock(&self) -> Option<(i32, ConnectionKey)> {
         self.active_project_lock.lock().ok()?.take()
     }
@@ -215,10 +219,7 @@ impl AppState {
 
 /// The distro a WSL connection names.
 pub fn wsl_distro(app_state: &AppState, id: i32) -> Result<String, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state.db()?;
     conn.query_row(
         "SELECT distro_name FROM wsl_connections WHERE id = ?",
         [id],
@@ -229,10 +230,7 @@ pub fn wsl_distro(app_state: &AppState, id: i32) -> Result<String, String> {
 
 /// The container a container connection names.
 pub fn container_name(app_state: &AppState, id: i32) -> Result<String, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state.db()?;
     conn.query_row(
         "SELECT container_name FROM docker_connections WHERE id = ?",
         [id],

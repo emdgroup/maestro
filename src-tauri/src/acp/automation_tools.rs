@@ -477,10 +477,7 @@ impl FoundTemplate {
 
 fn all_templates(app_state: &Arc<AppState>) -> Result<Vec<FoundTemplate>, String> {
     let stored = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         templates::list(&conn)?
     };
     let own = stored.into_iter().map(|template| FoundTemplate {
@@ -537,10 +534,7 @@ fn save_template(
     body: &TemplateBody,
 ) -> Result<Value, String> {
     let saved = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         templates::save(&conn, id, name, tag, body)?
     };
     app_state.app_handle.emit("templates-changed", ()).ok();
@@ -626,10 +620,7 @@ pub(super) fn delete_template(
 ) -> Result<Value, String> {
     let (id, template) = find_own_template(app_state, arguments)?;
     {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         templates::delete(&conn, id)?;
     }
     app_state.app_handle.emit("templates-changed", ()).ok();

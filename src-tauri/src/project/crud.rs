@@ -9,10 +9,7 @@ use tauri::State;
 
 /// The project's row.
 pub(crate) fn load_project(app_state: &AppState, project_id: i32) -> Result<Project, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state.db()?;
     conn.query_row(
         "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
         [project_id],
@@ -46,10 +43,7 @@ pub(crate) async fn register_project_in_db(
     let wsl_connection_id = connection_key.wsl_id();
     let docker_connection_id = connection_key.docker_id();
     let project_id = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         let existing: Option<i32> = conn.query_row(
             "SELECT id FROM projects WHERE path = ? AND connection_id IS ? AND wsl_connection_id IS ? AND docker_connection_id IS ?",
             params![path, connection_id, wsl_connection_id, docker_connection_id],
@@ -131,10 +125,7 @@ pub(crate) fn fetch_projects_from_db(
 #[tauri::command]
 #[specta::specta]
 pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state.db()?;
 
     let mut stmt = conn
         .prepare("SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects ORDER BY last_opened DESC NULLS LAST")
@@ -158,9 +149,7 @@ pub fn get_project(
     // Update last_opened timestamp when project is selected
     let now = Utc::now().to_rfc3339();
     app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?
+        .db()?
         .execute(
             "UPDATE projects SET last_opened = ? WHERE id = ?",
             rusqlite::params![&now, project.id],
@@ -186,10 +175,7 @@ pub async fn open_project(
     crate::project::lock::acquire(&app_state, &project).await?;
 
     {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE projects SET last_opened = ? WHERE id = ?",
@@ -282,10 +268,7 @@ pub async fn create_project(
     // NOTE: This older handler has similar logic to register_project_in_db but also
     // updates last_opened via get_project(). Could be unified in a future cleanup.
     let project_id = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         let existing: Option<i32> = conn.query_row(
             "SELECT id FROM projects WHERE path = ? AND connection_id IS ? AND wsl_connection_id IS ? AND docker_connection_id IS ?",
             params![path, connection_id, wsl_connection_id, docker_connection_id],

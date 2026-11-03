@@ -80,10 +80,7 @@ pub async fn save_wsl_connection(
     display_name: Option<String>,
 ) -> Result<WslConnection, String> {
     let now = chrono::Utc::now().to_rfc3339();
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {e}"))?;
+    let conn = app_state.db()?;
     conn.execute(
         "INSERT INTO wsl_connections (distro_name, display_name, last_used_at, created_at)
          VALUES (?1, ?2, ?3, ?3)
@@ -112,10 +109,7 @@ pub async fn delete_wsl_connection(
     app_state: State<'_, Arc<AppState>>,
     connection_id: i32,
 ) -> Result<(), String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {e}"))?;
+    let conn = app_state.db()?;
     crate::project::crud::remove_projects_on(
         &conn,
         crate::acp::ConnectionKey::Wsl { id: connection_id },
@@ -135,10 +129,7 @@ pub async fn delete_wsl_connection(
 pub async fn list_wsl_connections(
     app_state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<WslConnection>, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {e}"))?;
+    let conn = app_state.db()?;
     let mut stmt = conn
         .prepare("SELECT id, distro_name, display_name, last_used_at, created_at FROM wsl_connections ORDER BY last_used_at DESC")
         .map_err(|e| format!("DB prepare failed: {e}"))?;

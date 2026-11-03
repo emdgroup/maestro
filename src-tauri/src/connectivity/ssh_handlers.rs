@@ -17,10 +17,7 @@ async fn finalize_ssh_connection(
 ) -> Result<(), String> {
     app_state.ssh.set_session(connection_id, session).await;
 
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state.db()?;
     let now = Utc::now().to_rfc3339();
 
     match auth_method_update {
@@ -47,10 +44,7 @@ async fn finalize_ssh_connection(
 #[tauri::command]
 #[specta::specta]
 pub fn list_ssh_connections(app_state: State<Arc<AppState>>) -> Result<Vec<SshConnection>, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state.db()?;
 
     let mut stmt = conn
         .prepare("SELECT id, connection_string, username, host, port, auth_method, display_name, last_used_at, created_at FROM ssh_connections ORDER BY last_used_at DESC")
@@ -70,10 +64,7 @@ pub fn get_ssh_connection(
     connection_id: i32,
     app_state: State<Arc<AppState>>,
 ) -> Result<SshConnection, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state.db()?;
 
     let connection = conn.query_row(
         "SELECT id, connection_string, username, host, port, auth_method, display_name, last_used_at, created_at FROM ssh_connections WHERE id = ?",
@@ -119,10 +110,7 @@ pub fn create_ssh_connection(
         return Err("Invalid host".to_string());
     }
 
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state.db()?;
 
     let now = Utc::now().to_rfc3339();
 
@@ -167,10 +155,7 @@ pub async fn connect_ssh_without_credentials(
     if let Some(existing_session) = app_state.ssh.get_session(connection_id).await {
         if existing_session.is_connected().await {
             // Reuse live session — update last_used_at
-            let conn = app_state
-                .db
-                .lock()
-                .map_err(|e| format!("Lock failed: {}", e))?;
+            let conn = app_state.db()?;
             let now = Utc::now().to_rfc3339();
             conn.execute(
                 "UPDATE ssh_connections SET last_used_at = ?, updated_at = ? WHERE id = ?",
@@ -378,10 +363,7 @@ pub fn delete_ssh_connection(
     } = get_ssh_connection(connection_id, app_state.clone())
         .map_err(|e| format!("Connection not found: {}", e))?;
 
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state.db()?;
     crate::project::crud::remove_projects_on(
         &conn,
         crate::acp::ConnectionKey::Ssh { id: connection_id },
@@ -412,10 +394,7 @@ pub fn rename_ssh_connection(
     connection_id: i32,
     display_name: String,
 ) -> Result<(), String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state.db()?;
 
     let now = chrono::Utc::now().to_rfc3339();
 

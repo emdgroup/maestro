@@ -61,10 +61,7 @@ pub fn apply_window_frame(_app: &AppHandle, _native_frame: bool) {}
 #[tauri::command]
 #[specta::specta]
 pub fn get_settings(app_state: State<Arc<AppState>>) -> Result<AppSettings, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state.db()?;
     crate::core::settings::load_settings(&conn).map_err(|e| e.to_string())
 }
 
@@ -73,10 +70,7 @@ pub fn get_settings(app_state: State<Arc<AppState>>) -> Result<AppSettings, Stri
 #[specta::specta]
 pub fn save_settings(app_state: State<Arc<AppState>>, settings: AppSettings) -> Result<(), String> {
     {
-        let mut conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let mut conn = app_state.db()?;
         crate::core::settings::save_settings(&mut conn, &settings).map_err(|e| e.to_string())?;
     }
 
@@ -148,9 +142,7 @@ pub(crate) async fn seed_connection_capacity(
 ) -> Result<(), String> {
     use rusqlite::OptionalExtension;
     let row = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {e}"))?
+        .db()?
         .query_row(
             "SELECT concurrency_mode, max_concurrent_agents FROM connection_settings
              WHERE connection_key = ?1",
@@ -288,10 +280,7 @@ pub fn get_log_directory(
     app_state: State<Arc<AppState>>,
 ) -> Result<LogLocation, String> {
     let configured = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         crate::core::settings::load_settings(&conn)?.log_directory
     };
     let resolved = logging::current_log_dir(&app, configured.as_deref())?;

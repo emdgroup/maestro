@@ -53,10 +53,7 @@ pub async fn get_home_summary(
     connection: ConnectionKey,
 ) -> Result<HomeSummary, String> {
     let recent: Vec<(i32, String)> = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         crate::project::crud::fetch_projects_from_db(&conn, connection)?
             .into_iter()
             .map(|project| (project.id, project.path))

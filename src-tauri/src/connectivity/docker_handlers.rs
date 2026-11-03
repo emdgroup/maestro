@@ -91,10 +91,7 @@ pub async fn save_docker_connection(
     display_name: Option<String>,
 ) -> Result<DockerConnection, String> {
     let now = chrono::Utc::now().to_rfc3339();
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {e}"))?;
+    let conn = app_state.db()?;
     conn.execute(
         "INSERT INTO docker_connections (container_name, image_name, display_name, last_used_at, created_at)
          VALUES (?1, ?2, ?3, ?4, ?4)
@@ -116,10 +113,7 @@ pub async fn save_docker_connection(
 pub async fn list_docker_connections(
     app_state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<DockerConnection>, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {e}"))?;
+    let conn = app_state.db()?;
     let mut stmt = conn
         .prepare("SELECT id, container_name, image_name, display_name, last_used_at, created_at FROM docker_connections ORDER BY last_used_at DESC")
         .map_err(|e| format!("DB prepare failed: {e}"))?;
@@ -138,10 +132,7 @@ pub async fn delete_docker_connection(
     app_state: State<'_, Arc<AppState>>,
     connection_id: i32,
 ) -> Result<(), String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {e}"))?;
+    let conn = app_state.db()?;
     crate::project::crud::remove_projects_on(
         &conn,
         crate::acp::ConnectionKey::Docker { id: connection_id },

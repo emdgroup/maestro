@@ -47,10 +47,7 @@ fn with_db<T>(
     app_state: &AppState,
     f: impl FnOnce(&rusqlite::Connection) -> rusqlite::Result<T>,
 ) -> Result<T, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state.db()?;
     f(&conn).map_err(|e| format!("Usage mirror: {e}"))
 }
 
@@ -134,9 +131,6 @@ pub fn get_usage_report(
     app_state: State<'_, Arc<AppState>>,
     query: crate::usage::report::UsageQuery,
 ) -> Result<crate::usage::report::UsageReport, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state.db()?;
     crate::usage::report::report(&conn, &query)
 }

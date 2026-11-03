@@ -71,10 +71,7 @@ async fn import(
     connection_key: ConnectionKey,
 ) -> Result<(), String> {
     let mut request = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {e}"))?;
+        let conn = app_state.db()?;
         let stamped: Option<String> = conn
             .query_row(
                 "SELECT daemon_imported_at FROM projects WHERE id = ?1",
@@ -109,10 +106,7 @@ async fn import(
             log::warn!("[import] emitting project-importing failed: {e}");
         }
         let source_id = {
-            let conn = app_state
-                .db
-                .lock()
-                .map_err(|e| format!("Lock failed: {e}"))?;
+            let conn = app_state.db()?;
             crate::core::settings::install_id(&conn)?
         };
         let not_found = format!("No connection server for connection {connection_key:?}");
@@ -193,10 +187,7 @@ async fn import(
     // Auto mode is per project in the daemon now. The app's old global switch survives only as
     // this settings row, read once here to seed the first project imported.
     let auto_mode = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {e}"))?;
+        let conn = app_state.db()?;
         conn.query_row(
             "SELECT value FROM settings WHERE key = 'auto_mode'",
             [],
@@ -222,10 +213,7 @@ async fn import(
         .await?;
     }
 
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {e}"))?;
+    let conn = app_state.db()?;
     conn.execute(
         "UPDATE projects SET daemon_imported_at = ?1 WHERE id = ?2",
         params![crate::project::now_rfc3339(), project_id],
@@ -245,10 +233,7 @@ fn read_aliases(
     app_state: &AppState,
     project_id: i32,
 ) -> Result<HashMap<(String, String), String>, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {e}"))?;
+    let conn = app_state.db()?;
     aliases(&conn, project_id).map_err(|e| format!("Failed to read session names: {e}"))
 }
 
