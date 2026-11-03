@@ -19,7 +19,7 @@ import {
 } from "@/services/connection.service";
 import { useHomeStore } from "@/store/homeStore";
 import { HomeSheet } from "./HomeSheet";
-import { Segmented } from "./Segmented";
+import { Segmented } from "@/components/common/Segmented";
 import { Button } from "@/ui/button";
 
 type Kind = "ssh" | "wsl" | "docker";
@@ -121,12 +121,13 @@ function SshForm({
       <div className="mt-4 text-[11px] text-muted-foreground">Sign in with</div>
       <div className="mt-1">
         <Segmented
+          size="lg"
           value={auth}
           onChange={setAuth}
           options={[
-            ["agent", "SSH agent"],
-            ["key", "Key file"],
-            ["password", "Password"],
+            { value: "agent", label: "SSH agent" },
+            { value: "key", label: "Key file" },
+            { value: "password", label: "Password" },
           ]}
         />
       </div>

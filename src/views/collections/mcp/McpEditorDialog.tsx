@@ -17,7 +17,8 @@ import {
   useSaveMcpServerMutation,
   useTestMcpServerMutation,
 } from "@/services/mcp.service";
-import { ALL_AGENTS, Segmented } from "../AgentsDialog";
+import { ALL_AGENTS } from "../AgentsDialog";
+import { Segmented } from "@/components/common/Segmented";
 import { CommandInput } from "./CommandInput";
 import {
   guessName,

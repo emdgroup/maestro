@@ -7,7 +7,8 @@ import { Textarea } from "@/ui/textarea";
 import { MarkdownEditor } from "@/components/kanban/shared/MarkdownEditor";
 import { cn } from "@/lib/utils";
 import { useSaveSkillMutation } from "@/services/skill.service";
-import { ALL_AGENTS, Segmented } from "../AgentsDialog";
+import { ALL_AGENTS } from "../AgentsDialog";
+import { Segmented } from "@/components/common/Segmented";
 import {
   isSkillName,
   parseSkillMd,

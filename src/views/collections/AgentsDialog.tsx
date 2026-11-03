@@ -1,13 +1,11 @@
 import { useState } from "react";
-import { SegmentThumb } from "@/components/common/SegmentThumb";
+
 import { Users } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/ui/dialog";
 import { AgentIcon } from "@/components/common/AgentIcon";
-import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
-import { cn } from "@/lib/utils";
-import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
+
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { DiscoveredAgent } from "@/types/bindings";
 
@@ -105,48 +103,6 @@ export function AgentsSummary({
     >
       {summary}
     </button>
-  );
-}
-
-/** A single choice out of a few, drawn as Home's segmented switch. */
-export function Segmented({
-  label,
-  value,
-  options,
-  onChange,
-  size = "sm",
-  className,
-}: {
-  label: string;
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (value: string) => void;
-  size?: "sm" | "xs";
-  className?: string;
-}) {
-  return (
-    <ToggleGroup
-      aria-label={label}
-      value={[value]}
-      onValueChange={(values) => {
-        const next = values.find((option) => option !== value);
-        if (next) onChange(next);
-      }}
-      spacing={1}
-      className={cn(SEGMENT_GROUP, className)}
-    >
-      <SegmentThumb />
-      {options.map((option) => (
-        <ToggleGroupItem
-          key={option.value}
-          value={option.value}
-          size="sm"
-          className={cn(SEGMENT_ITEM, size === "xs" && "h-5 px-2 text-[11px]")}
-        >
-          {option.label}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
   );
 }
 

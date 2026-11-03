@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from "react";
-import { SegmentThumb } from "@/components/common/SegmentThumb";
+import { Segmented } from "@/components/common/Segmented";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { Plus, Archive, Search, BellDot, Repeat } from "lucide-react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { Checkbox } from "@/ui/checkbox";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+
 import type { RunMode, Task, TaskPriority } from "@/types/bindings";
 import { PRIORITIES } from "@/utils/constants/priority";
 import { CreateTaskModal } from "@/components/kanban/create-task-modal/CreateTaskModal";
@@ -26,7 +26,6 @@ import { ArchiveModal } from "@/components/kanban/archive-modal/ArchiveModal";
 import { usePullRequestPoll } from "@/services/integration.service";
 import { QueueCapacityBadge } from "@/components/kanban/QueueCapacityBadge";
 import { AutoModeToggle } from "@/components/kanban/AutoModeToggle";
-import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
 
 const EMPTY_TASKS: Task[] = [];
 
@@ -233,28 +232,24 @@ export const KanbanView: React.FC = () => {
         </Popover>
 
         {/* How each task runs. One choice, so the group always has exactly one pressed. */}
-        <ToggleGroup
-          aria-label="How tasks run"
-          spacing={1}
-          className={SEGMENT_GROUP}
-          value={[runMode ?? "All"]}
-          onValueChange={(values) => {
-            const picked = values.find((v) => v !== (runMode ?? "All"));
-            if (picked) setRunMode(picked === "All" ? null : (picked as RunMode));
-          }}
-        >
-          <SegmentThumb />
-          <ToggleGroupItem value="All" size="sm" className={SEGMENT_ITEM}>
-            All
-          </ToggleGroupItem>
-          <ToggleGroupItem value="Pipeline" size="sm" className={SEGMENT_ITEM}>
-            Pipeline
-          </ToggleGroupItem>
-          <ToggleGroupItem value="Loop" size="sm" className={SEGMENT_ITEM}>
-            <Repeat className="size-3" />
-            Loops
-          </ToggleGroupItem>
-        </ToggleGroup>
+        <Segmented<"All" | RunMode>
+          label="How tasks run"
+          value={runMode ?? "All"}
+          onChange={(picked) => setRunMode(picked === "All" ? null : picked)}
+          options={[
+            { value: "All", label: "All" },
+            { value: "Pipeline", label: "Pipeline" },
+            {
+              value: "Loop",
+              label: (
+                <>
+                  <Repeat className="size-3" />
+                  Loops
+                </>
+              ),
+            },
+          ]}
+        />
 
         <QueueCapacityBadge projectId={projectId} />
 

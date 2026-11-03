@@ -11,7 +11,7 @@ import { FilePicker } from "@/views/home/file-picker/FilePicker";
 import { ProviderRepoPicker } from "@/views/home/provider-repo-picker/ProviderRepoPicker";
 import type { HomeConnection } from "./ConnectionPanel";
 import { HomeSheet } from "./HomeSheet";
-import { Segmented } from "./Segmented";
+import { Segmented } from "@/components/common/Segmented";
 import { Button } from "@/ui/button";
 
 type Choice = "open" | "clone" | "create";
@@ -184,11 +184,12 @@ function AddProjectSheet({
           {choice === "clone" && (
             <div className="space-y-2">
               <Segmented
+                size="lg"
                 value={cloneTab}
                 onChange={setCloneTab}
                 options={[
-                  ["provider", "Provider"],
-                  ["url", "URL"],
+                  { value: "provider", label: "Provider" },
+                  { value: "url", label: "URL" },
                 ]}
               />
               {cloneTab === "provider" ? (

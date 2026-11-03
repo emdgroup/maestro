@@ -1,10 +1,9 @@
 import { DiffModeEnum } from "@git-diff-view/react";
-import { SegmentThumb } from "@/components/common/SegmentThumb";
+import { Segmented } from "@/components/common/Segmented";
 import { X, AlignJustify, Columns2, CheckCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
+
 import { Button } from "@/ui/button";
-import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 
 interface DiffActionBarProps {
   /** Sits at the far left — the file-panel toggle and the scope selector. */
@@ -64,26 +63,22 @@ export function DiffActionBar({
             </span>
           </div>
         )}
-        <ToggleGroup
-          spacing={1}
-          className={SEGMENT_GROUP}
-          value={[splitActive ? "split" : "unified"]}
-          onValueChange={(values) => {
-            if (values.includes("split")) {
-              onDiffViewModeChange(DiffModeEnum.SplitGitHub);
-            } else {
-              onDiffViewModeChange(DiffModeEnum.Unified);
-            }
-          }}
-        >
-          <SegmentThumb />
-          <ToggleGroupItem value="unified" size="sm" className={cn(SEGMENT_ITEM, "w-7 px-0")}>
-            <AlignJustify className="size-3.5" />
-          </ToggleGroupItem>
-          <ToggleGroupItem value="split" size="sm" className={cn(SEGMENT_ITEM, "w-7 px-0")}>
-            <Columns2 className="size-3.5" />
-          </ToggleGroupItem>
-        </ToggleGroup>
+        <Segmented
+          label="Diff layout"
+          value={splitActive ? "split" : "unified"}
+          onChange={(mode) =>
+            onDiffViewModeChange(mode === "split" ? DiffModeEnum.SplitGitHub : DiffModeEnum.Unified)
+          }
+          itemClassName="w-7 px-0"
+          options={[
+            {
+              value: "unified",
+              ariaLabel: "Unified",
+              label: <AlignJustify className="size-3.5" />,
+            },
+            { value: "split", ariaLabel: "Split", label: <Columns2 className="size-3.5" /> },
+          ]}
+        />
         {splitButtonNode}
         <Button variant="ghost" size="icon" className="size-7 rounded-full" onClick={onClose}>
           <X className="size-4" />

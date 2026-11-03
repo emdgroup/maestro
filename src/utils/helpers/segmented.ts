@@ -1,7 +1,7 @@
 /**
- * Home's `Segmented` switch (src/views/home/Segmented.tsx) for the shadcn primitives the views
- * use: a translucent track with a raised segment for the chosen option, which is `SegmentThumb`
- * and has to be rendered inside each group.
+ * The segmented switch's look (`components/common/Segmented.tsx`) for the places that cannot use
+ * the component itself: a translucent track with a raised segment for the chosen option, which is
+ * `SegmentThumb` and has to be rendered inside each group.
  */
 
 /** For `TabsList` and `TabsTrigger`. */

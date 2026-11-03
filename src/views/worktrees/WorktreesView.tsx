@@ -1,15 +1,15 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { SegmentThumb } from "@/components/common/SegmentThumb";
+import { Segmented } from "@/components/common/Segmented";
 import { useQueryClient } from "@tanstack/react-query";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { ChevronsUpDown, GitBranch, Plus, RefreshCw, Scissors, SearchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
+
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Spinner } from "@/ui/spinner";
-import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/ui/resizable";
@@ -376,20 +376,11 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
               </InputGroupAddon>
             </InputGroup>
           </ShortcutHint>
-          <ToggleGroup spacing={1} size="sm" value={[statusFilter]} className={SEGMENT_GROUP}>
-            <SegmentThumb />
-            {STATUS_FILTERS.map((f) => (
-              <ToggleGroupItem
-                key={f}
-                value={f}
-                pressed={statusFilter === f}
-                onClick={() => setStatusFilter(f)}
-                className={SEGMENT_ITEM}
-              >
-                {f}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+          <Segmented
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={STATUS_FILTERS.map((f) => ({ value: f, label: f }))}
+          />
         </div>
         <div className="flex items-center gap-2">
           <ShortcutHint shortcutId="wt-refresh">
