@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
-use tauri::Emitter;
 use tauri::State;
 
 use crate::core::AppState;
@@ -316,7 +315,7 @@ pub async fn rename_acp_session(
     )
     .await?;
 
-    app_state.app_handle.emit("sessions-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
     Ok(())
 }
 
@@ -374,9 +373,11 @@ async fn emit_init_events_from_session(session_id: &str, app_state: &Arc<AppStat
                 "name": v.get("name").and_then(|s| s.as_str()).unwrap_or(""),
             })).collect::<Vec<_>>(),
         });
-        let _ = app_state
-            .app_handle
-            .emit(&format!("acp://session-models/{}", session_id), &payload);
+        crate::core::emit_or_log(
+            &app_state.app_handle,
+            &format!("acp://session-models/{}", session_id),
+            &payload,
+        );
     }
     if let Some(mode_opt) = find_opt("mode") {
         let options = mode_opt
@@ -399,9 +400,11 @@ async fn emit_init_events_from_session(session_id: &str, app_state: &Arc<AppStat
                 "name": v.get("name").and_then(|s| s.as_str()).unwrap_or(""),
             })).collect::<Vec<_>>(),
         });
-        let _ = app_state
-            .app_handle
-            .emit(&format!("acp://session-modes/{}", session_id), &payload);
+        crate::core::emit_or_log(
+            &app_state.app_handle,
+            &format!("acp://session-modes/{}", session_id),
+            &payload,
+        );
     }
     if let Some(capabilities) = prompt_capabilities {
         crate::core::emit_or_log(
@@ -447,24 +450,30 @@ pub async fn drain_acp_replay(
     };
     if let Some(events) = buffered {
         for payload in events {
-            let _ = app_state
-                .app_handle
-                .emit(&format!("acp://session-update/{}", session_id), &payload);
+            crate::core::emit_or_log(
+                &app_state.app_handle,
+                &format!("acp://session-update/{}", session_id),
+                &payload,
+            );
         }
         if is_initialized {
             emit_init_events_from_session(session_id, &app_state).await;
-            let _ = app_state
-                .app_handle
-                .emit(&format!("acp://replay-drained/{}", session_id), turn_active);
+            crate::core::emit_or_log(
+                &app_state.app_handle,
+                &format!("acp://replay-drained/{}", session_id),
+                turn_active,
+            );
         }
     } else if is_initialized {
         // Buffer already consumed (no replay buffer for new sessions, or drained before
         // panel mounted). Emit replay-drained so late-mounting panels complete
         // initialization instead of waiting for the 15 s stale timeout.
         emit_init_events_from_session(session_id, &app_state).await;
-        let _ = app_state
-            .app_handle
-            .emit(&format!("acp://replay-drained/{}", session_id), turn_active);
+        crate::core::emit_or_log(
+            &app_state.app_handle,
+            &format!("acp://replay-drained/{}", session_id),
+            turn_active,
+        );
     }
     Ok(())
 }

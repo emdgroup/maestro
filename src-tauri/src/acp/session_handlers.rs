@@ -1,7 +1,6 @@
 use serde::Serialize;
 use specta::Type;
 use std::sync::Arc;
-use tauri::Emitter;
 use tauri::State;
 
 use crate::acp::{SessionRequest, TaskKey, TaskMetadata};
@@ -167,7 +166,7 @@ async fn finish_spawn(
     if let Some(task) = task {
         close_superseded_sessions_for_task(app_state, task, session_id).await;
     }
-    app_state.app_handle.emit("sessions-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
     SpawnSessionResult {
         session_id: session_id.to_string(),
     }
@@ -303,7 +302,7 @@ pub(crate) async fn close_superseded_sessions_for_task(
         superseded.len()
     );
 
-    app_state.app_handle.emit("sessions-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
 }
 
 /// The body of `cancel_acp_session`.
@@ -311,7 +310,7 @@ pub(crate) async fn end_acp_session(app_state: &Arc<AppState>, session_id: &str)
     // The daemon fails a task an agent was still working on when its session is cancelled, and
     // leaves one parked at a gate alone.
     tear_down_session(app_state, session_id).await;
-    app_state.app_handle.emit("sessions-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
 }
 
 /// Interrupt the current ACP turn without killing the session.
@@ -377,7 +376,7 @@ pub async fn restore_acp_session(
     crate::acp::discovery_handlers::ensure_connection_server(app_state, connection_key).await?;
     crate::acp::load_via_connection_server(&acp_session_id, task, &req).await?;
 
-    app_state.app_handle.emit("sessions-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
     Ok(session_id)
 }
 

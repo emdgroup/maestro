@@ -6,7 +6,7 @@ use maestro_protocol::{
 };
 use maestro_protocol::{ServerRequest, ServerResponse};
 use std::sync::Arc;
-use tauri::{Emitter, State};
+use tauri::State;
 
 /// Apply one transition in the daemon, its guard read under the same lock as the write. `None`
 /// when the guard refused it.
@@ -122,7 +122,7 @@ pub async fn interrupt_task(
 
     crate::git::worktree_lifecycle::discard_task_workspace(&app_state, project_id, task_id).await?;
 
-    app_state.app_handle.emit("sessions-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
     Ok(())
 }
 
@@ -161,7 +161,7 @@ pub async fn stop_task(
         }),
     )
     .await?;
-    app_state.app_handle.emit("sessions-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
     Ok(())
 }
 

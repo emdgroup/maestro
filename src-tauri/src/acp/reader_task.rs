@@ -574,7 +574,7 @@ pub(crate) async fn handle_shared_server_message(
             // `TaskSessionStarted`, which adopts it. So this load's entry goes, and neither the task
             // nor the row is touched.
             app_state.acp.sessions.lock().await.remove(&session_id);
-            app_handle.emit("sessions-changed", ()).ok();
+            crate::core::emit_or_log(app_handle, "sessions-changed", ());
             return;
         }
 
@@ -628,12 +628,11 @@ pub(crate) async fn handle_shared_server_message(
                             crate::acp::ConnectionKey::Wsl { id } => format!("wsl-{id}"),
                             crate::acp::ConnectionKey::Docker { id } => format!("docker-{id}"),
                         };
-                        app_handle
-                            .emit(
-                                &format!("acp://auth-state-changed/{}", conn_key_id),
-                                &serde_json::json!({ "agentId": agent_id }),
-                            )
-                            .ok();
+                        crate::core::emit_or_log(
+                            app_handle,
+                            &format!("acp://auth-state-changed/{}", conn_key_id),
+                            &serde_json::json!({ "agentId": agent_id }),
+                        );
                     }
                 }
             }
@@ -856,12 +855,11 @@ pub(crate) async fn handle_shared_server_message(
                 crate::acp::ConnectionKey::Wsl { id } => format!("wsl-{id}"),
                 crate::acp::ConnectionKey::Docker { id } => format!("docker-{id}"),
             };
-            app_handle
-                .emit(
-                    &format!("acp://auth-pty-exit/{}", conn_key_id),
-                    &serde_json::json!({ "exit_code": exit.exit_code }),
-                )
-                .ok();
+            crate::core::emit_or_log(
+                app_handle,
+                &format!("acp://auth-pty-exit/{}", conn_key_id),
+                &serde_json::json!({ "exit_code": exit.exit_code }),
+            );
             if exit.exit_code == Some(0) {
                 {
                     let mut map = app_state.acp.agent_auth_info.lock().await;
@@ -869,12 +867,11 @@ pub(crate) async fn handle_shared_server_message(
                         info.authenticated = true;
                     }
                 }
-                app_handle
-                    .emit(
-                        &format!("acp://auth-state-changed/{}", conn_key_id),
-                        &serde_json::json!({ "agentId": exit.agent_id }),
-                    )
-                    .ok();
+                crate::core::emit_or_log(
+                    app_handle,
+                    &format!("acp://auth-state-changed/{}", conn_key_id),
+                    &serde_json::json!({ "agentId": exit.agent_id }),
+                );
             }
         }
         ServerResponse::Diagnostic(diag) => {
@@ -893,12 +890,11 @@ pub(crate) async fn handle_shared_server_message(
             }
             // Connection-scoped event so the auth modal can receive output even when the
             // session that triggered auth was discarded before the modal opened.
-            app_handle
-                .emit(
-                    &format!("acp://auth-output/{}", connection_key_id(&connection_key)),
-                    &diag,
-                )
-                .ok();
+            crate::core::emit_or_log(
+                app_handle,
+                &format!("acp://auth-output/{}", connection_key_id(&connection_key)),
+                &diag,
+            );
         }
         ServerResponse::Error(err) => {
             // No id and no session: nothing says which request this answers, so every session
@@ -1178,7 +1174,7 @@ pub(crate) fn spawn_shared_reader_task(
             }
         }
 
-        app_state.app_handle.emit("sessions-changed", ()).ok();
+        crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
     });
 }
 

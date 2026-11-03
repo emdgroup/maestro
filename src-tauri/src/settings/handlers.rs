@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::acp::connection_server::{query_project_store, query_via_server, reply};
 use crate::core::{logging, AppState};
@@ -83,7 +83,7 @@ pub fn save_settings(app_state: State<Arc<AppState>>, settings: AppSettings) -> 
     // Switching auto-mode on, or raising the concurrency limit, has to be able to start work
     // immediately. Without this the change would sit inert until a task happened to move, which
     // is what made the auto-mode switch look broken.
-    app_state.app_handle.emit("settings-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "settings-changed", ());
     Ok(())
 }
 

@@ -154,7 +154,7 @@ async fn save(
     let saved: Automation =
         query_save_automation_via_server(project.key, project.path.clone(), automation, app_state)
             .await?;
-    app_state.app_handle.emit("automations-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "automations-changed", ());
     Ok(automation_json(&saved))
 }
 
@@ -284,7 +284,7 @@ pub(super) async fn delete_automation(
 ) -> Result<Value, String> {
     let (project, automation) = find_automation(app_state, session_id, arguments, "id").await?;
     query_delete_automation_via_server(project.key, automation.id.clone(), app_state).await?;
-    app_state.app_handle.emit("automations-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "automations-changed", ());
     Ok(json!({ "deleted": automation.id }))
 }
 
@@ -537,7 +537,7 @@ fn save_template(
         let conn = app_state.db()?;
         templates::save(&conn, id, name, tag, body)?
     };
-    app_state.app_handle.emit("templates-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "templates-changed", ());
     Ok(FoundTemplate {
         id: format!("user-{}", saved.id),
         name: saved.name,
@@ -623,7 +623,7 @@ pub(super) fn delete_template(
         let conn = app_state.db()?;
         templates::delete(&conn, id)?;
     }
-    app_state.app_handle.emit("templates-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "templates-changed", ());
     Ok(json!({ "deleted": template.id }))
 }
 

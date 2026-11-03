@@ -7,7 +7,7 @@ use maestro_protocol::{
     ServerRequest, ServerResponse, SpawnAuthTerminalRequest,
 };
 use std::sync::Arc;
-use tauri::{Emitter, State};
+use tauri::State;
 
 fn connection_key_id(key: &crate::acp::ConnectionKey) -> String {
     match key {
@@ -134,13 +134,11 @@ pub async fn acp_start_auth_terminal(
         .map_err(|_| "Connection server writer channel closed".to_string())?;
 
     // Emit empty-output event so AgentActivityPanel opens the terminal tab immediately.
-    app_state
-        .app_handle
-        .emit(
-            &format!("acp://terminal-output/{}", session_id),
-            &serde_json::json!({ "terminal_id": terminal_id, "output": "" }),
-        )
-        .ok();
+    crate::core::emit_or_log(
+        &app_state.app_handle,
+        &format!("acp://terminal-output/{}", session_id),
+        &serde_json::json!({ "terminal_id": terminal_id, "output": "" }),
+    );
 
     Ok(terminal_id)
 }

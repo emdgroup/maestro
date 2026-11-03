@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tauri::{Emitter, State};
+use tauri::State;
 
 use crate::acp::connection_server::{query_project_store, reply};
 use crate::core::AppState;
@@ -311,7 +311,7 @@ pub async fn spawn_interactive_execution(
             .await
             .insert(session_id.clone(), meta);
     }
-    app_state.app_handle.emit("sessions-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
 
     Ok(session_id)
 }
