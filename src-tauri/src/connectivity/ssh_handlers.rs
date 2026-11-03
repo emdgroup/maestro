@@ -6,7 +6,6 @@ use crate::connectivity::ssh::session::{SshAuthMethod, SshConnection};
 use crate::connectivity::ssh::{spawn_heartbeat_task, PasswordManager, RemoteSshSession};
 use crate::core::AppState;
 use crate::models::ConnectionStatus;
-use crate::project::handlers::remove_projects_by_connection_id;
 
 /// Store SSH session in AppState, update DB timestamps, and kick off a background
 /// remote-agent availability check so the result is ready before the user opens a dialog.
@@ -379,13 +378,14 @@ pub fn delete_ssh_connection(
     } = get_ssh_connection(connection_id, app_state.clone())
         .map_err(|e| format!("Connection not found: {}", e))?;
 
-    remove_projects_by_connection_id(app_state.clone(), connection_id)
-        .map_err(|e| format!("Could not remove projects: {}", e))?;
-
     let conn = app_state
         .db
         .lock()
         .map_err(|e| format!("Lock failed: {}", e))?;
+    crate::project::crud::remove_projects_on(
+        &conn,
+        crate::acp::ConnectionKey::Ssh { id: connection_id },
+    )?;
 
     // Delete from database
     conn.execute("DELETE FROM ssh_connections WHERE id = ?", [connection_id])

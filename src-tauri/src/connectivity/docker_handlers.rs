@@ -142,11 +142,10 @@ pub async fn delete_docker_connection(
         .db
         .lock()
         .map_err(|e| format!("Lock failed: {e}"))?;
-    conn.execute(
-        "DELETE FROM projects WHERE docker_connection_id = ?",
-        [connection_id],
-    )
-    .map_err(|e| format!("Failed to remove projects: {e}"))?;
+    crate::project::crud::remove_projects_on(
+        &conn,
+        crate::acp::ConnectionKey::Docker { id: connection_id },
+    )?;
     let rows_deleted = conn
         .execute(
             "DELETE FROM docker_connections WHERE id = ?",

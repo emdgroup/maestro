@@ -251,23 +251,19 @@ pub async fn release_active_project_lock(
     Ok(())
 }
 
-/// remove projects by connection id
-pub fn remove_projects_by_connection_id(
-    app_state: State<'_, Arc<AppState>>,
-    connection_id: i32,
+/// Forget every project on a connection, as deleting the connection does.
+pub(crate) fn remove_projects_on(
+    conn: &rusqlite::Connection,
+    connection_key: ConnectionKey,
 ) -> Result<(), String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-
-    // Delete from database
-    conn.execute(
-        "DELETE FROM projects WHERE connection_id = ?",
-        [connection_id],
-    )
-    .map_err(|e| e.to_string())?;
-
+    let (column, id) = match connection_key {
+        ConnectionKey::Ssh { id } => ("connection_id", id),
+        ConnectionKey::Wsl { id } => ("wsl_connection_id", id),
+        ConnectionKey::Docker { id } => ("docker_connection_id", id),
+        ConnectionKey::Local => return Err("Local projects belong to no connection".to_string()),
+    };
+    conn.execute(&format!("DELETE FROM projects WHERE {column} = ?"), [id])
+        .map_err(|e| format!("Failed to remove projects: {e}"))?;
     Ok(())
 }
 
@@ -398,5 +394,30 @@ mod tests {
         let remote = fetch_projects_from_db(&conn, ConnectionKey::Ssh { id: ssh_conn_id }).unwrap();
         assert_eq!(remote.len(), 1);
         assert_eq!(remote[0].name, "Remote Project");
+    }
+
+    #[test]
+    fn removing_a_connection_s_projects_leaves_every_other_project() {
+        let conn = test_db();
+        conn.execute(
+            "INSERT INTO ssh_connections (connection_string, username, host, port, auth_method, last_used_at, created_at, updated_at)              VALUES ('user@host:22', 'user', 'host', 22, 'password', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        let ssh_conn_id = conn.last_insert_rowid() as i32;
+        insert_project(&conn, "Local Project", "/local/path", None);
+        insert_project(&conn, "Remote Project", "/remote/path", Some(ssh_conn_id));
+
+        assert!(remove_projects_on(&conn, ConnectionKey::Local).is_err());
+        remove_projects_on(&conn, ConnectionKey::Ssh { id: ssh_conn_id }).unwrap();
+
+        let ssh = ConnectionKey::Ssh { id: ssh_conn_id };
+        assert!(fetch_projects_from_db(&conn, ssh).unwrap().is_empty());
+        assert_eq!(
+            fetch_projects_from_db(&conn, ConnectionKey::Local)
+                .unwrap()
+                .len(),
+            1
+        );
     }
 }

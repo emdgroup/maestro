@@ -116,11 +116,10 @@ pub async fn delete_wsl_connection(
         .db
         .lock()
         .map_err(|e| format!("Lock failed: {e}"))?;
-    conn.execute(
-        "DELETE FROM projects WHERE wsl_connection_id = ?",
-        [connection_id],
-    )
-    .map_err(|e| format!("Failed to remove projects: {e}"))?;
+    crate::project::crud::remove_projects_on(
+        &conn,
+        crate::acp::ConnectionKey::Wsl { id: connection_id },
+    )?;
     let rows_deleted = conn
         .execute("DELETE FROM wsl_connections WHERE id = ?", [connection_id])
         .map_err(|e| format!("Failed to delete WSL connection: {e}"))?;
