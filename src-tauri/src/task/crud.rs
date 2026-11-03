@@ -12,8 +12,8 @@ use tauri::State;
 
 /// A name the wire enum knows, or an error naming what it was meant to be.
 ///
-/// Refused rather than defaulted: the app's `FromStr` impls fall back to a variant, so a typo
-/// arriving over IPC would quietly move or re-prioritise a task instead of being rejected.
+/// Refused rather than defaulted: falling back to a variant would let a typo arriving over IPC
+/// quietly move or re-prioritise a task instead of being rejected.
 pub(crate) fn parse_wire<T: serde::de::DeserializeOwned>(
     what: &str,
     name: &str,
