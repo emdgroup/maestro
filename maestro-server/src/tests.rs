@@ -189,7 +189,7 @@ async fn test_reap_closes_only_idle_unwatched_sessions() {
         turn_active: bool,
     ) -> (
         ActiveSession,
-        tokio::sync::mpsc::Receiver<crate::SessionCommand>,
+        tokio::sync::mpsc::Receiver<crate::sessions::SessionCommand>,
     ) {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel(4);
         let session = ActiveSession {
@@ -218,32 +218,32 @@ async fn test_reap_closes_only_idle_unwatched_sessions() {
     sessions.insert("busy".to_string(), busy);
 
     // Somebody is watching: nothing is idle, whatever the turn state or how long it lasts.
-    crate::reap_idle_sessions(&mut sessions, &attached, None, None).await;
-    crate::reap_idle_sessions(&mut sessions, &attached, None, None).await;
+    crate::reap_idle_sessions(&mut sessions, &no_agents(), &attached, None, None).await;
+    crate::reap_idle_sessions(&mut sessions, &no_agents(), &attached, None, None).await;
     assert_eq!(sessions.len(), 2);
     assert!(!sessions["idle"].idle_marked);
 
     // Nobody watching: the idle one is marked, the mid-turn one is not.
-    crate::reap_idle_sessions(&mut sessions, &detached, None, None).await;
+    crate::reap_idle_sessions(&mut sessions, &no_agents(), &detached, None, None).await;
     assert_eq!(sessions.len(), 2, "one sweep marks, it does not close");
     assert!(sessions["idle"].idle_marked);
     assert!(!sessions["busy"].idle_marked);
 
     // Marked, and still idle on the next sweep.
-    crate::reap_idle_sessions(&mut sessions, &detached, None, None).await;
+    crate::reap_idle_sessions(&mut sessions, &no_agents(), &detached, None, None).await;
     assert_eq!(sessions.len(), 1, "the idle session is gone");
     assert!(sessions.contains_key("busy"));
     assert!(
         matches!(
             idle_rx.recv().await,
-            Some(crate::SessionCommand::CloseSession)
+            Some(crate::sessions::SessionCommand::CloseSession)
         ),
         "the agent is asked to close the session, not left holding it"
     );
 
     // A turn that ends while nobody is attached is marked by the next sweep, not closed by it.
     sessions["busy"].turn_active.store(false, Ordering::SeqCst);
-    crate::reap_idle_sessions(&mut sessions, &detached, None, None).await;
+    crate::reap_idle_sessions(&mut sessions, &no_agents(), &detached, None, None).await;
     assert_eq!(sessions.len(), 1);
     assert!(sessions["busy"].idle_marked);
 }
@@ -276,20 +276,20 @@ async fn test_reap_mark_is_cleared_by_activity() {
     );
 
     let detached = crate::client_sink::ClientSink::detached();
-    crate::reap_idle_sessions(&mut sessions, &detached, None, None).await;
+    crate::reap_idle_sessions(&mut sessions, &no_agents(), &detached, None, None).await;
     assert!(sessions["session"].idle_marked);
 
     // A turn starts before the sweep that would have closed it.
     turn_active.store(true, Ordering::SeqCst);
-    crate::reap_idle_sessions(&mut sessions, &detached, None, None).await;
+    crate::reap_idle_sessions(&mut sessions, &no_agents(), &detached, None, None).await;
     assert_eq!(sessions.len(), 1, "the mark is cancelled, not honoured");
     assert!(!sessions["session"].idle_marked);
 
     // The turn ends, and the whole grace period runs again from there.
     turn_active.store(false, Ordering::SeqCst);
-    crate::reap_idle_sessions(&mut sessions, &detached, None, None).await;
+    crate::reap_idle_sessions(&mut sessions, &no_agents(), &detached, None, None).await;
     assert_eq!(sessions.len(), 1);
-    crate::reap_idle_sessions(&mut sessions, &detached, None, None).await;
+    crate::reap_idle_sessions(&mut sessions, &no_agents(), &detached, None, None).await;
     assert!(sessions.is_empty());
 }
 
@@ -444,8 +444,14 @@ async fn test_a_session_closed_while_it_came_up_is_closed_not_kept() {
     assert!(
         matches!(
             gone_rx.recv().await,
-            Some(crate::SessionCommand::CloseSession)
+            Some(crate::sessions::SessionCommand::CloseSession)
         ),
         "the agent is asked to close it"
     );
+}
+
+fn no_agents() -> crate::sessions::SharedAgentConnections {
+    std::sync::Arc::new(tokio::sync::Mutex::new(
+        crate::sessions::AgentConnectionMap::new(),
+    ))
 }
