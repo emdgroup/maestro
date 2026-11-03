@@ -53,6 +53,14 @@ describe("useShortcuts", () => {
     expect(seen).not.toContain("Escape");
   });
 
+  /** Ctrl+N is "new worktree" here, but this harness handles no such shortcut. */
+  it("leaves the default alone for a shortcut nothing handles", () => {
+    render(<Harness dialogOpen={false} />);
+    const event = new KeyboardEvent("keydown", { key: "n", ctrlKey: true, cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   it("still sees other keys while a dialog is open", async () => {
     render(<Harness dialogOpen />);
     expect(screen.getByText("inside the dialog")).toBeTruthy();
