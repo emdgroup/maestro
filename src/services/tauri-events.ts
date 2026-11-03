@@ -54,13 +54,7 @@ export function useServerEventSync(projectId: number | undefined) {
       (payload) => {
         void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
         const id = payload.project_id ?? null;
-        for (const kind of [
-          "relationships",
-          "instructions",
-          "attachments",
-          "commitMessage",
-          ...LOOP_QUERY_KINDS,
-        ]) {
+        for (const kind of ["attachments", "commitMessage", ...LOOP_QUERY_KINDS]) {
           const queryKey = [...taskQueryKeys.base, kind];
           void queryClient.invalidateQueries({
             queryKey: id === null ? queryKey : [...queryKey, id],

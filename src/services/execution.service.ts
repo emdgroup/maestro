@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
-import { Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
 import { taskQueryKeys } from "@/services/task.service";
 import { findEffortOption } from "@/lib/effort-option";
 import { useAnnotationStore } from "@/store/annotationStore";
@@ -16,8 +15,6 @@ export const executionQueryKeys = {
   sessionList: (agentId: string, cwd: string, connection: ConnectionKey) =>
     ["sessionList", agentId, cwd, connection] as const,
   agentDiscovery: (connection: ConnectionKey) => ["agentDiscovery", connection] as const,
-  projectAgents: (connection: ConnectionKey, cwd: string) =>
-    ["projectAgents", connection, cwd] as const,
   sessionMeta: (sessionId: string | null) => ["acpSessionMeta", sessionId] as const,
   sessionUsage: (connection: ConnectionKey, agentId: string | null, acpSessionId: string | null) =>
     ["sessionUsage", connection, agentId, acpSessionId] as const,
@@ -393,28 +390,6 @@ export function useLoadAcpSessionMutation() {
 }
 
 /**
- * Close a stored ACP session on the agent server (frees agent resources).
- */
-export function useCloseStoredAcpSessionMutation() {
-  return useMutation({
-    mutationFn: async ({
-      agentId,
-      acpSessionId,
-      cwd,
-      connection,
-    }: {
-      agentId: string;
-      acpSessionId: string;
-      cwd: string;
-      connection: ConnectionKey;
-    }) => {
-      return await api.closeAcpSession(agentId, acpSessionId, cwd, connection);
-    },
-    onError: createErrorToastHandler("Failed to close session"),
-  });
-}
-
-/**
  * Spawn a user-controlled interactive shell on a branch.
  * Managed AI-agent sessions use ACP instead of this PTY path.
  * Returns the session_id for attach_terminal.
@@ -460,25 +435,6 @@ export function useSpawnInteractiveExecutionMutation() {
 }
 
 /**
- * Detect which agent tools have config markers in the given project directory.
- * Used to suggest or pre-select a default agent when opening a project.
- * Requires preflight to have run for this connection.
- */
-export function useProjectAgentsQuery(
-  connection: ConnectionKey,
-  cwd: string | null,
-  enabled: boolean = true,
-) {
-  return useQuery({
-    queryKey: executionQueryKeys.projectAgents(connection, cwd ?? ""),
-    queryFn: () => api.detectProjectAgents(connection, cwd!),
-    enabled: enabled && cwd != null,
-    staleTime: 60_000,
-    gcTime: 5 * 60 * 1000,
-  });
-}
-
-/**
  * Unified agent discovery hook — works for both local and remote connections.
  * 5-minute staleTime mirrors backend TTL.
  */
@@ -489,21 +445,6 @@ export function useAgentDiscoveryQuery(connection: ConnectionKey, enabled: boole
     enabled,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
-  });
-}
-
-export function useSetToolPathMutation() {
-  return useMutation({
-    mutationFn: ({
-      connection,
-      tool,
-      path,
-    }: {
-      connection: ConnectionKey;
-      tool: string;
-      path: string | null;
-    }) => api.setToolPath(connection, tool, path),
-    onError: createErrorToastHandler("Failed to update binary path"),
   });
 }
 
@@ -667,56 +608,6 @@ export function useCancelActiveSessionMutation() {
       void queryClient.invalidateQueries({ queryKey: ["activeSessions"] });
     },
     onError: createErrorToastHandler("Failed to close session"),
-  });
-}
-
-export function useAttachTerminalMutation() {
-  return useMutation({
-    mutationFn: async ({
-      sessionId,
-      outputChannel,
-    }: {
-      sessionId: string;
-      outputChannel: TAURI_CHANNEL<string>;
-    }) => {
-      return await api.attachTerminal(sessionId, outputChannel, null);
-    },
-    onError: createErrorToastHandler("Failed to attach terminal"),
-  });
-}
-
-export function useDetachTerminalMutation() {
-  return useMutation({
-    mutationFn: async ({ sessionId }: { sessionId: string }) => {
-      return await api.detachTerminal(sessionId);
-    },
-    onError: createErrorToastHandler("Failed to detach terminal"),
-  });
-}
-
-export function useSendTerminalInputMutation() {
-  return useMutation({
-    mutationFn: async ({ sessionId, input }: { sessionId: string; input: string }) => {
-      return await api.sendTerminalInput(sessionId, input);
-    },
-    onError: createErrorToastHandler("Failed to send terminal input"),
-  });
-}
-
-export function useResizeTerminalMutation() {
-  return useMutation({
-    mutationFn: async ({
-      sessionId,
-      cols,
-      rows,
-    }: {
-      sessionId: string;
-      cols: number;
-      rows: number;
-    }) => {
-      return await api.resizeTerminal(sessionId, cols, rows);
-    },
-    onError: createErrorToastHandler("Failed to resize terminal"),
   });
 }
 

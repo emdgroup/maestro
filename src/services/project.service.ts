@@ -38,33 +38,11 @@ export const projectQueryKeys = {
   remotes: (projectId: number) => [...projectQueryKeys.base, "remotes", projectId] as const,
 };
 
-/**
- * Query hook for fetching all projects
- */
-export function useProjects() {
-  return useQuery({
-    queryKey: projectQueryKeys.list(),
-    queryFn: () => api.getProjects(),
-    staleTime: Infinity,
-  });
-}
-
 export function connectionQueryKey(connection: ConnectionKey): number | string {
   if (connection.type === "docker") return `docker-${connection.id}`;
   if (connection.type === "wsl") return `wsl-${connection.id}`;
   if (connection.type === "ssh") return connection.id;
   return localConnectionId;
-}
-
-/**
- * Query hook for fetching a single project by ID
- */
-export function useProjectById(projectId: number) {
-  return useQuery({
-    queryKey: projectQueryKeys.details(projectId),
-    queryFn: () => api.getProject(projectId),
-    staleTime: Infinity,
-  });
 }
 
 /**

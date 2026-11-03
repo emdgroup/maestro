@@ -9,10 +9,6 @@ import { toast } from "sonner";
 import { commands } from "@/types/bindings";
 import type {
   Task,
-  TaskConfigRequest,
-  TaskRelationship,
-  TaskInstruction,
-  RemoteIssue,
   TaskAttachment,
   CreateTaskRequest,
   UpdateTaskRequest,
@@ -31,10 +27,6 @@ export const taskQueryKeys = {
   lists: () => [...taskQueryKeys.base, "list"] as const,
   list: (projectId: number) => [...taskQueryKeys.lists(), { projectId }] as const,
   // Task ids are per project, so every key naming a task names its project too.
-  relationships: (projectId: number, taskId: number) =>
-    [...taskQueryKeys.base, "relationships", projectId, taskId] as const,
-  instructions: (projectId: number, taskId: number) =>
-    [...taskQueryKeys.base, "instructions", projectId, taskId] as const,
   comments: (projectId: number, taskId: number) =>
     [...taskQueryKeys.base, "comments", projectId, taskId] as const,
   attachments: (projectId: number, taskId: number) =>
@@ -160,28 +152,6 @@ export function useSetTaskProfileOverridesMutation() {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: createErrorToastHandler("Failed to save the agents for this task"),
-  });
-}
-
-export function useUpdateTaskSettingsMutation() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({
-      projectId,
-      taskId,
-      config,
-    }: {
-      projectId: number;
-      taskId: number;
-      config: TaskConfigRequest;
-    }) => api.updateTaskSettings(projectId, taskId, config),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: taskQueryKeys.lists(),
-      });
-    },
-    onError: createErrorToastHandler("Failed to update task settings"),
   });
 }
 
@@ -343,79 +313,6 @@ export function useDeleteTaskMutation() {
 }
 
 /**
- * Query hook for fetching task relationships
- */
-export function useTaskRelationshipsQuery(projectId: number | null, taskId: number | null) {
-  return useQuery<TaskRelationship[]>({
-    queryKey: taskQueryKeys.relationships(projectId!, taskId!),
-    queryFn: () => api.listTaskRelationships(projectId!, taskId!),
-    enabled: projectId !== null && taskId !== null,
-  });
-}
-
-/**
- * Mutation hook for adding a task relationship
- */
-export function useAddTaskRelationshipMutation() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({
-      projectId,
-      fromTaskId,
-      toTaskId,
-      relationshipType,
-    }: {
-      projectId: number;
-      fromTaskId: number;
-      toTaskId: number;
-      relationshipType: string;
-    }) => api.addTaskRelationship(projectId, fromTaskId, toTaskId, relationshipType),
-    onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({
-        queryKey: taskQueryKeys.relationships(variables.projectId, variables.fromTaskId),
-      });
-    },
-    onError: createErrorToastHandler("Failed to add relationship"),
-  });
-}
-
-/**
- * Mutation hook for deleting a task relationship
- */
-export function useDeleteTaskRelationshipMutation() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({
-      projectId,
-      relationshipId,
-    }: {
-      projectId: number;
-      relationshipId: number;
-      taskId: number;
-    }) => api.deleteTaskRelationship(projectId, relationshipId),
-    onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({
-        queryKey: taskQueryKeys.relationships(variables.projectId, variables.taskId),
-      });
-    },
-    onError: createErrorToastHandler("Failed to remove relationship"),
-  });
-}
-
-/**
- * Query hook for fetching task instructions log
- */
-export function useTaskInstructionsQuery(projectId: number | null, taskId: number | null) {
-  return useQuery<TaskInstruction[]>({
-    queryKey: taskQueryKeys.instructions(projectId!, taskId!),
-    queryFn: () => api.listTaskInstructions(projectId!, taskId!),
-    enabled: projectId !== null && taskId !== null,
-  });
-}
-
-/**
  * Query hook for listing git branches of a project
  * Returns [BranchList, currentBranch] tuple where BranchList has local and remote arrays
  */
@@ -425,33 +322,6 @@ export function useProjectBranchesQuery(projectId: number | null) {
     queryFn: () => api.listProjectBranches(projectId!),
     enabled: projectId !== null,
     staleTime: 60000, // 1 minute — branches don't change that often
-  });
-}
-
-/**
- * Mutation hook for adding an instruction to a task
- */
-export function useAddTaskInstructionMutation() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({
-      projectId,
-      taskId,
-      content,
-      source,
-    }: {
-      projectId: number;
-      taskId: number;
-      content: string;
-      source: string;
-    }) => api.addTaskInstruction(projectId, taskId, content, source),
-    onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({
-        queryKey: taskQueryKeys.instructions(variables.projectId, variables.taskId),
-      });
-    },
-    onError: createErrorToastHandler("Failed to add instruction"),
   });
 }
 
@@ -472,79 +342,6 @@ export function useListRemoteIssuesQuery(projectId: number | null, isModalOpen: 
     staleTime: 60_000,
     refetchInterval: isModalOpen ? 5 * 60 * 1000 : false,
     retry: 1,
-  });
-}
-
-/**
- * Batch-imports a list of RemoteIssues as Backlog tasks for the given project.
- * Skips any that have already been imported (handled by Rust).
- * Invalidates task list cache on success.
- */
-export function useImportTasksMutation() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({
-      projectId,
-      issues,
-      baseBranch,
-    }: {
-      projectId: number;
-      issues: RemoteIssue[];
-      baseBranch: string;
-    }) => api.importTasks(projectId, issues, baseBranch),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
-    },
-    onError: createErrorToastHandler("Failed to import tasks"),
-  });
-}
-
-/**
- * Overwrites a task's title, description, labels, and external_updated_at
- * from the current remote issue data. This is the "Update task" action in the Changed tab.
- */
-export function useUpdateTaskFromRemoteMutation() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({
-      projectId,
-      taskId,
-      issue,
-    }: {
-      projectId: number;
-      taskId: number;
-      issue: RemoteIssue;
-    }) => api.updateTaskFromRemote(projectId, taskId, issue),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
-    },
-    onError: createErrorToastHandler("Failed to update task from remote"),
-  });
-}
-
-/**
- * Advances a task's external_updated_at to the remote value, clearing the
- * "changed" flag without modifying task content. This is the "Dismiss change" action.
- */
-export function useDismissTaskChangeMutation() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({
-      projectId,
-      taskId,
-      remoteUpdatedAt,
-    }: {
-      projectId: number;
-      taskId: number;
-      remoteUpdatedAt: string;
-    }) => api.dismissTaskChange(projectId, taskId, remoteUpdatedAt),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
-    },
-    onError: createErrorToastHandler("Failed to dismiss task change"),
   });
 }
 

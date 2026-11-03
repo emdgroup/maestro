@@ -94,7 +94,7 @@ describe("useServerEventSync", () => {
 
     fire("tasks-changed", { project_id: 7 });
 
-    for (const kind of ["relationships", "instructions", "attachments", "commitMessage"]) {
+    for (const kind of ["attachments", "commitMessage"]) {
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["tasks", kind, 7] });
     }
     // The prefix matches the keys the hooks use.

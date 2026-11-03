@@ -118,14 +118,6 @@ export function useListDirContents(
   });
 }
 
-export function useListContents(connection: ConnectionKey | null | undefined, path: string) {
-  return useQuery({
-    queryKey: [...connectionQueryKeys.fileBrowser(), connection, path],
-    queryFn: () => api.listContents(connection ?? LOCAL, path, false),
-    enabled: !!path,
-  });
-}
-
 export function useListWorkspaceFiles(
   connection: ConnectionKey | null | undefined,
   path: string,
