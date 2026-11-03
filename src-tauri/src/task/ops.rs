@@ -60,19 +60,7 @@ pub async fn list_project_branches(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<(crate::git::BranchList, String), String> {
-    // Look up the project to get its path
-    let project = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-            [project_id],
-            crate::models::Project::from_row,
-        )
-        .map_err(|e| e.to_string())?
-    };
+    let project = crate::project::crud::load_project(&app_state, project_id)?;
 
     // Uses get_git_connection directly (not get_project_with_git_conn) because
     // branch listing should fall back to local path when SSH is disconnected,
@@ -448,7 +436,7 @@ pub async fn start_task(
     agent_id: Option<String>,
 ) -> Result<StartTaskResult, String> {
     let (connection_key, project_path) =
-        crate::project::automations::target(&app_state, project_id).await?;
+        crate::project::crud::target(&app_state, project_id).await?;
     // Spawning an agent, and signing it in, takes far longer than a store write.
     crate::acp::connection_server::query_via_server(
         connection_key,

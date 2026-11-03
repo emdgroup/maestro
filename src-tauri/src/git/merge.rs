@@ -1,6 +1,5 @@
 use super::exec::{run_git_in_dir, run_git_in_dir_lossy};
 use crate::acp::connection_server::{query_project_store, reply};
-use crate::acp::ConnectionKey;
 use crate::core::{get_project_with_git_conn, AppState};
 use crate::git::worktree_lifecycle::{delete_worktree_rows, task_worktree};
 use crate::models::{GitConnection, MergeResult, PullRequestCi, Task, TaskBall};
@@ -321,18 +320,14 @@ pub async fn resolve_commit_message(
     let branch_name = task_worktree(&app_state, project_id, task_id)
         .await?
         .map(|worktree| worktree.branch_name);
-    let project = crate::project::lock::load_project(&app_state, project_id)?;
+    let project = crate::project::crud::load_project(&app_state, project_id)?;
+    let connection_key = project.connection_key();
     let (task_name, base_branch, external_id, description, project_path) = (
         task.title,
         task.base_branch,
         task.external_id,
         task.description,
         project.path,
-    );
-    let connection_key = ConnectionKey::from_all_ids(
-        project.connection_id,
-        project.wsl_connection_id,
-        project.docker_connection_id,
     );
 
     let default_template = match branch_name {
@@ -1119,7 +1114,7 @@ async fn land_merged_pull_request(
         .await
         .map(|_| ());
     };
-    let project = crate::project::lock::load_project(app_state, project_id)?;
+    let project = crate::project::crud::load_project(app_state, project_id)?;
 
     finalize_successful_merge(
         app_state,

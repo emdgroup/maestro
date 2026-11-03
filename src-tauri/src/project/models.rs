@@ -19,9 +19,13 @@ pub struct Project {
 }
 
 impl Project {
-    /// Check if this is a remote SSH project
-    pub fn is_remote(&self) -> bool {
-        self.connection_id.is_some()
+    /// The connection this project lives on.
+    pub fn connection_key(&self) -> crate::acp::ConnectionKey {
+        crate::acp::ConnectionKey::from_all_ids(
+            self.connection_id,
+            self.wsl_connection_id,
+            self.docker_connection_id,
+        )
     }
 
     /// Parse a Project from a rusqlite Row.

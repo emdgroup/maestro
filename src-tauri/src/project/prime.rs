@@ -14,18 +14,7 @@ pub async fn prime_project_server(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<(), String> {
-    let (project_path, connection_key) = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-            [project_id],
-            |row| Ok((row.get::<_, String>(0)?, ConnectionKey::from_all_ids(row.get(1)?, row.get(2)?, row.get(3)?))),
-        )
-        .map_err(|_| format!("Project {} not found", project_id))?
-    };
+    let (connection_key, project_path) = super::crud::target(&app_state, project_id).await?;
 
     crate::acp::discovery_handlers::ensure_connection_server(&app_state, connection_key).await?;
     // Remote discovery costs round trips the spawn dialog would otherwise sit waiting on. Local

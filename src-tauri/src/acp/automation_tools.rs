@@ -22,9 +22,8 @@ use crate::acp::connection_server::{
 };
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
-use crate::project::automations::{
-    target, Automation, AutomationRun, AutomationWorkspace, WebhookOverlap,
-};
+use crate::project::automations::{Automation, AutomationRun, AutomationWorkspace, WebhookOverlap};
+use crate::project::crud::target;
 use crate::templates::{self, AutomationTemplate, TemplateBody};
 use maestro_protocol::HostToolCall;
 

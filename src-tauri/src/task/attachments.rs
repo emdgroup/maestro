@@ -87,7 +87,7 @@ pub async fn list_task_attachments(
     project_id: i32,
     task_id: i32,
 ) -> Result<Vec<TaskAttachment>, String> {
-    let (_, project_path) = crate::project::automations::target(&app_state, project_id).await?;
+    let (_, project_path) = crate::project::crud::target(&app_state, project_id).await?;
     let rows = list_rows(&app_state, project_id, task_id).await?;
     Ok(rows
         .into_iter()

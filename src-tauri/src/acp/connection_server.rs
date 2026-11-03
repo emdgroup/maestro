@@ -137,7 +137,7 @@ pub(crate) async fn query_project_store<T>(
     extract: impl FnOnce(ServerResponse) -> Option<T>,
 ) -> Result<T, String> {
     let (connection_key, project_path) =
-        crate::project::automations::target(app_state, project_id).await?;
+        crate::project::crud::target(app_state, project_id).await?;
     query_via_server(
         connection_key,
         app_state,

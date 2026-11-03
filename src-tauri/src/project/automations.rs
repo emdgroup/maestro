@@ -24,38 +24,13 @@ use crate::acp::connection_server::{
 };
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
+use crate::project::crud::target;
 
 pub use maestro_protocol::{
     Automation, AutomationRun, AutomationRunStatus, AutomationWorkspace, DeliveryOutcome,
     ListAutomationsResponse, RunRetention, RunTrigger, WebhookDelivery, WebhookOverlap,
     WebhookSettings, WebhookStatus,
 };
-
-/// Which server to ask, and what this project is called on it.
-///
-/// Read from the `projects` row alone: every task, worktree and review request comes through here,
-/// and building a `GitConnection` for each would look up the connection's credentials to no end.
-pub(crate) async fn target(
-    app_state: &Arc<AppState>,
-    project_id: i32,
-) -> Result<(ConnectionKey, String), String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {e}"))?;
-    conn.query_row(
-        "SELECT path, connection_id, wsl_connection_id, docker_connection_id
-         FROM projects WHERE id = ?1",
-        [project_id],
-        |row| {
-            Ok((
-                ConnectionKey::from_all_ids(row.get(1)?, row.get(2)?, row.get(3)?),
-                row.get(0)?,
-            ))
-        },
-    )
-    .map_err(|e| format!("Project {project_id} not found: {e}"))
-}
 
 #[tauri::command]
 #[specta::specta]

@@ -216,18 +216,9 @@ pub async fn list_acp_sessions(
     // project, so the name and folder ride along on the reply the history modal is waiting for.
     // Closed rows are asked for too, because history lists conversations the project let go of.
     // Best effort: without them the list still shows, under the agent's own titles.
-    let project_path: Option<String> = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("DB lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path FROM projects WHERE id = ?",
-            [project_id],
-            |row| row.get(0),
-        )
+    let project_path = crate::project::crud::load_project(&app_state, project_id)
         .ok()
-    };
+        .map(|project| project.path);
     if let Some(project_path) = project_path {
         match crate::acp::connection_server::query_project_sessions_via_server(
             connection,
@@ -289,20 +280,8 @@ pub async fn rename_acp_session(
     acp_session_id: String,
     display_name: String,
 ) -> Result<(), String> {
-    let (project_path, connection_key) = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("DB lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-            [project_id],
-            |row| Ok((
-                row.get::<_, String>(0)?,
-                crate::acp::ConnectionKey::from_all_ids(row.get(1)?, row.get(2)?, row.get(3)?),
-            )),
-        ).map_err(|e| format!("Project not found: {}", e))?
-    };
+    let (connection_key, project_path) =
+        crate::project::crud::target(&app_state, project_id).await?;
 
     // The daemon only needs a folder for a conversation it has no row for yet. A live session
     // knows its own; one known only to the agent is filed under the project root, which is where

@@ -425,17 +425,8 @@ pub async fn recover_task_session(
     task_id: i32,
     project_id: i32,
 ) -> Result<String, String> {
-    let connection_key = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("DB lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-            [project_id],
-            |row| Ok(crate::acp::ConnectionKey::from_all_ids(row.get(0)?, row.get(1)?, row.get(2)?)),
-        ).map_err(|e| format!("Project not found: {}", e))?
-    };
+    let connection_key =
+        crate::project::crud::load_project(&app_state, project_id)?.connection_key();
 
     crate::acp::session_ops::attach_project_sessions(connection_key, project_id, None, &app_state)
         .await;

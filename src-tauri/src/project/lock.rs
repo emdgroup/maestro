@@ -43,27 +43,6 @@ fn label() -> &'static str {
     hostname().unwrap_or("another machine")
 }
 
-fn connection_of(project: &Project) -> ConnectionKey {
-    ConnectionKey::from_all_ids(
-        project.connection_id,
-        project.wsl_connection_id,
-        project.docker_connection_id,
-    )
-}
-
-pub(crate) fn load_project(app_state: &AppState, project_id: i32) -> Result<Project, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    conn.query_row(
-        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-        [project_id],
-        Project::from_row,
-    )
-    .map_err(|_| "Project not found".to_string())
-}
-
 fn request(project: &Project) -> maestro_protocol::AcquireProjectLockRequest {
     maestro_protocol::AcquireProjectLockRequest {
         project_path: project.path.clone(),
@@ -75,7 +54,7 @@ fn request(project: &Project) -> maestro_protocol::AcquireProjectLockRequest {
 /// holds it, and plainly when the server cannot be reached: the project cannot be opened safely
 /// without asking.
 pub async fn acquire(app_state: &Arc<AppState>, project: &Project) -> Result<(), String> {
-    let key = connection_of(project);
+    let key = project.connection_key();
     ensure_connection_server(app_state, key).await?;
     let resp = query_acquire_project_lock_via_server(key, request(project), app_state).await?;
     if !resp.acquired {
@@ -118,7 +97,7 @@ pub async fn reacquire(app_state: Arc<AppState>, key: ConnectionKey) {
         let Some((project_id, _)) = held else {
             return;
         };
-        let Ok(project) = load_project(&app_state, project_id) else {
+        let Ok(project) = crate::project::crud::load_project(&app_state, project_id) else {
             return;
         };
         match query_acquire_project_lock_via_server(key, request(&project), &app_state).await {
@@ -167,8 +146,8 @@ pub async fn request_project_takeover(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<bool, String> {
-    let project = load_project(&app_state, project_id)?;
-    let key = connection_of(&project);
+    let project = crate::project::crud::load_project(&app_state, project_id)?;
+    let key = project.connection_key();
     ensure_connection_server(&app_state, key).await?;
     query_takeover_via_server(key, request(&project), &app_state).await
 }

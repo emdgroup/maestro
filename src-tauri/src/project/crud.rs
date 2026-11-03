@@ -7,6 +7,32 @@ use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
 
+/// The project's row.
+pub(crate) fn load_project(app_state: &AppState, project_id: i32) -> Result<Project, String> {
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
+    conn.query_row(
+        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
+        [project_id],
+        Project::from_row,
+    )
+    .map_err(|e| format!("Project {} not found: {}", project_id, e))
+}
+
+/// Which server to ask, and what this project is called on it.
+///
+/// Read from the `projects` row alone: every task, worktree and review request comes through here,
+/// and building a `GitConnection` for each would look up the connection's credentials to no end.
+pub(crate) async fn target(
+    app_state: &AppState,
+    project_id: i32,
+) -> Result<(ConnectionKey, String), String> {
+    let project = load_project(app_state, project_id)?;
+    Ok((project.connection_key(), project.path))
+}
+
 /// Register a project in the database (check-or-insert) and initialize .maestro folder.
 /// Returns the full Project row.
 pub(crate) async fn register_project_in_db(
@@ -44,16 +70,7 @@ pub(crate) async fn register_project_in_db(
 
     init_project_storage(app_state, path, connection_key).await;
 
-    // Read back full project row
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    conn.query_row(
-        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-        params![project_id],
-        Project::from_row,
-    ).map_err(|e| e.to_string())
+    load_project(app_state, project_id)
 }
 
 /// Fetch projects for a connection from an open DB connection.
@@ -137,30 +154,19 @@ pub fn get_project(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<Project, String> {
-    let conn = app_state
+    let project = load_project(&app_state, project_id)?;
+    // Update last_opened timestamp when project is selected
+    let now = Utc::now().to_rfc3339();
+    app_state
         .db
         .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-
-    // Try to find existing project
-    let existing: Result<Project, _> = conn.query_row(
-        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-        [&project_id],
-        Project::from_row
-    );
-
-    if let Ok(project) = existing {
-        // Update last_opened timestamp when project is selected
-        let now = Utc::now().to_rfc3339();
-        conn.execute(
+        .map_err(|e| format!("Lock failed: {}", e))?
+        .execute(
             "UPDATE projects SET last_opened = ? WHERE id = ?",
             rusqlite::params![&now, project.id],
         )
         .map_err(|e| e.to_string())?;
-        Ok(project)
-    } else {
-        Err("Project not found".to_string())
-    }
+    Ok(project)
 }
 
 /// Open a project by ID: acquire the project lock, update last_opened, and return the Project.
@@ -174,7 +180,7 @@ pub async fn open_project(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<Project, String> {
-    let project = crate::project::lock::load_project(&app_state, project_id)?;
+    let project = load_project(&app_state, project_id)?;
 
     // Errors if another window holds it, or if its server cannot be reached to ask.
     crate::project::lock::acquire(&app_state, &project).await?;

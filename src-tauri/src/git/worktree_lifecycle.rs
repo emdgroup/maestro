@@ -519,11 +519,7 @@ pub async fn live_session_cwds(
     project: &crate::models::Project,
 ) -> Result<Vec<String>, String> {
     let mut live_cwds = running_session_cwds(app_state).await;
-    let connection_key = crate::acp::ConnectionKey::from_all_ids(
-        project.connection_id,
-        project.wsl_connection_id,
-        project.docker_connection_id,
-    );
+    let connection_key = project.connection_key();
     match crate::acp::connection_server::query_project_sessions_via_server(
         connection_key,
         project.path.clone(),

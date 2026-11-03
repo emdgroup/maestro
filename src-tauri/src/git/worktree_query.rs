@@ -210,17 +210,7 @@ pub async fn list_worktrees_with_status(
     repo_path: String,
 ) -> Result<Vec<WorktreeWithStatus>, String> {
     // Resolve project and git connection (local vs remote SSH)
-    let project = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-            [project_id],
-            crate::models::Project::from_row,
-        ).map_err(|e| format!("Project {} not found: {}", project_id, e))?
-    };
+    let project = crate::project::crud::load_project(&app_state, project_id)?;
     let git_conn = crate::core::get_git_connection(&project, &app_state)
         .await
         .unwrap_or_else(|_| crate::models::GitConnection::Local {

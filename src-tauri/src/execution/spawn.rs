@@ -77,7 +77,6 @@ pub async fn spawn_interactive_execution(
     // Resolve project and git connection (local vs remote SSH) — same pattern as create_worktree
     let (project, git_conn) =
         crate::core::get_project_with_git_conn(&app_state, project_id).await?;
-    let is_remote = project.is_remote();
 
     // Canonicalize only a path that is actually on this machine. A WSL or container path is not:
     // resolving `/root/proj` on a Windows host yields `C:\root\proj`, which then reaches
@@ -179,10 +178,7 @@ pub async fn spawn_interactive_execution(
         }
     }
 
-    if is_remote {
-        let conn_id = project
-            .connection_id
-            .ok_or("Remote project has no connection_id")?;
+    if let Some(conn_id) = project.connection_id {
         let ssh_session = app_state
             .ssh
             .get_session(conn_id)

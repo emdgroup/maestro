@@ -29,14 +29,10 @@ async fn additional_directories_for(req: &SessionRequest) -> Vec<String> {
 /// The project's path as this app's own row has it, which is what the daemon files a session
 /// under. `None` for a project that is gone, which leaves the session without a row there.
 fn project_path(app_state: &crate::core::AppState, project_id: i32) -> Option<String> {
-    let conn = app_state.db.lock().ok()?;
-    conn.query_row(
-        "SELECT path FROM projects WHERE id = ?",
-        [project_id],
-        |row| row.get(0),
-    )
-    .map_err(|e| log::warn!("cannot read the path of project {project_id}: {e}"))
-    .ok()
+    crate::project::crud::load_project(app_state, project_id)
+        .map(|project| project.path)
+        .map_err(|e| log::warn!("cannot read the path of project {project_id}: {e}"))
+        .ok()
 }
 
 /// The writer of the connection's server, which the caller has just ensured. Missing only when the
