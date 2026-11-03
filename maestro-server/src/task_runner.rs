@@ -16,9 +16,8 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 use maestro_protocol::{
     AddTaskCommentRequest, AgentRole, ConcurrencyMode, ErrorResponse, NewTaskComment, PhaseStatus,
-    RequestTaskExecutionRequest, ServerRequest, ServerResponse, StartTaskRequest,
-    StartTaskResponse, Task, TaskPhase, TaskSessionStarted, TaskStatus, TaskTransition,
-    TransitionGuard, AUTH_REQUIRED_ERROR,
+    ServerRequest, ServerResponse, StartTaskRequest, StartTaskResponse, Task, TaskPhase,
+    TaskSessionStarted, TaskStatus, TaskTransition, TransitionGuard, AUTH_REQUIRED_ERROR,
 };
 use rusqlite::Connection;
 
@@ -250,18 +249,11 @@ pub(crate) fn begin(
     if request.respect_capacity {
         if let Ok(status) = crate::pipeline_settings::capacity_status(conn) {
             let full = used_slots >= status.slots.max(0) as usize;
-            if full && status.settings.concurrency_mode == ConcurrencyMode::Hard {
-                let ask = ServerRequest::RequestTaskExecution(RequestTaskExecutionRequest {
-                    project_path: project_path.clone(),
-                    task_id: task.id,
-                });
-                if let ServerResponse::RequestTaskExecutionOk(reply) =
-                    answer_into(conn, ask, pushes)?
-                {
-                    if reply.deferred {
-                        return Ok(Begun::Deferred);
-                    }
-                }
+            if full
+                && status.settings.concurrency_mode == ConcurrencyMode::Hard
+                && requests::request_execution(conn, &project_path, task.id, pushes)?
+            {
+                return Ok(Begun::Deferred);
             }
         }
     }

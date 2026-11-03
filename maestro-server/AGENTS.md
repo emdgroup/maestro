@@ -194,8 +194,10 @@ the canonical path from the app's `project_id`.
   task 3, every command naming a task or worktree carries `project_id` too, and so does every task
   query key in the frontend.
 - **A guarded step is one request.** A transition travels with its guard (`TransitionGuard`) and runs
-  under the store's lock, as do the composite steps: the turn end (`EndTaskTurn`), closing a
-  refinement and requesting execution. A step the guard refuses writes nothing and pushes nothing.
+  under the store's lock, as do the composite steps: the turn end (`task_store::end_turn`), closing
+  a refinement and requesting execution. The turn end and the deferred execution are the daemon's
+  own, so they are functions in `task_store::requests` rather than wire requests. A step the guard
+  refuses writes nothing and pushes nothing.
 - **Nothing on the shared reader awaits a daemon reply.** The reply to a daemon request comes back
   through the same reader that would be waiting for it, so `reader_task` spawns such requests onto
   a task of their own. A permission request of a task session is settled that way, its blocked
@@ -267,8 +269,8 @@ is handed over. The claim on the task keeps a second start from doing anything. 
 on session close, hold release and a one-minute tick.
 
 **A guarded step is still one request.** The turn end classifies the turn, runs the diff gate with
-local `git` (the daemon is on the repository's machine), and writes the outcome as one `EndTaskTurn`
-under the store's lock, exactly as a window's would. A start that cannot go ahead with nobody
+local `git` (the daemon is on the repository's machine), and writes the outcome as one
+`requests::end_turn` under the store's lock. A start that cannot go ahead with nobody
 watching, for want of an agent or a sign-in, fails with a note in the thread rather than retrying.
 The claim overwrites the phase with `Spawning`, so it keeps the one it took in `claimed_from`: a start
 that does not come up goes back to that phase, failed, where the stage it hands to can claim it again,

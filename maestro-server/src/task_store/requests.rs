@@ -7,9 +7,9 @@
 
 use maestro_protocol::{
     ApplyTaskTransitionRequest, LoopCheckList, LoopIterationList, NewTaskComment, OptionalTask,
-    OptionalWorktree, ProjectRef, RequestTaskExecutionResponse, SaveTaskReviewResponse,
-    ServerRequest, ServerResponse, TaskAttachmentList, TaskCommentList, TaskList, TaskRef,
-    TaskTransition, TaskUpdate, TransitionGuard, WorktreeList,
+    OptionalWorktree, ProjectRef, SaveTaskReviewResponse, ServerRequest, ServerResponse, Task,
+    TaskAttachmentList, TaskCommentList, TaskList, TaskRef, TaskTransition, TaskUpdate,
+    TransitionGuard, WorktreeList,
 };
 use rusqlite::Connection;
 
@@ -151,20 +151,6 @@ pub fn answer(
                 changed,
             )
         }
-        Q::EndTaskTurn(mut r) => {
-            canonical(&mut r.project_path);
-            let task = super::end_turn(conn, &r)?;
-            let changed = Changed {
-                tasks: task.is_some(),
-                comments_of: task.as_ref().map(|_| r.task_id),
-                ..Changed::default()
-            };
-            (
-                r.project_path,
-                A::EndTaskTurnOk(OptionalTask { task }),
-                changed,
-            )
-        }
         Q::CloseRefinement(mut r) => {
             canonical(&mut r.project_path);
             let task = super::close_refinement(conn, &r)?;
@@ -175,16 +161,6 @@ pub fn answer(
                 ..Changed::default()
             };
             (r.project_path, A::CloseRefinementOk(task), changed)
-        }
-        Q::RequestTaskExecution(mut r) => {
-            canonical(&mut r.project_path);
-            let deferred = super::request_execution(conn, &r)?;
-            let changed = Changed {
-                tasks: deferred,
-                ..Changed::default()
-            };
-            let reply = A::RequestTaskExecutionOk(RequestTaskExecutionResponse { deferred });
-            (r.project_path, reply, changed)
         }
         Q::ListTasksAwaitingMerge(mut r) => {
             canonical(&mut r.project_path);
@@ -328,8 +304,50 @@ pub fn answer(
         }
         _ => return Err("not a task, worktree or review request".to_string()),
     };
-
     let mut pushes = Vec::new();
+    owed(project_path, changed, &mut pushes);
+    Ok((reply, pushes))
+}
+
+/// The turn end under the store's lock, its pushes added to `pushes`. The task when the turn's
+/// transition applied, `None` when the task had already been parked.
+pub fn end_turn(
+    conn: &mut Connection,
+    mut turn: super::EndTurn,
+    pushes: &mut Vec<ServerResponse>,
+) -> Result<Option<Task>, String> {
+    turn.project_path = canonical_project_path(&turn.project_path);
+    let task = super::end_turn(conn, &turn)?;
+    let changed = Changed {
+        tasks: task.is_some(),
+        comments_of: task.as_ref().map(|_| turn.task_id),
+        ..Changed::default()
+    };
+    owed(turn.project_path, changed, pushes);
+    Ok(task)
+}
+
+/// Defer an Execute there is no slot for, its pushes added to `pushes`. `false` when the task
+/// moved away first, and the caller should let the claim refuse it.
+pub fn request_execution(
+    conn: &mut Connection,
+    project_path: &str,
+    task_id: i32,
+    pushes: &mut Vec<ServerResponse>,
+) -> Result<bool, String> {
+    let project_path = canonical_project_path(project_path);
+    let deferred = super::request_execution(conn, &project_path, task_id)?;
+    let changed = Changed {
+        tasks: deferred,
+        ..Changed::default()
+    };
+    owed(project_path, changed, pushes);
+    Ok(deferred)
+}
+
+/// The pushes a change to the rows of `project_path` owes.
+fn owed(project_path: String, changed: Changed, pushes: &mut Vec<ServerResponse>) {
+    use ServerResponse as A;
     if changed.tasks {
         pushes.push(A::TasksChanged(ProjectRef {
             project_path: project_path.clone(),
@@ -344,5 +362,4 @@ pub fn answer(
     if changed.worktrees {
         pushes.push(A::WorktreesChanged(ProjectRef { project_path }));
     }
-    Ok((reply, pushes))
 }

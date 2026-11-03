@@ -247,9 +247,7 @@ pub enum ServerRequest {
     DeleteTask(TaskRef),
     /// One guarded transition, the guard read under the same lock as the write.
     ApplyTaskTransition(ApplyTaskTransitionRequest),
-    EndTaskTurn(EndTaskTurnRequest),
     CloseRefinement(CloseRefinementRequest),
-    RequestTaskExecution(RequestTaskExecutionRequest),
     /// Queued tasks with no phase, deferred first, then by priority and age.
     /// Unarchived tasks at `AwaitingMerge` with a pull request number, for the forge sweep.
     ListTasksAwaitingMerge(ProjectRef),
@@ -2059,37 +2057,6 @@ pub struct OptionalTask {
     pub task: Option<Task>,
 }
 
-/// How an agent's turn on a task ended, as the app classified it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum TurnEnding {
-    Completed {
-        is_git_repo: bool,
-        has_changes: Option<bool>,
-        reviewer_pending: bool,
-    },
-    Stalled,
-    Failed,
-    /// A read-only role's deliverable arrived as a request to leave plan mode.
-    ArtifactDelivered,
-}
-
-/// The turn end, under one lock: read the phase, turn a reviewer's reply into its verdict
-/// (counting the round when it rejects), apply the transition while the task still has a phase,
-/// and file the closing message in the thread by what the phase produced.
-///
-/// A CI fix ending at `AwaitingMerge` is not sent here: the daemon pushes it and applies
-/// `CiFixPushed` itself.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct EndTaskTurnRequest {
-    pub project_path: String,
-    pub task_id: i32,
-    pub ending: TurnEnding,
-    /// The reply read as an approving verdict. Consulted only when the phase is `SelfReview`.
-    #[serde(default)]
-    pub review_approved: bool,
-    pub closing_message: String,
-}
-
 /// Answer the refiner's proposal gate: on accept, the latest proposal becomes the description and
 /// leaves the thread; either way `RefinementClosed` applies.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -2097,20 +2064,6 @@ pub struct CloseRefinementRequest {
     pub project_path: String,
     pub task_id: i32,
     pub accept: bool,
-}
-
-/// Defer an Execute the host has no slot for: a Planning task moves to Queue, and a task parked
-/// there is stamped with `execute_requested_at` if it has none.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct RequestTaskExecutionRequest {
-    pub project_path: String,
-    pub task_id: i32,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct RequestTaskExecutionResponse {
-    /// `false` when the task moved away first, and the caller should let the claim refuse it.
-    pub deferred: bool,
 }
 
 /// How the machine's agent limit is decided.
@@ -2716,10 +2669,7 @@ pub enum ServerResponse {
     CancelTaskOk(Task),
     DeleteTaskOk,
     ApplyTaskTransitionOk(OptionalTask),
-    /// The task when the turn's transition applied, `None` when the task had already been parked.
-    EndTaskTurnOk(OptionalTask),
     CloseRefinementOk(Task),
-    RequestTaskExecutionOk(RequestTaskExecutionResponse),
     ListTasksAwaitingMergeOk(TaskList),
     ListTaskCommentsOk(TaskCommentList),
     AddTaskCommentOk(TaskComment),
@@ -2862,9 +2812,7 @@ impl ServerResponse {
             | Self::CancelTaskOk(_)
             | Self::DeleteTaskOk
             | Self::ApplyTaskTransitionOk(_)
-            | Self::EndTaskTurnOk(_)
             | Self::CloseRefinementOk(_)
-            | Self::RequestTaskExecutionOk(_)
             | Self::ListTasksAwaitingMergeOk(_)
             | Self::ListTaskCommentsOk(_)
             | Self::AddTaskCommentOk(_)
@@ -4104,17 +4052,6 @@ mod tests {
                     comment: None,
                 },
             )),
-            AnyMessage::Request(ServerRequest::EndTaskTurn(EndTaskTurnRequest {
-                project_path: "/srv/shop".to_string(),
-                task_id: 3,
-                ending: TurnEnding::Completed {
-                    is_git_repo: true,
-                    has_changes: Some(true),
-                    reviewer_pending: true,
-                },
-                review_approved: false,
-                closing_message: "Done.".to_string(),
-            })),
             AnyMessage::Response(ServerResponse::InsertWorktreeOk(Worktree {
                 id: 4,
                 project_path: "/srv/shop".to_string(),
@@ -4272,7 +4209,6 @@ mod tests {
             project_path: "/srv/shop".to_string(),
         })
         .is_reply());
-        assert!(ServerResponse::EndTaskTurnOk(OptionalTask { task: None }).is_reply());
         assert!(ServerResponse::DeleteWorktreesOk.is_reply());
     }
 

@@ -7,13 +7,13 @@
 use std::sync::Arc;
 
 use maestro_protocol::{
-    AgentRole, EndTaskTurnRequest, NewTaskComment, PhaseStatus, ServerRequest, ServerResponse,
-    StartTaskRequest, Task, TaskBall, TaskPhase, TaskTransition, TaskUpdate, TransitionGuard,
-    TurnEnding, WorkspaceMode,
+    AgentRole, NewTaskComment, PhaseStatus, ServerResponse, StartTaskRequest, Task, TaskBall,
+    TaskPhase, TaskTransition, TaskUpdate, TransitionGuard, WorkspaceMode,
 };
 
 use crate::helpers::{broadcast, send_diag};
-use crate::task_store::requests::{answer_into, note, transition};
+use crate::task_store::requests::{self, answer_into, note, transition};
+use crate::task_store::{EndTurn, TurnEnding};
 use crate::turn::{classify_turn, classify_verdict, ReviewVerdict, TurnFacts, TurnOutcome};
 use crate::worktree::git;
 
@@ -230,7 +230,7 @@ pub(crate) async fn resolve(
         ),
     );
 
-    let request = match resolution {
+    let written = match resolution {
         Resolution::Ignore => return (None, pushes),
         Resolution::PushCiFix => {
             let pushed = match &worktree {
@@ -239,7 +239,7 @@ pub(crate) async fn resolve(
                 }
                 None => Err(format!("no worktree for task {task_id}")),
             };
-            match pushed {
+            let request = match pushed {
                 // The verdict that asked for the fix must not outlive it.
                 Ok(()) => transition(
                     project_path,
@@ -264,25 +264,26 @@ pub(crate) async fn resolve(
                         ..note(format!("The CI fix could not be pushed: {e}"))
                     }),
                 ),
-            }
+            };
+            answer_into(&mut *store.lock().await, request, &mut pushes).map(|reply| match reply {
+                ServerResponse::ApplyTaskTransitionOk(applied) => applied.task,
+                _ => None,
+            })
         }
         Resolution::End(ending) => {
             let closing_message = facts.closing_message.unwrap_or_default();
-            ServerRequest::EndTaskTurn(EndTaskTurnRequest {
+            let turn = EndTurn {
                 project_path: project_path.to_string(),
                 task_id,
                 ending,
                 review_approved: classify_verdict(&closing_message) == ReviewVerdict::Approved,
                 closing_message,
-            })
+            };
+            requests::end_turn(&mut *store.lock().await, turn, &mut pushes)
         }
     };
-
-    let written = answer_into(&mut *store.lock().await, request, &mut pushes);
     let task = match written {
-        Ok(ServerResponse::EndTaskTurnOk(ended)) => ended.task,
-        Ok(ServerResponse::ApplyTaskTransitionOk(applied)) => applied.task,
-        Ok(_) => None,
+        Ok(task) => task,
         Err(e) => {
             send_diag("warn", format!("[task] turn end of task {task_id}: {e}"));
             None

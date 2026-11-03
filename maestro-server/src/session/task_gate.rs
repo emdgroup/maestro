@@ -7,8 +7,7 @@
 //! task blocked and waits for a user, and the mark is cleared when one answers.
 
 use maestro_protocol::{
-    AgentRole, EndTaskTurnRequest, ServerRequest, ServerResponse, Task, TaskPhase, TaskTransition,
-    TransitionGuard, TurnEnding,
+    AgentRole, ServerRequest, ServerResponse, Task, TaskPhase, TaskTransition, TransitionGuard,
 };
 use serde_json::Value;
 
@@ -247,17 +246,23 @@ async fn take_plan(
 ) -> Option<Task> {
     let review_approved =
         crate::turn::classify_verdict(&plan) == crate::turn::ReviewVerdict::Approved;
-    let request = ServerRequest::EndTaskTurn(EndTaskTurnRequest {
+    let turn = crate::task_store::EndTurn {
         project_path: project_path.clone(),
         task_id: *task_id,
-        ending: TurnEnding::ArtifactDelivered,
+        ending: crate::task_store::TurnEnding::ArtifactDelivered,
         review_approved,
         closing_message: plan,
-    });
-    match write(request, stdout).await? {
-        ServerResponse::EndTaskTurnOk(ended) => ended.task,
-        _ => None,
+    };
+    let store = crate::project_store::SHARED.get()?;
+    let mut pushes = Vec::new();
+    let ended = requests::end_turn(&mut *store.lock().await, turn, &mut pushes);
+    for push in pushes {
+        broadcast(stdout, push).await;
     }
+    ended
+        .map_err(|e| send_diag("warn", format!("[task] {e}")))
+        .ok()
+        .flatten()
 }
 
 #[cfg(test)]
