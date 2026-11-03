@@ -469,7 +469,10 @@ fn abandon(pending: &Pending, alive: &AtomicBool) {
 }
 
 /// The behaviour this module replaces: one process per command.
-async fn cold_spawn(
+///
+/// Also what deploying `maestro-server` runs through, since the binary it pipes in is too large for
+/// a channel frame and the channel is served by the binary being replaced.
+pub(crate) async fn cold_spawn(
     target: &ExecTarget<'_>,
     cwd: Option<&str>,
     program: &str,
@@ -566,19 +569,23 @@ async fn cold_spawn(
     let mut child = command
         .spawn()
         .map_err(|e| format!("failed to run {}: {}", program, e))?;
-    if let (Some(bytes), Some(mut sink)) = (stdin.as_ref(), child.stdin.take()) {
-        sink.write_all(bytes)
-            .await
-            .map_err(|e| format!("failed to write stdin: {}", e))?;
-        sink.flush()
-            .await
-            .map_err(|e| format!("failed to flush stdin: {}", e))?;
-        drop(sink);
-    }
+    let write_result = match (stdin.as_ref(), child.stdin.take()) {
+        (Some(bytes), Some(mut sink)) => match sink.write_all(bytes).await {
+            Ok(()) => sink.flush().await,
+            Err(e) => Err(e),
+        },
+        _ => Ok(()),
+    };
     let output = child
         .wait_with_output()
         .await
         .map_err(|e| format!("failed to run {}: {}", program, e))?;
+    // A command that exits before reading all of its input breaks the pipe. Its exit status and
+    // stderr say why, which is the more useful answer, so a failed write only counts when the
+    // command itself succeeded.
+    if output.status.success() {
+        write_result.map_err(|e| format!("failed to write stdin: {}", e))?;
+    }
 
     Ok(CommandOutput {
         stdout: output.stdout,
