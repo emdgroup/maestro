@@ -144,18 +144,7 @@ pub async fn ensure_connection_server(
         }
         ConnectionKey::Wsl { id: wsl_id } => {
             let wsl_id = *wsl_id;
-            let distro = {
-                let conn = app_state
-                    .db
-                    .lock()
-                    .map_err(|e| format!("Lock failed: {}", e))?;
-                conn.query_row(
-                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                    [wsl_id],
-                    |row| row.get::<_, String>(0),
-                )
-                .map_err(|e| format!("WSL connection {} not found: {}", wsl_id, e))?
-            };
+            let distro = crate::core::connection::wsl_distro(app_state, wsl_id)?;
             #[cfg(windows)]
             {
                 let maestro_path =
@@ -194,18 +183,7 @@ pub async fn ensure_connection_server(
         }
         ConnectionKey::Docker { id: docker_id } => {
             let docker_id = *docker_id;
-            let container_name = {
-                let conn = app_state
-                    .db
-                    .lock()
-                    .map_err(|e| format!("Lock failed: {}", e))?;
-                conn.query_row(
-                    "SELECT container_name FROM docker_connections WHERE id = ?",
-                    [docker_id],
-                    |row| row.get::<_, String>(0),
-                )
-                .map_err(|e| format!("Docker connection {} not found: {}", docker_id, e))?
-            };
+            let container_name = crate::core::connection::container_name(app_state, docker_id)?;
             let cli = crate::connectivity::docker::ContainerCli::detect()
                 .map_err(|e| format!("No container CLI found: {}", e))?;
             let maestro_path = crate::acp::deploy::ensure_container_server(

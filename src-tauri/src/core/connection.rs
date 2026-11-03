@@ -213,11 +213,40 @@ impl AppState {
     }
 }
 
+/// The distro a WSL connection names.
+pub fn wsl_distro(app_state: &AppState, id: i32) -> Result<String, String> {
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
+    conn.query_row(
+        "SELECT distro_name FROM wsl_connections WHERE id = ?",
+        [id],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("WSL connection {} not found: {}", id, e))
+}
+
+/// The container a container connection names.
+pub fn container_name(app_state: &AppState, id: i32) -> Result<String, String> {
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
+    conn.query_row(
+        "SELECT container_name FROM docker_connections WHERE id = ?",
+        [id],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Docker connection {} not found: {}", id, e))
+}
+
 /// Resolve a [`ConnectionKey`] and a path into the connection handle everything else runs
 /// commands and file operations through.
 ///
-/// This is the one place that turns a connection id into a distro name, a container name or a
-/// live SSH session, so call sites hold a `GitConnection` rather than repeating those lookups.
+/// Together with [`wsl_distro`] and [`container_name`], the one place that turns a connection id
+/// into a distro name, a container name or a live SSH session, so call sites hold a
+/// `GitConnection` rather than repeating those lookups.
 pub async fn git_connection_for(
     app_state: &AppState,
     path: String,
@@ -236,39 +265,14 @@ pub async fn git_connection_for(
                 remote_path: path,
             })
         }
-        ConnectionKey::Wsl { id } => {
-            let distro = {
-                let conn = app_state
-                    .db
-                    .lock()
-                    .map_err(|e| format!("Lock failed: {}", e))?;
-                conn.query_row(
-                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                    [id],
-                    |row| row.get::<_, String>(0),
-                )
-                .map_err(|e| format!("WSL connection {} not found: {}", id, e))?
-            };
-            Ok(GitConnection::Wsl { distro, path })
-        }
-        ConnectionKey::Docker { id } => {
-            let container_name = {
-                let conn = app_state
-                    .db
-                    .lock()
-                    .map_err(|e| format!("Lock failed: {}", e))?;
-                conn.query_row(
-                    "SELECT container_name FROM docker_connections WHERE id = ?",
-                    [id],
-                    |row| row.get::<_, String>(0),
-                )
-                .map_err(|e| format!("Docker connection {} not found: {}", id, e))?
-            };
-            Ok(GitConnection::Docker {
-                container_name,
-                path,
-            })
-        }
+        ConnectionKey::Wsl { id } => Ok(GitConnection::Wsl {
+            distro: wsl_distro(app_state, id)?,
+            path,
+        }),
+        ConnectionKey::Docker { id } => Ok(GitConnection::Docker {
+            container_name: container_name(app_state, id)?,
+            path,
+        }),
     }
 }
 
