@@ -3577,7 +3577,7 @@ dependencies = [
 
 [[package]]
 name = "maestro"
-version = "0.44.0"
+version = "0.45.0"
 dependencies = [
  "aes-gcm",
  "base64 0.23.1",
@@ -3624,7 +3624,7 @@ dependencies = [
 
 [[package]]
 name = "maestro-protocol"
-version = "0.44.0"
+version = "0.45.0"
 dependencies = [
  "base64 0.23.1",
  "image",
@@ -3636,7 +3636,7 @@ dependencies = [
 
 [[package]]
 name = "maestro-server"
-version = "0.44.0"
+version = "0.45.0"
 dependencies = [
  "agent-client-protocol",
  "agent-client-protocol-schema",
@@ -6633,9 +6633,9 @@ dependencies = [
 
 [[package]]
 name = "sysinfo"
-version = "0.39.6"
+version = "0.40.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2071df9448915b71c4fe6d25deaf1c22f12bd234f01540b77312bb8e41361e6"
+checksum = "0e8a3edbe0394ce115f3917a00349dd242be09eb5a091ed509eaf67b55cfb8a8"
 dependencies = [
  "libc",
  "memchr",

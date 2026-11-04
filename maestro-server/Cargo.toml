@@ -56,7 +56,7 @@ sha2 = "0.11"
 hex = "0.4"
 subtle = "2"
 # The Auto agent limit measures this machine's free memory, as the app does for a local project.
-sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+sysinfo = { version = "0.40.1", default-features = false, features = ["system"] }
 # A task's image attachments, encoded as the app does; scaling them is maestro-protocol's `image`
 # feature. Same version as the app's, so it is already in the lockfile.
 base64 = "0.23"
