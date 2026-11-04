@@ -831,6 +831,31 @@ describe("WorkspaceFilesPanel tabs", () => {
     return screen.getAllByRole("tab").map((t) => t.textContent);
   }
 
+  it("is one tab stop, moved along the row by the arrow keys, Home and End", async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    const row = await screen.findByRole("tablist");
+    const main = within(row).getByRole("tab", { name: /main\.ts/ });
+    const notes = within(row).getByRole("tab", { name: /notes\.md/ });
+    expect([main.tabIndex, notes.tabIndex]).toEqual([-1, 0]);
+
+    fireEvent.keyDown(notes, { key: "ArrowLeft" });
+    expect(main).toHaveAttribute("aria-selected", "true");
+    expect(main).toHaveFocus();
+    expect([main.tabIndex, notes.tabIndex]).toEqual([0, -1]);
+
+    fireEvent.keyDown(main, { key: "End" });
+    expect(notes).toHaveFocus();
+    fireEvent.keyDown(notes, { key: "Home" });
+    expect(main).toHaveFocus();
+  });
+
+  it("closes a tab from the keyboard with Delete", async () => {
+    renderPanel();
+    fireEvent.keyDown(await screen.findByRole("tab", { name: /main\.ts/ }), { key: "Delete" });
+    await waitFor(() => expect(screen.queryByRole("tab")).toBeNull());
+  });
+
   it("copies the absolute path from the tab's menu", async () => {
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
     renderPanel();

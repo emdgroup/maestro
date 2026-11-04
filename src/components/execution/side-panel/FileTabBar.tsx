@@ -72,6 +72,24 @@ export function FileTabBar({
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [active]);
 
+  /** The row is one tab stop: the arrows, Home and End move along it, and Delete closes a tab. */
+  function handleKeyDown(e: React.KeyboardEvent) {
+    const path = (e.target as HTMLElement).closest<HTMLElement>("[data-file-tab]")?.dataset.fileTab;
+    if (!path) return;
+    if (e.key === "Delete") {
+      e.preventDefault();
+      onClose(path);
+      return;
+    }
+    const i = tabs.indexOf(path);
+    const to = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: tabs.length - 1 }[e.key];
+    const next = to === undefined ? undefined : tabs[to];
+    if (next === undefined) return;
+    e.preventDefault();
+    onActivate(next);
+    rowRef.current?.querySelector<HTMLElement>(`[data-file-tab="${CSS.escape(next)}"]`)?.focus();
+  }
+
   const menuIndex = menu ? tabs.indexOf(menu.path) : -1;
   const act = (run: (path: string) => void) => () => {
     if (menu) run(menu.path);
@@ -81,6 +99,11 @@ export function FileTabBar({
   return (
     <div
       ref={rowRef}
+      role="tablist"
+      aria-label={
+        split ? (side === 0 ? "Open files, left side" : "Open files, right side") : "Open files"
+      }
+      onKeyDown={handleKeyDown}
       data-tab-row={side}
       className="flex items-center gap-0.5 flex-1 min-w-0 h-full overflow-x-auto scrollbar-none"
     >
@@ -196,7 +219,7 @@ function FileTab({
           <div
             ref={ref}
             role="tab"
-            tabIndex={0}
+            tabIndex={isActive ? 0 : -1}
             aria-selected={isActive}
             data-file-tab={path}
             onClick={onActivate}
