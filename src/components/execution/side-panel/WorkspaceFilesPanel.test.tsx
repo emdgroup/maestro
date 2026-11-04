@@ -881,6 +881,32 @@ describe("WorkspaceFilesPanel tabs", () => {
     expect(screen.getByTestId("editor")).toHaveValue("edited");
   });
 
+  it("opens a file to the side with Ctrl+Enter on its row in the tree", async () => {
+    renderPanel();
+    await screen.findByRole("tab", { name: /main\.ts/ });
+    fireEvent.keyDown(await screen.findByRole("button", { name: /notes\.md/ }), {
+      key: "Enter",
+      ctrlKey: true,
+    });
+
+    await waitFor(() =>
+      expect(
+        [...document.querySelectorAll("[data-tab-row]")].map((r) =>
+          [...r.querySelectorAll("[role=tab]")].map((t) => t.textContent),
+        ),
+      ).toEqual([["main.ts"], ["notes.md"]]),
+    );
+  });
+
+  it("asks before Ctrl+W closes a tab with unsaved changes", async () => {
+    renderPanel();
+    await enterEditMode();
+    typeDraft("edited");
+    fireEvent.keyDown(screen.getByRole("tab", { name: /main\.ts/ }), { key: "w", ctrlKey: true });
+
+    expect(await screen.findByText("Save changes to main.ts?")).toBeInTheDocument();
+  });
+
   it("copies the absolute path from the tab's menu", async () => {
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
     renderPanel();
