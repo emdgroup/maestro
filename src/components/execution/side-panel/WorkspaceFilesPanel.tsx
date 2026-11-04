@@ -62,7 +62,7 @@ import { ToolbarButton } from "./ToolbarButton";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/ui/resizable";
 import { ReviewLayout } from "@/components/execution/diff/ReviewLayout";
 import { useReviewPanelLayout } from "@/components/execution/diff/useReviewPanelLayout";
-import { isAbsolutePath, basename } from "@/lib/path-utils";
+import { isAbsolutePath, basename, type LineRange } from "@/lib/path-utils";
 import { FileHeaderActions, FileNameCopyButton } from "./FileHeaderActions";
 
 interface WorkspaceFilesPanelProps {
@@ -76,6 +76,8 @@ interface WorkspaceFilesPanelProps {
   wslDistroName?: string;
   isActive?: boolean;
   initialPath?: string;
+  /** Lines of `initialPath` to scroll to and flash when it opens. */
+  initialLines?: LineRange;
   /** Drives the warning shown on entering edit mode: the agent may be writing this file. */
   isProcessing?: boolean;
   /** Lets the panel's own tab refuse to close while an unsaved draft is open. */
@@ -102,6 +104,7 @@ export function WorkspaceFilesPanel({
   wslDistroName,
   isActive = true,
   initialPath,
+  initialLines,
   isProcessing = false,
   onDirtyChange,
   onSelectedChange,
@@ -279,6 +282,7 @@ export function WorkspaceFilesPanel({
       onChange={setDraft}
       onSave={() => void handleSave()}
       onScrollerChange={setEditorScroller}
+      revealLines={selected === initialPath ? initialLines : undefined}
     />
   );
 

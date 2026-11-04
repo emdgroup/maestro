@@ -1,6 +1,14 @@
 import { useEffect, useRef } from "react";
-import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
+  Compartment,
+  EditorState,
+  StateEffect,
+  StateField,
+  type Extension,
+} from "@codemirror/state";
+import {
+  Decoration,
+  type DecorationSet,
   EditorView,
   keymap,
   lineNumbers,
@@ -21,6 +29,7 @@ import {
 import { languages } from "@codemirror/language-data";
 import { githubTheme } from "@/lib/codemirror-github-theme";
 import { useTheme } from "@/providers/ThemeProvider";
+import type { LineRange } from "@/lib/path-utils";
 
 /**
  * Structure only — every colour lives in `githubTheme`. The two are separate because the layout
@@ -38,6 +47,34 @@ const BASE_THEME = EditorView.theme({
     paddingRight: "1rem",
   },
   "&.cm-focused": { outline: "none" },
+});
+
+/** How long `.cm-flash-line` runs in `index.css`; the decoration is taken off once it has. */
+const FLASH_MS = 1600;
+const FLASH_LINE = Decoration.line({ class: "cm-flash-line" });
+
+/**
+ * Lines a link pointed at, briefly tinted so the eye finds them after the jump. A decoration rather
+ * than a class on the DOM line, because CodeMirror recreates those lines as they scroll in and out
+ * of view; `null` takes it off again.
+ */
+const setFlash = StateEffect.define<LineRange | null>();
+const flashField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(flash, tr) {
+    for (const effect of tr.effects) {
+      if (!effect.is(setFlash)) continue;
+      if (!effect.value) return Decoration.none;
+      const { doc } = tr.state;
+      const lines = [];
+      for (let n = effect.value.from; n <= Math.min(effect.value.to, doc.lines); n++) {
+        lines.push(FLASH_LINE.range(doc.line(n).from));
+      }
+      return Decoration.set(lines);
+    }
+    return flash.map(tr.changes);
+  },
+  provide: (field) => EditorView.decorations.from(field),
 });
 
 /**
@@ -81,6 +118,8 @@ interface FileEditorProps {
    * put a ref or a class on it from here. Called with `null` when the view is torn down.
    */
   onScrollerChange?: (element: HTMLElement | null) => void;
+  /** Lines to scroll to and flash, once per file, as soon as the document is long enough to have them. */
+  revealLines?: LineRange;
 }
 
 export function FileEditor({
@@ -91,6 +130,7 @@ export function FileEditor({
   onChange,
   onSave,
   onScrollerChange,
+  revealLines,
 }: FileEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -145,6 +185,7 @@ export function FileEditor({
           languageCompartment.current.of([]),
           themeCompartment.current.of([]),
           BASE_THEME,
+          flashField,
           EditorView.updateListener.of((update) => {
             if (update.docChanged) onChangeRef.current(update.state.doc.toString());
           }),
@@ -225,6 +266,37 @@ export function FileEditor({
     if (view.state.doc.toString() === doc) return;
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
   }, [doc, docEpoch, readOnly]);
+
+  // After the effect above, so it sees the document that just landed. Once per view and range, so
+  // the panel's poll does not yank the view back after the user has scrolled away. Per view, not
+  // per component: StrictMode builds the view twice, and a guard that outlived the first one
+  // skipped the second, which is the one on screen.
+  const revealedRef = useRef<{ view: EditorView; key: string } | null>(null);
+  const revealFrom = revealLines?.from;
+  const revealTo = revealLines?.to;
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !revealFrom || !revealTo) return;
+    const key = `${revealFrom}-${revealTo}`;
+    const revealed = revealedRef.current;
+    if ((revealed?.view === view && revealed.key === key) || revealFrom > view.state.doc.lines) {
+      return;
+    }
+    revealedRef.current = { view, key };
+    const pos = view.state.doc.line(revealFrom).from;
+    view.dispatch({
+      selection: { anchor: pos },
+      effects: [
+        EditorView.scrollIntoView(pos, { y: "center" }),
+        setFlash.of({ from: revealFrom, to: revealTo }),
+      ],
+    });
+    // Not cleared on re-run: the poll changes `doc`, and cancelling here would leave the tint on.
+    // A view torn down in the meantime is no longer `viewRef.current`, and is left alone.
+    window.setTimeout(() => {
+      if (viewRef.current === view) view.dispatch({ effects: setFlash.of(null) });
+    }, FLASH_MS);
+  }, [revealFrom, revealTo, doc]);
 
   return <div ref={hostRef} className="flex-1 min-h-0 overflow-hidden [&_.cm-editor]:h-full" />;
 }

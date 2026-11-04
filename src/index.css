@@ -708,6 +708,22 @@
   animation: shimmer 1.5s infinite;
 }
 
+/* A file link's cited lines, in the Files tab: tinted, held, faded. `FLASH_MS` in FileEditor.tsx
+   takes the decoration off when this ends. */
+.cm-flash-line {
+  animation: cm-flash-line 1.6s ease-out;
+}
+@keyframes cm-flash-line {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  10%,
+  45% {
+    background-color: color-mix(in oklab, var(--accent) 28%, transparent);
+  }
+}
+
 @keyframes blink {
   0%,
   100% {

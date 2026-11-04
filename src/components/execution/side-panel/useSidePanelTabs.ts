@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { CanvasSurface } from "@/components/execution/activity/types";
+import type { LineRange } from "@/lib/path-utils";
 
 export type TabKind =
   | "overview"
@@ -17,6 +18,8 @@ export interface SidePanelTab {
   label: string;
   closeable: boolean;
   initialPath?: string;
+  /** Lines of `initialPath` to scroll to and flash, from a `#L42` or `#L42-L50` link. */
+  initialLines?: LineRange;
   acpTerminalId?: string;
   isAuthTerminal?: boolean;
 }
@@ -58,7 +61,11 @@ export interface UseSidePanelTabsResult {
   activeTabId: string;
   setActiveTabId: (id: string) => void;
   closeTab: (id: string) => void;
-  addDynamicTab: (kind: "terminal" | "files", initialPath?: string) => string;
+  addDynamicTab: (
+    kind: "terminal" | "files",
+    initialPath?: string,
+    initialLines?: LineRange,
+  ) => string;
   openTabKind: (kind: TabKind) => void;
   openAcpTerminalTab: (terminalId: string, opts?: { isAuthTerminal?: boolean }) => void;
   latestCanvasSurfaceId: string | null;
@@ -196,13 +203,16 @@ export function useSidePanelTabs({
     [markTabSeen],
   );
 
-  const addDynamicTab = useCallback((kind: "terminal" | "files", initialPath?: string): string => {
-    counterRef.current += 1;
-    const id = `${kind}-${counterRef.current}`;
-    setTabs((prev) => [...prev, { ...makeTab(kind, id), initialPath }]);
-    setActiveTabId(id);
-    return id;
-  }, []);
+  const addDynamicTab = useCallback(
+    (kind: "terminal" | "files", initialPath?: string, initialLines?: LineRange): string => {
+      counterRef.current += 1;
+      const id = `${kind}-${counterRef.current}`;
+      setTabs((prev) => [...prev, { ...makeTab(kind, id), initialPath, initialLines }]);
+      setActiveTabId(id);
+      return id;
+    },
+    [],
+  );
 
   const openAcpTerminalTab = useCallback(
     (terminalId: string, opts?: { isAuthTerminal?: boolean }) => {

@@ -300,7 +300,7 @@ export function SidePanelContent({
 
   return (
     <>
-      {tabs.map(({ id, kind, initialPath, acpTerminalId, isAuthTerminal }) => {
+      {tabs.map(({ id, kind, initialPath, initialLines, acpTerminalId, isAuthTerminal }) => {
         const isActive = isSessionActive && activeTabId === id;
         const ptyEntry = kind === "terminal" && !acpTerminalId ? ptyState.get(id) : undefined;
         return (
@@ -598,6 +598,7 @@ export function SidePanelContent({
                 wslDistroName={wslDistroName}
                 isActive={isActive}
                 initialPath={initialPath}
+                initialLines={initialLines}
                 isProcessing={isProcessing}
                 onDirtyChange={(dirty) => onTabDirtyChange?.(id, dirty)}
                 onSelectedChange={(path) => onTabFileChange?.(id, path)}

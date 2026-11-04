@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -6,6 +7,7 @@ vi.mock("@/providers/ThemeProvider", () => ({
   useTheme: () => ({ theme: "dark", systemTheme: "dark" }),
 }));
 
+import { EditorView } from "@codemirror/view";
 import { FileEditor } from "./FileEditor";
 
 describe("FileEditor", () => {
@@ -29,6 +31,35 @@ describe("FileEditor", () => {
     expect(container.querySelector(".cm-content")?.textContent).toContain("const b = 2;");
     // The read view numbers its lines through a CSS counter; edit mode has to keep them.
     expect(container.querySelector(".cm-lineNumbers")).not.toBeNull();
+  });
+
+  it("puts the cursor on the line a link asked for and flashes the range", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const doc = Array.from({ length: 50 }, (_, i) => `line ${i + 1}`).join("\n");
+    // StrictMode, as the app runs: it builds the view twice, and the reveal has to land on the one
+    // that stays.
+    const { container } = render(
+      <StrictMode>
+        <FileEditor
+          doc={doc}
+          docEpoch={0}
+          fileName="a.ts"
+          readOnly
+          revealLines={{ from: 30, to: 32 }}
+          onChange={() => {}}
+          onSave={() => {}}
+        />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(container.querySelector(".cm-editor")).not.toBeNull());
+    const view = EditorView.findFromDOM(container.querySelector(".cm-editor") as HTMLElement)!;
+    expect(view.state.doc.lineAt(view.state.selection.main.head).number).toBe(30);
+    const flashed = [...container.querySelectorAll(".cm-flash-line")].map((l) => l.textContent);
+    expect(flashed).toEqual(["line 30", "line 31", "line 32"]);
+
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(container.querySelector(".cm-flash-line")).toBeNull();
+    vi.useRealTimers();
   });
 
   it("reports edits to its parent rather than owning the draft", async () => {

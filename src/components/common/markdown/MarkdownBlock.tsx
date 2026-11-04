@@ -177,7 +177,9 @@ function MarkdownAnchorComponent({
               (el) => clicked.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING,
             ) ?? candidates[candidates.length - 1];
           scrollToTarget(target);
-        } else if (href.startsWith("file://") && openFile) {
+        } else if (openFile && (href.startsWith("file://") || !/^[a-z][a-z0-9+.-]+:/i.test(href))) {
+          // No scheme means a path, the shape agents use to cite code (`src/a.ts#L42`). A drive
+          // letter is a single character, so `C:/…` falls through to here as well.
           openFile(href);
         } else {
           openUrl(href);
