@@ -342,7 +342,10 @@ export function WorkspaceFilesPanel({
       className="absolute inset-0 flex flex-col"
       onKeyDown={(e) => {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "w" && selected) {
+          // Kept from the Agents view's own Ctrl+W, which closes the whole session: with focus in
+          // here it closes the file in front, and only with no file open does it reach the session.
           e.preventDefault();
+          e.stopPropagation();
           requestClose(tabs.focus, selected);
         }
       }}
@@ -463,7 +466,7 @@ export function WorkspaceFilesPanel({
                 {drop?.kind === "well" && drop.side === side && (
                   <div
                     className={cn(
-                      "absolute top-1.5 bottom-1.5 flex items-center justify-center gap-1.5 rounded-[14px] border border-dashed border-accent/60 bg-accent/14 text-xs text-foreground",
+                      "absolute top-1.5 bottom-1.5 flex items-center justify-center gap-1.5 rounded-[14px] border border-dashed border-accent/60 bg-accent/14 backdrop-blur-sm text-xs text-foreground",
                       drop.zone === "right" ? "left-1/2 right-1.5" : "left-1.5 right-1.5",
                     )}
                   >

@@ -894,6 +894,21 @@ describe("WorkspaceFilesPanel tabs", () => {
     await waitFor(() => expect(screen.queryByRole("tab")).toBeNull());
   });
 
+  /** The Agents view closes the whole session on Ctrl+W, from a listener on the window. */
+  it("closes the file in front on Ctrl+W, and keeps the key from the session", async () => {
+    const onWindow = vi.fn();
+    window.addEventListener("keydown", onWindow);
+    renderPanel();
+    fireEvent.keyDown(await screen.findByRole("tab", { name: /main\.ts/ }), {
+      key: "w",
+      ctrlKey: true,
+    });
+    window.removeEventListener("keydown", onWindow);
+
+    await waitFor(() => expect(screen.queryByRole("tab")).toBeNull());
+    expect(onWindow).not.toHaveBeenCalled();
+  });
+
   it("moves a tab to a second side from its menu, and the split closes with it", async () => {
     renderPanel();
     await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));

@@ -240,8 +240,6 @@ function FileTab({
             e.stopPropagation();
             onClose();
           }}
-          // Kept from starting a drag, so a press on the X is always a close.
-          onPointerDown={(e) => e.stopPropagation()}
           className={cn(
             "size-4.5 inline-flex items-center justify-center rounded-[5px] text-muted-foreground hover:text-foreground hover:bg-foreground/12",
             isActive || isDirty ? "opacity-100" : "opacity-0 group-hover/tab:opacity-100",
