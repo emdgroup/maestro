@@ -850,6 +850,17 @@ describe("WorkspaceFilesPanel tabs", () => {
     expect(main).toHaveFocus();
   });
 
+  it("hands focus to the tab that takes over when the keyboard closes one", async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    const notes = await screen.findByRole("tab", { name: /notes\.md/ });
+    act(() => notes.focus());
+
+    fireEvent.keyDown(notes, { key: "Delete" });
+
+    await waitFor(() => expect(screen.getByRole("tab", { name: /main\.ts/ })).toHaveFocus());
+  });
+
   it("closes a tab from the keyboard with Delete", async () => {
     renderPanel();
     fireEvent.keyDown(await screen.findByRole("tab", { name: /main\.ts/ }), { key: "Delete" });

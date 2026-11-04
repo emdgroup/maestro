@@ -72,10 +72,28 @@ export function FileTabBar({
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [active]);
 
+  // A tab closed from the keyboard takes the focus with it; the tab that takes over gets it, so the
+  // keyboard keeps its place in the row. Only while nothing else has taken the focus since: an
+  // unsaved tab's question, or a click elsewhere, keeps it.
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (!refocus.current || !active || document.activeElement !== document.body) return;
+    refocus.current = false;
+    tabElement(active)?.focus();
+  }, [tabs, active]);
+
+  function tabElement(path: string) {
+    return rowRef.current?.querySelector<HTMLElement>(`[data-file-tab="${CSS.escape(path)}"]`);
+  }
+
   /** The row is one tab stop: the arrows, Home and End move along it, and Delete closes a tab. */
   function handleKeyDown(e: React.KeyboardEvent) {
     const path = (e.target as HTMLElement).closest<HTMLElement>("[data-file-tab]")?.dataset.fileTab;
     if (!path) return;
+    // The panel closes the tab on Ctrl+W; this only notes that the keyboard did it.
+    if (e.key === "Delete" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "w")) {
+      refocus.current = true;
+    }
     if (e.key === "Delete") {
       e.preventDefault();
       onClose(path);
@@ -87,7 +105,7 @@ export function FileTabBar({
     if (next === undefined) return;
     e.preventDefault();
     onActivate(next);
-    rowRef.current?.querySelector<HTMLElement>(`[data-file-tab="${CSS.escape(next)}"]`)?.focus();
+    tabElement(next)?.focus();
   }
 
   const menuIndex = menu ? tabs.indexOf(menu.path) : -1;
