@@ -331,9 +331,14 @@ export function WorkspaceFilesPanel({
   const split = tabs.groups.length > 1;
   // Beside the tree, each side is a glass well under its own row of tabs; with the tree floating
   // or hidden the panel's own glass is the surface, and a line under the tabs is all that is left.
+  // The second side butts against the first with a square corner, so its left edge meets their
+  // shared top edge in a T rather than a second rounded well beside the first.
   const well = (side: number) =>
     panel.inset
-      ? "inner-glass rounded-tl-[18px] border-t border-l overflow-hidden"
+      ? cn(
+          "inner-glass border-t overflow-hidden",
+          side === 0 ? "rounded-tl-[18px] border-l" : "border-l",
+        )
       : cn("border-t border-accent/10", side > 0 && "border-l");
   const place = (side: number, row: number) => ({ gridColumn: side + 1, gridRow: row });
 
@@ -367,7 +372,7 @@ export function WorkspaceFilesPanel({
         >
           <div
             ref={gridRef}
-            className="grid flex-1 min-h-0 gap-x-1.5"
+            className="grid flex-1 min-h-0"
             style={{
               gridTemplateColumns: `repeat(${tabs.groups.length}, minmax(0, 1fr))`,
               gridTemplateRows: "auto minmax(0, 1fr)",
