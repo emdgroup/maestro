@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useHorizontalScrollFade } from "@/hooks/useHorizontalScrollFade";
 import { useDraggable } from "@dnd-kit/react";
 import { Feedback } from "@dnd-kit/dom";
 import { Columns2, Copy, ExternalLink, File, X } from "lucide-react";
@@ -14,6 +15,7 @@ import {
   ContextMenuShortcut,
 } from "@/ui/context-menu";
 import type { TabDragData } from "./file-tabs";
+import { scrollTabIntoView } from "./SidePanelTabBar";
 
 interface FileTabBarProps {
   side: number;
@@ -57,7 +59,9 @@ export function FileTabBar({
   onOpenExternally,
   fullPathOf,
 }: FileTabBarProps) {
-  const rowRef = useRef<HTMLDivElement>(null);
+  // Scrolls sideways with the wheel and fades the edge that has more tabs past it, as the session's
+  // side panel does: a row with more tabs than room is reached by scrolling, not by closing tabs.
+  const { ref: rowRef, maskStyle } = useHorizontalScrollFade<HTMLDivElement>(tabs.length);
   const [menu, setMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const anchor = useMemo(() => {
     if (!menu) return undefined;
@@ -66,11 +70,9 @@ export function FileTabBar({
   }, [menu]);
 
   useEffect(() => {
-    if (!active) return;
-    rowRef.current
-      ?.querySelector(`[data-file-tab="${CSS.escape(active)}"]`)
-      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [active]);
+    const tab = active && tabIn(rowRef.current, active);
+    if (rowRef.current && tab) scrollTabIntoView(rowRef.current, tab);
+  }, [active, rowRef]);
 
   // A tab closed from the keyboard takes the focus with it; the tab that takes over gets it, so the
   // keyboard keeps its place in the row. Only while nothing else has taken the focus since: an
@@ -79,12 +81,8 @@ export function FileTabBar({
   useEffect(() => {
     if (!refocus.current || !active || document.activeElement !== document.body) return;
     refocus.current = false;
-    tabElement(active)?.focus();
-  }, [tabs, active]);
-
-  function tabElement(path: string) {
-    return rowRef.current?.querySelector<HTMLElement>(`[data-file-tab="${CSS.escape(path)}"]`);
-  }
+    tabIn(rowRef.current, active)?.focus();
+  }, [tabs, active, rowRef]);
 
   /** The row is one tab stop: the arrows, Home and End move along it, and Delete closes a tab. */
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -105,7 +103,7 @@ export function FileTabBar({
     if (next === undefined) return;
     e.preventDefault();
     onActivate(next);
-    tabElement(next)?.focus();
+    tabIn(rowRef.current, next)?.focus();
   }
 
   const menuIndex = menu ? tabs.indexOf(menu.path) : -1;
@@ -122,6 +120,12 @@ export function FileTabBar({
         split ? (side === 0 ? "Open files, left side" : "Open files, right side") : "Open files"
       }
       onKeyDown={handleKeyDown}
+      // Keyboard focus lands a tab flush against the edge; this scrolls it in with a peek.
+      onFocus={(e) => {
+        const tab = (e.target as HTMLElement).closest<HTMLElement>("[data-file-tab]");
+        if (rowRef.current && tab) scrollTabIntoView(rowRef.current, tab);
+      }}
+      style={maskStyle}
       data-tab-row={side}
       className="flex items-center gap-0.5 flex-1 min-w-0 h-full overflow-x-auto scrollbar-none"
     >
@@ -196,6 +200,10 @@ export function FileTabBar({
       </MenuPrimitive.Root>
     </div>
   );
+}
+
+function tabIn(row: HTMLElement | null, path: string) {
+  return row?.querySelector<HTMLElement>(`[data-file-tab="${CSS.escape(path)}"]`);
 }
 
 // The original stays in the row, dimmed, while a copy follows the pointer: the row keeps its shape,

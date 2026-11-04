@@ -40,7 +40,7 @@ const EDGE_PEEK = 48;
  * so a tab reached at the edge still reads as "there are more tabs this way".
  * A no-op when the tab already sits clear of both edges; `scrollTo` clamps at the ends.
  */
-function scrollTabIntoView(strip: HTMLElement, tab: HTMLElement) {
+export function scrollTabIntoView(strip: HTMLElement, tab: HTMLElement) {
   const stripBox = strip.getBoundingClientRect();
   const tabBox = tab.getBoundingClientRect();
   const pastLeft = stripBox.left + EDGE_PEEK - tabBox.left;

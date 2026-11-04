@@ -861,6 +861,23 @@ describe("WorkspaceFilesPanel tabs", () => {
     await waitFor(() => expect(screen.getByRole("tab", { name: /main\.ts/ })).toHaveFocus());
   });
 
+  /** Tabs past the edge of the row are reached by scrolling it, as in the session's side panel. */
+  it("scrolls the row of tabs sideways with the mouse wheel", async () => {
+    renderPanel();
+    const row = await screen.findByRole("tablist");
+    Object.defineProperties(row, {
+      scrollWidth: { configurable: true, value: 900 },
+      clientWidth: { configurable: true, value: 300 },
+    });
+
+    // Measured from where it is, since happy-dom does not clamp the scroll that put the active tab
+    // in view.
+    const before = row.scrollLeft;
+    fireEvent.wheel(row, { deltaY: 120 });
+
+    expect(row.scrollLeft - before).toBe(120);
+  });
+
   it("closes a tab from the keyboard with Delete", async () => {
     renderPanel();
     fireEvent.keyDown(await screen.findByRole("tab", { name: /main\.ts/ }), { key: "Delete" });
