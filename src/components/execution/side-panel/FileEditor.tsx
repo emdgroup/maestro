@@ -81,6 +81,8 @@ interface FileEditorProps {
    * put a ref or a class on it from here. Called with `null` when the view is torn down.
    */
   onScrollerChange?: (element: HTMLElement | null) => void;
+  /** 1-based line to scroll to, once per file, as soon as the document is long enough to have it. */
+  revealLine?: number;
 }
 
 export function FileEditor({
@@ -91,6 +93,7 @@ export function FileEditor({
   onChange,
   onSave,
   onScrollerChange,
+  revealLine,
 }: FileEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -225,6 +228,22 @@ export function FileEditor({
     if (view.state.doc.toString() === doc) return;
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
   }, [doc, docEpoch, readOnly]);
+
+  // After the effect above, so it sees the document that just landed. Keyed by file and line so the
+  // panel's poll does not yank the view back after the user has scrolled away.
+  const revealedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !revealLine) return;
+    const key = `${fileName}:${revealLine}`;
+    if (revealedRef.current === key || revealLine > view.state.doc.lines) return;
+    revealedRef.current = key;
+    const pos = view.state.doc.line(revealLine).from;
+    view.dispatch({
+      selection: { anchor: pos },
+      effects: EditorView.scrollIntoView(pos, { y: "center" }),
+    });
+  }, [revealLine, fileName, doc]);
 
   return <div ref={hostRef} className="flex-1 min-h-0 overflow-hidden [&_.cm-editor]:h-full" />;
 }

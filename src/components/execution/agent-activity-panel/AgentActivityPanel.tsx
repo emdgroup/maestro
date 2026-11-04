@@ -19,7 +19,7 @@ import type { TaskDraft } from "../activity/task-draft";
 import { isSubagentToolCall } from "../activity/utils";
 import type { UsageState, ToolCallItem } from "../activity/types";
 import { cn } from "@/lib/utils";
-import { fileUriToPath, toPosixPath } from "@/lib/path-utils";
+import { fileUriToPath, splitLineAnchor, toPosixPath } from "@/lib/path-utils";
 import {
   openFileWithConnection,
   useArtifactFiles,
@@ -393,7 +393,8 @@ export function AgentActivityPanel({
       // Tool calls report Windows paths with backslashes and an arbitrarily cased
       // drive letter, so compare on a normalised copy: a missed prefix would send
       // an absolute path to a panel that resolves everything against the workspace.
-      const abs = fileUriToPath(uri);
+      const { path, line } = splitLineAnchor(uri);
+      const abs = fileUriToPath(path);
       // A spreadsheet or archive has no viewer in the panel, so it goes to the system's own app.
       if (opensExternally(abs)) {
         openFileWithConnection(connection, abs, {
@@ -404,7 +405,7 @@ export function AgentActivityPanel({
       }
       const base = toPosixPath(workspacePath).replace(/\/+$/, "");
       const inWorkspace = base !== "" && abs.toLowerCase().startsWith(`${base.toLowerCase()}/`);
-      addDynamicTab("files", inWorkspace ? abs.slice(base.length + 1) : abs);
+      addDynamicTab("files", inWorkspace ? abs.slice(base.length + 1) : abs, line);
       setSidePanelCollapsed(false);
     },
     [addDynamicTab, workspacePath, setSidePanelCollapsed, connection, wslDistroName],

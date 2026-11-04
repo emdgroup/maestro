@@ -44,6 +44,18 @@ export function fileUriToPath(uri: string): string {
 }
 
 /**
+ * Split the `#L42` (or `#L42-L50`) that agents append to cite a line off a file link. Only that
+ * shape is taken, so a `#` that is really part of a file name stays where it is.
+ *
+ * @example
+ * splitLineAnchor('src/a.ts#L42')  // { path: 'src/a.ts', line: 42 }
+ */
+export function splitLineAnchor(uri: string): { path: string; line?: number } {
+  const match = /#L(\d+)(?:-L?\d+)?$/.exec(uri);
+  return match ? { path: uri.slice(0, match.index), line: Number(match[1]) } : { path: uri };
+}
+
+/**
  * Last segment of a path, whichever separator it uses, ignoring a trailing one. A path with no
  * segment at all (`/`) comes back as given.
  *

@@ -6,6 +6,7 @@ vi.mock("@/providers/ThemeProvider", () => ({
   useTheme: () => ({ theme: "dark", systemTheme: "dark" }),
 }));
 
+import { EditorView } from "@codemirror/view";
 import { FileEditor } from "./FileEditor";
 
 describe("FileEditor", () => {
@@ -29,6 +30,25 @@ describe("FileEditor", () => {
     expect(container.querySelector(".cm-content")?.textContent).toContain("const b = 2;");
     // The read view numbers its lines through a CSS counter; edit mode has to keep them.
     expect(container.querySelector(".cm-lineNumbers")).not.toBeNull();
+  });
+
+  it("puts the cursor on the line a link asked for", async () => {
+    const doc = Array.from({ length: 50 }, (_, i) => `line ${i + 1}`).join("\n");
+    const { container } = render(
+      <FileEditor
+        doc={doc}
+        docEpoch={0}
+        fileName="a.ts"
+        readOnly
+        revealLine={30}
+        onChange={() => {}}
+        onSave={() => {}}
+      />,
+    );
+    await waitFor(() => expect(container.querySelector(".cm-editor")).not.toBeNull());
+    const view = EditorView.findFromDOM(container.querySelector(".cm-editor") as HTMLElement)!;
+    const head = view.state.selection.main.head;
+    expect(view.state.doc.lineAt(head).number).toBe(30);
   });
 
   it("reports edits to its parent rather than owning the draft", async () => {

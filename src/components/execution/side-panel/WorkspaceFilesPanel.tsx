@@ -76,6 +76,8 @@ interface WorkspaceFilesPanelProps {
   wslDistroName?: string;
   isActive?: boolean;
   initialPath?: string;
+  /** Line of `initialPath` to scroll to when it opens. */
+  initialLine?: number;
   /** Drives the warning shown on entering edit mode: the agent may be writing this file. */
   isProcessing?: boolean;
   /** Lets the panel's own tab refuse to close while an unsaved draft is open. */
@@ -102,6 +104,7 @@ export function WorkspaceFilesPanel({
   wslDistroName,
   isActive = true,
   initialPath,
+  initialLine,
   isProcessing = false,
   onDirtyChange,
   onSelectedChange,
@@ -279,6 +282,7 @@ export function WorkspaceFilesPanel({
       onChange={setDraft}
       onSave={() => void handleSave()}
       onScrollerChange={setEditorScroller}
+      revealLine={selected === initialPath ? initialLine : undefined}
     />
   );
 

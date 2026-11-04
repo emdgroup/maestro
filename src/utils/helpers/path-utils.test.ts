@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { basename, fileUriToPath, isAbsolutePath, toPosixPath } from "./path-utils";
+import {
+  basename,
+  fileUriToPath,
+  isAbsolutePath,
+  splitLineAnchor,
+  toPosixPath,
+} from "./path-utils";
 
 describe("fileUriToPath", () => {
   it("drops the empty-authority slash only in front of a drive letter", () => {
@@ -81,5 +87,25 @@ describe("basename", () => {
   it("ignores a trailing separator", () => {
     expect(basename("/path/to/")).toBe("to");
     expect(basename("C:\\repo\\wt\\")).toBe("wt");
+  });
+});
+
+describe("splitLineAnchor", () => {
+  it("takes the line off a relative link and a file URI", () => {
+    expect(splitLineAnchor("src/providers/ThemeProvider.tsx#L263")).toEqual({
+      path: "src/providers/ThemeProvider.tsx",
+      line: 263,
+    });
+    expect(splitLineAnchor("file:///C:/p/a.ts#L5")).toEqual({ path: "file:///C:/p/a.ts", line: 5 });
+  });
+
+  it("takes the first line of a range", () => {
+    expect(splitLineAnchor("a.ts#L10-L20")).toEqual({ path: "a.ts", line: 10 });
+    expect(splitLineAnchor("a.ts#L10-20")).toEqual({ path: "a.ts", line: 10 });
+  });
+
+  it("leaves a path without a line anchor alone", () => {
+    expect(splitLineAnchor("notes#1.md")).toEqual({ path: "notes#1.md" });
+    expect(splitLineAnchor("C:/p/a.ts")).toEqual({ path: "C:/p/a.ts" });
   });
 });

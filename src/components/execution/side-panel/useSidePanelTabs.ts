@@ -17,6 +17,8 @@ export interface SidePanelTab {
   label: string;
   closeable: boolean;
   initialPath?: string;
+  /** Line of `initialPath` to scroll to, from a `#L42` link. */
+  initialLine?: number;
   acpTerminalId?: string;
   isAuthTerminal?: boolean;
 }
@@ -58,7 +60,7 @@ export interface UseSidePanelTabsResult {
   activeTabId: string;
   setActiveTabId: (id: string) => void;
   closeTab: (id: string) => void;
-  addDynamicTab: (kind: "terminal" | "files", initialPath?: string) => string;
+  addDynamicTab: (kind: "terminal" | "files", initialPath?: string, initialLine?: number) => string;
   openTabKind: (kind: TabKind) => void;
   openAcpTerminalTab: (terminalId: string, opts?: { isAuthTerminal?: boolean }) => void;
   latestCanvasSurfaceId: string | null;
@@ -196,13 +198,16 @@ export function useSidePanelTabs({
     [markTabSeen],
   );
 
-  const addDynamicTab = useCallback((kind: "terminal" | "files", initialPath?: string): string => {
-    counterRef.current += 1;
-    const id = `${kind}-${counterRef.current}`;
-    setTabs((prev) => [...prev, { ...makeTab(kind, id), initialPath }]);
-    setActiveTabId(id);
-    return id;
-  }, []);
+  const addDynamicTab = useCallback(
+    (kind: "terminal" | "files", initialPath?: string, initialLine?: number): string => {
+      counterRef.current += 1;
+      const id = `${kind}-${counterRef.current}`;
+      setTabs((prev) => [...prev, { ...makeTab(kind, id), initialPath, initialLine }]);
+      setActiveTabId(id);
+      return id;
+    },
+    [],
+  );
 
   const openAcpTerminalTab = useCallback(
     (terminalId: string, opts?: { isAuthTerminal?: boolean }) => {
