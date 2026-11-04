@@ -493,6 +493,18 @@ describe("WorkspaceFilesPanel file list", () => {
     expect(screen.queryByRole("button", { name: /pin/i })).toBeNull();
   });
 
+  /** The panes hold the drafts, and the list moving them about in the layout must not remount them. */
+  it("keeps an unsaved draft when the list is hidden and shown again", async () => {
+    renderPanel();
+    await enterEditMode();
+    typeDraft("edited");
+
+    await userEvent.click(screen.getByRole("button", { name: "Hide file list" }));
+    expect(screen.getByTestId("editor")).toHaveValue("edited");
+    await userEvent.click(screen.getByRole("button", { name: "Show file list" }));
+    expect(screen.getByTestId("editor")).toHaveValue("edited");
+  });
+
   it("hides and shows the list from the one toggle", async () => {
     renderPanel();
     expect(await screen.findByText("src")).toBeInTheDocument();
