@@ -33,7 +33,7 @@ vi.mock("@/lib/tauri-utils", () => ({
   },
 }));
 
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
 vi.mock("@/services/connection.service", async (importOriginal) => ({
   ...(await importOriginal()),
@@ -856,6 +856,31 @@ describe("WorkspaceFilesPanel tabs", () => {
     await waitFor(() => expect(screen.queryByRole("tab")).toBeNull());
   });
 
+  it("keeps unsaved tabs open on Close others, and says so", async () => {
+    renderPanel();
+    await enterEditMode();
+    typeDraft("edited");
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: /notes\.md/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Close others" }));
+
+    expect(tabNames()).toEqual(["main.ts", "notes.md"]);
+    expect(toast.info).toHaveBeenCalledWith("Kept main.ts open: it has unsaved changes.");
+  });
+
+  /** The point of keeping every pane in one list: a move is not a remount. */
+  it("takes a draft along when its tab moves to the other side", async () => {
+    renderPanel();
+    await enterEditMode();
+    typeDraft("edited");
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: /main\.ts/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Move to the side" }));
+
+    await waitFor(() => expect(document.querySelectorAll("[data-tab-row]")).toHaveLength(2));
+    expect(screen.getByTestId("editor")).toHaveValue("edited");
+  });
+
   it("copies the absolute path from the tab's menu", async () => {
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
     renderPanel();
@@ -1142,6 +1167,29 @@ describe("WorkspaceFilesPanel tabs", () => {
   it("selects no text while the line between the sides is dragged", async () => {
     renderPanel();
     expect(fireEvent.pointerDown(await splitNotes(), { pointerId: 1 })).toBe(false);
+  });
+
+  /** A maximized side panel restored to its column has no room for two sides. */
+  it("joins the sides into one when the room for a split goes", async () => {
+    const client = new QueryClient();
+    const panel = (splitAllowed: boolean) => (
+      <QueryClientProvider client={client}>
+        <WorkspaceFilesPanel
+          workspacePath={WORKSPACE}
+          connection={CONNECTION}
+          openRequest={FIRST}
+          splitAllowed={splitAllowed}
+        />
+      </QueryClientProvider>
+    );
+    const FIRST = request("src/main.ts");
+    const { rerender } = render(panel(true));
+    await splitNotes();
+
+    rerender(panel(false));
+
+    await waitFor(() => expect(document.querySelectorAll("[data-tab-row]")).toHaveLength(1));
+    expect(tabNames()).toEqual(["main.ts", "notes.md"]);
   });
 
   it("offers no split where the panel has no room for one", async () => {

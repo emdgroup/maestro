@@ -24,7 +24,7 @@ import { useFileTreeState } from "./useFileTreeState";
 import { ToolbarButton } from "./ToolbarButton";
 import { ReviewLayout } from "@/components/execution/diff/ReviewLayout";
 import { useReviewPanelLayout } from "@/components/execution/diff/useReviewPanelLayout";
-import { isAbsolutePath } from "@/lib/path-utils";
+import { basename, isAbsolutePath } from "@/lib/path-utils";
 import { FileTabPane } from "./FileTabPane";
 import { FileTabBar } from "./FileTabBar";
 import {
@@ -427,9 +427,18 @@ export function WorkspaceFilesPanel({
                   split={split}
                   onActivate={(path) => setTabs((s) => openTab(s, path, side))}
                   onClose={(path) => requestClose(side, path)}
-                  onCloseMany={(close) =>
-                    setTabs((s) => closeTabs(s, side, (p, i) => !dirty.has(p) && close(p, i)))
-                  }
+                  onCloseMany={(close) => {
+                    // An unsaved tab is never closed without asking, and one question per tab
+                    // would be a queue of dialogs: they stay open, and the user is told why.
+                    const kept = group.tabs.filter((p, i) => close(p, i) && dirty.has(p));
+                    setTabs((s) => closeTabs(s, side, (p, i) => !dirty.has(p) && close(p, i)));
+                    if (kept.length > 0) {
+                      const they = kept.length === 1 ? "it has" : "they have";
+                      toast.info(
+                        `Kept ${kept.map(basename).join(", ")} open: ${they} unsaved changes.`,
+                      );
+                    }
+                  }}
                   onMove={(path) =>
                     setTabs((s) => moveTab(s, side, path, side === 0 ? 1 : 0, Infinity))
                   }
