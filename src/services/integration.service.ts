@@ -484,19 +484,30 @@ export function useSaveProjectIssueTrackingConfig() {
  */
 const RECONCILE_POLL_MS = 3 * 60 * 1000;
 /**
+ * The steady rate while the user is looking at the board, where a merge landing late is visible.
+ * Away from it, nobody is watching the cards, so the slower rate keeps the forge cost down.
+ */
+const RECONCILE_FOCUSED_POLL_MS = 60 * 1000;
+/**
  * The sweep's burst rate. Slower than the branch poll's, since each sweep asks about every open
  * pull request; `BURST_TRIES` of these cover the window a forge takes to queue its first check.
  */
 const RECONCILE_BURST_POLL_MS = 6_000;
 
 /**
- * How soon to sweep again, given whether anything is still unreported and how much burst is left.
+ * How soon to sweep again, given whether anything is still unreported, how much burst is left and
+ * whether the user is looking at the board.
  *
  * Exported so the rule can be tested directly rather than through a timer, for the reason
  * `branchPullRequestPollInterval` is: an interval buried in an effect is one no test can reach.
  */
-export function sweepInterval(anyUnreported: boolean, burstsLeft: number): number {
-  return anyUnreported && burstsLeft > 0 ? RECONCILE_BURST_POLL_MS : RECONCILE_POLL_MS;
+export function sweepInterval(
+  anyUnreported: boolean,
+  burstsLeft: number,
+  focused: boolean,
+): number {
+  if (anyUnreported && burstsLeft > 0) return RECONCILE_BURST_POLL_MS;
+  return focused ? RECONCILE_FOCUSED_POLL_MS : RECONCILE_POLL_MS;
 }
 
 /**
@@ -518,10 +529,15 @@ export function sweepInterval(anyUnreported: boolean, burstsLeft: number): numbe
  * requests a minute forever — steady-state cost is unchanged, only the post-approve window is
  * faster.
  *
+ * `onBoard` is whether the board's tab is the one on screen. Arriving there, by tab or by bringing
+ * the window back to the front, sweeps at once, and while the window has focus there the steady
+ * rate is a minute rather than three: a merge done on the forge is then on the card by the time the
+ * user is back looking at it.
+ *
  * Failures are silent by design. A rate limit or a dropped connection means "ask again in three
  * minutes", and a toast for each would make the network's health look like the task's.
  */
-export function usePullRequestPoll(projectId: number | null, tasks: Task[]) {
+export function usePullRequestPoll(projectId: number | null, tasks: Task[], onBoard: boolean) {
   const queryClient = useQueryClient();
 
   // Archived tasks are in `get_tasks` but not in reconcile's SQL, so one of them sitting at
@@ -547,15 +563,27 @@ export function usePullRequestPoll(projectId: number | null, tasks: Task[]) {
   );
   const anyUnreported = open.some((t) => t.pull_request_ci == null);
 
+  // Read through refs so that arriving on the board wakes the running loop rather than re-running
+  // the effect below, which would also sweep on leaving it and re-arm a spent burst each time.
+  const onBoardRef = useRef(onBoard);
+  const wakeRef = useRef(() => {});
+  useEffect(() => {
+    onBoardRef.current = onBoard;
+    if (onBoard) wakeRef.current();
+  }, [onBoard]);
+
   useEffect(() => {
     if (!projectId) return;
 
     let cancelled = false;
+    let inFlight = false;
     let timer: ReturnType<typeof setTimeout>;
     let burstsLeft = BURST_TRIES;
 
     const sweep = async () => {
       if (cancelled) return;
+      clearTimeout(timer);
+      inFlight = true;
       try {
         const changed = await api.reconcilePullRequests(projectId);
         if (!cancelled && changed.length > 0) {
@@ -564,17 +592,32 @@ export function usePullRequestPoll(projectId: number | null, tasks: Task[]) {
       } catch {
         // Reported by the backend's own logging; see the note above on why this is not a toast.
       }
+      inFlight = false;
       if (cancelled) return;
-      const next = sweepInterval(anyUnreported, burstsLeft);
+      const focused = onBoardRef.current && document.hasFocus();
+      const next = sweepInterval(anyUnreported, burstsLeft, focused);
       if (next === RECONCILE_BURST_POLL_MS) burstsLeft -= 1;
       timer = setTimeout(() => void sweep(), next);
     };
+
+    // A sweep already on the wire answers the same question, and starting a second would leave
+    // two timers chained after it.
+    const wake = () => {
+      if (!inFlight) void sweep();
+    };
+    const onWindowFocus = () => {
+      if (onBoardRef.current) wake();
+    };
+    wakeRef.current = wake;
+    window.addEventListener("focus", onWindowFocus);
 
     void sweep();
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      window.removeEventListener("focus", onWindowFocus);
+      wakeRef.current = () => {};
     };
     // `watchKey` re-arms the burst and sweeps at once; `anyUnreported` drops back to the steady
     // rate as soon as the verdict lands. Both are strings/booleans, so this settles.

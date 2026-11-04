@@ -4,7 +4,7 @@ import { useShortcuts } from "@/hooks/useShortcuts";
 import { Plus, Archive, Search, BellDot, Repeat } from "lucide-react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { BoardView } from "@/views/kanban/board-view/BoardView";
-import { useActiveTaskId } from "@/store/navigationStore";
+import { useActiveTab, useActiveTaskId } from "@/store/navigationStore";
 import { useReviewPanelTaskId, useBoardActions } from "@/store/boardStore";
 import { TaskDetailModal } from "@/components/kanban/task-detail-modal/TaskDetailModal";
 import { TaskReviewPanel } from "@/components/execution/diff/TaskReviewPanel";
@@ -42,7 +42,8 @@ export const KanbanView: React.FC = () => {
 
   // The daemon drives the pipeline; the forge is the window's, so pull requests are polled here,
   // where it keeps running while the user is on another tab.
-  usePullRequestPoll(projectId, taskList);
+  const onBoard = useActiveTab() === "kanban";
+  usePullRequestPoll(projectId, taskList, onBoard);
 
   const [query, setQuery] = useState("");
   const [selectedPriorities, setSelectedPriorities] = useState<TaskPriority[]>([]);
