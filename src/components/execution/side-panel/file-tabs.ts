@@ -32,6 +32,9 @@ export interface FileTabsState {
 
 export const NO_TABS: FileTabsState = { groups: [{ tabs: [], active: null }], focus: 0 };
 
+/** The index of the last side there can be: two at most, side by side. */
+const LAST_SIDE = 1;
+
 export function sideOf(state: FileTabsState, path: string): number {
   return state.groups.findIndex((g) => g.tabs.includes(path));
 }
@@ -45,6 +48,20 @@ export function focusedPath(state: FileTabsState): string | null {
 function neighbour(tabs: string[], path: string): string | null {
   const i = tabs.indexOf(path);
   return tabs[i + 1] ?? tabs[i - 1] ?? null;
+}
+
+/** Makes `side` the one the tree opens on, if there is such a side. */
+export function focusSide(state: FileTabsState, side: number): FileTabsState {
+  if (side === state.focus || !state.groups[side]) return state;
+  return { ...state, focus: side };
+}
+
+/**
+ * Whether a tab on `side` can go to the other side: the panel has the room, and there is a second
+ * side already or a tab that can leave this one without emptying it.
+ */
+export function canSplit(state: FileTabsState, side: number, allowed: boolean): boolean {
+  return allowed && (state.groups.length > 1 || (state.groups[side]?.tabs.length ?? 0) > 1);
 }
 
 /** Drops empty sides, keeping one, and keeps `focus` on the same side wherever it now sits. */
@@ -61,7 +78,7 @@ export function openTab(state: FileTabsState, path: string, side?: number): File
     const groups = state.groups.map((g, i) => (i === at ? { ...g, active: path } : g));
     return { groups, focus: at };
   }
-  const target = Math.min(side ?? state.focus, 1);
+  const target = Math.min(side ?? state.focus, LAST_SIDE);
   if (at >= 0) return moveTab(state, at, path, target, Infinity);
   const groups = [...state.groups];
   if (target >= groups.length) groups.push({ tabs: [], active: null });
@@ -81,6 +98,7 @@ export function closeTabs(
   close: (path: string, index: number) => boolean,
 ): FileTabsState {
   const group = state.groups[side];
+  if (!group) return state;
   const tabs = group.tabs.filter((p, i) => !close(p, i));
   if (tabs.length === group.tabs.length) return state;
   let active = group.active;
@@ -105,7 +123,7 @@ export function closeTab(state: FileTabsState, side: number, path: string): File
 
 /**
  * Moves a tab to `index` in the row of side `to`: a reorder when `to` is its own side, a move
- * across otherwise. `to` past the last side opens the second one.
+ * across otherwise. `to` past the last side opens the second one, and there is never a third.
  */
 export function moveTab(
   state: FileTabsState,
@@ -115,12 +133,13 @@ export function moveTab(
   index: number,
 ): FileTabsState {
   const groups = state.groups.map((g) => ({ ...g, tabs: [...g.tabs] }));
+  to = Math.min(to, LAST_SIDE);
   if (to >= groups.length) {
     to = groups.length;
     groups.push({ tabs: [], active: null });
   }
   const src = groups[from];
-  const i = src.tabs.indexOf(path);
+  const i = src ? src.tabs.indexOf(path) : -1;
   if (i < 0) return state;
   if (from !== to && src.active === path) src.active = neighbour(src.tabs, path);
   src.tabs.splice(i, 1);
@@ -163,4 +182,69 @@ export function removePaths(
     if (side < next.groups.length) next = closeTabs(next, side, remove);
   }
   return next;
+}
+
+/** A rectangle on screen; a `DOMRect` is one. */
+export interface Box {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/** Where the rows of tabs and the files sit on screen, measured while a tab is dragged. */
+export interface DropLayout {
+  /** `band` is the strip around a row, so the gap after its last tab still counts as the row. */
+  rows: { side: number; band: Box; tabs: Box[] }[];
+  wells: { side: number; box: Box }[];
+}
+
+/** Where a dragged tab would land: a slot in a row of tabs, or a side's whole file. */
+export type DropTarget =
+  | { kind: "row"; side: number; index: number }
+  /** `right` opens the second side; `all` moves the tab onto the other one. */
+  | { kind: "well"; side: number; zone: "right" | "all" };
+
+/** What a dragged tab carries: the side it left and its path. */
+export interface TabDragData {
+  side: number;
+  path: string;
+}
+
+const inside = (b: Box, x: number, y: number) =>
+  x >= b.left && x <= b.right && y >= b.top && y <= b.bottom;
+
+/** Where a tab dragged from `from` would land with the pointer at `x`, `y`. */
+export function dropTargetAt(
+  state: FileTabsState,
+  layout: DropLayout,
+  x: number,
+  y: number,
+  from: TabDragData,
+  splitAllowed: boolean,
+): DropTarget | null {
+  const row = layout.rows.find((r) => inside(r.band, x, y));
+  if (row) {
+    const after = row.tabs.findIndex((t) => x < (t.left + t.right) / 2);
+    return { kind: "row", side: row.side, index: after < 0 ? row.tabs.length : after };
+  }
+  const well = layout.wells.find((w) => inside(w.box, x, y));
+  if (!well) return null;
+  if (state.groups.length > 1) {
+    return well.side !== from.side ? { kind: "well", side: well.side, zone: "all" } : null;
+  }
+  const rightHalf = x > (well.box.left + well.box.right) / 2;
+  return rightHalf && canSplit(state, from.side, splitAllowed)
+    ? { kind: "well", side: well.side, zone: "right" }
+    : null;
+}
+
+export function dropTab(
+  state: FileTabsState,
+  target: DropTarget,
+  from: TabDragData,
+): FileTabsState {
+  if (target.kind === "row") return moveTab(state, from.side, from.path, target.side, target.index);
+  const to = target.zone === "right" ? LAST_SIDE : target.side;
+  return moveTab(state, from.side, from.path, to, Infinity);
 }

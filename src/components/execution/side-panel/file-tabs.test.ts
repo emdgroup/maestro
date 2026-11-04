@@ -1,14 +1,19 @@
 import { describe, it, expect } from "vitest";
 import {
   NO_TABS,
+  canSplit,
   closeTab,
   closeTabs,
+  dropTab,
+  dropTargetAt,
+  focusSide,
   joinSides,
   moveTab,
   openTab,
   openToSide,
   removePaths,
   renamePaths,
+  type DropLayout,
   type FileTabsState,
 } from "./file-tabs";
 
@@ -87,5 +92,101 @@ describe("file tabs", () => {
       p.startsWith("src/"),
     );
     expect(rows(s)).toEqual(["x"]);
+  });
+
+  it("never makes a third side", () => {
+    const split = openToSide(open("a", "b", "c"), "c");
+    expect(rows(moveTab(split, 0, "b", 2, Infinity))).toEqual(["a", "c,b"]);
+  });
+
+  it("ignores a side that is not there", () => {
+    const s = open("a");
+    expect(closeTabs(s, 3, () => true)).toBe(s);
+    expect(focusSide(s, 3)).toBe(s);
+  });
+
+  it("keeps focus on the second side when the first empties under it", () => {
+    const s = closeTab({ ...openToSide(open("a", "b"), "b"), focus: 1 }, 0, "a");
+    expect(rows(s)).toEqual(["b"]);
+    expect(s.focus).toBe(0);
+  });
+
+  it("opens to the side the focus is not on", () => {
+    const split = openToSide(open("a", "b"), "b");
+    expect(rows(openToSide(split, "c"))).toEqual(["a,c", "b"]);
+  });
+
+  it("splits only with the room for it and a tab that can leave, or a side already there", () => {
+    expect(canSplit(open("a"), 0, true)).toBe(false);
+    expect(canSplit(open("a", "b"), 0, true)).toBe(true);
+    expect(canSplit(open("a", "b"), 0, false)).toBe(false);
+    expect(canSplit(openToSide(open("a", "b"), "b"), 1, true)).toBe(true);
+  });
+});
+
+describe("dropping a dragged tab", () => {
+  const box = (left: number, top: number, right: number, bottom: number) => ({
+    left,
+    top,
+    right,
+    bottom,
+  });
+  // One side, 0-400 wide: its band of tabs on top, two tabs in it, the file below.
+  const lone: DropLayout = {
+    rows: [{ side: 0, band: box(0, 0, 400, 40), tabs: [box(10, 5, 90, 35), box(100, 5, 180, 35)] }],
+    wells: [{ side: 0, box: box(0, 40, 400, 400) }],
+  };
+  const two = open("a", "b");
+
+  it("lands between the tabs of a row, by the half of the tab the pointer is over", () => {
+    expect(dropTargetAt(two, lone, 20, 20, { side: 0, path: "b" }, true)).toEqual({
+      kind: "row",
+      side: 0,
+      index: 0,
+    });
+    expect(dropTargetAt(two, lone, 300, 20, { side: 0, path: "a" }, true)).toEqual({
+      kind: "row",
+      side: 0,
+      index: 2,
+    });
+  });
+
+  it("opens a second side on the right half of a lone file, and nowhere on the left", () => {
+    const from = { side: 0, path: "b" };
+    expect(dropTargetAt(two, lone, 300, 200, from, true)).toEqual({
+      kind: "well",
+      side: 0,
+      zone: "right",
+    });
+    expect(dropTargetAt(two, lone, 100, 200, from, true)).toBeNull();
+    expect(dropTargetAt(two, lone, 300, 200, from, false)).toBeNull();
+    expect(dropTargetAt(open("a"), lone, 300, 200, { side: 0, path: "a" }, true)).toBeNull();
+  });
+
+  it("moves onto the other side's file, but not onto its own", () => {
+    const split = openToSide(two, "b");
+    const layout: DropLayout = {
+      rows: [],
+      wells: [
+        { side: 0, box: box(0, 40, 200, 400) },
+        { side: 1, box: box(200, 40, 400, 400) },
+      ],
+    };
+    expect(dropTargetAt(split, layout, 100, 200, { side: 1, path: "b" }, true)).toEqual({
+      kind: "well",
+      side: 0,
+      zone: "all",
+    });
+    expect(dropTargetAt(split, layout, 300, 200, { side: 1, path: "b" }, true)).toBeNull();
+  });
+
+  it("applies a drop as a reorder, a move across, or a new side", () => {
+    const from = { side: 0, path: "b" };
+    expect(rows(dropTab(two, { kind: "row", side: 0, index: 0 }, from))).toEqual(["b,a"]);
+    expect(rows(dropTab(two, { kind: "well", side: 0, zone: "right" }, from))).toEqual(["a", "b"]);
+    const split = openToSide(two, "b");
+    expect(
+      rows(dropTab(split, { kind: "well", side: 0, zone: "all" }, { side: 1, path: "b" })),
+    ).toEqual(["a,b"]);
   });
 });

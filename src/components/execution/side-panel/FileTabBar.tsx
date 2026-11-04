@@ -13,12 +13,7 @@ import {
   ContextMenuSeparator,
   ContextMenuShortcut,
 } from "@/ui/context-menu";
-
-/** What a dragged tab carries, for the panel to work out where it lands. */
-export interface TabDragData {
-  side: number;
-  path: string;
-}
+import type { TabDragData } from "./file-tabs";
 
 interface FileTabBarProps {
   side: number;
@@ -29,7 +24,7 @@ interface FileTabBarProps {
   dirty: ReadonlySet<string>;
   /** Where a tab being dragged over this row would land, for the insertion mark. */
   dropIndex: number | null;
-  /** Whether a tab can go to the other side from here — see `canSplit` in the panel. */
+  /** Whether a tab can go to the other side from here — see `canSplit`. */
   canMove: boolean;
   /** There are two sides, so moving goes to "the other side" rather than opens one. */
   split: boolean;

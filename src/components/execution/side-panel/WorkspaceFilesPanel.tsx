@@ -26,11 +26,15 @@ import { ReviewLayout } from "@/components/execution/diff/ReviewLayout";
 import { useReviewPanelLayout } from "@/components/execution/diff/useReviewPanelLayout";
 import { isAbsolutePath } from "@/lib/path-utils";
 import { FileTabPane } from "./FileTabPane";
-import { FileTabBar, type TabDragData } from "./FileTabBar";
+import { FileTabBar } from "./FileTabBar";
 import {
   NO_TABS,
+  canSplit,
   closeTab,
   closeTabs,
+  dropTab,
+  dropTargetAt,
+  focusSide,
   focusedPath,
   joinSides,
   moveTab,
@@ -39,8 +43,11 @@ import {
   removePaths,
   renamePaths,
   sideOf,
+  type DropLayout,
+  type DropTarget,
   type FileOpenRequest,
   type FileTabsState,
+  type TabDragData,
 } from "./file-tabs";
 
 interface WorkspaceFilesPanelProps {
@@ -66,12 +73,6 @@ interface WorkspaceFilesPanelProps {
   /** Reports the file in front, so the tab that holds this panel can name it on hover. */
   onSelectedChange?: (path: string | null) => void;
 }
-
-/** Where a dragged tab would land: a slot in a row of tabs, or a side's whole file. */
-type DropTarget =
-  | { kind: "row"; side: number; index: number }
-  /** `right` opens the second side; `all` moves the tab onto the other one. */
-  | { kind: "well"; side: number; zone: "right" | "all" };
 
 /** The narrowest either side of a split can be dragged to. */
 const MIN_SIDE_PX = 240;
@@ -199,10 +200,6 @@ export function WorkspaceFilesPanel({
   // which the read rejects (os error 123) and the OS opener cannot find.
   const fullPathOf = (path: string) => (isAbsolutePath(path) ? path : `${workspacePath}/${path}`);
 
-  /** A tab can go to the other side: there is one, or there is room for one and a tab to leave. */
-  const canSplit = (side: number) =>
-    splitAllowed && (tabs.groups.length > 1 || tabs.groups[side].tabs.length > 1);
-
   // Closing a tab with an unsaved draft asks first; its pane holds the question, since it is the
   // one that can save.
   const [closePrompt, setClosePrompt] = useState<string | null>(null);
@@ -231,45 +228,21 @@ export function WorkspaceFilesPanel({
     setSplitRatio(Math.min(1 - min, Math.max(min, ratio)));
   }
 
-  /** Measured off the rows and wells on screen, against the pointer, as the mock does. */
-  function dropTargetAt(x: number, y: number, from: TabDragData): DropTarget | null {
+  /** The rows and files on screen, measured for `dropTargetAt` while a tab is dragged. */
+  function measureDropLayout(): DropLayout {
     const grid = gridRef.current;
-    if (!grid) return null;
-    const inside = (r: DOMRect) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
-    for (const row of grid.querySelectorAll<HTMLElement>("[data-tab-row]")) {
-      // The band around the row, so the gap after the last tab still counts as the row.
-      if (!inside(row.parentElement!.getBoundingClientRect())) continue;
-      const tabEls = [...row.querySelectorAll<HTMLElement>("[data-file-tab]")];
-      const after = tabEls.findIndex((t) => {
-        const r = t.getBoundingClientRect();
-        return x < r.left + r.width / 2;
-      });
-      return {
-        kind: "row",
+    if (!grid) return { rows: [], wells: [] };
+    return {
+      rows: [...grid.querySelectorAll<HTMLElement>("[data-tab-row]")].map((row) => ({
         side: Number(row.dataset.tabRow),
-        index: after < 0 ? tabEls.length : after,
-      };
-    }
-    for (const well of grid.querySelectorAll<HTMLElement>("[data-well]")) {
-      const r = well.getBoundingClientRect();
-      if (!inside(r)) continue;
-      const side = Number(well.dataset.well);
-      if (tabs.groups.length === 1) {
-        return canSplit(0) && x > r.left + r.width / 2
-          ? { kind: "well", side, zone: "right" }
-          : null;
-      }
-      return side !== from.side ? { kind: "well", side, zone: "all" } : null;
-    }
-    return null;
-  }
-
-  function applyDrop(target: DropTarget, from: TabDragData) {
-    setTabs((s) =>
-      target.kind === "row"
-        ? moveTab(s, from.side, from.path, target.side, target.index)
-        : moveTab(s, from.side, from.path, target.zone === "right" ? 1 : target.side, Infinity),
-    );
+        band: row.parentElement!.getBoundingClientRect(),
+        tabs: [...row.querySelectorAll("[data-file-tab]")].map((t) => t.getBoundingClientRect()),
+      })),
+      wells: [...grid.querySelectorAll<HTMLElement>("[data-well]")].map((well) => ({
+        side: Number(well.dataset.well),
+        box: well.getBoundingClientRect(),
+      })),
+    };
   }
 
   const togglePanel = (
@@ -373,12 +346,14 @@ export function WorkspaceFilesPanel({
           onDragMove={(event) => {
             const from = event.operation.source?.data as TabDragData | undefined;
             const { x, y } = event.operation.position.current;
-            const next = from ? dropTargetAt(x, y, from) : null;
+            const next = from
+              ? dropTargetAt(tabs, measureDropLayout(), x, y, from, splitAllowed)
+              : null;
             setDrop((prev) => (sameDrop(prev, next) ? prev : next));
           }}
           onDragEnd={(event) => {
             const from = event.operation.source?.data as TabDragData | undefined;
-            if (!event.canceled && from && drop) applyDrop(drop, from);
+            if (!event.canceled && from && drop) setTabs((s) => dropTab(s, drop, from));
             setDrop(null);
           }}
         >
@@ -394,8 +369,7 @@ export function WorkspaceFilesPanel({
             // Whatever is pressed in a side — a tab, the file — makes it the one the tree opens on.
             onPointerDownCapture={(e) => {
               const at = (e.target as HTMLElement).closest<HTMLElement>("[data-side]");
-              const side = at ? Number(at.dataset.side) : tabs.focus;
-              if (side !== tabs.focus) setTabs((s) => ({ ...s, focus: side }));
+              if (at) setTabs((s) => focusSide(s, Number(at.dataset.side)));
             }}
           >
             {tabs.groups.map((group, side) => (
@@ -413,7 +387,7 @@ export function WorkspaceFilesPanel({
                   focused={!split || side === tabs.focus}
                   dirty={dirty}
                   dropIndex={drop?.kind === "row" && drop.side === side ? drop.index : null}
-                  canMove={canSplit(side)}
+                  canMove={canSplit(tabs, side, splitAllowed)}
                   split={split}
                   onActivate={(path) => setTabs((s) => openTab(s, path, side))}
                   onClose={(path) => requestClose(side, path)}
