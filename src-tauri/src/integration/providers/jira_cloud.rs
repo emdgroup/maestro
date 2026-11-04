@@ -1,5 +1,5 @@
 use super::normalize_instance_url;
-use crate::models::issue_tracking::RemoteIssue;
+use crate::integration::issue_tracking_models::RemoteIssue;
 use base64::Engine as _;
 
 #[derive(serde::Deserialize)]

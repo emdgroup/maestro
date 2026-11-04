@@ -1,8 +1,79 @@
-use maestro_protocol::{AcpRegistry, AgentDistribution, AgentRegistryEntry};
+use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
 
 use crate::helpers::send_diag;
 
 const REGISTRY_JSON: &str = include_str!("../assets/registry.json");
+
+// The ACP agent registry's schema, as the bundled registry and `custom-agents.json` are written.
+
+// --- CDN registry types — used by maestro-server for agent discovery ---
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AcpRegistry {
+    pub version: String,
+    pub agents: Vec<AgentRegistryEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AgentRegistryEntry {
+    pub id: String,
+    pub name: String,
+    /// Absent in hand-written `custom-agents.json` entries; the CDN registry always sets it.
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub distribution: AgentDistribution,
+    #[serde(default)]
+    pub repository: Option<String>,
+    #[serde(default)]
+    pub authors: Option<Vec<String>>,
+    #[serde(default)]
+    pub license: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub website: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct AgentDistribution {
+    #[serde(default)]
+    pub npx: Option<NpxDistribution>,
+    #[serde(default)]
+    pub binary: Option<HashMap<String, BinaryTarget>>,
+    #[serde(default)]
+    pub uvx: Option<UvxDistribution>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct NpxDistribution {
+    pub package: String,
+    #[serde(default)]
+    pub args: Option<Vec<String>>,
+    #[serde(default)]
+    pub env: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BinaryTarget {
+    /// Where the CDN registry says the binary can be downloaded. Maestro never fetches it — it
+    /// spawns what is already on the host — so a hand-written entry can leave it out.
+    #[serde(default)]
+    pub archive: Option<String>,
+    pub cmd: String,
+    #[serde(default)]
+    pub args: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UvxDistribution {
+    pub package: String,
+    #[serde(default)]
+    pub args: Option<Vec<String>>,
+}
 
 #[derive(Clone)]
 pub struct DiscoveredAgentWithSpawn {
@@ -155,9 +226,7 @@ pub fn discover_agents(registry: &AcpRegistry) -> Vec<DiscoveredAgentWithSpawn> 
 }
 
 fn custom_agents_path() -> Result<std::path::PathBuf, String> {
-    Ok(crate::tool_config::home_dir()?
-        .join(".maestro")
-        .join("custom-agents.json"))
+    Ok(maestro_protocol::paths::maestro_home()?.join("custom-agents.json"))
 }
 
 fn read_custom_agents() -> Result<Vec<AgentRegistryEntry>, String> {
@@ -220,7 +289,7 @@ fn merge_custom_agents(agents: &mut Vec<DiscoveredAgentWithSpawn>, custom: &[Age
 
 #[cfg(test)]
 mod tests {
-    use maestro_protocol::{AgentDistribution, AgentRegistryEntry, NpxDistribution};
+    use super::{AgentDistribution, AgentRegistryEntry, NpxDistribution};
 
     fn custom_entry(id: &str, name: &str) -> AgentRegistryEntry {
         AgentRegistryEntry {
@@ -371,6 +440,43 @@ mod tests {
                 "agent {:?} resolved to an empty spawn command",
                 agent.id
             );
+        }
+    }
+
+    #[derive(serde::Deserialize)]
+    struct CustomAgentsFile {
+        agents: Vec<AgentRegistryEntry>,
+    }
+
+    /// The `maestro-custom-agents` skill teaches the user's agent to hand-write
+    /// `~/.maestro/custom-agents.json`, so its examples are the only specification of that file
+    /// anyone reads. A registry schema change that leaves them behind produces entries
+    /// maestro-server silently drops, on the user's machine, with nothing pointing back here.
+    #[test]
+    fn the_custom_agents_skill_documents_entries_that_still_parse() {
+        // The app bundles the skill; this crate is the one that parses what it teaches.
+        let skill = include_str!("../../../src-tauri/assets/skills/maestro-custom-agents/SKILL.md");
+
+        let examples: Vec<&str> = skill
+            .split("```json")
+            .skip(1)
+            .filter_map(|rest| rest.split("```").next())
+            .collect();
+        assert_eq!(examples.len(), 2, "expected the schema and Ollama examples");
+
+        for example in examples {
+            let parsed: CustomAgentsFile = serde_json::from_str(example)
+                .unwrap_or_else(|error| panic!("example does not parse: {error}\n{example}"));
+            for entry in &parsed.agents {
+                assert!(!entry.id.is_empty());
+                assert!(
+                    entry.distribution.npx.is_some()
+                        || entry.distribution.uvx.is_some()
+                        || entry.distribution.binary.is_some(),
+                    "example agent {:?} has no launch method",
+                    entry.id
+                );
+            }
         }
     }
 }

@@ -1,17 +1,12 @@
 //! Core ACP session and transport data types.
 
-use crate::acp::transport::{PromptCapabilitiesInfo, ServerResponse};
 use maestro_protocol::RequestId;
+use maestro_protocol::{PromptCapabilitiesInfo, ServerResponse};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::io::BufWriter;
-use tokio::process::{Child, ChildStdin};
+use tokio::process::Child;
 use tokio::sync::oneshot;
-
-/// Reply slot for a request that can only be in flight one at a time.
-/// `None` means no request is outstanding.
-pub type PendingReply<T> = Arc<std::sync::Mutex<Option<oneshot::Sender<Result<T, String>>>>>;
 
 /// Session-update payloads held until the frontend listener registers and drains them.
 ///
@@ -52,18 +47,6 @@ pub struct RestorableSession {
     /// None when the session hadn't received SpawnOk yet, so the daemon has no row for it.
     pub acp_session_id: Option<String>,
     pub project_id: Option<i32>,
-}
-
-/// Write transport for a live ACP session.
-/// Local sessions write to the child process stdin.
-/// Remote sessions send framed bytes to a writer task via mpsc.
-/// Shared-server sessions route to a connection-level maestro-server via mpsc.
-pub enum AcpTransportWriter {
-    Local(Arc<tokio::sync::Mutex<BufWriter<ChildStdin>>>),
-    RemoteSsh(tokio::sync::mpsc::Sender<Vec<u8>>),
-    /// Session shares a connection-level maestro-server process. The sender routes
-    /// to the writer task that owns the child's stdin.
-    SharedServer(tokio::sync::mpsc::Sender<Vec<u8>>),
 }
 
 /// A request waiting for the reply that carries its id.
@@ -199,7 +182,7 @@ pub struct ConnectionServer {
     /// `None` for remote (SSH exec channel) connection servers.
     pub child: Option<Child>,
     /// Channel to the writer task (framed bytes → child stdin / SSH channel).
-    /// Cloned into each session's `AcpTransportWriter::SharedServer`.
+    /// Cloned into each session's `writer`.
     pub writer_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
     pub pending: PendingRequests,
     /// Unix timestamp (seconds) of the last `Ping` received from maestro-server.
@@ -241,26 +224,16 @@ pub enum TransportTarget<'a> {
     },
 }
 
-/// A live ACP session — local subprocess or remote SSH exec channel.
+/// A live ACP session on its connection's shared maestro-server.
 ///
 /// Stored in `AppState.acp.sessions` keyed by session id.
-/// Dropping this struct cleanly shuts down the session:
-/// - Local: `child` drops with `kill_on_drop(true)`, killing maestro-server.
-/// - Remote: `writer` channel closes, writer task exits, SSH channel closes.
 pub struct AcpProcess {
-    pub writer: AcpTransportWriter,
-    /// Local sessions only — kill_on_drop(true) ensures cleanup on drop.
-    pub child: Option<Child>,
-    /// Cancel signal for the background reader task.
-    pub reader_cancel_tx: Option<oneshot::Sender<()>>,
+    /// The connection server's writer: every session on a connection shares its one relay.
+    pub writer: tokio::sync::mpsc::Sender<Vec<u8>>,
     pub current_model_id: Arc<std::sync::Mutex<Option<String>>>,
     pub current_mode_id: Arc<std::sync::Mutex<Option<String>>>,
     /// Working directory on the server host — passed in FileSearch/FileRead requests.
     pub cwd: String,
-    /// Pending file search response channel. One request at a time.
-    pub pending_file_search: PendingReply<Vec<String>>,
-    /// Pending file read response channel. One request at a time.
-    pub pending_file_read: PendingReply<String>,
     // Session metadata
     pub session_name: Option<String>,
     pub agent_id_meta: String,
@@ -285,7 +258,8 @@ pub struct AcpProcess {
     /// emitting `replay-drained` before the session is ready (empty buffer race).
     pub initialized: Arc<std::sync::Mutex<bool>>,
     /// Strips the completion marker from `agent_message_chunk` text before it is shown.
-    pub completion_filter: Arc<std::sync::Mutex<super::completion::CompletionMarkerFilter>>,
+    pub completion_filter:
+        Arc<std::sync::Mutex<maestro_protocol::completion::CompletionMarkerFilter>>,
     /// Session capability flags from SpawnOk. Used by get_active_sessions.
     pub session_capabilities: SessionCapabilitiesInfo,
     /// Raw config_options catalog from SpawnOk/SessionLoadOk/config updates.
@@ -367,9 +341,7 @@ impl TaskMetadata {
 /// Parameters for constructing an `AcpProcess`. Separates the plain data fields
 /// from the Arc-wrapped caches, which `AcpProcess::create` allocates uniformly.
 pub struct AcpProcessParams {
-    pub writer: AcpTransportWriter,
-    pub child: Option<Child>,
-    pub cancel_tx: Option<oneshot::Sender<()>>,
+    pub writer: tokio::sync::mpsc::Sender<Vec<u8>>,
     pub cwd: String,
     pub session_name: Option<String>,
     pub agent_id: String,
@@ -395,35 +367,14 @@ pub struct SessionRequest {
     pub app_state: Arc<crate::core::AppState>,
 }
 
-pub struct ReaderTaskContext {
-    pub session_id: String,
-    pub app_handle: tauri::AppHandle,
-    pub app_state: Arc<crate::core::AppState>,
-    pub current_model_id: Arc<std::sync::Mutex<Option<String>>>,
-    pub current_mode_id: Arc<std::sync::Mutex<Option<String>>>,
-    pub pending_file_search: PendingReply<Vec<String>>,
-    pub pending_file_read: PendingReply<String>,
-    pub acp_session_id_cache: Arc<std::sync::Mutex<Option<String>>>,
-    pub replay_buffer: ReplayBuffer,
-    pub initialized: Arc<std::sync::Mutex<bool>>,
-    pub completion_filter: Arc<std::sync::Mutex<super::completion::CompletionMarkerFilter>>,
-}
-
 impl AcpProcess {
     pub fn task_key(&self) -> Option<TaskKey> {
         TaskKey::of(self.project_id, self.task_id)
     }
 
-    pub fn create(
-        params: AcpProcessParams,
-        session_id: String,
-        app_handle: tauri::AppHandle,
-        app_state: Arc<crate::core::AppState>,
-    ) -> (Self, ReaderTaskContext) {
+    pub fn create(params: AcpProcessParams) -> Self {
         let current_model_id = Arc::new(std::sync::Mutex::new(None));
         let current_mode_id = Arc::new(std::sync::Mutex::new(None));
-        let pending_file_search = Arc::new(std::sync::Mutex::new(None));
-        let pending_file_read = Arc::new(std::sync::Mutex::new(None));
         let acp_session_id = Arc::new(std::sync::Mutex::new(params.initial_acp_session_id));
         let replay_buffer = Arc::new(std::sync::Mutex::new(if params.enable_replay_buffer {
             Some(Vec::new())
@@ -432,30 +383,13 @@ impl AcpProcess {
         }));
         let initialized = Arc::new(std::sync::Mutex::new(false));
         let completion_filter = Arc::new(std::sync::Mutex::new(
-            super::completion::CompletionMarkerFilter::new(),
+            maestro_protocol::completion::CompletionMarkerFilter::new(),
         ));
-        let ctx = ReaderTaskContext {
-            session_id,
-            app_handle,
-            app_state,
-            current_model_id: Arc::clone(&current_model_id),
-            current_mode_id: Arc::clone(&current_mode_id),
-            pending_file_search: Arc::clone(&pending_file_search),
-            pending_file_read: Arc::clone(&pending_file_read),
-            acp_session_id_cache: Arc::clone(&acp_session_id),
-            replay_buffer: Arc::clone(&replay_buffer),
-            initialized: Arc::clone(&initialized),
-            completion_filter: Arc::clone(&completion_filter),
-        };
-        let process = Self {
+        Self {
             writer: params.writer,
-            child: params.child,
-            reader_cancel_tx: params.cancel_tx,
             current_model_id,
             current_mode_id,
             cwd: params.cwd,
-            pending_file_search,
-            pending_file_read,
             session_name: params.session_name,
             agent_id_meta: params.agent_id,
             project_id: params.project_id,
@@ -475,15 +409,14 @@ impl AcpProcess {
             prompt_capabilities: None,
             has_pending_permission: Arc::new(AtomicBool::new(false)),
             turn_active: Arc::new(AtomicBool::new(false)),
-        };
-        (process, ctx)
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::acp::transport::ErrorResponse;
+    use maestro_protocol::ErrorResponse;
 
     fn error(message: &str) -> ServerResponse {
         ServerResponse::Error(ErrorResponse {

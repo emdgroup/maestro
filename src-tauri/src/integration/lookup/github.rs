@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::core::AppState;
-use crate::models::issue_tracking::RepoOption;
+use crate::integration::issue_tracking_models::RepoOption;
 
 /// Check whether a GitHub user or organization exists. Returns true if found, false if not.
 #[tauri::command]

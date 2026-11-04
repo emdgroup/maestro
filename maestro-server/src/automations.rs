@@ -14,14 +14,23 @@ use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use maestro_protocol::{
     Automation, AutomationRun, AutomationRunStatus, AutomationWorkspace, RunRetention, RunTrigger,
-    WebhookOverlap,
+    ServerRequest, ServerResponse, WebhookOverlap,
 };
 use rusqlite::{params, Connection, OptionalExtension};
+
+use crate::project_path::canonical_project_path;
+
+/// What every automation request answers with when the store could not be opened. Said plainly
+/// rather than as an empty list, which would look like a project with no automations.
+pub const UNAVAILABLE: &str =
+    "The automation store could not be opened, so automations are unavailable on this machine";
 
 /// Cap on what a run list hands back, whatever the client asks for.
 const RUN_LIMIT: u32 = 200;
 
-const SCHEMA: &str = "
+/// The schema every release shipped before the file kept a version. Idempotent, since a file from
+/// then is at version 0 with some or all of it already there: see `add_late_columns`.
+const V1_AUTOMATIONS: &str = "
 CREATE TABLE IF NOT EXISTS projects (
     path       TEXT PRIMARY KEY,
     created_at TEXT NOT NULL
@@ -131,102 +140,123 @@ CREATE TABLE IF NOT EXISTS webhook_settings (
 );
 ";
 
+/// Append only: a step, once released, is never edited, and a new one goes on the end.
+const MIGRATIONS: &[&str] = &[V1_AUTOMATIONS];
+
+/// Columns added to tables that already existed on machines that had run a daemon, before the file
+/// kept a version. Each is nullable or defaulted, so a row from before them reads as it did.
+const LATE_COLUMNS: &[(&str, &str, &str)] = &[
+    ("runs", "agent_session_id", "TEXT"),
+    ("runs", "agent_id", "TEXT"),
+    ("runs", "cwd", "TEXT"),
+    ("runs", "can_reload", "INTEGER"),
+    ("runs", "worktree_path", "TEXT"),
+    ("runs", "worktree_branch", "TEXT"),
+    ("runs", "worktree_base", "TEXT"),
+    ("runs", "worktree_kept", "TEXT"),
+    ("runs", "ordinal", "INTEGER"),
+    ("runs", "result", "TEXT"),
+    ("runs", "origin", "TEXT"),
+    ("automations", "slug", "TEXT"),
+    ("automations", "runs_started", "INTEGER"),
+    (
+        "automations",
+        "webhook_enabled",
+        "INTEGER NOT NULL DEFAULT 0",
+    ),
+    ("automations", "webhook_overlap", "TEXT"),
+    ("automations", "webhook_secret", "TEXT"),
+];
+
+/// The reply to an automation request that only reads or writes the store.
+pub fn answer(conn: &Connection, request: ServerRequest) -> Result<ServerResponse, String> {
+    use ServerRequest as Q;
+    use ServerResponse as A;
+    Ok(match request {
+        Q::ListAutomations(r) => {
+            let project_path = canonical_project_path(&r.project_path);
+            A::ListAutomationsOk(maestro_protocol::ListAutomationsResponse {
+                automations: list(conn, &project_path)?,
+                server_timezone: server_timezone(),
+                retention: retention(conn, &project_path)?,
+            })
+        }
+        Q::SaveAutomation(r) => {
+            // Canonicalized here rather than trusted from the client: this is the process on the
+            // machine the path exists on, and every later lookup has to agree with this one.
+            let project_path = canonical_project_path(&r.project_path);
+            let mut automation = r.automation;
+            automation.project_path = project_path.clone();
+            A::SaveAutomationOk(save(conn, &project_path, &automation)?)
+        }
+        Q::DeleteAutomation(r) => {
+            delete(conn, &r.automation_id)?;
+            A::DeleteAutomationOk
+        }
+        Q::ListAutomationRuns(r) => {
+            let project_path = canonical_project_path(&r.project_path);
+            let runs = list_runs(conn, &project_path, r.limit)?;
+            A::ListAutomationRunsOk(maestro_protocol::ListAutomationRunsResponse { runs })
+        }
+        Q::GetWebhookSettings => A::WebhookSettingsOk(crate::webhook::status(conn)),
+        Q::RollWebhookSecret(r) => {
+            A::RollWebhookSecretOk(roll_webhook_secret(conn, &r.automation_id)?)
+        }
+        Q::ListWebhookDeliveries(r) => {
+            let deliveries = crate::webhook::list_deliveries(conn, &r.automation_id)?;
+            A::ListWebhookDeliveriesOk(maestro_protocol::ListWebhookDeliveriesResponse {
+                deliveries,
+            })
+        }
+        _ => return Err("not an automation request".to_string()),
+    })
+}
+
 /// Open, or create, the daemon's automation database.
 ///
 /// WAL and a busy timeout because two processes reach this file whenever the app is attached: the
 /// daemon's clock writes runs while the window reads them.
 pub fn open(dir: &Path) -> Result<Connection, String> {
     let path = dir.join("automations.db");
-    let conn = Connection::open(&path).map_err(|e| format!("cannot open {path:?}: {e}"))?;
+    let mut conn = Connection::open(&path).map_err(|e| format!("cannot open {path:?}: {e}"))?;
     conn.pragma_update(None, "journal_mode", "WAL")
         .map_err(|e| format!("cannot set WAL on {path:?}: {e}"))?;
     conn.busy_timeout(std::time::Duration::from_secs(5))
         .map_err(|e| format!("cannot set busy_timeout on {path:?}: {e}"))?;
     conn.pragma_update(None, "foreign_keys", "ON")
         .map_err(|e| format!("cannot enable foreign keys on {path:?}: {e}"))?;
-    conn.execute_batch(SCHEMA)
-        .map_err(|e| format!("cannot create the automation schema: {e}"))?;
-    // Added after the table existed on machines that had already run a daemon. Each is nullable,
-    // so a run recorded before them simply cannot be reopened, which is what it was anyway.
-    for (column, kind) in [
-        ("agent_session_id", "TEXT"),
-        ("agent_id", "TEXT"),
-        ("cwd", "TEXT"),
-        ("can_reload", "INTEGER"),
-        ("worktree_path", "TEXT"),
-        ("worktree_branch", "TEXT"),
-        ("worktree_base", "TEXT"),
-        ("worktree_kept", "TEXT"),
-        ("ordinal", "INTEGER"),
-        ("result", "TEXT"),
-        ("origin", "TEXT"),
-    ] {
-        add_column_if_missing(&conn, "runs", column, kind)?;
+    if crate::project_store::schema_version(&conn, "automations.db")? == 0 {
+        add_late_columns(&conn)?;
     }
-    add_column_if_missing(&conn, "automations", "slug", "TEXT")?;
-    add_column_if_missing(&conn, "automations", "runs_started", "INTEGER")?;
-    add_column_if_missing(
-        &conn,
-        "automations",
-        "webhook_enabled",
-        "INTEGER NOT NULL DEFAULT 0",
-    )?;
-    add_column_if_missing(&conn, "automations", "webhook_overlap", "TEXT")?;
-    add_column_if_missing(&conn, "automations", "webhook_secret", "TEXT")?;
+    crate::project_store::migrate(&mut conn, "automations.db", MIGRATIONS)?;
     Ok(conn)
 }
 
+/// Bring a table an unversioned file already has up to `V1_AUTOMATIONS`, which `CREATE TABLE IF
+/// NOT EXISTS` would leave as it is. A table the file lacks is skipped: the migration creates it.
+///
 /// The declared type matters: SQLite converts a value to the column's affinity on write, so an
 /// integer stored in a TEXT column comes back as text and no longer reads as a number.
-fn add_column_if_missing(
-    conn: &Connection,
-    table: &str,
-    column: &str,
-    kind: &str,
-) -> Result<(), String> {
-    let present: bool = conn
-        .query_row(
-            "SELECT COUNT(*) > 0 FROM pragma_table_info(?1) WHERE name = ?2",
-            params![table, column],
-            |row| row.get(0),
+fn add_late_columns(conn: &Connection) -> Result<(), String> {
+    for (table, column, kind) in LATE_COLUMNS {
+        let columns: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info(?1)")
+            .and_then(|mut statement| {
+                statement
+                    .query_map(params![table], |row| row.get(0))?
+                    .collect()
+            })
+            .map_err(|e| format!("cannot read the shape of {table}: {e}"))?;
+        if columns.is_empty() || columns.iter().any(|name| name == column) {
+            continue;
+        }
+        conn.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {kind}"),
+            [],
         )
-        .map_err(|e| format!("cannot read the shape of {table}: {e}"))?;
-    if present {
-        return Ok(());
+        .map_err(|e| format!("cannot add {table}.{column}: {e}"))?;
     }
-    conn.execute(
-        &format!("ALTER TABLE {table} ADD COLUMN {column} {kind}"),
-        [],
-    )
-    .map(|_| ())
-    .map_err(|e| format!("cannot add {table}.{column}: {e}"))
-}
-
-/// The name a project is filed under, resolved on the machine the path exists on.
-///
-/// Falls back to tidying the given path when it does not resolve, so a project on a disconnected
-/// drive still matches the rows it wrote — being unable to reach a directory is not a reason to
-/// forget the automations pointing at it.
-pub fn canonical_project_path(path: &str) -> String {
-    let resolved = std::fs::canonicalize(path)
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| path.to_string());
-    let resolved = strip_verbatim(&resolved).replace('\\', "/");
-    let trimmed = resolved.trim_end_matches('/');
-    if trimmed.is_empty() {
-        resolved
-    } else {
-        trimmed.to_string()
-    }
-}
-
-/// Windows hands back a verbatim path, which no other part of Maestro ever shows or stores. A share
-/// comes back as `\\?\UNC\server\share`, whose plain spelling is `\\server\share`.
-fn strip_verbatim(path: &str) -> String {
-    match path.strip_prefix(r"\\?\UNC\") {
-        Some(share) => format!(r"\\{share}"),
-        None => path.strip_prefix(r"\\?\").unwrap_or(path).to_string(),
-    }
+    Ok(())
 }
 
 /// The IANA zone this machine is set to, or `UTC` when it will not say.
@@ -1039,20 +1069,74 @@ pub fn fail_interrupted_runs(conn: &Connection) -> Result<usize, String> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_verbatim_share_keeps_its_two_slashes() {
-        assert_eq!(
-            strip_verbatim(r"\\?\UNC\server\share\p").replace('\\', "/"),
-            "//server/share/p"
-        );
-        assert_eq!(strip_verbatim(r"\\?\C:\p"), r"C:\p");
-        assert_eq!(strip_verbatim("/home/p"), "/home/p");
-    }
-
     fn store() -> Connection {
         let conn = Connection::open_in_memory().expect("in-memory database");
-        conn.execute_batch(SCHEMA).expect("schema");
+        conn.execute_batch(V1_AUTOMATIONS).expect("schema");
         conn
+    }
+
+    /// The tables as the earliest build that wrote this file made them, before any late column.
+    const OLDEST: &str = "
+        CREATE TABLE projects (path TEXT PRIMARY KEY, created_at TEXT NOT NULL);
+        CREATE TABLE automations (
+            id TEXT PRIMARY KEY,
+            project_path TEXT NOT NULL REFERENCES projects(path) ON DELETE CASCADE,
+            name TEXT NOT NULL, prompt TEXT NOT NULL, agent_id TEXT NOT NULL, cron TEXT,
+            timezone TEXT NOT NULL, enabled INTEGER NOT NULL, model TEXT, permission_mode TEXT,
+            effort TEXT, workspace TEXT NOT NULL, created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL, last_fired_at TEXT
+        );
+        CREATE TABLE runs (
+            id TEXT PRIMARY KEY, automation_id TEXT NOT NULL, project_path TEXT NOT NULL,
+            automation_name TEXT NOT NULL, status TEXT NOT NULL, scheduled INTEGER NOT NULL,
+            started_at TEXT NOT NULL, finished_at TEXT, session_id TEXT, error TEXT
+        );
+        INSERT INTO projects (path, created_at) VALUES ('/repo', 'then');
+        INSERT INTO automations (id, project_path, name, prompt, agent_id, timezone, enabled,
+            workspace, created_at, updated_at)
+            VALUES ('a1', '/repo', 'Nightly', 'Tidy up', 'claude', 'UTC', 1, 'null', 'then',
+            'then');
+        INSERT INTO runs (id, automation_id, project_path, automation_name, status, scheduled,
+            started_at) VALUES ('r1', 'a1', '/repo', 'Nightly', 'succeeded', 0, 'then');
+    ";
+
+    /// A file left by a release, unversioned, opens with its rows and is stamped version 1.
+    #[test]
+    fn an_unversioned_file_of_any_shape_migrates_and_keeps_its_rows() {
+        for shape in [OLDEST, V1_AUTOMATIONS] {
+            let dir = tempfile::tempdir().expect("temp dir");
+            {
+                let conn = Connection::open(dir.path().join("automations.db")).expect("create");
+                conn.execute_batch(shape).expect("old shape");
+                if shape == V1_AUTOMATIONS {
+                    conn.execute_batch(&OLDEST[OLDEST.find("INSERT").unwrap()..])
+                        .expect("rows");
+                }
+            }
+            let conn = open(dir.path()).expect("migrate");
+            assert_eq!(
+                crate::project_store::schema_version(&conn, "automations.db").unwrap(),
+                MIGRATIONS.len() as i64
+            );
+            let automation = get(&conn, "a1").expect("read").expect("kept");
+            assert_eq!(automation.name, "Nightly");
+            assert!(!automation.webhook_enabled);
+            assert_eq!(list_runs(&conn, "/repo", None).expect("runs").len(), 1);
+            drop(conn);
+            open(dir.path()).expect("a second open is a no-op");
+        }
+    }
+
+    #[test]
+    fn a_file_newer_than_this_build_is_refused() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        open(dir.path()).expect("create");
+        Connection::open(dir.path().join("automations.db"))
+            .expect("reopen")
+            .pragma_update(None, "user_version", MIGRATIONS.len() as i64 + 1)
+            .expect("bump");
+        let refused = open(dir.path()).expect_err("refused");
+        assert!(refused.contains("newer"), "{refused}");
     }
 
     fn automation(id: &str, cron: Option<&str>) -> Automation {
@@ -1185,8 +1269,12 @@ mod tests {
         // What an earlier migration left behind: `can_reload` added as TEXT, so `1` became `"1"`,
         // and the strict read that followed failed every run list on that machine.
         let conn = Connection::open_in_memory().expect("in-memory database");
-        let migrated = SCHEMA.replace("can_reload        INTEGER", "can_reload        TEXT");
-        assert_ne!(migrated, SCHEMA, "the column this test is about has moved");
+        let migrated =
+            V1_AUTOMATIONS.replace("can_reload        INTEGER", "can_reload        TEXT");
+        assert_ne!(
+            migrated, V1_AUTOMATIONS,
+            "the column this test is about has moved"
+        );
         conn.execute_batch(&migrated).expect("schema");
 
         let saved = save(&conn, "/p", &automation("a", None)).expect("save");

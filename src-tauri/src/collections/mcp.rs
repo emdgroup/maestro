@@ -17,12 +17,13 @@ use specta::Type;
 use tauri::State;
 
 use crate::acp::connection_server::{
-    query_list_mcp_servers_via_server, query_save_mcp_servers_via_server,
-    query_set_mcp_secrets_via_server, query_test_mcp_server_via_server,
+    query_list_mcp_servers_via_server, query_save_mcp_servers_via_server, query_via_server,
+    query_via_server_within, reply,
 };
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
 use crate::integration::keychain::KeychainStore;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 use super::mcp_oauth::{self, AUTHORIZATION, OAUTH_KEY};
 
@@ -38,8 +39,9 @@ pub struct McpKeyValue {
     pub secret: bool,
 }
 
-/// An MCP server the user manages, as the editor and the cards see it. Same shape as
-/// `maestro_protocol::ManagedMcpServer`, which cannot derive `Type`.
+/// An MCP server the user manages, as the editor and the cards see it. The same fields as
+/// `maestro_protocol::ManagedMcpServer`, except that `oauth` is typed here: the daemon carries it
+/// as opaque JSON it never reads.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 pub struct McpServerConfig {
     pub name: String,
@@ -79,13 +81,6 @@ pub struct McpOAuthSettings {
     pub client_secret: String,
     /// A PEM private key, same as `client_secret`.
     pub private_key: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-pub struct McpTestResult {
-    pub ok: bool,
-    pub tools: Vec<String>,
-    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
@@ -171,7 +166,13 @@ pub(crate) async fn push_secrets(
             }
         }
     }
-    query_set_mcp_secrets_via_server(connection, secrets, app_state).await?;
+    query_via_server(
+        connection,
+        app_state,
+        ServerRequest::SetMcpSecrets(maestro_protocol::SetMcpSecretsRequest { secrets }),
+        reply!(ServerResponse::SetMcpSecretsOk => ()),
+    )
+    .await?;
     mcp_oauth::schedule_refresh(app_state, connection, soonest);
     Ok(())
 }
@@ -333,7 +334,7 @@ pub async fn test_mcp_server(
     server: McpServerConfig,
     previous_name: Option<String>,
     oauth: Option<String>,
-) -> Result<McpTestResult, String> {
+) -> Result<maestro_protocol::McpTestResult, String> {
     let mut server = server;
     let stored_under = previous_name.unwrap_or_else(|| server.name.clone());
     mcp_oauth::refresh_if_due(connection, &stored_under, &app_state).await;
@@ -352,7 +353,18 @@ pub async fn test_mcp_server(
             }
         }
     }
-    convert(query_test_mcp_server_via_server(connection, convert(server)?, &app_state).await?)
+    // The server answers within 15 seconds whatever happens, so the margin here only covers the
+    // round trip.
+    query_via_server_within(
+        connection,
+        &app_state,
+        ServerRequest::TestMcpServer(maestro_protocol::TestMcpServerRequest {
+            server: convert(server)?,
+        }),
+        reply!(ServerResponse::TestMcpServerOk(response) => response),
+        30,
+    )
+    .await
 }
 
 /// The whole GitHub MCP Registry, star-ranked: a few hundred servers, read 100 at a time, the

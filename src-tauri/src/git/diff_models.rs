@@ -10,7 +10,6 @@ use specta::Type;
 /// - CommitRange: `git diff --unified=6 {from}..{to}` (single commit view)
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "type")]
-#[specta(export)]
 pub enum DiffTarget {
     Head,
     Commit {
@@ -39,7 +38,6 @@ pub enum DiffTarget {
 /// When the diff or untracked list exceeds the server-side caps, the corresponding
 /// `_truncated` flag is set to true and `total_*` reflects the actual uncapped size.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct WorktreeDiffResult {
     pub diff: String,
     pub diff_truncated: bool,
@@ -52,7 +50,6 @@ pub struct WorktreeDiffResult {
 /// Lightweight summary returned by get_worktree_diff_stats — no unified diff text,
 /// just the numbers needed for stats display in the session header.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct WorktreeDiffStats {
     pub file_count: u32,
     pub insertions: u32,
@@ -65,7 +62,6 @@ pub struct WorktreeDiffStats {
 /// The sizes are the two blobs' byte counts, which is the only thing resembling a `+`/`-` count a
 /// binary change has. Either is zero where that side does not exist — an addition or a deletion.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct BinaryFileInfo {
     pub old_size: u32,
     pub new_size: u32,
@@ -75,14 +71,12 @@ pub struct BinaryFileInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct DirtyStatus {
     pub modified_count: u32,
     pub untracked_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct CommitInfo {
     pub sha: String,
     pub message: String,

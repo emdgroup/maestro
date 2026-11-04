@@ -22,10 +22,15 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 
 use crate::acp::transport_types::try_parse_acp_frame;
-use crate::command_ext::NoConsoleWindow;
 use crate::connectivity::docker::ContainerCli;
 use crate::connectivity::ssh::RemoteSshSession;
-use crate::git::remote::shell_quote;
+use maestro_protocol::command_ext::NoConsoleWindow;
+
+/// Shell-safe quoting for paths used in SSH commands.
+/// Wraps in single quotes and escapes internal single quotes as '\'' (end quote, escaped quote, restart quote).
+pub fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
 
 pub struct CommandOutput {
     pub stdout: Vec<u8>,
@@ -80,8 +85,8 @@ pub enum ExecHost {
 impl<'a> ExecTarget<'a> {
     /// The one mapping from a resolved connection to where its commands run. Everything that
     /// holds a [`GitConnection`] goes through this instead of matching on it again.
-    pub fn of(conn: &'a crate::models::GitConnection) -> Self {
-        use crate::models::GitConnection;
+    pub fn of(conn: &'a crate::connectivity::GitConnection) -> Self {
+        use crate::connectivity::GitConnection;
         match conn {
             GitConnection::Local { .. } => ExecTarget::Local,
             GitConnection::Remote { ssh, .. } => ExecTarget::Ssh {
@@ -153,7 +158,7 @@ struct Channel {
 
 /// Run a command on whichever machine a connection points at.
 pub async fn run_on(
-    conn: &crate::models::GitConnection,
+    conn: &crate::connectivity::GitConnection,
     cwd: Option<&str>,
     program: &str,
     args: &[&str],
@@ -469,7 +474,10 @@ fn abandon(pending: &Pending, alive: &AtomicBool) {
 }
 
 /// The behaviour this module replaces: one process per command.
-async fn cold_spawn(
+///
+/// Also what deploying `maestro-server` runs through, since the binary it pipes in is too large for
+/// a channel frame and the channel is served by the binary being replaced.
+pub(crate) async fn cold_spawn(
     target: &ExecTarget<'_>,
     cwd: Option<&str>,
     program: &str,
@@ -566,19 +574,23 @@ async fn cold_spawn(
     let mut child = command
         .spawn()
         .map_err(|e| format!("failed to run {}: {}", program, e))?;
-    if let (Some(bytes), Some(mut sink)) = (stdin.as_ref(), child.stdin.take()) {
-        sink.write_all(bytes)
-            .await
-            .map_err(|e| format!("failed to write stdin: {}", e))?;
-        sink.flush()
-            .await
-            .map_err(|e| format!("failed to flush stdin: {}", e))?;
-        drop(sink);
-    }
+    let write_result = match (stdin.as_ref(), child.stdin.take()) {
+        (Some(bytes), Some(mut sink)) => match sink.write_all(bytes).await {
+            Ok(()) => sink.flush().await,
+            Err(e) => Err(e),
+        },
+        _ => Ok(()),
+    };
     let output = child
         .wait_with_output()
         .await
         .map_err(|e| format!("failed to run {}: {}", program, e))?;
+    // A command that exits before reading all of its input breaks the pipe. Its exit status and
+    // stderr say why, which is the more useful answer, so a failed write only counts when the
+    // command itself succeeded.
+    if output.status.success() {
+        write_result.map_err(|e| format!("failed to write stdin: {}", e))?;
+    }
 
     Ok(CommandOutput {
         stdout: output.stdout,

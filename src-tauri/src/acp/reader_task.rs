@@ -3,21 +3,17 @@
 
 use crate::acp::manager::log_server_diagnostic;
 use crate::acp::replay::{emit_or_buffer_payload, push_config_init_to_buffer};
-use crate::acp::session_types::{
-    PendingReply, PendingRequests, ReaderTaskContext, RestorableSession,
-};
-use crate::acp::transport::{
-    FileReadResponse, FileSearchResponse, PromptCapabilitiesInfo, ServerRequest, ServerResponse,
-    SessionModeState, SessionModelState,
-};
+use crate::acp::session_types::{PendingRequests, RestorableSession};
 use crate::acp::transport_types::{serialize_message, AcpReadSource};
 use crate::acp::TaskKey;
+use maestro_protocol::{
+    PromptCapabilitiesInfo, ServerRequest, ServerResponse, SessionModeState, SessionModelState,
+};
 use maestro_protocol::{TaskTransition, TransitionGuard};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Emitter;
-use tokio::sync::oneshot;
 
 /// Payload for `acp://connection-live` and `acp://connection-lost`.
 ///
@@ -35,95 +31,6 @@ pub struct ConnectionEvent {
 pub struct ConnectionQuiet {
     pub connection: crate::acp::ConnectionKey,
     pub quiet_for_secs: u64,
-}
-
-pub(crate) fn spawn_reader_task(
-    source: AcpReadSource,
-    cancel_rx: oneshot::Receiver<()>,
-    ctx: ReaderTaskContext,
-) {
-    let ReaderTaskContext {
-        session_id,
-        app_handle,
-        app_state,
-        current_model_id,
-        current_mode_id,
-        pending_file_search,
-        pending_file_read,
-        acp_session_id_cache,
-        replay_buffer,
-        initialized,
-        completion_filter,
-    } = ctx;
-    tokio::spawn(async move {
-        let mut source = source;
-        let mut cancel_rx = cancel_rx;
-
-        loop {
-            let msg = tokio::select! {
-                biased;
-                _ = &mut cancel_rx => break,
-                result = source.next_message() => match result {
-                    Some(msg) => msg,
-                    None => break,
-                },
-            };
-            match &msg {
-                ServerResponse::Ping { .. } | ServerResponse::TerminalOutput(_) => {}
-                _ => {
-                    if let Ok(json) = serde_json::to_string(&msg) {
-                        log::trace!("[acp] << session_id={session_id} {json}");
-                    }
-                }
-            }
-            if let ServerResponse::Ping { seq } = &msg {
-                log::trace!("[acp] ping seq={seq} on direct session session_id={session_id}");
-                let pong = ServerRequest::Pong { seq: *seq };
-                if let Err(e) =
-                    crate::acp::write_to_acp_session(&app_state, &session_id, &pong).await
-                {
-                    log::warn!("[acp] pong failed on direct session session_id={session_id}: {e}");
-                }
-                if let Err(e) = app_state.app_handle.emit("acp://heartbeat", ()) {
-                    log::warn!("[acp] emit heartbeat failed: {e}");
-                }
-                continue;
-            }
-
-            update_session_from_response(&session_id, &msg, &app_state).await;
-
-            // Off the reader loop: a `canvas_await` blocks until the user acts, and nothing else
-            // on this session could arrive meanwhile, including the answer itself.
-            if let ServerResponse::HostToolCall(call) = msg {
-                let state = Arc::clone(&app_state);
-                let owned_session_id = session_id.clone();
-                tokio::spawn(async move {
-                    crate::acp::host_tools::handle(state, &owned_session_id, call).await;
-                });
-                continue;
-            }
-
-            handle_server_message(
-                msg,
-                &session_id,
-                &app_handle,
-                &current_model_id,
-                &current_mode_id,
-                &pending_file_search,
-                &pending_file_read,
-                &acp_session_id_cache,
-                &replay_buffer,
-                &initialized,
-                &completion_filter,
-            );
-        }
-
-        app_state.acp.sessions.lock().await.remove(&session_id);
-        app_state.app_handle.emit("sessions-changed", ()).ok();
-        if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", session_id), ()) {
-            log::warn!("[acp] emit session-ended/{session_id} failed: {e}");
-        }
-    });
 }
 
 /// Apply `event` to the session's task in the daemon and wait for it, logging a failure. Never
@@ -231,12 +138,10 @@ fn handle_server_message(
     app_handle: &tauri::AppHandle,
     current_model_id: &Arc<std::sync::Mutex<Option<String>>>,
     current_mode_id: &Arc<std::sync::Mutex<Option<String>>>,
-    pending_file_search: &PendingReply<Vec<String>>,
-    pending_file_read: &PendingReply<String>,
     acp_session_id_cache: &Arc<std::sync::Mutex<Option<String>>>,
     replay_buffer: &crate::acp::session_types::ReplayBuffer,
     initialized: &Arc<std::sync::Mutex<bool>>,
-    completion_filter: &Arc<std::sync::Mutex<crate::acp::completion::CompletionMarkerFilter>>,
+    completion_filter: &Arc<std::sync::Mutex<maestro_protocol::completion::CompletionMarkerFilter>>,
 ) -> Option<String> {
     match msg {
         ServerResponse::SessionUpdate(upd) => {
@@ -416,36 +321,11 @@ fn handle_server_message(
                 log::warn!("[acp] emit config-state-updated/{session_id} failed: {e}");
             }
         }
-        ServerResponse::FileSearchOk(FileSearchResponse { files }) => {
-            if let Ok(mut guard) = pending_file_search.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(files));
-                }
-            }
-        }
-        ServerResponse::FileReadOk(FileReadResponse { content }) => {
-            if let Ok(mut guard) = pending_file_read.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(content));
-                }
-            }
-        }
         ServerResponse::Error(err) => {
             log::error!(
                 "[acp] session-error session_id={session_id}: {}",
                 err.message
             );
-            // Resolve any pending file op with the error before emitting the session-error event.
-            if let Ok(mut guard) = pending_file_search.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Err(err.message.clone()));
-                }
-            }
-            if let Ok(mut guard) = pending_file_read.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Err(err.message.clone()));
-                }
-            }
             if let Err(e) =
                 app_handle.emit(&format!("acp://session-error/{}", session_id), &err.message)
             {
@@ -606,8 +486,8 @@ fn project_id_for_path(
     match_project_path(rows, connection_key, canonical_path, ignore_case)
 }
 
-/// Compared with separators and a trailing slash tidied, the part of the daemon's
-/// `canonical_project_path` this side can reproduce.
+/// Compared after `tidy_path`, the part of the daemon's `canonical_project_path` this side can
+/// reproduce.
 ///
 /// A project opened through a symlink does not match, and its pushes carry no id. That is safe:
 /// a push naming no project is refetched by every window, which costs a request and loses nothing.
@@ -617,21 +497,14 @@ fn match_project_path(
     canonical_path: &str,
     ignore_case: bool,
 ) -> Option<i32> {
-    fn tidy(path: &str) -> String {
-        let path = path
-            .strip_prefix(r"\\?\")
-            .unwrap_or(path)
-            .replace('\\', "/");
-        path.trim_end_matches('/').to_string()
-    }
-    let wanted = tidy(canonical_path);
+    let wanted = maestro_protocol::paths::tidy_path(canonical_path);
     rows.into_iter()
         .find(|(_, path, key)| {
             *key == connection_key
                 && if ignore_case {
-                    tidy(path).eq_ignore_ascii_case(&wanted)
+                    maestro_protocol::paths::tidy_path(path).eq_ignore_ascii_case(&wanted)
                 } else {
-                    tidy(path) == wanted
+                    maestro_protocol::paths::tidy_path(path) == wanted
                 }
         })
         .map(|(id, _, _)| id)
@@ -701,7 +574,7 @@ pub(crate) async fn handle_shared_server_message(
             // `TaskSessionStarted`, which adopts it. So this load's entry goes, and neither the task
             // nor the row is touched.
             app_state.acp.sessions.lock().await.remove(&session_id);
-            app_handle.emit("sessions-changed", ()).ok();
+            crate::core::emit_or_log(app_handle, "sessions-changed", ());
             return;
         }
 
@@ -711,8 +584,6 @@ pub(crate) async fn handle_shared_server_message(
                 (
                     Arc::clone(&s.current_model_id),
                     Arc::clone(&s.current_mode_id),
-                    Arc::clone(&s.pending_file_search),
-                    Arc::clone(&s.pending_file_read),
                     Arc::clone(&s.acp_session_id),
                     Arc::clone(&s.replay_buffer),
                     Arc::clone(&s.initialized),
@@ -725,8 +596,6 @@ pub(crate) async fn handle_shared_server_message(
         if let Some((
             current_model_id,
             current_mode_id,
-            pfs,
-            pfr,
             acp_sid,
             replay,
             initialized,
@@ -759,12 +628,11 @@ pub(crate) async fn handle_shared_server_message(
                             crate::acp::ConnectionKey::Wsl { id } => format!("wsl-{id}"),
                             crate::acp::ConnectionKey::Docker { id } => format!("docker-{id}"),
                         };
-                        app_handle
-                            .emit(
-                                &format!("acp://auth-state-changed/{}", conn_key_id),
-                                &serde_json::json!({ "agentId": agent_id }),
-                            )
-                            .ok();
+                        crate::core::emit_or_log(
+                            app_handle,
+                            &format!("acp://auth-state-changed/{}", conn_key_id),
+                            &serde_json::json!({ "agentId": agent_id }),
+                        );
                     }
                 }
             }
@@ -783,8 +651,6 @@ pub(crate) async fn handle_shared_server_message(
                 app_handle,
                 &current_model_id,
                 &current_mode_id,
-                &pfs,
-                &pfr,
                 &acp_sid,
                 &replay,
                 &initialized,
@@ -989,12 +855,11 @@ pub(crate) async fn handle_shared_server_message(
                 crate::acp::ConnectionKey::Wsl { id } => format!("wsl-{id}"),
                 crate::acp::ConnectionKey::Docker { id } => format!("docker-{id}"),
             };
-            app_handle
-                .emit(
-                    &format!("acp://auth-pty-exit/{}", conn_key_id),
-                    &serde_json::json!({ "exit_code": exit.exit_code }),
-                )
-                .ok();
+            crate::core::emit_or_log(
+                app_handle,
+                &format!("acp://auth-pty-exit/{}", conn_key_id),
+                &serde_json::json!({ "exit_code": exit.exit_code }),
+            );
             if exit.exit_code == Some(0) {
                 {
                     let mut map = app_state.acp.agent_auth_info.lock().await;
@@ -1002,12 +867,11 @@ pub(crate) async fn handle_shared_server_message(
                         info.authenticated = true;
                     }
                 }
-                app_handle
-                    .emit(
-                        &format!("acp://auth-state-changed/{}", conn_key_id),
-                        &serde_json::json!({ "agentId": exit.agent_id }),
-                    )
-                    .ok();
+                crate::core::emit_or_log(
+                    app_handle,
+                    &format!("acp://auth-state-changed/{}", conn_key_id),
+                    &serde_json::json!({ "agentId": exit.agent_id }),
+                );
             }
         }
         ServerResponse::Diagnostic(diag) => {
@@ -1026,12 +890,11 @@ pub(crate) async fn handle_shared_server_message(
             }
             // Connection-scoped event so the auth modal can receive output even when the
             // session that triggered auth was discarded before the modal opened.
-            app_handle
-                .emit(
-                    &format!("acp://auth-output/{}", connection_key_id(&connection_key)),
-                    &diag,
-                )
-                .ok();
+            crate::core::emit_or_log(
+                app_handle,
+                &format!("acp://auth-output/{}", connection_key.event_id()),
+                &diag,
+            );
         }
         ServerResponse::Error(err) => {
             // No id and no session: nothing says which request this answers, so every session
@@ -1311,17 +1174,8 @@ pub(crate) fn spawn_shared_reader_task(
             }
         }
 
-        app_state.app_handle.emit("sessions-changed", ()).ok();
+        crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
     });
-}
-
-fn connection_key_id(key: &crate::acp::ConnectionKey) -> String {
-    match key {
-        crate::acp::ConnectionKey::Local => "local".to_string(),
-        crate::acp::ConnectionKey::Ssh { id } => format!("ssh-{id}"),
-        crate::acp::ConnectionKey::Wsl { id } => format!("wsl-{id}"),
-        crate::acp::ConnectionKey::Docker { id } => format!("docker-{id}"),
-    }
 }
 
 /// Whether an error response means the session it names is gone, rather than merely that
@@ -1401,6 +1255,22 @@ mod tests {
             assert_eq!(found(r"C:\users\dev\shop", false), None);
         }
 
+        /// The daemon files a share as `//server/share`; this side used to tidy the verbatim
+        /// spelling to `UNC/server/share`, so a project on a share never matched its pushes.
+        #[test]
+        fn a_project_on_a_share_matches_its_verbatim_spelling() {
+            let rows = vec![(4, "//server/share/shop".to_string(), ConnectionKey::Local)];
+            assert_eq!(
+                match_project_path(
+                    rows,
+                    ConnectionKey::Local,
+                    r"\\?\UNC\server\share\shop",
+                    false
+                ),
+                Some(4)
+            );
+        }
+
         #[test]
         fn a_remote_path_matches_exactly_on_its_own_connection() {
             let ssh = ConnectionKey::Ssh { id: 7 };
@@ -1423,7 +1293,7 @@ mod tests {
 
     mod fatal_session_errors {
         use super::*;
-        use crate::acp::transport::ErrorResponse;
+        use maestro_protocol::ErrorResponse;
 
         fn error(message: &str, session_id: Option<&str>) -> ServerResponse {
             ServerResponse::Error(ErrorResponse {

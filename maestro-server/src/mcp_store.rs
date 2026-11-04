@@ -35,9 +35,7 @@ struct StoreFile {
 }
 
 fn store_path() -> Result<PathBuf, String> {
-    Ok(crate::tool_config::home_dir()?
-        .join(".maestro")
-        .join("mcp-servers.json"))
+    Ok(maestro_protocol::paths::maestro_home()?.join("mcp-servers.json"))
 }
 
 pub(crate) fn list() -> Result<Vec<ManagedMcpServer>, String> {
@@ -64,7 +62,7 @@ fn write_to(path: &Path, mut servers: Vec<ManagedMcpServer>) -> Result<(), Strin
         if server.name.trim().is_empty() {
             return Err("An MCP server needs a name".to_string());
         }
-        if server.name == maestro_protocol::MCP_SERVER_NAME {
+        if server.name == crate::mcp_gateway::MCP_SERVER_NAME {
             return Err(format!(
                 "\"{}\" is reserved for Maestro's own server",
                 server.name
@@ -171,7 +169,7 @@ fn convert_for(
             continue;
         }
         let name = server.name.clone();
-        if name == maestro_protocol::MCP_SERVER_NAME {
+        if name == crate::mcp_gateway::MCP_SERVER_NAME {
             out.skipped.push(format!(
                 "{name}: reserved — Maestro provides its own server under this name"
             ));
@@ -276,7 +274,7 @@ async fn probe(server: ManagedMcpServer) -> Result<Vec<String>, String> {
 
 async fn probe_stdio(stdio: acp::schema::v1::McpServerStdio) -> Result<Vec<String>, String> {
     let env: HashMap<String, String> = stdio.env.into_iter().map(|v| (v.name, v.value)).collect();
-    let home = crate::tool_config::home_dir()?;
+    let home = maestro_protocol::paths::home_dir()?;
     // ponytail: `kill_on_drop` stops the direct child only; a launcher such as `npx` can leave its
     // node child behind until it notices stdin closed. A process-group kill fixes that if it bites.
     let mut child = crate::agent::spawn_agent_subprocess(
@@ -583,7 +581,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("dir");
         let path = dir.path().join("mcp-servers.json");
         assert!(write_to(&path, vec![stdio("a", &[]), stdio("a", &[])]).is_err());
-        assert!(write_to(&path, vec![stdio(maestro_protocol::MCP_SERVER_NAME, &[])]).is_err());
+        assert!(write_to(&path, vec![stdio(crate::mcp_gateway::MCP_SERVER_NAME, &[])]).is_err());
         assert!(read_from(&path).expect("missing is empty").is_empty());
     }
 

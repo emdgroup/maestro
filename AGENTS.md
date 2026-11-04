@@ -125,16 +125,15 @@ Code is organized by **domain**, not by layer. Each domain module owns its own
 handlers (`handlers.rs` or `*_handlers.rs`), models (`models.rs` or `*_models.rs`),
 and logic, so a feature touches one directory rather than three.
 
-- `core/` — cross-cutting foundations: `schema.rs` (SQLite schema + migration), `settings.rs`, `connection.rs` (incl. `get_project_with_git_conn()`), `project_storage.rs`, `AppState`
+- `core/` — cross-cutting foundations: `schema.rs` (SQLite schema + migration), `connection.rs` (incl. `get_project_with_git_conn()`), `project_storage.rs`, `AppState`
 - `project/` — project CRUD, handlers, models, `git_ops.rs`, `lock.rs` (asks the connection's daemon for the project lock, and for takeovers), `session_state.rs`, `prime.rs`
 - `task/` — task commands, each one round trip to the daemon that stores the task (see "Tasks live in the daemon" in `maestro-server/AGENTS.md`), the app's models converted from the protocol rows, `attachments.rs`, `ops.rs`
-- `git/` — worktree lifecycle/query/staging, `merge.rs`, `review.rs`, diff + review models and handlers, `remote.rs`. The git work runs here; the worktree and review rows are the daemon's
+- `git/` — worktree lifecycle/query/staging, `merge.rs`, `review.rs`, worktree, diff and review models, `remote.rs` (remotes and branches). The git work runs here; the worktree and review rows are the daemon's
 - `acp/` — ACP session management: `manager.rs`, `registry.rs`, `transport*.rs`, `reader_task.rs`, `deploy.rs`, `replay.rs`, `host_tools.rs`, and session/prompt/discovery/file/meta/auth handlers
 - `execution/` — PTY spawning (local + remote), `queue.rs` and `capacity.rs` (the app's view of the daemon's capacity), handlers, models
-- `connectivity/` — SSH (`ssh/`), WSL, Docker, SFTP, filesystem handlers, connection models
-- `integration/` — issue-tracking providers (`providers/`), `lookup/`, `keychain.rs`
-- `settings/` — app settings handlers and models
-- `ipc/mod.rs`, `models/mod.rs` — thin re-export shims only (no code), kept so `lib.rs`'s `collect_commands![]` and older `crate::models::*` paths keep resolving. New code should import from the owning domain module directly.
+- `connectivity/` — SSH (`ssh/`), WSL, Docker, SFTP, filesystem handlers, `files.rs` (file operations and copies onto any connection), `exec_channel.rs` (remote commands, `shell_quote`), connection models
+- `integration/` — issue-tracking providers (`providers/`), `lookup/`, `keychain.rs`, `pull_request/` (forges), `pull_request_sweep.rs` (what became of the pull requests tasks wait on)
+- `settings/` — app settings handlers and models, `store.rs` (reading and writing the settings table)
 
 **maestro-server (`maestro-server/src/`):**
 
@@ -143,7 +142,16 @@ Separate binary (must be on PATH). Acts as ACP intermediary between Tauri and AI
 
 **maestro-protocol (`maestro-protocol/src/`):**
 
-Shared crate defining the JSON message types between maestro (Tauri) and maestro-server.
+Shared crate defining the JSON message types between maestro (Tauri) and maestro-server, and the
+rules both sides have to apply alike. The wire types sit in private modules by domain, all
+re-exported from `lib.rs` so every `maestro_protocol::X` path is flat: `messages.rs` (the
+`ServerRequest` and `ServerResponse` enums, with the message tests in `messages/tests.rs`),
+`framing.rs`, `session.rs`, `task.rs`, `loops.rs`, `pipeline.rs`, `project.rs`, `automation.rs`,
+`collections.rs` and `usage.rs`. The shared rules are public modules, one each: `completion.rs` (the completion marker and
+review cap), `worktree_names.rs`, `paths.rs` (path tidying and the home directory),
+`attachments.rs`, `mcp_args.rs` (MCP tool arguments) and `skill_names.rs`. It stays light because
+`maestro-server` is built on its own for remote hosts: anything heavier sits behind an optional
+feature, `image` for scaling attachments and `process` for `command_ext::NoConsoleWindow`.
 
 **Cargo workspace:** Root `Cargo.toml` defines three members: `src-tauri`, `maestro-server`, `maestro-protocol`. Build from repo root with `cargo build` or from `src-tauri/` for the Tauri app only.
 
@@ -172,7 +180,7 @@ All IPC uses TanStack Query — components never call `invoke()` directly. The p
 Component → TanStack Query hook → service function (invoke()) → Rust #[tauri::command]
 ```
 
-Service functions in `src/services/` wrap `invoke()` and export TanStack Query hooks directly (useQuery/useMutation co-located with the invoke call). `src/utils/hooks/` contains non-query custom hooks (keyboard nav, path nav, etc.). Rust handlers marked `#[tauri::command]` live in the handler file of their owning domain module (e.g. `task/handlers.rs`, `git/review_handlers.rs`, `acp/session_handlers.rs`); `ipc/mod.rs` re-exports them all so `lib.rs` can register them via `tauri-specta`'s `collect_commands![]` (currently ~187 commands).
+Service functions in `src/services/` wrap `invoke()` and export TanStack Query hooks directly (useQuery/useMutation co-located with the invoke call). `src/utils/hooks/` contains non-query custom hooks (keyboard nav, path nav, etc.). Rust handlers marked `#[tauri::command]` live in the file of their owning domain module (e.g. `task/crud.rs`, `git/review.rs`, `acp/session_handlers.rs`), and `lib.rs` registers each by its full path (`crate::task::crud::create_task`) via `tauri-specta`'s `collect_commands![]` (currently 249 commands). Name the defining module there, not a re-export: the macro resolves hidden items `#[tauri::command]` generates beside the function, and a named re-export leaves them behind. Import models from their owning domain module too; there is no `crate::models` shim.
 
 `src/types/bindings.ts` is fully generated — do not edit manually. It exports both TypeScript types (all Rust model structs/enums annotated with `#[derive(TS)]`) and a `commands` const object (typed wrappers for every registered IPC command). Import types with `import type { Task } from "@/types/bindings"`.
 
@@ -202,6 +210,18 @@ Note: `generate_typescript_bindings` also runs as part of `cargo test -p maestro
 test run rewrites `src/types/bindings.ts`. `.oxfmtrc.json` lists the file under `ignorePatterns`, so
 the committed copy is the generator's own output and a test run leaves it alone unless the bindings
 genuinely changed — a diff there means a model changed and should be committed.
+
+**A wire type the frontend sees is the protocol's own, not a copy.** `maestro-protocol` has an
+optional `specta` feature, turned on only by `src-tauri`, and a type the app hands its frontend
+derives `#[cfg_attr(feature = "specta", derive(specta::Type))]` where it is defined. Re-export it
+from the app's domain module rather than writing a twin. The feature must stay off in
+`maestro-server`, which is deployed to every remote host: `cargo tree -p maestro-server -e normal |
+grep -c specta` is 0. Two specta habits to know: a field with `#[serde(default)]` comes out optional
+(`?:`) even when it is not an `Option`, and a doc comment is copied into a TypeScript block comment,
+so it must never contain a star followed by a slash. The app keeps its own struct only where the
+shape differs: `Task` and `Worktree` carry `project_id` for the wire's `project_path`, `Prompt` adds
+`shared`, `McpServerConfig` types the `oauth` the wire carries as opaque JSON, and `UsageTurn`
+flattens the wire's nested token counts.
 
 ## Project Conventions
 

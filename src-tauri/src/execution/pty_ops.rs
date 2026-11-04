@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tauri::{Emitter, State};
+use tauri::State;
 
 use crate::connectivity::ssh::SshWriteOp;
 use crate::core::AppState;
@@ -153,6 +153,6 @@ pub async fn close_pty_session(
     // Remove session metadata so get_active_sessions no longer lists it
     app_state.pty.session_meta.lock().await.remove(&session_id);
 
-    app_state.app_handle.emit("sessions-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
     Ok(())
 }

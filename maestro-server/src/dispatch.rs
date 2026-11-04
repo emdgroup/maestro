@@ -17,11 +17,6 @@ use crate::session::{self, create_session_on_connection};
 use crate::sessions::{ActiveSession, SessionCommand, SessionMap, SharedAgentConnections};
 use crate::tool_check::check_tools;
 
-/// What every automation request answers with when the store could not be opened. Said plainly
-/// rather than as an empty list, which would look like a project with no automations.
-const NO_AUTOMATION_STORE: &str =
-    "The automation store could not be opened, so automations are unavailable on this machine";
-
 fn server_status(
     live_sessions: usize,
     running_runs: u32,
@@ -83,7 +78,7 @@ pub(crate) fn running_project_sessions(
                 closed: false,
                 live: None,
             };
-            (crate::automations::canonical_project_path(&project.project_path) == project_path)
+            (crate::project_path::canonical_project_path(&project.project_path) == project_path)
                 .then(|| (row, Some(session_id.clone())))
         })
         .collect()
@@ -445,7 +440,7 @@ pub(crate) async fn dispatch_message(
         }
 
         ServerRequest::ListProjectSessions(req) => {
-            let project_path = crate::automations::canonical_project_path(&req.project_path);
+            let project_path = crate::project_path::canonical_project_path(&req.project_path);
             let listed = match project_store {
                 Some(store) => {
                     let conn = store.lock().await;
@@ -486,253 +481,39 @@ pub(crate) async fn dispatch_message(
             .await;
         }
 
-        ServerRequest::RenameSession(req) => {
-            let Some(store) = project_store else {
-                reply(
-                    stdout,
-                    &error_response(crate::project_store::UNAVAILABLE.to_string()),
-                )
-                .await;
-                return true;
-            };
-            let project_path = crate::automations::canonical_project_path(&req.project_path);
-            let renamed = {
-                let conn = store.lock().await;
-                crate::project_store::rename(&conn, &req, &project_path, chrono::Utc::now())
-            };
-            match renamed {
-                Ok(()) => reply(stdout, &ServerResponse::RenameSessionOk).await,
-                Err(e) => reply(stdout, &error_response(e)).await,
-            }
-        }
-
-        ServerRequest::CloseProjectSession(req) => {
-            let Some(store) = project_store else {
-                reply(
-                    stdout,
-                    &error_response(crate::project_store::UNAVAILABLE.to_string()),
-                )
-                .await;
-                return true;
-            };
-            // A session running under this key was loaded by somebody after the failure that
-            // prompted this. Closing its row would hide a running session from every client
-            // opening the project, and `Cancel` is how a running one is closed.
-            let closed = if runs_under_key(sessions, &req.agent_id, &req.acp_session_id) {
-                Ok(())
-            } else {
-                crate::project_store::close_dormant(
-                    &*store.lock().await,
-                    &req.agent_id,
-                    &req.acp_session_id,
-                    chrono::Utc::now(),
-                )
-            };
-            match closed {
-                Ok(()) => reply(stdout, &ServerResponse::CloseProjectSessionOk).await,
-                Err(e) => reply(stdout, &error_response(e)).await,
-            }
-        }
-
         ServerRequest::Shutdown => {
             send_diag("info", "[server] shutdown requested by the host");
             return false;
         }
 
-        ServerRequest::ListAutomations(req) => {
-            let Some(store) = automation_store else {
-                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
-                return true;
-            };
-            let project_path = crate::automations::canonical_project_path(&req.project_path);
-            let listed = {
-                let conn = store.lock().await;
-                crate::automations::list(&conn, &project_path).and_then(|automations| {
-                    Ok((
-                        automations,
-                        crate::automations::retention(&conn, &project_path)?,
-                    ))
-                })
-            };
-            match listed {
-                Ok((automations, retention)) => {
-                    reply(
-                        stdout,
-                        &ServerResponse::ListAutomationsOk(
-                            maestro_protocol::ListAutomationsResponse {
-                                automations,
-                                server_timezone: crate::automations::server_timezone(),
-                                retention,
-                            },
-                        ),
-                    )
-                    .await
-                }
-                Err(e) => reply(stdout, &error_response(e)).await,
-            }
-        }
-
-        ServerRequest::SaveAutomation(req) => {
-            let Some(store) = automation_store else {
-                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
-                return true;
-            };
-            // Canonicalized here rather than trusted from the client: this is the process on the
-            // machine the path exists on, and every later lookup has to agree with this one.
-            let project_path = crate::automations::canonical_project_path(&req.project_path);
-            let mut automation = req.automation;
-            automation.project_path = project_path.clone();
-            let saved = {
-                let conn = store.lock().await;
-                crate::automations::save(&conn, &project_path, &automation)
-            };
-            match saved {
-                Ok(saved) => reply(stdout, &ServerResponse::SaveAutomationOk(saved)).await,
-                Err(e) => reply(stdout, &error_response(e)).await,
-            }
-        }
-
-        ServerRequest::DeleteAutomation(req) => {
-            let Some(store) = automation_store else {
-                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
-                return true;
-            };
-            let deleted = {
-                let conn = store.lock().await;
-                crate::automations::delete(&conn, &req.automation_id)
-            };
-            match deleted {
-                Ok(()) => reply(stdout, &ServerResponse::DeleteAutomationOk).await,
-                Err(e) => reply(stdout, &error_response(e)).await,
-            }
-        }
-
-        ServerRequest::RunAutomation(req) => {
-            let Some(store) = automation_store else {
-                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
-                return true;
-            };
-            // The run is announced by the runner, whether it starts or fails, so there is nothing
-            // to answer with here beyond an error the request itself could not get past.
-            if let Err(e) = crate::automation_runner::start(
-                store,
-                &req.automation_id,
-                maestro_protocol::RunTrigger::Manual,
-                None,
-                crate::automation_runner::Spawner {
+        request @ (ServerRequest::ListAutomations(_)
+        | ServerRequest::SaveAutomation(_)
+        | ServerRequest::DeleteAutomation(_)
+        | ServerRequest::RunAutomation(_)
+        | ServerRequest::ListAutomationRuns(_)
+        | ServerRequest::DeleteAutomationRun(_)
+        | ServerRequest::SetRunRetention(_)
+        | ServerRequest::GetWebhookSettings
+        | ServerRequest::SetWebhookSettings(_)
+        | ServerRequest::RollWebhookSecret(_)
+        | ServerRequest::ListWebhookDeliveries(_)) => match automation_store {
+            Some(store) => {
+                let spawner = crate::automation_runner::Spawner {
                     agents_with_spawn,
                     agent_connections,
                     stdout,
                     spawn_result_tx,
-                },
-            )
-            .await
-            {
-                reply(stdout, &error_response(e)).await;
+                };
+                Box::pin(crate::automation_runner::answer(
+                    store, request, sessions, spawner,
+                ))
+                .await
             }
-        }
-
-        ServerRequest::ListAutomationRuns(req) => {
-            let Some(store) = automation_store else {
-                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
-                return true;
-            };
-            let project_path = crate::automations::canonical_project_path(&req.project_path);
-            let listed = {
-                let conn = store.lock().await;
-                crate::automations::list_runs(&conn, &project_path, req.limit)
-            };
-            match listed {
-                Ok(runs) => {
-                    reply(
-                        stdout,
-                        &ServerResponse::ListAutomationRunsOk(
-                            maestro_protocol::ListAutomationRunsResponse { runs },
-                        ),
-                    )
-                    .await
-                }
-                Err(e) => reply(stdout, &error_response(e)).await,
+            None => {
+                let e = crate::automations::UNAVAILABLE.to_string();
+                reply(stdout, &error_response(e)).await
             }
-        }
-
-        ServerRequest::DeleteAutomationRun(req) => {
-            let Some(store) = automation_store else {
-                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
-                return true;
-            };
-            let run = {
-                let conn = store.lock().await;
-                crate::automations::get_run(&conn, &req.run_id)
-            };
-            // A run still going, or one whose session is still open, has an agent working in its
-            // worktree: removing that from under it is not deleting history.
-            let deleted = match run {
-                Ok(None) => Ok(()),
-                Ok(Some(run))
-                    if matches!(run.status, maestro_protocol::AutomationRunStatus::Running) =>
-                {
-                    Err("Stop this run before deleting it".to_string())
-                }
-                Ok(Some(run))
-                    if run
-                        .session_id
-                        .as_ref()
-                        .is_some_and(|session_id| sessions.contains_key(session_id)) =>
-                {
-                    Err(
-                        "This run's session is still open. Close it before deleting the run"
-                            .to_string(),
-                    )
-                }
-                Ok(Some(run)) => {
-                    // Answered from its own task: removing a worktree is a git process, and the
-                    // loop every session's traffic goes through must not wait on one.
-                    let store = Arc::clone(store);
-                    let stdout = Arc::clone(stdout);
-                    tokio::spawn(async move {
-                        let response =
-                            match crate::automation_runner::discard_run(&store, &run).await {
-                                Ok(()) => ServerResponse::DeleteAutomationRunOk,
-                                Err(e) => error_response(e),
-                            };
-                        reply(&stdout, &response).await;
-                    });
-                    return true;
-                }
-                Err(e) => Err(e),
-            };
-            match deleted {
-                Ok(()) => reply(stdout, &ServerResponse::DeleteAutomationRunOk).await,
-                Err(e) => reply(stdout, &error_response(e)).await,
-            }
-        }
-
-        ServerRequest::SetRunRetention(req) => {
-            let Some(store) = automation_store else {
-                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
-                return true;
-            };
-            let project_path = crate::automations::canonical_project_path(&req.project_path);
-            let saved = {
-                let conn = store.lock().await;
-                crate::automations::set_retention(&conn, &project_path, req.retention)
-            };
-            match saved {
-                Ok(()) => {
-                    // Answered once trimmed, so the client's next read of the list is already the
-                    // short one. From its own task, because trimming removes worktrees.
-                    let store = Arc::clone(store);
-                    let stdout = Arc::clone(stdout);
-                    tokio::spawn(async move {
-                        crate::automation_runner::apply_retention(&store, &project_path).await;
-                        let response = ServerResponse::SetRunRetentionOk;
-                        reply(&stdout, &response).await;
-                    });
-                }
-                Err(e) => reply(stdout, &error_response(e)).await,
-            }
-        }
+        },
 
         ServerRequest::GetServerStatus => {
             let running_runs = match automation_store {
@@ -766,80 +547,6 @@ pub(crate) async fn dispatch_message(
                 };
                 reply(&stdout, &response).await;
             });
-        }
-
-        ServerRequest::GetWebhookSettings => {
-            let Some(store) = automation_store else {
-                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
-                return true;
-            };
-            let status = {
-                let conn = store.lock().await;
-                crate::webhook::status(&conn)
-            };
-            reply(stdout, &ServerResponse::WebhookSettingsOk(status)).await;
-        }
-
-        ServerRequest::SetWebhookSettings(settings) => {
-            let Some(store) = automation_store else {
-                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
-                return true;
-            };
-            let saved = {
-                let conn = store.lock().await;
-                crate::webhook::save_settings(&conn, &settings)
-            };
-            if let Err(e) = saved {
-                reply(stdout, &error_response(e)).await;
-                return true;
-            }
-            // Rebound straight away, so the answer already says whether the new address works.
-            crate::webhook::restart(store).await;
-            let status = {
-                let conn = store.lock().await;
-                crate::webhook::status(&conn)
-            };
-            reply(stdout, &ServerResponse::WebhookSettingsOk(status)).await;
-        }
-
-        ServerRequest::RollWebhookSecret(req) => {
-            let Some(store) = automation_store else {
-                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
-                return true;
-            };
-            let rolled = {
-                let conn = store.lock().await;
-                crate::automations::roll_webhook_secret(&conn, &req.automation_id)
-            };
-            match rolled {
-                Ok(automation) => {
-                    reply(stdout, &ServerResponse::RollWebhookSecretOk(automation)).await
-                }
-                Err(e) => reply(stdout, &error_response(e)).await,
-            }
-        }
-
-        ServerRequest::ListWebhookDeliveries(req) => {
-            let Some(store) = automation_store else {
-                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
-                return true;
-            };
-            let listed = {
-                let conn = store.lock().await;
-                crate::webhook::list_deliveries(&conn, &req.automation_id)
-            };
-            match listed {
-                Ok(deliveries) => {
-                    reply(
-                        stdout,
-                        &ServerResponse::ListWebhookDeliveriesOk(
-                            maestro_protocol::ListWebhookDeliveriesResponse { deliveries },
-                        ),
-                    )
-                    .await
-                }
-                Err(e) => reply(stdout, &error_response(e)).await,
-            }
         }
 
         // No store means nothing was recorded, which is an empty answer rather than an error.
@@ -1397,7 +1104,7 @@ pub(crate) async fn dispatch_message(
         }
 
         ServerRequest::AcquireProjectLock(req) => {
-            let path = crate::automations::canonical_project_path(&req.project_path);
+            let path = crate::project_path::canonical_project_path(&req.project_path);
             let resp = stdout.lock().await.acquire_project(path, req.label).await;
             reply(stdout, &ServerResponse::AcquireProjectLockOk(resp)).await;
         }
@@ -1453,7 +1160,7 @@ pub(crate) async fn dispatch_message(
 
         // Answered through the sink, not here: the answer may be ten seconds away.
         ServerRequest::RequestTakeover(req) => {
-            let path = crate::automations::canonical_project_path(&req.project_path);
+            let path = crate::project_path::canonical_project_path(&req.project_path);
             stdout.lock().await.start_takeover(path, req.label).await;
         }
 
@@ -1470,9 +1177,20 @@ pub(crate) async fn dispatch_message(
         // a diagnostic, put every ping on the IPC channel.
         ServerRequest::Pong { seq: _ } => {}
 
-        // Fast SQLite, so answered on the loop like the session rows. The reply goes first, then
-        // the pushes to everybody, the requester included: its own refetch rides on them too.
-        request @ (ServerRequest::ListTasks(_)
+        request @ (ServerRequest::HoldTask(_) | ServerRequest::ReleaseTaskHold(_)) => {
+            crate::scheduler::hold_changed(&request);
+            let response = match crate::pipeline_settings::answer_hold(request) {
+                Ok(response) => response,
+                Err(e) => error_response(e),
+            };
+            reply(stdout, &response).await;
+        }
+
+        // Fast SQLite, so answered on the loop. The reply goes first, then the pushes to
+        // everybody, the requester included: its own refetch rides on them too.
+        request @ (ServerRequest::RenameSession(_)
+        | ServerRequest::CloseProjectSession(_)
+        | ServerRequest::ListTasks(_)
         | ServerRequest::GetTask(_)
         | ServerRequest::CreateTask(_)
         | ServerRequest::UpdateTask(_)
@@ -1480,9 +1198,7 @@ pub(crate) async fn dispatch_message(
         | ServerRequest::CancelTask(_)
         | ServerRequest::DeleteTask(_)
         | ServerRequest::ApplyTaskTransition(_)
-        | ServerRequest::EndTaskTurn(_)
         | ServerRequest::CloseRefinement(_)
-        | ServerRequest::RequestTaskExecution(_)
         | ServerRequest::ListTasksAwaitingMerge(_)
         | ServerRequest::ListTaskComments(_)
         | ServerRequest::AddTaskComment(_)
@@ -1508,58 +1224,36 @@ pub(crate) async fn dispatch_message(
         | ServerRequest::DeletePrompt(_)
         | ServerRequest::BeginImport(_)
         | ServerRequest::ImportChunk(_)
-        | ServerRequest::CommitImport(_)) => {
+        | ServerRequest::CommitImport(_)
+        | ServerRequest::GetCapacity
+        | ServerRequest::SetCapacity(_)
+        | ServerRequest::GetAutoMode(_)
+        | ServerRequest::SetAutoMode(_)
+        | ServerRequest::GetLoopWaitCap(_)
+        | ServerRequest::SetLoopWaitCap(_)
+        | ServerRequest::StartTask(_)) => {
             let Some(store) = project_store else {
-                reply(
-                    stdout,
-                    &error_response(crate::project_store::UNAVAILABLE.to_string()),
-                )
-                .await;
+                let e = crate::project_store::UNAVAILABLE.to_string();
+                reply(stdout, &error_response(e)).await;
                 return true;
             };
-            let answered = match request {
-                request @ (ServerRequest::ListPrompts(_)
-                | ServerRequest::GetPrompt(_)
-                | ServerRequest::CreatePrompt(_)
-                | ServerRequest::UpdatePrompt(_)
-                | ServerRequest::SetPromptFavorite(_)
-                | ServerRequest::DeletePrompt(_)) => {
-                    crate::prompt_store::answer(&*store.lock().await, request)
-                }
-                ServerRequest::BeginImport(request) => {
-                    let live = crate::task_store::project_import::live(
-                        &crate::automations::canonical_project_path(&request.project_path),
-                        sessions,
-                    );
-                    crate::task_store::project_import::begin(
-                        &mut *store.lock().await,
-                        request,
-                        &live,
-                    )
-                    .map(|r| (r, Vec::new()))
-                }
-                ServerRequest::ImportChunk(request) => {
-                    crate::task_store::project_import::chunk(request).map(|r| (r, Vec::new()))
-                }
-                ServerRequest::CommitImport(request) => {
-                    match crate::task_store::project_import::take_staged(&request.import_id) {
-                        Ok(staged) => {
-                            let live = crate::task_store::project_import::live(
-                                staged.project_path(),
-                                sessions,
-                            );
-                            crate::task_store::project_import::answer(
-                                &mut *store.lock().await,
-                                staged,
-                                &live,
-                            )
-                        }
-                        Err(e) => Err(e),
-                    }
-                }
-                request => crate::task_store::requests::answer(&mut *store.lock().await, request),
-            };
-            match answered {
+            if let ServerRequest::StartTask(req) = request {
+                let launcher = crate::task_runner::Launcher {
+                    store: Arc::clone(store),
+                    agent_connections: Arc::clone(agent_connections),
+                    settle_tx: settle_tx.clone(),
+                    reply: Arc::clone(stdout),
+                };
+                Box::pin(crate::task_runner::answer_start(
+                    launcher,
+                    req,
+                    sessions,
+                    agents_with_spawn,
+                ))
+                .await;
+                return true;
+            }
+            match Box::pin(crate::project_store::answer(store, request, sessions)).await {
                 Ok((response, pushes)) => {
                     reply(stdout, &response).await;
                     for push in pushes {
@@ -1567,89 +1261,6 @@ pub(crate) async fn dispatch_message(
                     }
                 }
                 Err(e) => reply(stdout, &error_response(e)).await,
-            }
-        }
-
-        request @ (ServerRequest::GetCapacity
-        | ServerRequest::SetCapacity(_)
-        | ServerRequest::GetAutoMode(_)
-        | ServerRequest::SetAutoMode(_)
-        | ServerRequest::GetLoopWaitCap(_)
-        | ServerRequest::SetLoopWaitCap(_)) => {
-            let answered = match project_store {
-                Some(store) => crate::pipeline_settings::answer(&*store.lock().await, request),
-                None => Err(crate::project_store::UNAVAILABLE.to_string()),
-            };
-            match answered {
-                Ok((mut response, pushes)) => {
-                    if let ServerResponse::GetCapacityOk(status) = &mut response {
-                        status.used = crate::pipeline_settings::taken_slots(sessions) as u32;
-                    }
-                    reply(stdout, &response).await;
-                    for push in pushes {
-                        crate::helpers::broadcast(stdout, push).await;
-                    }
-                }
-                Err(e) => reply(stdout, &error_response(e)).await,
-            }
-        }
-
-        request @ (ServerRequest::HoldTask(_) | ServerRequest::ReleaseTaskHold(_)) => {
-            crate::scheduler::hold_changed(&request);
-            let response = match crate::pipeline_settings::answer_hold(request) {
-                Ok(response) => response,
-                Err(e) => error_response(e),
-            };
-            reply(stdout, &response).await;
-        }
-
-        ServerRequest::StartTask(req) => {
-            let Some(store) = project_store else {
-                reply(
-                    stdout,
-                    &error_response(crate::project_store::UNAVAILABLE.to_string()),
-                )
-                .await;
-                return true;
-            };
-            // A custom agent added since startup is merged before it is looked for, as `ListAgents`
-            // does on every call.
-            agent::registry::apply_custom_agents(agents_with_spawn);
-            let mut pushes = Vec::new();
-            let begun = crate::task_runner::begin(
-                &mut *store.lock().await,
-                &req,
-                crate::pipeline_settings::taken_slots(sessions),
-                agents_with_spawn,
-                &mut pushes,
-            );
-            for push in pushes {
-                crate::helpers::broadcast(stdout, push).await;
-            }
-            match begun {
-                Ok(crate::task_runner::Begun::Deferred | crate::task_runner::Begun::Gated) => {
-                    reply(
-                        stdout,
-                        &ServerResponse::StartTaskOk(maestro_protocol::StartTaskResponse {
-                            session_id: None,
-                            skipped_attachments: vec![],
-                        }),
-                    )
-                    .await
-                }
-                // Answered once the session is in the map, or once the start has failed.
-                Ok(crate::task_runner::Begun::Claimed(claimed)) => {
-                    tokio::spawn(Box::pin(crate::task_runner::launch(
-                        crate::task_runner::Launcher {
-                            store: Arc::clone(store),
-                            agent_connections: Arc::clone(agent_connections),
-                            settle_tx: settle_tx.clone(),
-                            reply: Arc::clone(stdout),
-                        },
-                        claimed,
-                    )));
-                }
-                Err(e) => reply(stdout, &error_response(e.to_string())).await,
             }
         }
     }

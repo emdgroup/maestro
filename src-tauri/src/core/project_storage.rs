@@ -1,5 +1,5 @@
-use crate::git::remote::shell_quote;
-use crate::models::GitConnection;
+use crate::connectivity::exec_channel::shell_quote;
+use crate::connectivity::GitConnection;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;

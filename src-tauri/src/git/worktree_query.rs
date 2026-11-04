@@ -3,9 +3,9 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::core::AppState;
-use crate::models::{
-    is_maestro_created_worktree, AheadBehind, BinaryFileInfo, CommitInfo, DiffTarget, DirtyStatus,
-    WorktreeDiffResult, WorktreeDiffStats, WorktreeWithStatus,
+use crate::git::{
+    AheadBehind, BinaryFileInfo, CommitInfo, DiffTarget, DirtyStatus, WorktreeDiffResult,
+    WorktreeDiffStats, WorktreeWithStatus,
 };
 
 /// Everything one worktree's git state contributes to its card, gathered in a single round trip.
@@ -48,11 +48,11 @@ fn porcelain_path(line: &str) -> Option<&str> {
 /// Local connections only. The batch runner speaks git, not shell, so there is no way to stat a
 /// remote path in the same round trip; remote worktrees fall back to their last commit's date.
 async fn newest_changed_file_at(
-    conn: &crate::models::GitConnection,
+    conn: &crate::connectivity::GitConnection,
     worktree_path: &str,
     status_output: &str,
 ) -> Option<chrono::DateTime<chrono::Utc>> {
-    if !matches!(conn, crate::models::GitConnection::Local { .. }) {
+    if !matches!(conn, crate::connectivity::GitConnection::Local { .. }) {
         return None;
     }
     let root = std::path::Path::new(worktree_path);
@@ -86,7 +86,7 @@ fn parse_rfc3339(raw: &str) -> Option<chrono::DateTime<chrono::Utc>> {
 /// Batched because on WSL/SSH/Docker each git call pays a full interop spawn, and this runs per
 /// worktree on a ten-second poll.
 async fn git_info_for(
-    conn: &crate::models::GitConnection,
+    conn: &crate::connectivity::GitConnection,
     worktree_path: &str,
     branch: Option<&str>,
     base_branch: Option<&str>,
@@ -210,37 +210,17 @@ pub async fn list_worktrees_with_status(
     repo_path: String,
 ) -> Result<Vec<WorktreeWithStatus>, String> {
     // Resolve project and git connection (local vs remote SSH)
-    let project = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-            [project_id],
-            crate::models::Project::from_row,
-        ).map_err(|e| format!("Project {} not found: {}", project_id, e))?
-    };
+    let project = crate::project::crud::load_project(&app_state, project_id)?;
     let git_conn = crate::core::get_git_connection(&project, &app_state)
         .await
-        .unwrap_or_else(|_| crate::models::GitConnection::Local {
+        .unwrap_or_else(|_| crate::connectivity::GitConnection::Local {
             path: repo_path.clone(),
         });
 
     // Unfiltered on purpose: the main worktree at the repo root is included so it can be picked
     // in the spawn dialog.
     let mut disk_worktrees = crate::git::list_worktrees(&git_conn).await?;
-    disk_worktrees.retain(|wt| !crate::models::is_loop_sandbox(&wt.path));
-
-    struct DbWorktreeRow {
-        id: i32,
-        task_id: Option<i32>,
-        branch_name: String,
-        path: String,
-        created_at: String,
-        base_branch: Option<String>,
-        task_name: Option<String>,
-    }
+    disk_worktrees.retain(|wt| !maestro_protocol::worktree_names::is_loop_sandbox(&wt.path));
 
     // Two reads joined here, where the app's own tables once joined in SQL: the rows and the
     // tasks they name live in the daemon.
@@ -251,12 +231,12 @@ pub async fn list_worktrees_with_status(
             &app_state,
             project_id,
             |project_path| {
-                crate::acp::transport::ServerRequest::ListTasks(maestro_protocol::ProjectRef {
+                maestro_protocol::ServerRequest::ListTasks(maestro_protocol::ProjectRef {
                     project_path,
                 })
             },
             crate::acp::connection_server::reply!(
-                crate::acp::transport::ServerResponse::ListTasksOk(list) => list.tasks
+                maestro_protocol::ServerResponse::ListTasksOk(list) => list.tasks
             ),
         )
         .await?
@@ -266,24 +246,11 @@ pub async fn list_worktrees_with_status(
     } else {
         HashMap::new()
     };
-    let db_rows: Vec<DbWorktreeRow> = worktrees
-        .into_iter()
-        .map(|row| DbWorktreeRow {
-            id: row.id,
-            task_name: row
-                .task_id
-                .and_then(|task_id| task_titles.get(&task_id).cloned()),
-            task_id: row.task_id,
-            branch_name: row.branch_name,
-            path: row.path,
-            created_at: row.created_at,
-            base_branch: row.base_branch,
-        })
-        .collect();
+    let db_rows = worktrees;
 
     // Keyed by absolute path because that is what git reports; the rows store a path relative to
     // the repo root, so it is the row that has to be rewritten to match, not the other way round.
-    let db_map: HashMap<String, &DbWorktreeRow> = db_rows
+    let db_map: HashMap<String, &maestro_protocol::Worktree> = db_rows
         .iter()
         .map(|row| {
             let abs_path = format!("{}/{}", repo_path, row.path);
@@ -357,10 +324,11 @@ pub async fn list_worktrees_with_status(
             let in_use = live_cwds.as_ref().is_none_or(|live_cwds| {
                 live_cwds
                     .iter()
-                    .any(|cwd| crate::git::worktree_lifecycle::path_is_within(cwd, &wt.path))
+                    .any(|cwd| maestro_protocol::paths::path_is_within(cwd, &wt.path))
             });
-            let is_zombie =
-                db_row.task_id.is_none() && is_maestro_created_worktree(&db_row.path) && !in_use;
+            let is_zombie = db_row.task_id.is_none()
+                && maestro_protocol::worktree_names::is_maestro_created_worktree(&db_row.path)
+                && !in_use;
             result.push(WorktreeWithStatus {
                 id: Some(db_row.id),
                 project_id: Some(project_id),
@@ -374,7 +342,9 @@ pub async fn list_worktrees_with_status(
                 path: format!("{}/{}", repo_path, db_row.path),
                 changed_files_count,
                 created_at: Some(db_row.created_at.clone()),
-                task_name: db_row.task_name.clone(),
+                task_name: db_row
+                    .task_id
+                    .and_then(|task_id| task_titles.get(&task_id).cloned()),
                 is_zombie,
                 is_orphan: false,
                 diff_stat,
@@ -467,7 +437,7 @@ fn floor_char_boundary(s: &str, mut index: usize) -> usize {
 /// Returns the merge base rather than the branch tip so that commits the base branch gained
 /// *after* this worktree diverged do not appear in the diff as reversed changes.
 async fn resolve_divergence_point(
-    git_conn: &crate::models::GitConnection,
+    git_conn: &crate::connectivity::GitConnection,
     worktree_path: &str,
     branch: &str,
     remote: &str,
@@ -498,7 +468,7 @@ async fn resolve_divergence_point(
 /// not fail loudly: the blob would simply not match the diff, and the diff view would expand to
 /// lines that were never in the file being reviewed.
 async fn base_rev_for(
-    git_conn: &crate::models::GitConnection,
+    git_conn: &crate::connectivity::GitConnection,
     worktree_path: &str,
     diff_target: &DiffTarget,
     remote: &str,
@@ -519,7 +489,7 @@ async fn base_rev_for(
 /// Shared so that anything asking a second question about the same diff — the stat summary, one
 /// file's size — cannot end up comparing something else than the diff the reader is looking at.
 async fn diff_args_for(
-    git_conn: &crate::models::GitConnection,
+    git_conn: &crate::connectivity::GitConnection,
     worktree_path: &str,
     diff_target: &DiffTarget,
     remote: &str,
@@ -545,7 +515,7 @@ fn context_args(diff_target: &DiffTarget) -> &'static [&'static str] {
 
 /// The full `git diff` argv for a target, optionally leaving some paths out of it.
 async fn full_diff_args(
-    git_conn: &crate::models::GitConnection,
+    git_conn: &crate::connectivity::GitConnection,
     worktree_path: &str,
     diff_target: &DiffTarget,
     remote: &str,
@@ -562,7 +532,7 @@ async fn full_diff_args(
 
 /// The paths a target's diff reports as deleted.
 async fn deleted_paths(
-    git_conn: &crate::models::GitConnection,
+    git_conn: &crate::connectivity::GitConnection,
     worktree_path: &str,
     diff_target: &DiffTarget,
     remote: &str,
@@ -628,7 +598,7 @@ fn includes_working_tree(diff_target: &DiffTarget) -> bool {
 
 /// The worktree's untracked files, or nothing when the target does not reach the working tree.
 async fn untracked_files_for(
-    git_conn: &crate::models::GitConnection,
+    git_conn: &crate::connectivity::GitConnection,
     worktree_path: &str,
     diff_target: &DiffTarget,
 ) -> Vec<String> {
@@ -774,7 +744,7 @@ pub async fn get_worktree_diff_stats(
 /// Split out so the turn-ended handler can ask whether an agent actually changed anything before
 /// deciding a turn ending means the work is finished.
 pub async fn diff_stats_in(
-    git_conn: &crate::models::GitConnection,
+    git_conn: &crate::connectivity::GitConnection,
     worktree_path: &str,
     diff_target: &DiffTarget,
     remote: &str,
@@ -991,7 +961,7 @@ pub async fn get_file_content_at_base(
 }
 
 async fn file_content_at(
-    git_conn: &crate::models::GitConnection,
+    git_conn: &crate::connectivity::GitConnection,
     worktree_path: &str,
     base: &str,
     file_path: &str,
@@ -1193,7 +1163,7 @@ mod commit_log_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::GitConnection;
+    use crate::connectivity::GitConnection;
     use std::path::Path;
     use std::process::Command;
 

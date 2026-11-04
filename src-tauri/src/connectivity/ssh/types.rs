@@ -6,7 +6,6 @@ use specta::Type;
 
 /// Saved SSH connection for quick reconnection
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct SshConnection {
     pub id: i32,
     pub connection_string: String, // e.g., "user@host:22"
@@ -21,7 +20,6 @@ pub struct SshConnection {
 
 /// SSH authentication method configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 #[serde(rename_all = "PascalCase")]
 pub enum SshAuthMethod {
     /// Authenticate using a private key file

@@ -1,9 +1,9 @@
 use std::sync::Arc;
-use tauri::{Emitter, State};
+use tauri::State;
 
 use crate::acp::connection_server::{query_project_store, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 /// Find the best available shell on Windows.
 ///
@@ -77,7 +77,6 @@ pub async fn spawn_interactive_execution(
     // Resolve project and git connection (local vs remote SSH) — same pattern as create_worktree
     let (project, git_conn) =
         crate::core::get_project_with_git_conn(&app_state, project_id).await?;
-    let is_remote = project.is_remote();
 
     // Canonicalize only a path that is actually on this machine. A WSL or container path is not:
     // resolving `/root/proj` on a Windows host yields `C:\root\proj`, which then reaches
@@ -179,10 +178,7 @@ pub async fn spawn_interactive_execution(
         }
     }
 
-    if is_remote {
-        let conn_id = project
-            .connection_id
-            .ok_or("Remote project has no connection_id")?;
+    if let Some(conn_id) = project.connection_id {
         let ssh_session = app_state
             .ssh
             .get_session(conn_id)
@@ -209,7 +205,7 @@ pub async fn spawn_interactive_execution(
             .lock()
             .await
             .insert(session_id.clone(), pty_handle);
-    } else if let crate::models::GitConnection::Wsl { ref distro, .. } = git_conn {
+    } else if let crate::connectivity::GitConnection::Wsl { ref distro, .. } = git_conn {
         let shell = "wsl.exe".to_string();
         let args = vec![
             "-d".to_string(),
@@ -219,8 +215,7 @@ pub async fn spawn_interactive_execution(
         ];
         // cwd for wsl.exe process itself is irrelevant — --cd sets the WSL working dir.
         // Use a safe Windows path so the PTY spawn doesn't fail on a Linux path.
-        let windows_cwd = std::env::var("USERPROFILE")
-            .map(std::path::PathBuf::from)
+        let windows_cwd = maestro_protocol::paths::home_dir()
             .unwrap_or_else(|_| std::path::PathBuf::from("C:\\"));
         let pty_session =
             crate::execution::spawn_agent_cli_pty(&session_id, shell, args, windows_cwd).await?;
@@ -232,7 +227,7 @@ pub async fn spawn_interactive_execution(
             Arc::new(tokio::sync::Mutex::new(pty_session)),
         );
         drop(sessions);
-    } else if let crate::models::GitConnection::Docker {
+    } else if let crate::connectivity::GitConnection::Docker {
         ref container_name, ..
     } = git_conn
     {
@@ -258,15 +253,8 @@ pub async fn spawn_interactive_execution(
         // path — `-w` above is what puts the shell in the worktree. Passing the container path
         // here would either fail the spawn or, when the worktree is bind-mounted at the same
         // path, silently open a shell on the host instead of inside the container.
-        let host_cwd = {
-            #[cfg(windows)]
-            let (var, fallback) = ("USERPROFILE", "C:\\");
-            #[cfg(not(windows))]
-            let (var, fallback) = ("HOME", "/");
-            std::env::var(var)
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|_| std::path::PathBuf::from(fallback))
-        };
+        let host_cwd = maestro_protocol::paths::home_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from(if cfg!(windows) { "C:\\" } else { "/" }));
         let pty_session = crate::execution::spawn_agent_cli_pty(
             &session_id,
             cli.binary().to_string(),
@@ -306,7 +294,7 @@ pub async fn spawn_interactive_execution(
 
     // Store PTY session metadata for get_active_sessions
     {
-        use crate::models::worktree::PtySessionMeta;
+        use crate::execution::models::PtySessionMeta;
         let meta = PtySessionMeta {
             session_name: session_name.clone(),
             started_at: now.clone(),
@@ -323,7 +311,7 @@ pub async fn spawn_interactive_execution(
             .await
             .insert(session_id.clone(), meta);
     }
-    app_state.app_handle.emit("sessions-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
 
     Ok(session_id)
 }

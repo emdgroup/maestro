@@ -10,7 +10,7 @@ name = "maestro-server"
 path = "src/main.rs"
 
 [dependencies]
-maestro-protocol = { path = "../maestro-protocol" }
+maestro-protocol = { path = "../maestro-protocol", features = ["image", "process"] }
 # Elicitation and terminal authentication are stable as of schema 1.7.0 (tool-call `name` as of 1.8.0), so the
 # `unstable_elicitation` / `unstable_auth_methods` flags no longer exist upstream.
 agent-client-protocol = { version = "3.6.0", features = [
@@ -57,9 +57,8 @@ hex = "0.4"
 subtle = "2"
 # The Auto agent limit measures this machine's free memory, as the app does for a local project.
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
-# A task's image attachments, scaled and encoded as the app does. Same versions as the app's, so
-# both are already in the lockfile.
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+# A task's image attachments, encoded as the app does; scaling them is maestro-protocol's `image`
+# feature. Same version as the app's, so it is already in the lockfile.
 base64 = "0.23"
 
 [dev-dependencies]

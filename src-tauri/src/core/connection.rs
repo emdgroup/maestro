@@ -10,9 +10,10 @@ use crate::acp::registry::AgentDiscoveryCacheEntry;
 use crate::acp::session_types::AgentAuthInfo;
 use crate::acp::{AcpProcess, ConnectionKey, ConnectionServer, RestorableSession};
 use crate::connectivity::ssh::{RemoteSshSession, SshPtyHandle};
+use crate::connectivity::GitConnection;
 use crate::core::schema::initialize_schema;
 use crate::execution::PtySession;
-use crate::models::{GitConnection, Project};
+use crate::project::Project;
 
 /// Mint the id a session is known by, everywhere: the key of `AcpState::sessions` and of the three
 /// `PtyState` maps, the routing key maestro-server files an ACP session under, the suffix of every
@@ -110,9 +111,9 @@ pub struct AcpState {
     /// One long-lived maestro-server process per connection.
     /// All sessions for a connection share this process instead of spawning their own.
     pub connection_servers: tokio::sync::Mutex<HashMap<ConnectionKey, ConnectionServer>>,
-    /// Per-connection deploy serialization locks. Prevents concurrent ensure_remote_server
-    /// calls (from prefetch_agent_discovery and preflight_connection racing) for the same
-    /// connection from running SFTP uploads simultaneously.
+    /// Per-connection deploy serialization locks. Keeps concurrent `ensure_connection_server`
+    /// calls (preflight, opening a project and discovery racing) for the same SSH connection from
+    /// running SFTP uploads simultaneously.
     pub deploy_locks: tokio::sync::Mutex<HashMap<i32, Arc<tokio::sync::Mutex<()>>>>,
     /// Connections whose next server spawn may retire a busy daemon from another build. Set by
     /// `preflight_connection` when the user chose to update anyway, taken by the spawn.
@@ -137,7 +138,7 @@ pub struct AcpState {
     /// server starts on its own, such as an automation's, talks before this window has adopted it,
     /// and what it said first is often the thing the user has to answer. Adoption replays these.
     pub unclaimed_messages:
-        tokio::sync::Mutex<HashMap<String, Vec<crate::acp::transport::ServerResponse>>>,
+        tokio::sync::Mutex<HashMap<String, Vec<maestro_protocol::ServerResponse>>>,
 }
 
 pub struct PtyState {
@@ -147,7 +148,7 @@ pub struct PtyState {
     /// the spawn_blocking reader to exit cleanly before a new attach starts.
     pub attach_cancel: tokio::sync::Mutex<HashMap<String, Arc<AtomicBool>>>,
     /// In-memory metadata for active PTY sessions, keyed by session id.
-    pub session_meta: tokio::sync::Mutex<HashMap<String, crate::models::worktree::PtySessionMeta>>,
+    pub session_meta: tokio::sync::Mutex<HashMap<String, crate::execution::models::PtySessionMeta>>,
 }
 
 pub struct AppState {
@@ -208,16 +209,43 @@ impl AppState {
 
     /// Forget the project this window holds, and say which it was. The server lets go of it when
     /// told to with `ReleaseProjectLock`, or when the relay that took it detaches.
+    pub fn db(&self) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
+        self.db.lock().map_err(|e| format!("Lock failed: {e}"))
+    }
+
     pub fn release_active_project_lock(&self) -> Option<(i32, ConnectionKey)> {
         self.active_project_lock.lock().ok()?.take()
     }
 }
 
+/// The distro a WSL connection names.
+pub fn wsl_distro(app_state: &AppState, id: i32) -> Result<String, String> {
+    let conn = app_state.db()?;
+    conn.query_row(
+        "SELECT distro_name FROM wsl_connections WHERE id = ?",
+        [id],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("WSL connection {} not found: {}", id, e))
+}
+
+/// The container a container connection names.
+pub fn container_name(app_state: &AppState, id: i32) -> Result<String, String> {
+    let conn = app_state.db()?;
+    conn.query_row(
+        "SELECT container_name FROM docker_connections WHERE id = ?",
+        [id],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Docker connection {} not found: {}", id, e))
+}
+
 /// Resolve a [`ConnectionKey`] and a path into the connection handle everything else runs
 /// commands and file operations through.
 ///
-/// This is the one place that turns a connection id into a distro name, a container name or a
-/// live SSH session, so call sites hold a `GitConnection` rather than repeating those lookups.
+/// Together with [`wsl_distro`] and [`container_name`], the one place that turns a connection id
+/// into a distro name, a container name or a live SSH session, so call sites hold a
+/// `GitConnection` rather than repeating those lookups.
 pub async fn git_connection_for(
     app_state: &AppState,
     path: String,
@@ -236,39 +264,14 @@ pub async fn git_connection_for(
                 remote_path: path,
             })
         }
-        ConnectionKey::Wsl { id } => {
-            let distro = {
-                let conn = app_state
-                    .db
-                    .lock()
-                    .map_err(|e| format!("Lock failed: {}", e))?;
-                conn.query_row(
-                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                    [id],
-                    |row| row.get::<_, String>(0),
-                )
-                .map_err(|e| format!("WSL connection {} not found: {}", id, e))?
-            };
-            Ok(GitConnection::Wsl { distro, path })
-        }
-        ConnectionKey::Docker { id } => {
-            let container_name = {
-                let conn = app_state
-                    .db
-                    .lock()
-                    .map_err(|e| format!("Lock failed: {}", e))?;
-                conn.query_row(
-                    "SELECT container_name FROM docker_connections WHERE id = ?",
-                    [id],
-                    |row| row.get::<_, String>(0),
-                )
-                .map_err(|e| format!("Docker connection {} not found: {}", id, e))?
-            };
-            Ok(GitConnection::Docker {
-                container_name,
-                path,
-            })
-        }
+        ConnectionKey::Wsl { id } => Ok(GitConnection::Wsl {
+            distro: wsl_distro(app_state, id)?,
+            path,
+        }),
+        ConnectionKey::Docker { id } => Ok(GitConnection::Docker {
+            container_name: container_name(app_state, id)?,
+            path,
+        }),
     }
 }
 
@@ -277,12 +280,7 @@ pub async fn get_git_connection(
     project: &Project,
     app_state: &AppState,
 ) -> Result<GitConnection, String> {
-    let key = ConnectionKey::from_all_ids(
-        project.connection_id,
-        project.wsl_connection_id,
-        project.docker_connection_id,
-    );
-    git_connection_for(app_state, project.path.clone(), key).await
+    git_connection_for(app_state, project.path.clone(), project.connection_key()).await
 }
 
 /// Fetch a project by ID and resolve its GitConnection (local or remote SSH).
@@ -293,17 +291,7 @@ pub async fn get_project_with_git_conn(
     app_state: &AppState,
     project_id: i32,
 ) -> Result<(Project, GitConnection), String> {
-    let project = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-            [project_id],
-            Project::from_row,
-        ).map_err(|e| format!("Project {} not found: {}", project_id, e))?
-    };
+    let project = crate::project::crud::load_project(app_state, project_id)?;
     let git_conn = get_git_connection(&project, app_state).await?;
     Ok((project, git_conn))
 }

@@ -19,7 +19,6 @@ pub mod session_handlers;
 pub mod session_ops;
 pub mod session_types;
 pub mod skills;
-pub mod transport;
 pub mod transport_setup;
 pub mod transport_types;
 pub mod usage_handlers;
@@ -40,7 +39,6 @@ pub(crate) const HOST_TRIPLE: &str = "x86_64-pc-windows-msvc";
     Debug, Clone, Copy, Hash, Eq, PartialEq, serde::Serialize, serde::Deserialize, specta::Type,
 )]
 #[serde(tag = "type")]
-#[specta(export)]
 pub enum ConnectionKey {
     #[serde(rename = "local")]
     Local,
@@ -86,11 +84,21 @@ impl ConnectionKey {
         }
     }
 
+    /// Identifier for auth terminal ids and event names. Free to change format, unlike
+    /// [`Self::storage_id`], which is written to the database.
+    pub fn event_id(&self) -> String {
+        match self {
+            ConnectionKey::Local => "local".to_string(),
+            ConnectionKey::Ssh { id } => format!("ssh-{id}"),
+            ConnectionKey::Wsl { id } => format!("wsl-{id}"),
+            ConnectionKey::Docker { id } => format!("docker-{id}"),
+        }
+    }
+
     /// Stable identifier for persisting a value against this connection.
     ///
-    /// Separate from the identically-shaped helpers in `auth_handlers` and `reader_task`, which
-    /// mint auth-cache keys and event names: those may change format freely, this one is written
-    /// to the database and cannot.
+    /// Separate from the identically-shaped [`Self::event_id`]: that one may change format
+    /// freely, this one is written to the database and cannot.
     pub fn storage_id(&self) -> String {
         match self {
             ConnectionKey::Local => "local".to_string(),
@@ -109,18 +117,14 @@ impl ConnectionKey {
 }
 
 pub use connection_server::{
-    pre_initialize_via_connection_server, query_check_tools_via_server,
-    query_install_skills_via_server, query_list_agents_via_connection_server,
-    query_session_close_via_server, query_session_delete_via_server, query_session_list_via_server,
-    spawn_connection_server, stop_resident_servers,
+    query_list_agents_via_connection_server, spawn_connection_server, stop_resident_servers,
 };
 pub use registry::{AgentDiscoveryCacheEntry, AgentDiscoveryResult, DiscoveredAgent};
 pub use session_ops::{
-    load_acp_session_cold, resolve_remote_context, restore_acp_sessions, spawn_acp_session_cold,
-    try_session_load_via_connection_server, try_spawn_via_connection_server, write_to_acp_session,
+    load_via_connection_server, restore_acp_sessions, spawn_via_connection_server,
+    write_to_acp_session,
 };
 pub use session_types::{
-    AcpProcess, AcpProcessParams, AcpTransportWriter, ConnectionServer, PendingRequests,
-    RestorableSession, SessionCapabilitiesInfo, SessionRequest, TaskKey, TaskMetadata,
-    TransportTarget,
+    AcpProcess, AcpProcessParams, ConnectionServer, PendingRequests, RestorableSession,
+    SessionCapabilitiesInfo, SessionRequest, TaskKey, TaskMetadata, TransportTarget,
 };

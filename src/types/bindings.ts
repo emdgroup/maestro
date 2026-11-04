@@ -1025,7 +1025,7 @@ async seedAgentProfiles(projectId: number, document: ProfilesDocument) : Promise
     else return { status: "error", error: e  as any };
 }
 },
-async listAutomations(projectId: number) : Promise<Result<AutomationList, string>> {
+async listAutomations(projectId: number) : Promise<Result<ListAutomationsResponse, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_automations", { projectId }) };
 } catch (e) {
@@ -1461,19 +1461,12 @@ async adoptAutomationSession(projectId: number, sessionId: string) : Promise<Res
 }
 },
 /**
- * Resolve the profile for a role and reduce it to what the agent can honour.
- * 
- * Takes the agent's advertised capabilities as arguments rather than looking them up, because
- * they are only known once the session has spawned and reported them — and the caller holding
- * that report is the frontend. Keeping the reduction here rather than there is what stops the
- * read-only correction being reimplemented, and differently, per call site.
- * 
- * `None` means the project has no profile for the role, which is not an error: profiles are
- * opt-in and a project without them keeps the per-task settings it already had.
+ * Whether `role` resolves to a profile on this project, `profile_id` being the task's override
+ * for it. The test the daemon makes before it runs the planner ahead of the coder.
  */
-async resolveAgentProfile(projectId: number, role: AgentRole, profileId: string | null, modelIds: string[], modeIds: string[], supportsEffort: boolean) : Promise<Result<ResolvedProfile | null, string>> {
+async hasProfileForRole(projectId: number, role: AgentRole, profileId: string | null) : Promise<Result<boolean, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("resolve_agent_profile", { projectId, role, profileId, modelIds, modeIds, supportsEffort }) };
+    return { status: "ok", data: await TAURI_INVOKE("has_profile_for_role", { projectId, role, profileId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1520,9 +1513,7 @@ async setProjectAccentColor(projectId: number, accentColor: string | null) : Pro
  * pre-initialize the default agent so the first session spawn is near-instant.
  * 
  * The frontend should call this fire-and-forget after a successful `open_project`.
- * Failures are benign — subsequent session spawns fall back to the cold path.
- * 
- * Only applies to local (non-SSH) projects.
+ * Failures are benign: a session spawn ensures the server itself.
  */
 async primeProjectServer(projectId: number) : Promise<Result<null, string>> {
     try {
@@ -3032,20 +3023,24 @@ export type AgentAuthInfo = { authMethods: AuthMethodDto[]; supportsLogout: bool
  */
 export type AgentDiscoveryResult = { maestro_server_available: boolean; agents: DiscoveredAgent[]; error?: string | null }
 /**
- * An agent's closed usage-limit gate, which a waiting task is held by.
+ * An agent's closed usage-limit gate.
  */
-export type AgentGateState = { agent_id: string; resume_at: string; 
+export type AgentGateState = { agent_id: string; 
 /**
- * `five_hour` or `seven_day...`, when the agent named it.
+ * RFC 3339.
+ */
+resume_at: string; 
+/**
+ * The window the limit belongs to, `five_hour` or `seven_day...`, when the agent named it.
  */
 window?: string | null; 
 /**
- * No reset time was known: the gate tries again at `resume_at`.
+ * No reset time was known: the gate backs off and tries again at `resume_at`.
  */
 backoff: boolean }
 export type AgentProfile = { id: string; name: string; role: AgentRole; agent_id: string; model?: string | null; 
 /**
- * Not ACP-universal — agents that do not expose it drop it per `fallback_behaviour`.
+ * Not ACP-universal: agents that do not expose it drop it per `fallback_behaviour`.
  */
 effort?: string | null; 
 /**
@@ -3059,18 +3054,19 @@ permission_mode?: string | null; skills?: string[]; mcp_servers?: string[];
  */
 role_prompt?: string | null; fallback_behaviour?: FallbackBehaviour }
 /**
- * The role a profile is written for.
+ * The pipeline role a session was started for, and the role a profile is written for.
  * 
  * Selecting by role is what lets a task say "plan with the planner" without naming a profile, and
  * what makes a project's default reviewer a project-level fact.
  */
 export type AgentRole = "Refiner" | "Planner" | "Coder" | "Reviewer" | 
 /**
- * Decides a loop's `judge` checks and writes its review digest.
+ * Decides a loop's `judge` checks and writes its review digest. Read-only.
  */
 "Judge" | 
 /**
- * Prepares a loop with the user: writes its tests in the loop's worktree and sets its checks.
+ * Prepares a loop with the user before it runs: writes its tests in the loop's worktree and
+ * sets its checks. Works a loop's `Refining` phase, which is the refiner's on a pipeline task.
  */
 "Preparer" | 
 /**
@@ -3168,12 +3164,14 @@ rejection: string | null }
  */
 export type AuthMethodDto = { id: string; name: string; description: string | null; methodType: string; args?: string[] }
 /**
- * TS-exportable version of `maestro_protocol::Automation` — the protocol crate derives no `Type`,
- * and giving it one would compile specta into the binary deployed to every remote host.
+ * One automation, whole.
+ * 
+ * The agent settings are the automation's own rather than a reference to an agent profile.
+ * Profiles say what a *pipeline role* means on a project, and an automation has no role.
  */
 export type Automation = { id: string; 
 /**
- * Canonicalized by the server, so this is the server's answer rather than anything sent to it.
+ * Canonicalized path of the project this belongs to, as the daemon resolved it.
  */
 project_path: string; name: string; 
 /**
@@ -3181,7 +3179,10 @@ project_path: string; name: string;
  */
 prompt: string; agent_id: string; 
 /**
- * Five-field cron. `None` for an automation that only runs when the user asks.
+ * Five-field cron, or `None` for an automation that only runs when asked.
+ * 
+ * Cron rather than the editor's presets because the daemon is what evaluates it, and a preset
+ * is a shape the UI can compile to this rather than a second thing to store.
  */
 cron?: string | null; 
 /**
@@ -3189,8 +3190,8 @@ cron?: string | null;
  */
 timezone: string; 
 /**
- * Whether the schedule is live. Disabling stops the clock; Run now still works, which is what
- * makes this a pause rather than a second kind of delete.
+ * Whether the schedule is live. Disabling stops the clock; running it by hand still works,
+ * which is what makes this a pause rather than a second kind of delete.
  */
 enabled: boolean; model?: string | null; 
 /**
@@ -3199,75 +3200,87 @@ enabled: boolean; model?: string | null;
  */
 permission_mode?: string | null; effort?: string | null; workspace: AutomationWorkspace; 
 /**
- * Whether `POST /hooks/<id>` starts this. `enabled` off stops the webhook too.
+ * Whether `POST /hooks/<id>` starts this. Independent of `enabled` above only in one
+ * direction: with `enabled` off, nothing automatic fires, webhook included.
  */
-webhook_enabled: boolean; webhook_overlap: WebhookOverlap; 
+webhook_enabled: boolean; 
 /**
- * Made by the server and only ever replaced by `roll_webhook_secret`; whatever is sent here
- * on save is ignored.
+ * What a delivery does while a run of this automation is already going.
+ */
+webhook_overlap: WebhookOverlap; 
+/**
+ * What a webhook sender signs with, or presents as a bearer token. Made by the server when
+ * the webhook is first turned on and changed only by `RollWebhookSecret`, so a save from a
+ * client never touches it.
  */
 webhook_secret?: string | null; 
 /**
- * When this next comes round, RFC 3339, as the server computed it. Nothing here parses cron.
+ * When this next comes round, RFC 3339. Computed on read and never stored — a stored one
+ * would be wrong the moment the clock or the timezone database moved.
  */
 next_due_at?: string | null }
-/**
- * A project's automations, and the one thing about the machine running them the editor has to
- * know: what "09:00" means there.
- */
-export type AutomationList = { automations: Automation[]; 
-/**
- * The IANA zone the background server's machine is set to. The same as this machine's for a
- * local project, and the only reason the editor offers a choice when it is not.
- */
-server_timezone: string; retention: RunRetention }
-/**
- * What happened to one firing of an automation.
- */
 export type AutomationRun = { id: string; automation_id: string; project_path: string; 
 /**
- * Copied by the server rather than joined, so a run still says what it was after the
- * automation that produced it is renamed or deleted.
+ * Copied rather than joined, so a run still says what it was even after the automation that
+ * produced it is renamed or deleted.
  */
-automation_name: string; status: AutomationRunStatus; trigger: RunTrigger; started_at: string; finished_at?: string | null; 
+automation_name: string; status: AutomationRunStatus; 
 /**
- * The session the run is happening in. This is how the app finds a session it did not start.
+ * What started it: the clock, somebody pressing Run now, or a webhook.
+ */
+trigger: RunTrigger; started_at: string; finished_at?: string | null; 
+/**
+ * The session the run is happening in, absent when the spawn itself failed. This is how a
+ * client finds a session the daemon started, since nothing the host wrote is attached to it.
  */
 session_id?: string | null; error?: string | null; 
 /**
- * What it takes to open this run again once the idle sweep has closed its session: the
- * agent's own id for the conversation, which agent it was, and where it ran.
+ * The agent's own id for this conversation, which is what `session/load` resumes from.
+ * 
+ * `session_id` above names a live session and stops resolving the moment the idle sweep
+ * closes it. These three are what it takes to open the run again afterwards, and this row is
+ * the only place they outlive the session.
  */
 agent_session_id?: string | null; agent_id?: string | null; cwd?: string | null; 
 /**
- * Whether that agent answers `session/load`. A run whose agent cannot is shown without a way
- * in, rather than with one that fails.
+ * Whether that agent answers `session/load`. `None` for a run recorded before this was kept.
  */
 can_reload?: boolean | null; 
 /**
- * The worktree this run made, while it is still on disk. Cleared by the server once it has
- * removed it, so a value here means a directory somebody still has to deal with — which is
- * also what the app adopts a `worktrees` row from.
+ * The worktree this run provisioned, while it is still on disk. Cleared once the daemon has
+ * removed it, so a value here means there is a directory somebody still has to deal with —
+ * which is also what the app adopts a `worktrees` row from. `cwd` above keeps the record of
+ * where the run happened either way.
  */
-worktree_path?: string | null; worktree_branch?: string | null; 
+worktree_path?: string | null; 
 /**
- * What that branch was cut from, so an adopted row can say how much the run committed.
+ * The local branch created with it, and deleted with it.
+ */
+worktree_branch?: string | null; 
+/**
+ * What that branch was cut from, resolved at creation. Carried so the app's adopted row can
+ * say how many commits the run made, which is the question a kept workspace raises.
  */
 worktree_base?: string | null; 
 /**
- * Why that worktree was kept rather than removed. `None` means nothing was kept, which is
- * also true of a run still going.
+ * Why that worktree was kept rather than removed, in words meant for the person who has to
+ * act on it. `None` means nothing was kept, which is also true of a run still going.
  */
 worktree_kept?: string | null; 
 /**
- * Which run of its automation this is, counting from 1, so a session opened from it can be
- * matched to its entry in run history.
+ * Which run of its automation this is, counting from 1. `None` for a run recorded before
+ * runs were numbered. It is what a session opened from this run is labelled with, and the
+ * number in the name of the worktree it made.
  */
 ordinal?: number | null; 
 /**
- * The agent's last message, recorded when the run ends.
+ * The agent's last message, the text after its final tool call, recorded when the run ends.
+ * What a finished run is read by, so nobody has to open a session to see what it concluded.
  */
 result?: string | null }
+/**
+ * What happened to one firing of an automation.
+ */
 export type AutomationRunStatus = "running" | "succeeded" | "failed"
 /**
  * What an automation template keeps: what to do and what starts it.
@@ -3279,8 +3292,8 @@ export type AutomationTemplate = { prompt: string; cron?: string | null; timezon
 /**
  * Where an automation's agent runs.
  * 
- * A path rather than a worktree row id: the server acts on this, and it has no access to this
- * app's database — for an SSH, WSL or container project, not even to the machine it is on.
+ * A path rather than the app's worktree row id: the daemon has to act on this with no access to
+ * the app's database, and on a remote project not even to the machine that database is on.
  */
 export type AutomationWorkspace = 
 /**
@@ -3292,9 +3305,11 @@ export type AutomationWorkspace =
  */
 { mode: "path"; path: string } | 
 /**
- * A fresh worktree per run, branched from `base_branch`. Made and unmade by the server, which
- * is the process on the machine the repository is on; this app adopts a `worktrees` row for
- * one that outlives its run.
+ * A fresh worktree per run, branched from `base_branch`.
+ * 
+ * Created and removed by the daemon, which is the process on the machine the repository is
+ * on. The app adopts a `worktrees` row for one that outlives its run; see phase 4 of
+ * `docs/automations-plan.md`.
  */
 { mode: "new_worktree"; base_branch: string }
 export type Autostart = 
@@ -3340,7 +3355,7 @@ export type BranchList = { local: string[]; remote: string[] }
  * Which branch a `NewWorktree` workspace ends up on: one created for it, or one that already
  * exists.
  * 
- * Only `Create` needs a companion — the name to give the branch — which is why the task carries
+ * Only `Create` needs a companion, the name to give the branch, which is why the task carries
  * `workspace_branch` beside this rather than encoding the name here. `Checkout` needs nothing: the
  * branch it checks out is the task's `base_branch`.
  */
@@ -3497,17 +3512,20 @@ export type CommitInfo = { sha: string; message: string;
  * the author date, so an agent's rebased commit would otherwise read as days old.
  */
 committed_at: string }
+/**
+ * How the machine's agent limit is decided.
+ */
 export type ConcurrencyMode = 
 /**
- * The number the user set, regardless of what the host is doing.
+ * The number the user set, regardless of what the machine is doing.
  */
 "Hard" | 
 /**
- * Derived from the host's free memory, recomputed whenever the queue is drained.
+ * Derived from the machine's free memory, `max_concurrent_agents` when it cannot be read.
  * 
  * The default, because the limit exists to stop auto-mode starting agents a host has no
- * memory for — and a fixed number chosen before anyone knew what the machine looks like
- * cannot do that. A host that cannot be measured falls back to the fixed number.
+ * memory for, and a fixed number chosen before anyone knew what the machine looks like
+ * cannot do that.
  */
 "Auto"
 /**
@@ -3544,7 +3562,22 @@ run_mode: RunMode | null;
  */
 loop_config: LoopConfig | null }
 export type CredentialSource = "manual" | "gh_cli" | "glab_cli"
-export type DeliveryOutcome = "started" | "queued" | "busy" | "queue_full" | "rate_limited" | "unauthorized" | "duplicate" | "disabled" | "too_large" | "failed"
+/**
+ * What became of one delivery.
+ */
+export type DeliveryOutcome = "started" | "queued" | 
+/**
+ * A run was going and the automation refuses overlap.
+ */
+"busy" | "queue_full" | "rate_limited" | "unauthorized" | "duplicate" | 
+/**
+ * The webhook, or everything automatic about the automation, is switched off.
+ */
+"disabled" | "too_large" | 
+/**
+ * Authorized and accepted, but the run could not be opened.
+ */
+"failed"
 /**
  * What `detect_project_issue_tracking` worked out from the project's git remote.
  */
@@ -3619,8 +3652,8 @@ export type FallbackBehaviour =
  */
 "Warn" | 
 /**
- * Refuse to spawn. For a profile whose whole point is the field that is missing — a
- * read-only reviewer on an agent with no read-only mode is not a reviewer.
+ * Refuse to spawn. For a profile whose whole point is the field that is missing: a read-only
+ * reviewer on an agent with no read-only mode is not a reviewer.
  */
 "Fail"
 export type FileEntry = { name: string; is_dir: boolean }
@@ -3697,6 +3730,19 @@ export type LandingMode =
  * A Linear team, exported to TypeScript bindings for the team picker (Phase 55).
  */
 export type LinearTeam = { id: string; name: string; key: string }
+export type ListAutomationsResponse = { automations: Automation[]; 
+/**
+ * The IANA zone this server's own machine is set to.
+ * 
+ * Sent with the list because it is what the editor has to offer: an automation on a remote
+ * project runs on that machine, so "09:00" means one thing there and another where the window
+ * is. Falls back to `UTC` when the machine cannot say.
+ */
+server_timezone: string; 
+/**
+ * How much of this project's run history is kept.
+ */
+retention: RunRetention }
 /**
  * A skill Maestro lists but does not manage: one of its own, or one the project carries.
  */
@@ -3727,9 +3773,13 @@ configured_directory: string }
 /**
  * One item of a loop's done criteria.
  */
-export type LoopCheck = { id: number; position: number; kind: LoopCheckKind; label: string; command?: string | null; 
+export type LoopCheck = { id: number; position: number; kind: LoopCheckKind; label: string; 
 /**
- * Its own time limit, in seconds. None takes the loop's `check_timeout_secs`.
+ * What a `Command` check or a `Setup` step runs. `None` for the other kinds.
+ */
+command?: string | null; 
+/**
+ * Its own time limit, in seconds. `None` takes the loop's `check_timeout_secs`.
  */
 timeout_secs?: number | null; state: LoopCheckState; 
 /**
@@ -3737,16 +3787,38 @@ timeout_secs?: number | null; state: LoopCheckState;
  */
 detail?: string | null; 
 /**
- * Proposed by the agent. Waiting for the user while `accepted` is false.
+ * Proposed by the worker rather than written by the user.
  */
-proposed: boolean; accepted: boolean; passed_at_sha?: string | null; updated_at: string }
+proposed: boolean; 
 /**
- * One check of the user's list: `id` keeps a check, none adds one.
+ * A proposal the user accepted. A proposal not accepted is waiting for an answer.
  */
-export type LoopCheckEntry = { id?: number | null; kind: LoopCheckKind; label: string; command?: string | null; timeout_secs?: number | null }
-export type LoopCheckKind = "Command" | "Judge" | "Manual" | 
+accepted: boolean; 
 /**
- * A command run before the checks, in list order.
+ * The commit a `Judge` check last passed on.
+ */
+passed_at_sha?: string | null; updated_at: string }
+/**
+ * One check of the user's list. `id` names a check it keeps, which goes back to `Pending` when
+ * its spec changed; no `id` adds one. A check the list leaves out is deleted.
+ */
+export type LoopCheckEntry = ({ kind: LoopCheckKind; label: string; command?: string | null; timeout_secs?: number | null }) & { id?: number | null }
+export type LoopCheckKind = 
+/**
+ * A shell command; exit 0 passes.
+ */
+"Command" | 
+/**
+ * A sentence a separate agent judges against the diff.
+ */
+"Judge" | 
+/**
+ * The user ticks it.
+ */
+"Manual" | 
+/**
+ * A shell command run before the checks, in list order. Not a check: a failing one stops the
+ * steps after it, and no check runs.
  */
 "Setup"
 /**
@@ -3758,21 +3830,30 @@ export type LoopCheckResult = { check_id: number; state: LoopCheckState;
  */
 detail?: string | null; 
 /**
- * What a command check ran.
+ * What a `Command` check ran.
  */
 command?: string | null }
 /**
- * What the user writes of a check.
+ * What the user writes of a check. The rest is the loop's.
  */
 export type LoopCheckSpec = { kind: LoopCheckKind; label: string; command?: string | null; timeout_secs?: number | null }
-export type LoopCheckState = "Pending" | "Pass" | "Fail" | "Flaky"
+export type LoopCheckState = "Pending" | "Pass" | "Fail" | 
 /**
- * A loop's budget and how its checks run. Mirrors `maestro_protocol::LoopConfig`, which holds the
- * defaults.
+ * Failed, then passed on the same commit, or the reverse.
  */
-export type LoopConfig = { max_iterations: number; 
+"Flaky"
 /**
- * How long one iteration's Build session may run, in seconds.
+ * A loop's budget and how its checks run, stored as JSON on the task. A field the stored JSON
+ * lacks takes its default, so adding one needs no migration.
+ */
+export type LoopConfig = { 
+/**
+ * Iterations that count. One a usage limit cut off does not.
+ */
+max_iterations: number; 
+/**
+ * How long one iteration's Build session may run, in seconds. One still running then is
+ * closed, and what it wrote is committed and checked as if it had ended.
  */
 max_build_secs: number; 
 /**
@@ -3780,38 +3861,119 @@ max_build_secs: number;
  */
 stall_limit: number; 
 /**
- * The time limit of a step or check without its own.
+ * The time limit of a step or check without its own. A row still running past its limit is
+ * killed and fails.
  */
 check_timeout_secs: number; 
 /**
- * Ordered patterns for what the worker's worktree leaves out; `!` makes files visible again.
- * See `maestro_protocol::LoopConfig`.
+ * What the worker's worktree leaves out, as ordered patterns: anchored at the repository root
+ * unless they start with a `**` segment, `*` within one folder, a `**` segment any number of
+ * folders, a trailing slash a folder and everything under it. `!pattern` makes matching files
+ * visible again, and a later entry wins over an earlier one. (No literal star-slash here: this
+ * comment is copied into a TypeScript block comment, which that would close.)
  */
 sealed_paths: string[] }
-export type LoopHalt = "Flaky" | "Failing" | "Stalled" | "OutOfIterations" | "Paused" | "Stopped" | "Blocked" | "Conflict"
 /**
- * One attempt at one iteration.
+ * Why a loop stopped for the user.
  */
-export type LoopIteration = { n: number; attempt: number; acp_session_id?: string | null; agent_id?: string | null; started_at: string; ended_at?: string | null; outcome: LoopIterationOutcome; counted: boolean; commit_sha?: string | null; files: number; added: number; removed: number; summary?: string | null; check_output?: string | null; tokens?: number | null; 
+export type LoopHalt = "Flaky" | "Failing" | "Stalled" | "OutOfIterations" | "Paused" | "Stopped" | 
 /**
- * Why the worker said it cannot go on.
+ * The worker called `loop_blocked`.
+ */
+"Blocked" | 
+/**
+ * An iteration's commit could not be merged back into the loop's worktree.
+ */
+"Conflict"
+/**
+ * One attempt at one iteration. An interrupted iteration runs again as the next `attempt` of the
+ * same `n`.
+ */
+export type LoopIteration = { n: number; attempt: number; acp_session_id?: string | null; agent_id?: string | null; started_at: string; ended_at?: string | null; outcome: LoopIterationOutcome; 
+/**
+ * Whether it counts against `max_iterations`.
+ */
+counted: boolean; commit_sha?: string | null; files: number; added: number; removed: number; 
+/**
+ * The agent's final message.
+ */
+summary?: string | null; 
+/**
+ * The tail of the checks' output.
+ */
+check_output?: string | null; 
+/**
+ * Tokens its session's turns used, from the usage record, while that still has them.
+ */
+tokens?: number | null; 
+/**
+ * Why the worker said it cannot go on, through `loop_blocked`.
  */
 blocked?: string | null; 
 /**
- * What each check concluded after this iteration, on the newest attempt of its number.
+ * What each check concluded after this iteration, passing ones included. Filled for the
+ * newest attempt of its number, and only in `ListLoopIterations`: the engine never reads it.
  */
 results: LoopCheckResult[] }
-export type LoopIterationOutcome = "Running" | "Checked" | "Interrupted" | "Empty" | "Failed" | "Blocked"
+export type LoopIterationOutcome = "Running" | 
 /**
- * A loop as its card and its detail's meters show it, read with the task.
+ * Ended and its checks ran.
  */
-export type LoopSummary = { iteration: number; counted: number; agent_secs: number; no_change: number; last_summary?: string | null; checks: LoopCheckState[]; proposals: number; 
+"Checked" | 
 /**
- * Why it last stopped for the user. Read only while it waits on the user.
+ * Cut off by a usage limit or the user; it runs again without counting.
+ */
+"Interrupted" | 
+/**
+ * Ended with nothing to commit.
+ */
+"Empty" | 
+/**
+ * The agent failed.
+ */
+"Failed" | 
+/**
+ * The worker called `loop_blocked`: committed, and its checks did not run.
+ */
+"Blocked"
+/**
+ * A loop as its card and its detail's meters show it.
+ */
+export type LoopSummary = { 
+/**
+ * The number of the latest iteration, running or ended; 0 before the first.
+ */
+iteration: number; 
+/**
+ * Iterations that count against `max_iterations`.
+ */
+counted: number; 
+/**
+ * The agent time those iterations took, in seconds.
+ */
+agent_secs: number; 
+/**
+ * Iterations in a row with no progress, as the stall limit counts them.
+ */
+no_change: number; 
+/**
+ * The latest iteration's closing words.
+ */
+last_summary?: string | null; 
+/**
+ * Every check's state in list order, proposals still waiting left out.
+ */
+checks: LoopCheckState[]; 
+/**
+ * Proposals waiting for the user's answer.
+ */
+proposals: number; 
+/**
+ * Why the loop last stopped for the user. Read only while it waits on the user.
  */
 halt?: LoopHalt | null; 
 /**
- * A pause or stop asked for, taken once the running step ends.
+ * A pause or stop the user asked for, which takes effect once the current step ends.
  */
 hold?: LoopHalt | null }
 export type McpCatalogEntry = { id: string; name: string; description: string; icon_url: string | null; stars: number | null; repo_url: string | null; 
@@ -3866,8 +4028,9 @@ client_secret: string;
  */
 private_key: string }
 /**
- * An MCP server the user manages, as the editor and the cards see it. Same shape as
- * `maestro_protocol::ManagedMcpServer`, which cannot derive `Type`.
+ * An MCP server the user manages, as the editor and the cards see it. The same fields as
+ * `maestro_protocol::ManagedMcpServer`, except that `oauth` is typed here: the daemon carries it
+ * as opaque JSON it never reads.
  */
 export type McpServerConfig = { name: string; 
 /**
@@ -4077,7 +4240,7 @@ export type PullRequestCheckStatus = "Passed" | "Failed" | "Running"
  * What the forge's CI last said about an open pull request's head commit.
  * 
  * A display cache rather than a lifecycle field: the sweep runs every three minutes, and this is
- * what lets the card answer "can this land" in between. Nothing branches on it — `CiState` is what
+ * what lets the card answer "can this land" in between. Nothing branches on it: `CiState` is what
  * the fix loop reads, freshly, from the forge.
  * 
  * `None` covers all three ways there is nothing to say: no CI configured, a forge that will not
@@ -4086,7 +4249,7 @@ export type PullRequestCheckStatus = "Passed" | "Failed" | "Running"
  * 
  * Conflicts are deliberately not in here. `AwaitingMerge` with `Waiting` and the ball on the user
  * is a conflict and nothing else, so storing it would be a second copy of a fact the lifecycle
- * fields already carry — and one a sweep that learned nothing could overwrite.
+ * fields already carry, and one a sweep that learned nothing could overwrite.
  */
 export type PullRequestCi = "Passing" | "Failing" | "Pending"
 /**
@@ -4133,22 +4296,18 @@ export type RemoteIssue = { external_id: string; title: string; body: string | n
  */
 export type RepoOption = { name: string; description: string | null; clone_url: string | null }
 /**
- * What a profile resolved to for an actual spawn, with anything the agent cannot honour removed.
- */
-export type ResolvedProfile = { profile_id: string; agent_id: string; model?: string | null; effort?: string | null; permission_mode?: string | null; skills: string[]; mcp_servers: string[]; role_prompt?: string | null; 
-/**
- * Human-readable notes about what was dropped, for the UI to show. Empty is the happy path.
- */
-warnings: string[] }
-/**
  * Typed response for save_task_review and request_changes IPC commands
  */
 export type ReviewResult = { success: boolean; review_id: number; task_status: string | null }
+/**
+ * How a task runs once it is started: the stage pipeline, or a loop of fresh coder sessions that
+ * ends when its checks pass. See `docs/loops-plan.md`.
+ */
 export type RunMode = "Pipeline" | "Loop"
 /**
- * Which finished runs a project keeps, per automation. A run is deleted once it is past the newest
- * `keep_last` **and** older than `max_age_days`; a limit left unset does not apply, and both unset
- * keeps everything. Deleting a run removes its worktree and branch, whatever they hold.
+ * Which finished runs a project keeps, per automation. A run is deleted only once it breaks every
+ * limit that is set: past the newest `keep_last` **and** older than `max_age_days`. Both `None`
+ * keeps everything. A running run is never deleted.
  */
 export type RunRetention = { keep_last: number | null; max_age_days: number | null }
 /**
@@ -4307,9 +4466,8 @@ pull_request_ci?: PullRequestCi | null;
  * Which profile this task wants for a given role, as JSON keyed by role name — a profile id,
  * or null for "skip this stage". Carried as the raw string rather than a parsed map because
  * the frontend is what reads it: it is written by the card's override dialog and handed
- * straight back to `resolve_agent_profile`, which already takes an override id and falls back
- * when it names nothing. `role_is_skipped` parses it on the Rust side, for the one stage the
- * backend decides on its own.
+ * straight back to `has_profile_for_role`, which already takes an override id and falls back
+ * when it names nothing. `maestro_protocol::profiles` parses it on the Rust side.
  */
 profile_overrides?: string | null; 
 /**
@@ -4340,12 +4498,12 @@ gate?: AgentGateState | null;
 drafted_by?: TaskDraft | null }
 export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
 /**
- * Who the pipeline is blocked on — not who owns the ticket.
+ * Who the pipeline is blocked on, not who owns the ticket.
  * 
  * A Planning backlog and a queued task are `None`, because nothing is waiting on anyone. That is
  * what keeps the "Needs me" filter showing genuine gates rather than the whole board.
  * 
- * `External` is a task waiting on something outside Maestro — a PR waiting on CI and a human
+ * `External` is a task waiting on something outside Maestro: a PR waiting on CI and a human
  * reviewer on GitHub. Folding that into `User` would list tasks in "Needs me" that our user
  * cannot act on, which is the one thing that filter has to get right.
  */
@@ -4353,22 +4511,18 @@ export type TaskBall = "Agent" | "User" | "External" | "None"
 /**
  * One entry in a task's outcome thread.
  * 
- * `kind` is what a gate points at — `proposal`, `plan`, `verdict`, `outcome`, `note`. Kept as a
+ * `kind` is what a gate points at: `proposal`, `plan`, `verdict`, `outcome`, `note`. Kept as a
  * string rather than an enum because the pipeline adds kinds as roles land, and an unknown one
  * arriving from an older or newer build should render as itself, not fail to deserialise the
  * whole thread.
  * 
  * `body` and `external_ref` are the inline-or-reference pair: exactly one carries the content.
  */
-export type TaskComment = { id: number; task_id: number; kind: string; author: string; body?: string | null; external_ref?: string | null; 
-/**
- * The phase that produced it, so a thread can be read back against the pipeline.
- */
-phase?: string | null; created_at: string }
+export type TaskComment = { id: number; task_id: number; kind: string; author: string; body?: string | null; external_ref?: string | null; phase?: string | null; created_at: string }
 /**
  * How a task reached `Done`, and therefore what is left over.
  * 
- * Only meaningful on a Done task, and only in a git project — a non-git task has no merge, no
+ * Only meaningful on a Done task, and only in a git project. A non-git task has no merge, no
  * worktree and no PR, so its completion is `None` rather than a variant meaning "not applicable".
  * 
  * `LocalOnly` is the one that carries unfinished business: the changes were committed and
@@ -4376,15 +4530,16 @@ phase?: string | null; created_at: string }
  */
 export type TaskCompletion = "Merged" | "MergedViaPR" | "LocalOnly" | "NoChanges"
 /**
- * The automation run whose agent created a task.
+ * The automation run a task came from.
  */
-export type TaskDraft = { automation: string; run?: number | null }
+export type TaskDraft = { automation: string; 
+/**
+ * The run's number among its automation's runs, `None` for a run recorded before runs were
+ * numbered.
+ */
+run?: number | null }
 /**
  * What the pipeline is doing to a task right now, independent of which column it sits in.
- * 
- * `Refining`, `Drafting`, `PlanReview`, `SelfReview` and `AwaitingMerge` are defined but inert:
- * no transition produces them until the refiner, planner, reviewer and PR roles land. They exist
- * now so adding those roles does not need a second migration.
  * 
  * A phase says nothing about which column the task is in. `Spawning` sits in Queue, which is what
  * lets a failed spawn be an ordinary active row rather than an exception to the phase invariant.
@@ -4521,22 +4676,47 @@ export type UsageTurn = { model_id: string | null;
  * RFC 3339.
  */
 started_at: string; ended_at: string; total_tokens: number | null; input_tokens: number | null; output_tokens: number | null; thought_tokens: number | null; cached_read_tokens: number | null; cached_write_tokens: number | null }
-export type WebhookDelivery = { id: string; received_at: string; status: number; outcome: DeliveryOutcome; detail?: string | null; run_id?: string | null }
+export type WebhookDelivery = { id: string; automation_id: string; received_at: string; 
+/**
+ * The HTTP status the sender got.
+ */
+status: number; outcome: DeliveryOutcome; detail?: string | null; 
+/**
+ * The run it started, once it has one. A queued delivery gets it when its turn comes.
+ */
+run_id?: string | null }
 /**
  * What a webhook delivery does while a run of the same automation is already going.
  */
-export type WebhookOverlap = "refuse" | "queue" | "parallel"
+export type WebhookOverlap = 
 /**
- * One machine's webhook listener, shared by every project on it.
+ * Answer 409 and run nothing.
  */
-export type WebhookSettings = { port: number; bind_address: string; 
+"refuse" | 
 /**
- * What senders call, a tunnel's or a reverse proxy's address. Webhook URLs are built from it.
+ * Wait in line, up to a cap, and run once the current run ends.
+ */
+"queue" | 
+/**
+ * Start another run beside it.
+ */
+"parallel"
+/**
+ * The webhook listener of one machine's server, shared by every project on it.
+ */
+export type WebhookSettings = { port: number; 
+/**
+ * `127.0.0.1` unless a proxy on another machine has to reach it.
+ */
+bind_address: string; 
+/**
+ * The address senders actually call, a tunnel's or a reverse proxy's. Webhook URLs are built
+ * from it; `None` means they are shown on the local address.
  */
 public_url?: string | null }
 export type WebhookStatus = { settings: WebhookSettings; 
 /**
- * Why the listener is not listening, or absent when it is.
+ * Why the listener is not listening, or `None` when it is.
  */
 error?: string | null }
 /**
@@ -4544,7 +4724,7 @@ error?: string | null }
  * exists. Shared by tasks and by the project default that seeds them.
  * 
  * This replaced a boolean, which could only say the first two. `ReuseWorkspace` is the one that
- * needs a companion — the worktree it names — which is why a task carries
+ * needs a companion, the worktree it names, which is why a task carries
  * `workspace_worktree_id` beside the mode rather than encoding everything here.
  */
 export type WorkspaceMode = "NewWorktree" | "RepositoryDirectory" | "ReuseWorkspace"

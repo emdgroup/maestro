@@ -1,21 +1,16 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
-use tauri::Emitter;
 use tauri::State;
 
-use crate::acp::transport::{SessionDeleteRequest, SessionListRequest};
+use crate::acp::connection_server::{query_via_server, query_via_server_within, reply};
 use crate::core::AppState;
-use crate::models::worktree::{
+use crate::execution::models::{
     ActiveSessionInfo, ExecutionMode, SessionListEntryDto, SessionListResult,
 };
-
-// Re-export attachment types and handlers (including macro-generated tauri/specta symbols)
-// so ipc/mod.rs glob import still resolves them.
-pub use crate::acp::attachment_handlers::*;
+use maestro_protocol::{ServerRequest, ServerResponse, SessionDeleteRequest, SessionListRequest};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct AcpSessionMeta {
     pub cwd: String,
     pub project_id: Option<i32>,
@@ -77,7 +72,7 @@ pub async fn get_acp_session_meta(
 fn branch_for_cwd(worktrees: &[crate::git::ParsedWorktree], cwd: &str) -> Option<String> {
     worktrees
         .iter()
-        .filter(|wt| crate::git::worktree_lifecycle::path_is_within(cwd, &wt.path))
+        .filter(|wt| maestro_protocol::paths::path_is_within(cwd, &wt.path))
         .max_by_key(|wt| wt.path.len())
         .and_then(|wt| wt.branch.clone())
 }
@@ -190,14 +185,16 @@ pub async fn list_acp_sessions(
     connection: crate::acp::ConnectionKey,
     cursor: Option<String>,
 ) -> Result<SessionListResult, String> {
-    let resp = crate::acp::query_session_list_via_server(
+    let resp = query_via_server_within(
         connection,
-        SessionListRequest {
+        &app_state,
+        ServerRequest::SessionList(SessionListRequest {
             agent_id: agent_id.clone(),
             cwd: cwd.clone(),
             cursor,
-        },
-        &app_state,
+        }),
+        reply!(ServerResponse::SessionListOk(response) => response),
+        30,
     )
     .await?;
     let supports_session_delete = resp.supports_session_delete;
@@ -216,18 +213,9 @@ pub async fn list_acp_sessions(
     // project, so the name and folder ride along on the reply the history modal is waiting for.
     // Closed rows are asked for too, because history lists conversations the project let go of.
     // Best effort: without them the list still shows, under the agent's own titles.
-    let project_path: Option<String> = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("DB lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path FROM projects WHERE id = ?",
-            [project_id],
-            |row| row.get(0),
-        )
+    let project_path = crate::project::crud::load_project(&app_state, project_id)
         .ok()
-    };
+        .map(|project| project.path);
     if let Some(project_path) = project_path {
         match crate::acp::connection_server::query_project_sessions_via_server(
             connection,
@@ -268,14 +256,16 @@ pub async fn delete_acp_session(
     cwd: String,
     connection: crate::acp::ConnectionKey,
 ) -> Result<(), String> {
-    crate::acp::query_session_delete_via_server(
+    query_via_server_within(
         connection,
-        SessionDeleteRequest {
+        &app_state,
+        ServerRequest::SessionDelete(SessionDeleteRequest {
             agent_id,
             session_id,
             cwd,
-        },
-        &app_state,
+        }),
+        reply!(ServerResponse::SessionDeleteOk => ()),
+        30,
     )
     .await
 }
@@ -289,20 +279,8 @@ pub async fn rename_acp_session(
     acp_session_id: String,
     display_name: String,
 ) -> Result<(), String> {
-    let (project_path, connection_key) = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("DB lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-            [project_id],
-            |row| Ok((
-                row.get::<_, String>(0)?,
-                crate::acp::ConnectionKey::from_all_ids(row.get(1)?, row.get(2)?, row.get(3)?),
-            )),
-        ).map_err(|e| format!("Project not found: {}", e))?
-    };
+    let (connection_key, project_path) =
+        crate::project::crud::target(&app_state, project_id).await?;
 
     // The daemon only needs a folder for a conversation it has no row for yet. A live session
     // knows its own; one known only to the agent is filed under the project root, which is where
@@ -324,20 +302,21 @@ pub async fn rename_acp_session(
         }
     }
 
-    crate::acp::connection_server::query_rename_session_via_server(
+    query_via_server(
         connection_key,
-        maestro_protocol::RenameSessionRequest {
+        &app_state,
+        ServerRequest::RenameSession(maestro_protocol::RenameSessionRequest {
             project_path,
             agent_id,
             acp_session_id,
             cwd,
             name: display_name,
-        },
-        &app_state,
+        }),
+        reply!(ServerResponse::RenameSessionOk => ()),
     )
     .await?;
 
-    app_state.app_handle.emit("sessions-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
     Ok(())
 }
 
@@ -345,9 +324,8 @@ pub async fn rename_acp_session(
 /// history modal resolves against the project it has open. `Some("")` is the project root itself;
 /// `None` means the directory lies outside the project.
 fn relative_to_project(project_path: &str, cwd: &str) -> Option<String> {
-    let normalize = |path: &str| path.replace('\\', "/").trim_end_matches('/').to_string();
-    let root = normalize(project_path);
-    let dir = normalize(cwd);
+    let root = maestro_protocol::paths::tidy_path(project_path);
+    let dir = maestro_protocol::paths::tidy_path(cwd);
     if dir == root {
         return Some(String::new());
     }
@@ -396,9 +374,11 @@ async fn emit_init_events_from_session(session_id: &str, app_state: &Arc<AppStat
                 "name": v.get("name").and_then(|s| s.as_str()).unwrap_or(""),
             })).collect::<Vec<_>>(),
         });
-        let _ = app_state
-            .app_handle
-            .emit(&format!("acp://session-models/{}", session_id), &payload);
+        crate::core::emit_or_log(
+            &app_state.app_handle,
+            &format!("acp://session-models/{}", session_id),
+            &payload,
+        );
     }
     if let Some(mode_opt) = find_opt("mode") {
         let options = mode_opt
@@ -421,9 +401,11 @@ async fn emit_init_events_from_session(session_id: &str, app_state: &Arc<AppStat
                 "name": v.get("name").and_then(|s| s.as_str()).unwrap_or(""),
             })).collect::<Vec<_>>(),
         });
-        let _ = app_state
-            .app_handle
-            .emit(&format!("acp://session-modes/{}", session_id), &payload);
+        crate::core::emit_or_log(
+            &app_state.app_handle,
+            &format!("acp://session-modes/{}", session_id),
+            &payload,
+        );
     }
     if let Some(capabilities) = prompt_capabilities {
         crate::core::emit_or_log(
@@ -469,24 +451,30 @@ pub async fn drain_acp_replay(
     };
     if let Some(events) = buffered {
         for payload in events {
-            let _ = app_state
-                .app_handle
-                .emit(&format!("acp://session-update/{}", session_id), &payload);
+            crate::core::emit_or_log(
+                &app_state.app_handle,
+                &format!("acp://session-update/{}", session_id),
+                &payload,
+            );
         }
         if is_initialized {
             emit_init_events_from_session(session_id, &app_state).await;
-            let _ = app_state
-                .app_handle
-                .emit(&format!("acp://replay-drained/{}", session_id), turn_active);
+            crate::core::emit_or_log(
+                &app_state.app_handle,
+                &format!("acp://replay-drained/{}", session_id),
+                turn_active,
+            );
         }
     } else if is_initialized {
         // Buffer already consumed (no replay buffer for new sessions, or drained before
         // panel mounted). Emit replay-drained so late-mounting panels complete
         // initialization instead of waiting for the 15 s stale timeout.
         emit_init_events_from_session(session_id, &app_state).await;
-        let _ = app_state
-            .app_handle
-            .emit(&format!("acp://replay-drained/{}", session_id), turn_active);
+        crate::core::emit_or_log(
+            &app_state.app_handle,
+            &format!("acp://replay-drained/{}", session_id),
+            turn_active,
+        );
     }
     Ok(())
 }

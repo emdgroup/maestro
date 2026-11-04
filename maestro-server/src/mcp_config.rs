@@ -101,7 +101,7 @@ pub(crate) fn project_servers(cwd: &str) -> Vec<maestro_protocol::ManagedMcpServ
     parsed
         .mcp_servers
         .into_iter()
-        .filter(|(name, _)| name != maestro_protocol::MCP_SERVER_NAME)
+        .filter(|(name, _)| name != crate::mcp_gateway::MCP_SERVER_NAME)
         .map(|(name, entry)| maestro_protocol::ManagedMcpServer {
             transport: entry
                 .transport
@@ -142,7 +142,7 @@ pub(crate) fn parse_mcp_servers(
         // not something ACP can express, and letting the file win would replace the canvas and
         // task tools with whatever it points at — same rule as a `custom-agents.json` id that
         // collides with a bundled agent.
-        if name == maestro_protocol::MCP_SERVER_NAME {
+        if name == crate::mcp_gateway::MCP_SERVER_NAME {
             out.skipped.push(format!(
                 "{name}: reserved — Maestro provides its own server under this name"
             ));

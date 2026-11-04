@@ -13,12 +13,14 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
+use maestro_protocol::paths::MAESTRO_DIR;
+use maestro_protocol::skill_names::{is_library_name, validate_skill_name};
 use maestro_protocol::{
     ApplySkillRequest, ManagedSkill, ProjectSkill, SkillFile, SkillList, ALL_AGENTS,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::command_ext::NoConsoleWindow;
+use maestro_protocol::command_ext::NoConsoleWindow;
 
 /// Pinned deliberately. `@latest` would fetch and execute whatever npm serves at that moment on
 /// every machine Maestro touches, which is the supply-chain exposure `maestro-server/AGENTS.md`
@@ -31,7 +33,7 @@ const INSTALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120)
 ///
 /// Returns `false` when the target already had exactly these skills installed and nothing ran.
 pub(crate) async fn install(skills: Vec<SkillFile>) -> Result<bool, String> {
-    let home = crate::tool_config::home_dir()?;
+    let home = maestro_protocol::paths::home_dir()?;
     let stage = stage_root(&home);
     if !stage_files(&stage, &home, &skills)? {
         return Ok(false);
@@ -41,7 +43,7 @@ pub(crate) async fn install(skills: Vec<SkillFile>) -> Result<bool, String> {
 }
 
 fn stage_root(home: &Path) -> PathBuf {
-    home.join(".maestro").join("skills")
+    home.join(MAESTRO_DIR).join("skills")
 }
 
 /// Write the skill files under `stage`, returning whether an install still has to run.
@@ -226,11 +228,11 @@ struct SkillEntry {
 }
 
 fn library_root(home: &Path) -> PathBuf {
-    home.join(".maestro").join("skill-library")
+    home.join(MAESTRO_DIR).join("skill-library")
 }
 
 fn state_path(home: &Path) -> PathBuf {
-    home.join(".maestro").join("skills.json")
+    home.join(MAESTRO_DIR).join("skills.json")
 }
 
 fn read_state(home: &Path) -> Result<SkillState, String> {
@@ -248,13 +250,9 @@ fn write_state(home: &Path, mut state: SkillState) -> Result<(), String> {
     crate::mcp_store::write_json_atomic(&state_path(home), &state)
 }
 
-/// The Agent Skills name rule, which is also what keeps a name safe to use as a directory.
-fn validate_name(name: &str) -> Result<(), String> {
-    let valid = (1..=64).contains(&name.len())
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
-    if valid {
+/// A name that can be in the library, and so is safe to use as a directory.
+fn library_name(name: &str) -> Result<(), String> {
+    if is_library_name(name) {
         Ok(())
     } else {
         Err(format!(
@@ -298,7 +296,7 @@ fn project_skills(root: &Path) -> Vec<ProjectSkill> {
 }
 
 pub(crate) fn list(project_path: Option<&str>) -> Result<SkillList, String> {
-    let home = crate::tool_config::home_dir()?;
+    let home = maestro_protocol::paths::home_dir()?;
     let library = library_root(&home);
     let skills = read_state(&home)?
         .skills
@@ -376,9 +374,14 @@ fn reconcile(
 }
 
 pub(crate) async fn apply(req: ApplySkillRequest) -> Result<(), String> {
-    validate_name(&req.name)?;
+    // Writing the skill makes it new, and a new skill is held to the whole naming rule.
+    if req.files.is_some() || req.source.is_some() {
+        validate_skill_name(&req.name)?;
+    } else {
+        library_name(&req.name)?;
+    }
     let _guard = MANAGED.lock().await;
-    let home = crate::tool_config::home_dir()?;
+    let home = maestro_protocol::paths::home_dir()?;
     let dir = library_root(&home).join(&req.name);
     let mut state = read_state(&home)?;
     let before = state.skills.get(&req.name).cloned().unwrap_or_default();
@@ -435,7 +438,7 @@ pub(crate) async fn apply(req: ApplySkillRequest) -> Result<(), String> {
 /// so it installs at project scope into a scratch directory, for one agent, copied rather than
 /// symlinked, and that copy is moved into the library.
 async fn fetch(home: &Path, source: &str, name: &str, dir: &Path) -> Result<(), String> {
-    let scratch = home.join(".maestro").join("skill-fetch");
+    let scratch = home.join(MAESTRO_DIR).join("skill-fetch");
     remove_dir_if_present(&scratch)?;
     std::fs::create_dir_all(&scratch)
         .map_err(|error| format!("Failed to create {}: {error}", scratch.display()))?;
@@ -483,9 +486,9 @@ fn remove_dir_if_present(dir: &Path) -> Result<(), String> {
 }
 
 pub(crate) async fn delete(name: &str) -> Result<(), String> {
-    validate_name(name)?;
+    library_name(name)?;
     let _guard = MANAGED.lock().await;
-    let home = crate::tool_config::home_dir()?;
+    let home = maestro_protocol::paths::home_dir()?;
     let mut state = read_state(&home)?;
     if let Some(entry) = state.skills.remove(name) {
         let (_, remove) = reconcile(&entry.agents, &BTreeMap::new(), false);
@@ -598,15 +601,6 @@ mod tests {
         );
         assert!(found[0].agents.contains(&"codex-acp".to_string()));
         assert_eq!(found[1].agents, vec!["claude-acp"]);
-    }
-
-    #[test]
-    fn skill_names_follow_the_agent_skills_rule() {
-        let long = "x".repeat(65);
-        for bad in ["", "PDF", "a/b", "..", "a_b", long.as_str()] {
-            assert!(validate_name(bad).is_err(), "{bad} must be rejected");
-        }
-        assert!(validate_name("pdf-tools-2").is_ok());
     }
 
     fn skill(path: &str, contents: &str) -> SkillFile {

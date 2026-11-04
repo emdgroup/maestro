@@ -8,3 +8,19 @@ base64 = "0.23"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["io-util", "macros", "rt"] }
+image = { version = "0.25", default-features = false, features = [
+  "png",
+  "jpeg",
+  "webp",
+], optional = true }
+specta = { version = "2.0.0-rc.20", features = ["serde_json"], optional = true }
+
+[features]
+# Scaling an image attachment down before it is sent. Off by default, so the crate stays light for
+# anyone who only needs the message types.
+image = ["dep:image"]
+# `NoConsoleWindow` for the processes the app and the daemon spawn.
+process = ["tokio/process"]
+# `specta::Type` on the wire types the app hands its frontend. Only the app turns it on: the daemon
+# is deployed to every remote host and must not compile specta in.
+specta = ["dep:specta"]

@@ -7,6 +7,7 @@
 //! import and read by nothing here. Moving a prompt between the two is a copy: a new row in the
 //! other collection, unstarred, with no link to the original.
 
+use maestro_protocol::mcp_args::{bool_argument, string_argument, string_list_argument};
 use maestro_protocol::{
     CreatePromptRequest, ProjectRef, PromptRef, SetPromptFavoriteRequest, UpdatePromptRequest,
 };
@@ -18,8 +19,8 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::acp::connection_server::{query_project_store, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct Prompt {
@@ -229,7 +230,7 @@ pub(crate) fn tool(conn: &Connection, name: &str, arguments: &Value) -> Result<V
                 id: None,
                 title: string_argument(arguments, "title")?.unwrap_or_default(),
                 body: string_argument(arguments, "body")?.unwrap_or_default(),
-                tags: tags_argument(arguments)?.unwrap_or_default(),
+                tags: string_list_argument(arguments, "tags")?.unwrap_or_default(),
                 shared: true,
                 favorite: bool_argument(arguments, "favorite")?.unwrap_or(false),
             };
@@ -240,7 +241,7 @@ pub(crate) fn tool(conn: &Connection, name: &str, arguments: &Value) -> Result<V
             let mut prompt = existing(id_argument(arguments)?)?;
             let title = string_argument(arguments, "title")?;
             let body = string_argument(arguments, "body")?;
-            let tags = tags_argument(arguments)?;
+            let tags = string_list_argument(arguments, "tags")?;
             let favorite = bool_argument(arguments, "favorite")?;
             if title.is_some() || body.is_some() || tags.is_some() {
                 let input = PromptInput {
@@ -275,33 +276,6 @@ fn id_argument(arguments: &Value) -> Result<i32, String> {
         .ok_or_else(|| "id is required".to_string())
 }
 
-// Absent and null both mean "leave it"; a value of the wrong type is refused with the field's
-// name rather than coerced, since nothing validates a host tool's schema before it gets here.
-fn string_argument(arguments: &Value, key: &str) -> Result<Option<String>, String> {
-    match arguments.get(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(_) => Err(format!("{key} must be a string")),
-    }
-}
-
-fn bool_argument(arguments: &Value, key: &str) -> Result<Option<bool>, String> {
-    match arguments.get(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::Bool(value)) => Ok(Some(*value)),
-        Some(_) => Err(format!("{key} must be true or false")),
-    }
-}
-
-fn tags_argument(arguments: &Value) -> Result<Option<Vec<String>>, String> {
-    match arguments.get("tags") {
-        None | Some(Value::Null) => Ok(None),
-        Some(value) => serde_json::from_value(value.clone())
-            .map(Some)
-            .map_err(|_| "tags must be a list of strings".to_string()),
-    }
-}
-
 /// Run `f` against the shared collection. A write tells every listener with `prompts-changed` and
 /// `collection: "shared"`; the daemon's push for a project's collection says `"project"`.
 pub(crate) fn with_shared<T>(
@@ -310,10 +284,7 @@ pub(crate) fn with_shared<T>(
     f: impl FnOnce(&Connection) -> Result<T, String>,
 ) -> Result<T, String> {
     let result = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         f(&conn)?
     };
     if write {

@@ -1,11 +1,11 @@
 use std::sync::Arc;
 use tauri::State;
 
-use crate::acp::connection_server::{query_via_server, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
+use crate::acp::connection_server::{query_via_server_within, reply};
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
 use crate::usage::mirror;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 const TIMEOUT_SECS: u64 = 30;
 
@@ -14,14 +14,12 @@ async fn turns_after(
     connection: ConnectionKey,
     after_turn_id: i64,
 ) -> Result<maestro_protocol::UsageTurnsResponse, String> {
-    query_via_server(
+    query_via_server_within(
         connection,
         app_state,
-        &format!("No connection server for connection {:?}", connection),
         ServerRequest::UsageTurns(maestro_protocol::UsageTurnsRequest { after_turn_id }),
         reply!(ServerResponse::UsageTurnsOk(page) => page),
         TIMEOUT_SECS,
-        "The connection's server did not answer within 30s",
     )
     .await
 }
@@ -31,14 +29,12 @@ async fn hours_after(
     connection: ConnectionKey,
     after_hour: String,
 ) -> Result<maestro_protocol::UsageHoursResponse, String> {
-    query_via_server(
+    query_via_server_within(
         connection,
         app_state,
-        &format!("No connection server for connection {:?}", connection),
         ServerRequest::UsageHours(maestro_protocol::UsageHoursRequest { after_hour }),
         reply!(ServerResponse::UsageHoursOk(page) => page),
         TIMEOUT_SECS,
-        "The connection's server did not answer within 30s",
     )
     .await
 }
@@ -47,10 +43,7 @@ fn with_db<T>(
     app_state: &AppState,
     f: impl FnOnce(&rusqlite::Connection) -> rusqlite::Result<T>,
 ) -> Result<T, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state.db()?;
     f(&conn).map_err(|e| format!("Usage mirror: {e}"))
 }
 
@@ -134,9 +127,6 @@ pub fn get_usage_report(
     app_state: State<'_, Arc<AppState>>,
     query: crate::usage::report::UsageQuery,
 ) -> Result<crate::usage::report::UsageReport, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state.db()?;
     crate::usage::report::report(&conn, &query)
 }

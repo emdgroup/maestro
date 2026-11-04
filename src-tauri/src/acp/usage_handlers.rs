@@ -6,9 +6,9 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::acp::connection_server::{query_via_server, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 /// One recorded turn. The token counts are `None` when the agent reported none for it.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -54,14 +54,11 @@ pub async fn get_session_usage(
     let response = query_via_server(
         connection,
         &app_state,
-        &format!("No connection server for connection {:?}", connection),
         ServerRequest::SessionUsage(maestro_protocol::SessionUsageRequest {
             agent_id,
             acp_session_id,
         }),
         reply!(ServerResponse::SessionUsageOk(response) => response),
-        15,
-        "The connection's server did not answer within 15s",
     )
     .await?;
     Ok(response.turns.into_iter().map(Into::into).collect())

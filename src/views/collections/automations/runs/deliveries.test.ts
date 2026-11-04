@@ -7,6 +7,7 @@ const at = (seconds: number) => new Date(seconds * 1000).toISOString();
 
 const delivery = (id: string, outcome: DeliveryOutcome, seconds: number): WebhookDelivery => ({
   id,
+  automation_id: "nightly",
   received_at: at(seconds),
   status: 409,
   outcome,

@@ -19,7 +19,6 @@ mod automation_runner;
 mod automations;
 mod autostart;
 mod client_sink;
-mod command_ext;
 mod daemon;
 mod dispatch;
 mod exec_channel;
@@ -34,6 +33,8 @@ mod mcp_store;
 mod pipeline_settings;
 mod profiles;
 mod project_locks;
+mod project_path;
+mod project_settings;
 mod project_store;
 mod prompt_store;
 mod scheduler;
@@ -62,8 +63,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use maestro_protocol::{
-    AcpRegistry, DiagnosticPayload, ErrorResponse, HandshakeResponse, ServerRequest,
-    ServerResponse, PROTOCOL_VERSION,
+    DiagnosticPayload, ErrorResponse, HandshakeResponse, ServerRequest, ServerResponse,
+    PROTOCOL_VERSION,
 };
 
 use agent_restart::handle_agent_restart;
@@ -417,7 +418,7 @@ pub(crate) async fn register_started_session(
             &project_store::Started {
                 agent_id: &session.agent_id,
                 acp_session_id: &cleanup.acp_session_id,
-                project_path: &automations::canonical_project_path(&project.project_path),
+                project_path: &project_path::canonical_project_path(&project.project_path),
                 cwd: &session.cwd,
                 meta: &project.meta,
                 can_reload: project.can_reload,
@@ -543,7 +544,7 @@ async fn run_server(
 
     // Agent discovery (which::which PATH scanning) runs after the handshake so the client does not
     // time out waiting on slow PATH scans on Windows.
-    let registry: AcpRegistry = tokio::task::spawn_blocking(agent::load_registry)
+    let registry: agent::registry::AcpRegistry = tokio::task::spawn_blocking(agent::load_registry)
         .await
         .unwrap_or_else(|_| agent::load_registry());
 

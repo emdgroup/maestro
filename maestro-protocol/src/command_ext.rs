@@ -1,5 +1,8 @@
-// CREATE_NO_WINDOW prevents child processes from opening a visible console window
-// when the parent Tauri process runs with windows_subsystem = "windows" (release builds).
+//! `no_console_window()` for the commands the app and the daemon spawn.
+//!
+//! CREATE_NO_WINDOW prevents child processes from opening a visible console window when the
+//! parent runs without one, as the release app does with windows_subsystem = "windows".
+
 #[cfg_attr(not(windows), allow(dead_code))]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 

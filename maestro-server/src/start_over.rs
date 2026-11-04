@@ -9,20 +9,19 @@
 use std::path::Path;
 
 use maestro_protocol::{
-    ApplyTaskTransitionRequest, BranchMode, PhaseStatus, RestartTaskRequest, RunMode,
-    ServerRequest, ServerResponse, TaskPhase, TaskStatus, TaskTransition, TransitionGuard,
-    WorkspaceMode,
+    BranchMode, PhaseStatus, RestartTaskRequest, RunMode, ServerResponse, TaskPhase, TaskStatus,
+    TaskTransition, TransitionGuard, WorkspaceMode,
 };
 
 use crate::project_store::Store;
-use crate::task_store::loops;
+use crate::task_store::{loops, requests};
 use crate::worktree::git;
 
 pub(crate) async fn restart(
     store: &Store,
     request: RestartTaskRequest,
 ) -> Result<Vec<ServerResponse>, String> {
-    let path = crate::automations::canonical_project_path(&request.project_path);
+    let path = crate::project_path::canonical_project_path(&request.project_path);
     let task_id = request.task_id;
     if !matches!(request.status, TaskStatus::Planning | TaskStatus::Queue) {
         return Err("A task starts over in Planning or Queue".to_string());
@@ -150,17 +149,16 @@ pub(crate) async fn restart(
             ));
         }
     }
-    let move_back = ServerRequest::ApplyTaskTransition(ApplyTaskTransitionRequest {
-        project_path: path.clone(),
+    let move_back = requests::transition(
+        &path,
         task_id,
-        event: TaskTransition::ManualMove(request.status),
-        guard: TransitionGuard::Always,
-        update: None,
+        TaskTransition::ManualMove(request.status),
+        TransitionGuard::Always,
+        None,
         // A loop starts over as a new one would, with nothing in its thread.
-        comment: (!looping).then(|| crate::loop_engine::note_entry(note)),
-    });
-    let (_, moved) = crate::task_store::requests::answer(&mut conn, move_back)?;
-    pushes.extend(moved);
+        (!looping).then(|| requests::note(note)),
+    );
+    requests::answer_into(&mut conn, move_back, &mut pushes)?;
     Ok(pushes)
 }
 

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::core::AppState;
-use crate::models::issue_tracking::GitLabProjectOption;
+use crate::integration::issue_tracking_models::GitLabProjectOption;
 
 /// List GitLab projects the authenticated user is a member of.
 #[tauri::command]

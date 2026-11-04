@@ -1,113 +1,31 @@
 //! External file attachment preparation for ACP sessions.
 
 use crate::acp::ConnectionKey;
+use crate::connectivity::GitConnection;
 use crate::core::AppState;
-use crate::models::GitConnection;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
 use tauri::State;
 
-const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
-const SCALE_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
+use maestro_protocol::attachments::{
+    image_too_large, is_image_extension, is_pdf_extension, mime_for_extension, scale_image,
+};
 
 fn prepare_image_bytes(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
-    let size = bytes.len() as u64;
-    if size > MAX_IMAGE_BYTES {
-        return Err(format!(
-            "Image too large ({} MB, max {} MB)",
-            size / 1_048_576,
-            MAX_IMAGE_BYTES / 1_048_576
-        ));
+    if let Some(reason) = image_too_large(bytes.len() as u64) {
+        return Err(reason);
     }
-    if size <= SCALE_THRESHOLD_BYTES {
-        return Ok(bytes);
-    }
-
-    let ratio = (SCALE_THRESHOLD_BYTES as f64 / size as f64).sqrt();
-    if ratio >= 0.9 {
-        return Ok(bytes);
-    }
-
-    let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
-    let new_w = (img.width() as f64 * ratio) as u32;
-    let new_h = (img.height() as f64 * ratio) as u32;
-    let resized = img.resize(new_w, new_h, image::imageops::FilterType::Triangle);
-
-    let mut output = Vec::new();
-    resized
-        .write_to(
-            &mut std::io::Cursor::new(&mut output),
-            image::ImageFormat::Png,
-        )
-        .map_err(|e| e.to_string())?;
-    Ok(output)
-}
-
-fn mime_for_extension(path: &str) -> Option<&'static str> {
-    let ext = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    match ext.as_str() {
-        "rs" => Some("text/x-rust"),
-        "ts" | "tsx" => Some("text/typescript"),
-        "js" | "jsx" => Some("text/javascript"),
-        "py" => Some("text/x-python"),
-        "go" => Some("text/x-go"),
-        "rb" => Some("text/x-ruby"),
-        "java" => Some("text/x-java"),
-        "c" | "h" => Some("text/x-c"),
-        "cpp" => Some("text/x-c++"),
-        "toml" => Some("text/x-toml"),
-        "json" => Some("application/json"),
-        "md" => Some("text/markdown"),
-        "yaml" | "yml" => Some("text/yaml"),
-        "sh" => Some("text/x-sh"),
-        "html" => Some("text/html"),
-        "css" => Some("text/css"),
-        "sql" => Some("text/x-sql"),
-        "graphql" => Some("text/x-graphql"),
-        "png" => Some("image/png"),
-        "jpg" | "jpeg" => Some("image/jpeg"),
-        "gif" => Some("image/gif"),
-        "webp" => Some("image/webp"),
-        "svg" => Some("image/svg+xml"),
-        "pdf" => Some("application/pdf"),
-        _ => None,
-    }
-}
-
-fn is_image_extension(path: &str) -> bool {
-    let ext = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    matches!(
-        ext.as_str(),
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "tiff" | "bmp" | "ico" | "svg"
-    )
-}
-
-fn is_pdf_extension(path: &str) -> bool {
-    std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.eq_ignore_ascii_case("pdf"))
-        .unwrap_or(false)
+    scale_image(bytes)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct ExternalFileRequest {
     pub path: String,
     pub is_image: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct AttachmentValidation {
     pub size_bytes: u64,
     /// `None` when the file can be attached. Otherwise the reason to show the user, phrased for
@@ -129,12 +47,8 @@ pub async fn validate_attachment(
         .map_err(|e| format!("Cannot read '{path}': {e}"))?;
     let size_bytes = metadata.len();
 
-    let rejection = if (is_image || is_image_extension(&path)) && size_bytes > MAX_IMAGE_BYTES {
-        Some(format!(
-            "Image too large ({} MB, max {} MB)",
-            size_bytes / 1_048_576,
-            MAX_IMAGE_BYTES / 1_048_576
-        ))
+    let rejection = if is_image || is_image_extension(&path) {
+        image_too_large(size_bytes)
     } else {
         None
     };
@@ -146,7 +60,6 @@ pub async fn validate_attachment(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct PreparedAttachment {
     pub display_name: String,
     pub local_path: String,
@@ -163,77 +76,6 @@ fn attachments_dir(cwd: &str, session_id: &str) -> String {
     )
 }
 
-/// Create the destination directory and copy into it in one command, so a copy costs one round
-/// trip rather than two.
-fn copy_script(dir: &str, source: &str, dest: &str) -> String {
-    use crate::git::remote::shell_quote;
-    format!(
-        "mkdir -p {} && cp {} {}",
-        shell_quote(dir),
-        shell_quote(source),
-        shell_quote(dest)
-    )
-}
-
-/// Copy a host file to `dest` on the machine `conn` points at, creating `dir` first. The one
-/// transfer path for prompt attachments and task attachments alike.
-pub(crate) async fn copy_to_machine(
-    app_state: &AppState,
-    conn: &GitConnection,
-    source: &std::path::Path,
-    dir: &str,
-    dest: &str,
-) -> Result<(), String> {
-    let name = source.file_name().and_then(|n| n.to_str()).unwrap_or(dest);
-    match conn {
-        GitConnection::Local { .. } => {
-            tokio::fs::create_dir_all(dir)
-                .await
-                .map_err(|e| format!("Failed to create {dir}: {e}"))?;
-            tokio::fs::copy(source, dest)
-                .await
-                .map_err(|e| format!("Failed to copy '{name}' to {dest}: {e}"))?;
-        }
-        GitConnection::Remote { ssh, .. } => {
-            crate::connectivity::files::create_dir_all(conn, dir).await?;
-            crate::connectivity::ssh::sftp::upload_file(
-                ssh,
-                source,
-                dest,
-                &format!("attach-{dest}"),
-                &app_state.app_handle,
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-        }
-        // The host's drives are already mounted inside the distro, so this copies without the
-        // bytes ever leaving the machine.
-        GitConnection::Wsl { distro, .. } => {
-            let source = source.to_str().ok_or("Source path is not valid UTF-8")?;
-            let source = crate::connectivity::wsl::to_wsl_path(distro, source).await?;
-            let output = crate::connectivity::exec_channel::run_on(
-                conn,
-                None,
-                "sh",
-                &["-c", &copy_script(dir, &source, dest)],
-            )
-            .await?;
-            if !output.success() {
-                return Err(format!(
-                    "Failed to copy '{name}' into {distro}: {}",
-                    output.stderr_string()
-                ));
-            }
-        }
-        GitConnection::Docker { container_name, .. } => {
-            crate::connectivity::files::create_dir_all(conn, dir).await?;
-            let cli = crate::connectivity::docker::ContainerCli::detect()?;
-            crate::connectivity::docker::copy_into(&cli, container_name, source, dest).await?;
-        }
-    }
-    Ok(())
-}
-
 /// The prompt block for a task attachment at `path` on the project's machine, in the shape
 /// [`prepare_external_attachments`] gives a file picked in the compose bar: an image inline, text
 /// pasted in, a PDF linked. The bytes are read where the project lives, since that is where the
@@ -248,12 +90,8 @@ pub(crate) async fn task_attachment_block(
 
     if is_image_extension(path) {
         let size = u64::try_from(size_bytes).unwrap_or(0);
-        if size > MAX_IMAGE_BYTES {
-            return Err(format!(
-                "Image too large ({} MB, max {} MB)",
-                size / 1_048_576,
-                MAX_IMAGE_BYTES / 1_048_576
-            ));
+        if let Some(reason) = image_too_large(size) {
+            return Err(reason);
         }
         let prepared = prepare_image_bytes(read_bytes(conn, path).await?)?;
         let mime = mime_for_extension(path).unwrap_or("image/png");
@@ -365,7 +203,10 @@ pub async fn prepare_external_attachments(
                     .await?;
                 let dir = attachments_dir(&cwd, session_id);
                 let dest = format!("{dir}/{display_name}");
-                copy_to_machine(&app_state, &conn, local_path, &dir, &dest).await?;
+                crate::connectivity::files::copy_to_machine(
+                    &app_state, &conn, local_path, &dir, &dest,
+                )
+                .await?;
                 format!("file://{dest}")
             };
 

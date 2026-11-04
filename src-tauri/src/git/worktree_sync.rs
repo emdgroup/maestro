@@ -1,8 +1,8 @@
 use std::sync::Arc;
-use tauri::{Emitter, State};
+use tauri::State;
 
+use crate::connectivity::GitConnection;
 use crate::core::AppState;
-use crate::models::GitConnection;
 
 /// Rewrite the git failures a user can act on, and pass everything else through.
 ///
@@ -77,7 +77,7 @@ pub async fn push_worktree_branch(
         .await
         .map_err(|e| classify_git_failure(&e))?;
 
-    app_state.app_handle.emit("worktrees-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "worktrees-changed", ());
     Ok(())
 }
 
@@ -166,7 +166,7 @@ pub async fn fetch_project_remote(
         .await
         .map_err(|e| classify_git_failure(&e))?;
 
-    app_state.app_handle.emit("worktrees-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "worktrees-changed", ());
     Ok(())
 }
 
@@ -200,13 +200,13 @@ pub async fn pull_worktree_branch(
     // Emitted even when the merge below fails: the fetch already moved the tracking refs, so every
     // card's behind count is now stale in the other direction — showing 0 for work that has
     // arrived. The user is about to be told the merge failed; the counts should agree with that.
-    app_state.app_handle.emit("worktrees-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "worktrees-changed", ());
 
     crate::git::run_git_in_dir(&git_conn, &worktree_path, &["merge", "--ff-only", "@{u}"])
         .await
         .map_err(|e| classify_git_failure(&e))?;
 
-    app_state.app_handle.emit("worktrees-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "worktrees-changed", ());
     Ok(())
 }
 

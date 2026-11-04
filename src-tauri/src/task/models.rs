@@ -1,8 +1,13 @@
+use maestro_protocol as wire;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+pub use maestro_protocol::{
+    BranchMode, LoopConfig, PhaseStatus, PullRequestCi, RunMode, TaskAttachment, TaskBall,
+    TaskComment, TaskCompletion, TaskPhase, TaskPriority, TaskStatus, WorkspaceMode,
+};
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct Task {
     pub id: i32,
     pub project_id: i32,
@@ -90,9 +95,8 @@ pub struct Task {
     /// Which profile this task wants for a given role, as JSON keyed by role name — a profile id,
     /// or null for "skip this stage". Carried as the raw string rather than a parsed map because
     /// the frontend is what reads it: it is written by the card's override dialog and handed
-    /// straight back to `resolve_agent_profile`, which already takes an override id and falls back
-    /// when it names nothing. `role_is_skipped` parses it on the Rust side, for the one stage the
-    /// backend decides on its own.
+    /// straight back to `has_profile_for_role`, which already takes an override id and falls back
+    /// when it names nothing. `maestro_protocol::profiles` parses it on the Rust side.
     #[specta(optional)]
     pub profile_overrides: Option<String>,
     /// The phase the last claim took the task from. Equal to `phase` on a `Failed` task when the
@@ -107,350 +111,14 @@ pub struct Task {
     pub loop_config: Option<LoopConfig>,
     /// What the board shows of a loop. Set on every loop task.
     #[specta(optional)]
-    pub loop_summary: Option<super::loops::LoopSummary>,
+    pub loop_summary: Option<maestro_protocol::LoopSummary>,
     /// The usage-limit gate holding this task while it waits on its agent.
     #[specta(optional)]
-    pub gate: Option<super::loops::AgentGateState>,
+    pub gate: Option<maestro_protocol::AgentGateState>,
     /// The automation run that created this task, if one did.
     #[specta(optional)]
-    pub drafted_by: Option<super::loops::TaskDraft>,
+    pub drafted_by: Option<maestro_protocol::TaskDraft>,
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[specta(export)]
-#[serde(rename_all = "PascalCase")]
-pub enum RunMode {
-    Pipeline,
-    Loop,
-}
-
-/// A loop's budget and how its checks run. Mirrors `maestro_protocol::LoopConfig`, which holds the
-/// defaults.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct LoopConfig {
-    pub max_iterations: u32,
-    /// How long one iteration's Build session may run, in seconds.
-    pub max_build_secs: u32,
-    /// Iterations in a row that change nothing before the loop stops as stalled.
-    pub stall_limit: u32,
-    /// The time limit of a step or check without its own.
-    pub check_timeout_secs: u32,
-    /// Ordered patterns for what the worker's worktree leaves out; `!` makes files visible again.
-    /// See `maestro_protocol::LoopConfig`.
-    pub sealed_paths: Vec<String>,
-}
-
-impl From<LoopConfig> for wire::LoopConfig {
-    fn from(config: LoopConfig) -> Self {
-        wire::LoopConfig {
-            max_iterations: config.max_iterations,
-            max_build_secs: config.max_build_secs,
-            stall_limit: config.stall_limit,
-            check_timeout_secs: config.check_timeout_secs,
-            sealed_paths: config.sealed_paths,
-        }
-    }
-}
-
-impl From<wire::LoopConfig> for LoopConfig {
-    fn from(config: wire::LoopConfig) -> Self {
-        LoopConfig {
-            max_iterations: config.max_iterations,
-            max_build_secs: config.max_build_secs,
-            stall_limit: config.stall_limit,
-            check_timeout_secs: config.check_timeout_secs,
-            sealed_paths: config.sealed_paths,
-        }
-    }
-}
-
-/// One entry in a task's outcome thread.
-///
-/// `kind` is what a gate points at — `proposal`, `plan`, `verdict`, `outcome`, `note`. Kept as a
-/// string rather than an enum because the pipeline adds kinds as roles land, and an unknown one
-/// arriving from an older or newer build should render as itself, not fail to deserialise the
-/// whole thread.
-///
-/// `body` and `external_ref` are the inline-or-reference pair: exactly one carries the content.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct TaskComment {
-    pub id: i32,
-    pub task_id: i32,
-    pub kind: String,
-    pub author: String,
-    #[specta(optional)]
-    pub body: Option<String>,
-    #[specta(optional)]
-    pub external_ref: Option<String>,
-    /// The phase that produced it, so a thread can be read back against the pipeline.
-    #[specta(optional)]
-    pub phase: Option<String>,
-    pub created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct TaskAttachment {
-    pub id: i32,
-    pub task_id: i32,
-    pub filename: String,
-    pub file_path: String,
-    pub file_size: i64,
-    pub created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-#[serde(rename_all = "PascalCase")]
-pub enum TaskPriority {
-    Urgent,
-    High,
-    Medium,
-    Low,
-    None,
-}
-
-/// Where an agent works: a worktree of its own, the project directory, or a worktree that already
-/// exists. Shared by tasks and by the project default that seeds them.
-///
-/// This replaced a boolean, which could only say the first two. `ReuseWorkspace` is the one that
-/// needs a companion — the worktree it names — which is why a task carries
-/// `workspace_worktree_id` beside the mode rather than encoding everything here.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[specta(export)]
-#[serde(rename_all = "PascalCase")]
-pub enum WorkspaceMode {
-    NewWorktree,
-    RepositoryDirectory,
-    ReuseWorkspace,
-}
-
-/// Which branch a `NewWorktree` workspace ends up on: one created for it, or one that already
-/// exists.
-///
-/// Only `Create` needs a companion — the name to give the branch — which is why the task carries
-/// `workspace_branch` beside this rather than encoding the name here. `Checkout` needs nothing: the
-/// branch it checks out is the task's `base_branch`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[specta(export)]
-#[serde(rename_all = "PascalCase")]
-pub enum BranchMode {
-    Create,
-    Checkout,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[specta(export)]
-#[serde(rename_all = "PascalCase")]
-pub enum TaskStatus {
-    Planning,
-    Queue,
-    InProgress,
-    Review,
-    Done,
-    Cancelled,
-}
-
-/// What the pipeline is doing to a task right now, independent of which column it sits in.
-///
-/// `Refining`, `Drafting`, `PlanReview`, `SelfReview` and `AwaitingMerge` are defined but inert:
-/// no transition produces them until the refiner, planner, reviewer and PR roles land. They exist
-/// now so adding those roles does not need a second migration.
-///
-/// A phase says nothing about which column the task is in. `Spawning` sits in Queue, which is what
-/// lets a failed spawn be an ordinary active row rather than an exception to the phase invariant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[specta(export)]
-#[serde(rename_all = "PascalCase")]
-pub enum TaskPhase {
-    Spawning,
-    Refining,
-    Drafting,
-    PlanReview,
-    Implementing,
-    Rework,
-    SelfReview,
-    Approval,
-    AwaitingMerge,
-    /// A loop's coder, one fresh session per iteration.
-    Iterating,
-    /// A loop's checks running, with no session live.
-    Checking,
-    /// A loop's judge deciding its `judge` checks, once every command check passes.
-    Judging,
-}
-
-impl TaskPhase {
-    /// Whether the phase belongs to a role that writes nothing.
-    ///
-    /// The phase is how the backend recognises the role at all: `AgentRole` is an argument the
-    /// frontend passes to Execute and is never persisted, so anything downstream of the spawn —
-    /// the permission path in particular — has only this to go on. Mirrors
-    /// `AgentRole::is_read_only`, and the two must agree.
-    pub fn is_read_only(self) -> bool {
-        matches!(
-            self,
-            TaskPhase::Refining | TaskPhase::Drafting | TaskPhase::SelfReview | TaskPhase::Judging
-        )
-    }
-}
-
-/// How the current phase is going.
-///
-/// `Blocked` and `Waiting` both mean the user has to act, and are deliberately distinct: `Blocked`
-/// is an agent stopped mid-phase that cannot continue without an answer, and drives the animated
-/// card treatment. `Waiting` is a gate with nothing running, and is static. Collapsing the two
-/// would make every waiting card pulse and turn the animation into wallpaper.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[specta(export)]
-#[serde(rename_all = "PascalCase")]
-pub enum PhaseStatus {
-    Running,
-    Blocked,
-    Waiting,
-    Failed,
-}
-
-/// Who the pipeline is blocked on — not who owns the ticket.
-///
-/// A Planning backlog and a queued task are `None`, because nothing is waiting on anyone. That is
-/// what keeps the "Needs me" filter showing genuine gates rather than the whole board.
-///
-/// `External` is a task waiting on something outside Maestro — a PR waiting on CI and a human
-/// reviewer on GitHub. Folding that into `User` would list tasks in "Needs me" that our user
-/// cannot act on, which is the one thing that filter has to get right.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[specta(export)]
-#[serde(rename_all = "PascalCase")]
-pub enum TaskBall {
-    Agent,
-    User,
-    External,
-    None,
-}
-
-/// How a task reached `Done`, and therefore what is left over.
-///
-/// Only meaningful on a Done task, and only in a git project — a non-git task has no merge, no
-/// worktree and no PR, so its completion is `None` rather than a variant meaning "not applicable".
-///
-/// `LocalOnly` is the one that carries unfinished business: the changes were committed and
-/// approved but never merged, and the worktree is still alive holding them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[specta(export)]
-#[serde(rename_all = "PascalCase")]
-pub enum TaskCompletion {
-    Merged,
-    MergedViaPR,
-    LocalOnly,
-    NoChanges,
-}
-
-/// What the forge's CI last said about an open pull request's head commit.
-///
-/// A display cache rather than a lifecycle field: the sweep runs every three minutes, and this is
-/// what lets the card answer "can this land" in between. Nothing branches on it — `CiState` is what
-/// the fix loop reads, freshly, from the forge.
-///
-/// `None` covers all three ways there is nothing to say: no CI configured, a forge that will not
-/// answer, and a pull request not swept yet. They are one silence on the card, so a fourth variant
-/// distinguishing them would render identically to its own absence.
-///
-/// Conflicts are deliberately not in here. `AwaitingMerge` with `Waiting` and the ball on the user
-/// is a conflict and nothing else, so storing it would be a second copy of a fact the lifecycle
-/// fields already carry — and one a sweep that learned nothing could overwrite.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[specta(export)]
-#[serde(rename_all = "PascalCase")]
-pub enum PullRequestCi {
-    Passing,
-    Failing,
-    Pending,
-}
-
-/// `From` both ways between an app enum and its `maestro_protocol` twin, which carries no specta
-/// `Type` so the binary deployed to every remote host does not compile specta in.
-macro_rules! wire_enum {
-    ($app:ty, $wire:ty, [$($variant:ident),* $(,)?]) => {
-        impl From<$wire> for $app {
-            fn from(value: $wire) -> Self {
-                type Wire = $wire;
-                match value {
-                    $(Wire::$variant => Self::$variant,)*
-                }
-            }
-        }
-        impl From<$app> for $wire {
-            fn from(value: $app) -> Self {
-                type App = $app;
-                match value {
-                    $(App::$variant => Self::$variant,)*
-                }
-            }
-        }
-    };
-}
-
-use maestro_protocol as wire;
-
-wire_enum!(
-    TaskStatus,
-    wire::TaskStatus,
-    [Planning, Queue, InProgress, Review, Done, Cancelled]
-);
-wire_enum!(
-    TaskPriority,
-    wire::TaskPriority,
-    [Urgent, High, Medium, Low, None]
-);
-wire_enum!(
-    WorkspaceMode,
-    wire::WorkspaceMode,
-    [NewWorktree, RepositoryDirectory, ReuseWorkspace]
-);
-wire_enum!(BranchMode, wire::BranchMode, [Create, Checkout]);
-wire_enum!(RunMode, wire::RunMode, [Pipeline, Loop]);
-wire_enum!(
-    TaskPhase,
-    wire::TaskPhase,
-    [
-        Spawning,
-        Refining,
-        Drafting,
-        PlanReview,
-        Implementing,
-        Rework,
-        SelfReview,
-        Approval,
-        AwaitingMerge,
-        Iterating,
-        Checking,
-        Judging
-    ]
-);
-wire_enum!(
-    PhaseStatus,
-    wire::PhaseStatus,
-    [Running, Blocked, Waiting, Failed]
-);
-wire_enum!(TaskBall, wire::TaskBall, [Agent, User, External, None]);
-wire_enum!(
-    TaskCompletion,
-    wire::TaskCompletion,
-    [Merged, MergedViaPR, LocalOnly, NoChanges]
-);
-wire_enum!(
-    PullRequestCi,
-    wire::PullRequestCi,
-    [Passing, Failing, Pending]
-);
-wire_enum!(
-    crate::project::profiles::AgentRole,
-    wire::AgentRole,
-    [Refiner, Planner, Coder, Reviewer, Judge, Preparer, Worker]
-);
 
 impl Task {
     /// The daemon's row, filed under the project the request named: it keys tasks by path, and
@@ -461,8 +129,8 @@ impl Task {
             project_id,
             title: task.title,
             description: task.description,
-            status: task.status.into(),
-            priority: task.priority.into(),
+            status: task.status,
+            priority: task.priority,
             base_branch: task.base_branch,
             archived_at: task.archived_at,
             external_id: task.external_id,
@@ -478,101 +146,30 @@ impl Task {
             created_at: task.created_at,
             updated_at: task.updated_at,
             auto_approve: task.auto_approve,
-            workspace_mode: task.workspace_mode.into(),
+            workspace_mode: task.workspace_mode,
             workspace_worktree_id: task.workspace_worktree_id,
-            workspace_branch_mode: task.workspace_branch_mode.into(),
+            workspace_branch_mode: task.workspace_branch_mode,
             workspace_branch: task.workspace_branch,
             agent_id: task.agent_id,
             permission_mode_override: task.permission_mode_override,
             execution_start_sha: task.execution_start_sha,
-            phase: task.phase.map(Into::into),
-            phase_status: task.phase_status.map(Into::into),
-            ball: task.ball.into(),
-            completion: task.completion.map(Into::into),
+            phase: task.phase,
+            phase_status: task.phase_status,
+            ball: task.ball,
+            completion: task.completion,
             execute_requested_at: task.execute_requested_at,
             pull_request_url: task.pull_request_url,
             pull_request_number: task.pull_request_number,
             review_rounds: task.review_rounds,
             fix_rounds: task.fix_rounds,
-            pull_request_ci: task.pull_request_ci.map(Into::into),
+            pull_request_ci: task.pull_request_ci,
             profile_overrides: task.profile_overrides,
-            claimed_from: task.claimed_from.map(Into::into),
-            run_mode: task.run_mode.into(),
-            loop_config: task.loop_config.map(Into::into),
-            loop_summary: task
-                .loop_summary
-                .and_then(|summary| super::loops::mirror(*summary).ok()),
-            gate: task.gate.and_then(|gate| super::loops::mirror(*gate).ok()),
-            drafted_by: task
-                .drafted_by
-                .and_then(|draft| super::loops::mirror(*draft).ok()),
+            claimed_from: task.claimed_from,
+            run_mode: task.run_mode,
+            loop_config: task.loop_config,
+            loop_summary: task.loop_summary.map(|summary| *summary),
+            gate: task.gate.map(|gate| *gate),
+            drafted_by: task.drafted_by.map(|draft| *draft),
         }
     }
-}
-
-impl From<wire::TaskComment> for TaskComment {
-    fn from(row: wire::TaskComment) -> Self {
-        TaskComment {
-            id: row.id,
-            task_id: row.task_id,
-            kind: row.kind,
-            author: row.author,
-            body: row.body,
-            external_ref: row.external_ref,
-            phase: row.phase,
-            created_at: row.created_at,
-        }
-    }
-}
-
-impl From<wire::TaskAttachment> for TaskAttachment {
-    fn from(row: wire::TaskAttachment) -> Self {
-        TaskAttachment {
-            id: row.id,
-            task_id: row.task_id,
-            filename: row.filename,
-            file_path: row.file_path,
-            file_size: row.file_size,
-            created_at: row.created_at,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct ProjectConfigResponse {
-    pub default_agent: Option<String>,
-    pub startup_tab: Option<String>,
-    /// Deliberately absent from `ProjectConfigRequest`: the settings form submits the whole
-    /// request, and a colour field there would let a form save clobber a colour picked in the
-    /// header moments earlier. Writes go through `set_project_accent_color` instead.
-    pub accent_color: Option<String>,
-    /// `Some(false)` once the colour has been decided; see `ProjectConfig`.
-    pub accent_color_auto_assign: Option<bool>,
-    /// Resolved, never `None`: the settings file may predate the key, and the UI needs an answer.
-    pub default_workspace_mode: WorkspaceMode,
-    /// The configured git remote, or `None` for "auto" — deliberately *not* resolved, because the
-    /// picker has to be able to show that no choice has been made.
-    pub remote_name: Option<String>,
-    /// The configured base branch for new worktrees, or `None` for "auto". Not resolved either,
-    /// and for the same reason as `remote_name` above.
-    pub base_branch: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct ProjectConfigRequest {
-    pub default_agent: Option<String>,
-    pub startup_tab: Option<String>,
-    /// Only `NewWorktree` and `RepositoryDirectory` are offered in Settings — a project default
-    /// cannot name a specific workspace — but the field is the full enum so the two places that
-    /// read it do not have to translate between two types.
-    pub default_workspace_mode: WorkspaceMode,
-    /// `None` selects auto-detection; a name must be one the project actually has, which is why
-    /// the form offers a picker rather than a text field.
-    pub remote_name: Option<String>,
-    /// `None` selects the branch the repository is on. Same reasoning as `remote_name` for why the
-    /// form offers a picker: a mistyped branch would only surface when a worktree failed to be
-    /// created for it.
-    pub base_branch: Option<String>,
 }

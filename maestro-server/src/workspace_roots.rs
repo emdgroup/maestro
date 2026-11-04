@@ -67,14 +67,6 @@ fn resolve_one(entry: &str, home: Option<&str>) -> Result<PathBuf, String> {
     Ok(expanded)
 }
 
-/// Read the current user's home directory, for expanding a leading `~`.
-pub(crate) fn home_dir() -> Option<String> {
-    std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .ok()
-        .filter(|h| !h.is_empty())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

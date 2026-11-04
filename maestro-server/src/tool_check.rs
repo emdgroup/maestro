@@ -1,4 +1,4 @@
-use crate::command_ext::NoConsoleWindow;
+use maestro_protocol::command_ext::NoConsoleWindow;
 use maestro_protocol::{ToolCheckResult, ToolPathSource};
 use std::path::{Path, PathBuf};
 

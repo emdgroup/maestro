@@ -258,7 +258,7 @@ impl<'a> Turn<'a> {
                 .map_or(session_id, |c| c.acp_session_id.as_str()),
             project_path: project.map_or_else(
                 || session.cwd.clone(),
-                |p| crate::automations::canonical_project_path(&p.project_path),
+                |p| crate::project_path::canonical_project_path(&p.project_path),
             ),
             role: project.and_then(|p| p.meta.role.as_deref()),
             stop_reason: &ended.stop_reason,

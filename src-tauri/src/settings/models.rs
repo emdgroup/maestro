@@ -6,7 +6,6 @@ use specta::Type;
 /// Per connection rather than per app or per project because the constraint is memory, and memory
 /// belongs to the host: every project pointed at the same machine draws on the same pool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct ConnectionCapacitySettings {
     pub concurrency_mode: crate::execution::capacity::ConcurrencyMode,
     /// The cap in `Hard` mode, and in `Auto` the fallback for a host whose free memory cannot be
@@ -25,7 +24,6 @@ impl Default for ConnectionCapacitySettings {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
 #[serde(rename_all = "lowercase")]
-#[specta(export)]
 pub enum ActivityVisibility {
     #[default]
     Auto,
@@ -36,7 +34,6 @@ pub enum ActivityVisibility {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
-#[specta(export)]
 pub enum TerminalColorMode {
     #[default]
     FollowTheme,
@@ -45,7 +42,6 @@ pub enum TerminalColorMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
-#[specta(export)]
 pub enum EnterKeyBehavior {
     #[default]
     SendPrompt,
@@ -119,7 +115,6 @@ impl std::str::FromStr for EnterKeyBehavior {
 /// What colour a project that has never chosen one gets on first open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
-#[specta(export)]
 pub enum NewProjectColor {
     /// Pick one of the preset hues at random and persist it to the project.
     #[default]
@@ -150,7 +145,6 @@ impl std::str::FromStr for NewProjectColor {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
-#[specta(export)]
 pub enum AgentStreamWidth {
     #[default]
     Full,
@@ -182,7 +176,6 @@ impl std::str::FromStr for AgentStreamWidth {
 /// Two fields rather than one because a directory change needs a restart, and the UI has to be
 /// able to say so instead of pointing at a folder that is still empty.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct LogLocation {
     /// Directory the running logger is writing to. Empty if logging failed to start.
     pub active_directory: String,
@@ -191,7 +184,6 @@ pub struct LogLocation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct AppSettings {
     pub theme_preference: Option<String>,
     #[serde(default)]

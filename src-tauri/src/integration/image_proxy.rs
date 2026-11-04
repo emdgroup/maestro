@@ -4,7 +4,7 @@ use base64::Engine as _;
 use tauri::State;
 
 use crate::core::AppState;
-use crate::models::project::ProjectConfig;
+use crate::project::models::ProjectConfig;
 
 const MAX_PROXY_IMAGE_SIZE: u64 = 10 * 1024 * 1024;
 

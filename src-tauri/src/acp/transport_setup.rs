@@ -1,8 +1,8 @@
 //! Transport channel setup: open local, remote, and WSL connections to maestro-server.
 
-use crate::acp::transport::{write_message, HandshakeRequest, ServerRequest, PROTOCOL_VERSION};
 use crate::acp::transport_types::{perform_handshake, write_to_acp_session_raw, AcpReadSource};
-use crate::command_ext::NoConsoleWindow;
+use maestro_protocol::command_ext::NoConsoleWindow;
+use maestro_protocol::{write_message, HandshakeRequest, ServerRequest, PROTOCOL_VERSION};
 use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::ChildStdin;
 

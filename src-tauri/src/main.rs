@@ -4,7 +4,8 @@
     windows_subsystem = "windows"
 )]
 
-use maestro_lib::core::{init_db, load_settings, logging, AppState};
+use maestro_lib::core::{init_db, logging, AppState};
+use maestro_lib::settings::store::load_settings;
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -17,7 +18,7 @@ use tauri::Manager;
 ///
 /// A bad custom directory must not stop the app from starting, so it falls back to the OS location
 /// and says so once logging is up.
-fn setup_logging(app: &tauri::App, settings: &maestro_lib::models::AppSettings) {
+fn setup_logging(app: &tauri::App, settings: &maestro_lib::settings::models::AppSettings) {
     let level = logging::effective_level(settings.log_level.as_deref());
     let handle = app.handle();
 

@@ -77,10 +77,13 @@ map, the `spawn_result_rx` arm of `main.rs`, and an automation's session gets on
 Nothing about open sessions is kept app-side: not in `.maestro/state.json`, and a session's name
 is `RenameSession` on the row rather than the app's `session_aliases` table.
 
-**`projects.db` migrates by `user_version`.** `MIGRATIONS` in `project_store.rs` is an append-only
-list, one frozen literal per version, and each step runs in its own transaction with the version it
-reaches. A daemon refuses a file at a version newer than it knows, as the app refuses a newer
-database. A remote daemon directory, `~/.maestro/daemon/`, is shared by every build on that host,
+**`projects.db` and `automations.db` migrate by `user_version`.** Each has `MIGRATIONS`, in
+`project_store.rs` and `automations.rs`, an append-only list, one frozen literal per version, run by
+`project_store::migrate`: each step in its own transaction with the version it reaches. A daemon
+refuses a file at a version newer than it knows, as the app refuses a newer database.
+`automations.db` kept no version before, so its version 1 is the schema those releases shipped,
+written with `IF NOT EXISTS`, and an unversioned file first gets the columns builds added to its
+existing tables (`LATE_COLUMNS`). A remote daemon directory, `~/.maestro/daemon/`, is shared by every build on that host,
 dev and released alike, so a dev build that migrated it leaves an older daemon there without its
 store until that one is updated. That is accepted, as it is for the app database.
 
@@ -194,8 +197,10 @@ the canonical path from the app's `project_id`.
   task 3, every command naming a task or worktree carries `project_id` too, and so does every task
   query key in the frontend.
 - **A guarded step is one request.** A transition travels with its guard (`TransitionGuard`) and runs
-  under the store's lock, as do the composite steps: the turn end (`EndTaskTurn`), closing a
-  refinement and requesting execution. A step the guard refuses writes nothing and pushes nothing.
+  under the store's lock, as do the composite steps: the turn end (`task_store::end_turn`), closing
+  a refinement and requesting execution. The turn end and the deferred execution are the daemon's
+  own, so they are functions in `task_store::requests` rather than wire requests. A step the guard
+  refuses writes nothing and pushes nothing.
 - **Nothing on the shared reader awaits a daemon reply.** The reply to a daemon request comes back
   through the same reader that would be waiting for it, so `reader_task` spawns such requests onto
   a task of their own. A permission request of a task session is settled that way, its blocked
@@ -248,7 +253,10 @@ turn and started the next stage, closing the window stopped every task where it 
 in `maestro-server/src/` carry it. `scheduler.rs` drains a project's queue and hands every stage
 over. `task_runner.rs` starts one stage (`StartTask`): the planner first where the project has one,
 capacity, the agent, the claim, the worktree from `worktree.rs`'s `prepare_task_workspace`, the
-spawn, the stage's profile from `profiles.rs`, the prompt from `task_prompt.rs`, the session ready,
+spawn, the stage's profile from `profiles.rs` (which profile a role resolves to, whether it is
+skipped and whether a reviewer runs are `maestro_protocol::profiles`, shared with the app; reducing
+a profile to what the agent offers is the daemon's alone), the prompt from `task_prompt.rs`, the
+session ready,
 and the session it supersedes closed. `task_turn.rs` reads a turn's end. `session/task_gate.rs`
 settles a task session's prompts. `task_restart.rs` is the startup pass. `pipeline_settings.rs`
 holds capacity, auto mode and holds.
@@ -264,8 +272,8 @@ is handed over. The claim on the task keeps a second start from doing anything. 
 on session close, hold release and a one-minute tick.
 
 **A guarded step is still one request.** The turn end classifies the turn, runs the diff gate with
-local `git` (the daemon is on the repository's machine), and writes the outcome as one `EndTaskTurn`
-under the store's lock, exactly as a window's would. A start that cannot go ahead with nobody
+local `git` (the daemon is on the repository's machine), and writes the outcome as one
+`requests::end_turn` under the store's lock. A start that cannot go ahead with nobody
 watching, for want of an agent or a sign-in, fails with a note in the thread rather than retrying.
 The claim overwrites the phase with `Spawning`, so it keeps the one it took in `claimed_from`: a start
 that does not come up goes back to that phase, failed, where the stage it hands to can claim it again,
@@ -347,6 +355,8 @@ project the database that would hold it is not even on the machine the agent run
 
 - **A project is its canonicalized path**, resolved by the daemon, because it is the process on the
   machine that path exists on. The app sends the path it knows and stores whatever comes back.
+  `canonical_project_path` (`project_path.rs`) resolves it and then tidies it with
+  `maestro_protocol::paths::tidy_path`, the same tidying the app does before it compares paths.
 - **Schedules are five-field cron plus an IANA timezone, and the editor is the expression.** There
   is no preset layer above it, so nothing snaps and nothing is ever read only.
   `to_crate_expression` fixes up the two places the `cron` crate disagrees with a crontab: it wants
@@ -433,7 +443,7 @@ what makes a merged branch and a pushed branch both safe to delete, and a branch
 nowhere else — including in a repository with no remote — kept.
 
 `runs.worktree_path` is a live pointer, cleared on removal, so a value in it means a directory
-somebody still has to deal with. `runs.worktree_kept` is why. `is_maestro_created_worktree` does not
+somebody still has to deal with. `runs.worktree_kept` is why. `is_maestro_created_worktree` (`maestro_protocol::worktree_names`, where every worktree and branch name is built) does not
 match this naming, which is deliberate: the app's zombie sweep must not reap a worktree the daemon
 owns. The app adopts a `worktrees` row for each one in `adopt_automation_worktrees`, so a kept
 workspace appears on the Workspaces screen like any other; `list_worktrees_with_status` prunes that
@@ -516,7 +526,8 @@ Three files:
   `assets/mcp-tools.json` and forwards every call to the gateway.
 - `maestro-server/src/mcp_gateway.rs` — the loopback listener in the running server. Draws canvas
   surfaces itself by emitting a `SessionUpdate`, and parks every call — canvas ones included — in
-  `PendingHostTools` until Tauri answers.
+  `PendingHostTools` until Tauri answers. The tools it answers itself are beside it in
+  `mcp_gateway/`: `task_tools.rs`, `loop_tools.rs` and `prompt_tools.rs`.
 - `src-tauri/src/acp/host_tools.rs` — the host end: `canvas_await`, with the automation and
   template tools in `acp/automation_tools.rs` and the shared prompt tools in `prompts.rs`.
 
@@ -566,7 +577,7 @@ sees its own surface, so this is the only way a blocked asset or a thrown except
 They arrive on the **next** call by necessity — the frame has not rendered this one yet.
 
 **Adding a tool** is two edits: an entry in `assets/mcp-tools.json` and an arm in
-`host_tools::handle`, or in `mcp_gateway.rs` for a task tool. The entry's `description` is the _only_ documentation the agent gets — it
+`host_tools::handle`, or in `mcp_gateway/task_tools.rs` for a task tool. The entry's `description` is the _only_ documentation the agent gets — it
 carries what the skill prose used to — so it is prose, not a label, and belongs in that asset
 rather than in Rust for the same reason `registry.json` does. `build_tools` loads it and does
 nothing else.

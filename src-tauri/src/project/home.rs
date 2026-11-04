@@ -6,9 +6,9 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::acp::connection_server::{query_via_server, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct HomeSummary {
@@ -53,10 +53,7 @@ pub async fn get_home_summary(
     connection: ConnectionKey,
 ) -> Result<HomeSummary, String> {
     let recent: Vec<(i32, String)> = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         crate::project::crud::fetch_projects_from_db(&conn, connection)?
             .into_iter()
             .map(|project| (project.id, project.path))
@@ -65,13 +62,10 @@ pub async fn get_home_summary(
     let summary = query_via_server(
         connection,
         &app_state,
-        &format!("No connection server for connection {:?}", connection),
         ServerRequest::HomeSummary(maestro_protocol::HomeSummaryRequest {
             project_paths: recent.iter().map(|(_, path)| path.clone()).collect(),
         }),
         reply!(ServerResponse::HomeSummaryOk(summary) => summary),
-        15,
-        "The connection's server did not answer within 15s",
     )
     .await?;
     let mut projects: Vec<HomeProject> = summary

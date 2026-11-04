@@ -19,10 +19,10 @@ pub mod worktrees;
 pub use threads::*;
 
 use chrono::Utc;
+use maestro_protocol::completion::{review_rounds_remain, REVIEW_ROUND_CAP};
 use maestro_protocol::{
-    BranchMode, CloseRefinementRequest, CreateTaskRequest, EndTaskTurnRequest, LoopConfig,
-    RequestTaskExecutionRequest, RunMode, Task, TaskPhase, TaskStatus, TaskTransition, TaskUpdate,
-    TransitionGuard, TurnEnding, WorkspaceMode,
+    BranchMode, CloseRefinementRequest, CreateTaskRequest, LoopConfig, RunMode, Task, TaskPhase,
+    TaskStatus, TaskTransition, TaskUpdate, TransitionGuard, WorkspaceMode,
 };
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{de::DeserializeOwned, Serialize};
@@ -130,9 +130,6 @@ CREATE TABLE IF NOT EXISTS task_attachments (
 );
 CREATE INDEX IF NOT EXISTS idx_task_attachments_task_id ON task_attachments(project_path, task_id);
 ";
-
-/// How many times a review agent may send a task back, as the app's `acp::completion` has it.
-const REVIEW_ROUND_CAP: i32 = 3;
 
 const TASK_SELECT: &str = "SELECT * FROM tasks";
 
@@ -668,9 +665,9 @@ pub fn close_refinement(
 /// deferred task keeps its place among the deferrals.
 pub fn request_execution(
     conn: &mut Connection,
-    request: &RequestTaskExecutionRequest,
+    project_path: &str,
+    task_id: i32,
 ) -> Result<bool, String> {
-    let (project_path, task_id) = (request.project_path.as_str(), request.task_id);
     let tx = transaction(conn)?;
     transition::apply(
         &tx,
@@ -736,6 +733,31 @@ pub fn awaiting_merge(conn: &Connection, project_path: &str) -> Result<Vec<Task>
     )
 }
 
+/// How an agent's turn on a task ended, as the daemon classified it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnEnding {
+    Completed {
+        is_git_repo: bool,
+        has_changes: Option<bool>,
+        reviewer_pending: bool,
+    },
+    Stalled,
+    Failed,
+    /// A read-only role's deliverable arrived as a request to leave plan mode.
+    ArtifactDelivered,
+}
+
+/// A turn end for `end_turn`. A CI fix ending at `AwaitingMerge` is not one: the daemon pushes it
+/// and applies `CiFixPushed` itself.
+pub struct EndTurn {
+    pub project_path: String,
+    pub task_id: i32,
+    pub ending: TurnEnding,
+    /// The reply read as an approving verdict. Consulted only when the phase is `SelfReview`.
+    pub review_approved: bool,
+    pub closing_message: String,
+}
+
 /// The turn end, under one lock: read the phase, turn a reviewer's reply into its verdict, apply
 /// the transition while the task still has a phase, and file the closing message by what the
 /// phase produced.
@@ -746,10 +768,7 @@ pub fn awaiting_merge(conn: &Connection, project_path: &str) -> Result<Vec<Task>
 /// A delivered artifact is a plan-mode agent's, so it counts only while the task is still in a
 /// read-only phase. Anywhere else the task moved on under the request, and the plan it carries is
 /// no other phase's outcome: nothing is written and `None` is returned.
-pub fn end_turn(
-    conn: &mut Connection,
-    request: &EndTaskTurnRequest,
-) -> Result<Option<Task>, String> {
+pub fn end_turn(conn: &mut Connection, request: &EndTurn) -> Result<Option<Task>, String> {
     let (project_path, task_id) = (request.project_path.as_str(), request.task_id);
     let tx = transaction(conn)?;
     let phase = transition::read_state(&tx, project_path, task_id)?.phase;
@@ -829,7 +848,7 @@ fn review_verdict_event(
             |row| row.get(0),
         )
         .unwrap_or(REVIEW_ROUND_CAP);
-    if rounds >= REVIEW_ROUND_CAP {
+    if !review_rounds_remain(rounds) {
         crate::send_diag(
             "info",
             format!(
@@ -1270,14 +1289,7 @@ mod tests {
     }
 
     fn execute(conn: &mut Connection, task_id: i32) -> bool {
-        request_execution(
-            conn,
-            &RequestTaskExecutionRequest {
-                project_path: PROJECT.to_string(),
-                task_id,
-            },
-        )
-        .expect("request execution")
+        request_execution(conn, PROJECT, task_id).expect("request execution")
     }
 
     #[test]
@@ -1415,7 +1427,7 @@ mod tests {
     ) -> Option<Task> {
         end_turn(
             conn,
-            &EndTaskTurnRequest {
+            &EndTurn {
                 project_path: PROJECT.to_string(),
                 task_id,
                 ending,

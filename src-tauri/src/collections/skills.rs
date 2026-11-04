@@ -18,16 +18,18 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use maestro_protocol::skill_names::validate_skill_name;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use specta::Type;
 use tauri::State;
 
 use crate::acp::connection_server::{
-    query_apply_skill_via_server, query_delete_skill_via_server, query_list_skills_via_server,
+    query_apply_skill_via_server, query_via_server, query_via_server_within, reply,
 };
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 /// A skill the size of this is not a skill; it keeps a bad download off the wire.
 const MAX_SKILL_BYTES: usize = 8 * 1024 * 1024;
@@ -92,7 +94,13 @@ pub async fn list_skills(
     connection: ConnectionKey,
     project_path: Option<String>,
 ) -> Result<SkillLibrary, String> {
-    let list = query_list_skills_via_server(connection, project_path, &app_state).await?;
+    let list = query_via_server(
+        connection,
+        &app_state,
+        ServerRequest::ListSkills(maestro_protocol::ProjectScopedRequest { project_path }),
+        reply!(ServerResponse::ListSkillsOk(response) => response),
+    )
+    .await?;
     Ok(SkillLibrary {
         skills: list
             .skills
@@ -151,7 +159,7 @@ pub async fn save_skill(
     skill_md: String,
     agents: BTreeMap<String, bool>,
 ) -> Result<(), String> {
-    validate_name(&name)?;
+    validate_skill_name(&name)?;
     let parsed = parse_skill_md(&skill_md);
     if parsed.name.as_deref() != Some(name.as_str()) {
         return Err(format!("The name in SKILL.md has to be {name}"));
@@ -210,7 +218,14 @@ pub async fn delete_skill(
     connection: ConnectionKey,
     name: String,
 ) -> Result<(), String> {
-    query_delete_skill_via_server(connection, name, &app_state).await
+    query_via_server_within(
+        connection,
+        &app_state,
+        ServerRequest::DeleteSkill(maestro_protocol::DeleteSkillRequest { name }),
+        reply!(ServerResponse::DeleteSkillOk => ()),
+        150,
+    )
+    .await
 }
 
 /// Install a catalog skill into the connection's library and for `agents`. The daemon fetches it
@@ -224,7 +239,7 @@ pub async fn install_catalog_skill(
     skill_id: String,
     agents: BTreeMap<String, bool>,
 ) -> Result<(), String> {
-    validate_name(&skill_id)?;
+    validate_skill_name(&skill_id)?;
     query_apply_skill_via_server(
         connection,
         maestro_protocol::ApplySkillRequest {
@@ -434,22 +449,6 @@ fn skill_files(found: &Value) -> Result<Vec<maestro_protocol::SkillFile>, String
     }
 }
 
-/// The Agent Skills name rule, which `isSkillName` in `skills.ts` mirrors.
-fn validate_name(name: &str) -> Result<(), String> {
-    let valid = (1..=64).contains(&name.len())
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-        && !name.starts_with('-')
-        && !name.ends_with('-')
-        && !name.contains("--");
-    if valid {
-        Ok(())
-    } else {
-        Err("A skill name is 1 to 64 lowercase letters, numbers and hyphens, with no hyphen at either end or two in a row".to_string())
-    }
-}
-
 #[derive(Debug, Default, PartialEq)]
 struct ParsedSkill {
     name: Option<String>,
@@ -536,15 +535,6 @@ mod tests {
             meta_description(r#"<meta name="description" content=""/>"#),
             None
         );
-    }
-
-    #[test]
-    fn names_follow_the_agent_skills_rule() {
-        assert!(validate_name("pdf-processing").is_ok());
-        let long = "a".repeat(65);
-        for bad in ["", "PDF", "-pdf", "pdf-", "pdf--x", "pdf_x", long.as_str()] {
-            assert!(validate_name(bad).is_err(), "{bad}");
-        }
     }
 
     #[test]

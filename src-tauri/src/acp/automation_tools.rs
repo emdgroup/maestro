@@ -10,6 +10,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use maestro_protocol::mcp_args::required_text;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
 use tauri::Emitter;
@@ -19,13 +20,12 @@ use crate::acp::connection_server::{
     query_list_automations_via_server, query_run_automation_via_server,
     query_save_automation_via_server,
 };
-use crate::acp::transport::HostToolCall;
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
-use crate::project::automations::{
-    target, Automation, AutomationRun, AutomationWorkspace, WebhookOverlap,
-};
+use crate::project::automations::{Automation, AutomationRun, AutomationWorkspace, WebhookOverlap};
+use crate::project::crud::target;
 use crate::templates::{self, AutomationTemplate, TemplateBody};
+use maestro_protocol::HostToolCall;
 
 /// How long `run_automation` waits for the user before answering that it is still waiting. Under
 /// the 90 seconds the server holds a host call open for.
@@ -63,15 +63,6 @@ const TEMPLATE_FIELDS: [&str; 5] = [
 /// Default number of runs `list_automation_runs` returns, and the most it will.
 const DEFAULT_RUNS: u64 = 20;
 const MAX_RUNS: u64 = 100;
-
-fn required_str<'a>(arguments: &'a Value, key: &str) -> Result<&'a str, String> {
-    arguments
-        .get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| format!("{key} is required"))
-}
 
 /// `base` with every one of `fields` the agent passed written over it, `null` included, so an
 /// agent clears a schedule the same way it sets one. Going through serde means a wrong type is
@@ -135,10 +126,7 @@ async fn project_automations(
 ) -> Result<(Vec<Automation>, String), String> {
     let response =
         query_list_automations_via_server(project.key, project.path.clone(), app_state).await?;
-    Ok((
-        response.automations.into_iter().map(Into::into).collect(),
-        response.server_timezone,
-    ))
+    Ok((response.automations, response.server_timezone))
 }
 
 /// The automation `arguments[key]` names, if it is one of this session's project.
@@ -148,7 +136,7 @@ async fn find_automation(
     arguments: &Value,
     key: &str,
 ) -> Result<(Project, Automation), String> {
-    let id = required_str(arguments, key)?;
+    let id = required_text(arguments, key)?;
     let project = project(app_state, session_id).await?;
     let (automations, _) = project_automations(app_state, &project).await?;
     let automation = automations
@@ -163,15 +151,10 @@ async fn save(
     project: &Project,
     automation: Automation,
 ) -> Result<Value, String> {
-    let saved: Automation = query_save_automation_via_server(
-        project.key,
-        project.path.clone(),
-        automation.into(),
-        app_state,
-    )
-    .await?
-    .into();
-    app_state.app_handle.emit("automations-changed", ()).ok();
+    let saved: Automation =
+        query_save_automation_via_server(project.key, project.path.clone(), automation, app_state)
+            .await?;
+    crate::core::emit_or_log(&app_state.app_handle, "automations-changed", ());
     Ok(automation_json(&saved))
 }
 
@@ -233,7 +216,7 @@ pub(super) async fn create_automation(
             .unwrap_or_default(),
     };
     let workspace = match config.default_workspace_mode() {
-        crate::models::WorkspaceMode::NewWorktree => AutomationWorkspace::NewWorktree {
+        crate::task::WorkspaceMode::NewWorktree => AutomationWorkspace::NewWorktree {
             base_branch: super::host_tools::default_base_branch(app_state, project.id, &config)
                 .await,
         },
@@ -301,7 +284,7 @@ pub(super) async fn delete_automation(
 ) -> Result<Value, String> {
     let (project, automation) = find_automation(app_state, session_id, arguments, "id").await?;
     query_delete_automation_via_server(project.key, automation.id.clone(), app_state).await?;
-    app_state.app_handle.emit("automations-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "automations-changed", ());
     Ok(json!({ "deleted": automation.id }))
 }
 
@@ -428,7 +411,6 @@ pub(super) async fn list_automation_runs(
     let runs: Vec<Value> = response
         .runs
         .into_iter()
-        .map(AutomationRun::from)
         .filter(|run| automation_id.is_none_or(|id| run.automation_id == id))
         .take(limit)
         .map(|run| run_summary(&run))
@@ -441,14 +423,13 @@ pub(super) async fn get_automation_run(
     session_id: &str,
     arguments: &Value,
 ) -> Result<Value, String> {
-    let id = required_str(arguments, "id")?;
+    let id = required_text(arguments, "id")?;
     let project = project(app_state, session_id).await?;
     let response =
         query_automation_runs_via_server(project.key, project.path, None, app_state).await?;
     let run = response
         .runs
         .into_iter()
-        .map(AutomationRun::from)
         .find(|run| run.id == id)
         .ok_or_else(|| format!("no run {id} in this project"))?;
     let mut value = run_summary(&run);
@@ -496,10 +477,7 @@ impl FoundTemplate {
 
 fn all_templates(app_state: &Arc<AppState>) -> Result<Vec<FoundTemplate>, String> {
     let stored = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         templates::list(&conn)?
     };
     let own = stored.into_iter().map(|template| FoundTemplate {
@@ -526,7 +504,7 @@ fn find_template(
     arguments: &Value,
     key: &str,
 ) -> Result<FoundTemplate, String> {
-    let id = required_str(arguments, key)?;
+    let id = required_text(arguments, key)?;
     all_templates(app_state)?
         .into_iter()
         .find(|template| template.id == id)
@@ -556,13 +534,10 @@ fn save_template(
     body: &TemplateBody,
 ) -> Result<Value, String> {
     let saved = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         templates::save(&conn, id, name, tag, body)?
     };
-    app_state.app_handle.emit("templates-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "templates-changed", ());
     Ok(FoundTemplate {
         id: format!("user-{}", saved.id),
         name: saved.name,
@@ -605,7 +580,7 @@ pub(super) fn update_template(
     let body: AutomationTemplate = overlay(body, arguments, &TEMPLATE_FIELDS)?;
     let name = match arguments.get("name") {
         None | Some(Value::Null) => template.name.clone(),
-        Some(_) => required_str(arguments, "name")?.to_string(),
+        Some(_) => required_text(arguments, "name")?,
     };
     let tag = tag_argument(arguments, template.tag)?;
     save_template(
@@ -626,7 +601,7 @@ pub(super) async fn save_as_template(
         find_automation(app_state, session_id, arguments, "automation_id").await?;
     let name = match arguments.get("name") {
         None | Some(Value::Null) => automation.name.clone(),
-        Some(_) => required_str(arguments, "name")?.to_string(),
+        Some(_) => required_text(arguments, "name")?,
     };
     let tag = tag_argument(arguments, None)?;
     let body = TemplateBody::Automation(AutomationTemplate {
@@ -645,13 +620,10 @@ pub(super) fn delete_template(
 ) -> Result<Value, String> {
     let (id, template) = find_own_template(app_state, arguments)?;
     {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         templates::delete(&conn, id)?;
     }
-    app_state.app_handle.emit("templates-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "templates-changed", ());
     Ok(json!({ "deleted": template.id }))
 }
 

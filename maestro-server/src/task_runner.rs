@@ -15,10 +15,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use maestro_protocol::{
-    AddTaskCommentRequest, AgentRole, ApplyTaskTransitionRequest, ConcurrencyMode, ErrorResponse,
-    NewTaskComment, PhaseStatus, RequestTaskExecutionRequest, ServerRequest, ServerResponse,
-    StartTaskRequest, StartTaskResponse, Task, TaskPhase, TaskSessionStarted, TaskStatus,
-    TaskTransition, TransitionGuard, AUTH_REQUIRED_ERROR,
+    AddTaskCommentRequest, AgentRole, ConcurrencyMode, ErrorResponse, NewTaskComment, PhaseStatus,
+    ServerRequest, ServerResponse, StartTaskRequest, StartTaskResponse, Task, TaskPhase,
+    TaskSessionStarted, TaskStatus, TaskTransition, TransitionGuard, AUTH_REQUIRED_ERROR,
 };
 use rusqlite::Connection;
 
@@ -26,6 +25,7 @@ use crate::agent::registry::DiscoveredAgentWithSpawn;
 use crate::helpers::{broadcast, send_diag, send_response};
 use crate::profiles;
 use crate::sessions::{ActiveSession, SessionCommand, SessionMap, SharedAgentConnections};
+use crate::task_store::requests::{self, answer_into, note};
 
 type SpawnParams = (String, Vec<String>, HashMap<String, String>);
 
@@ -137,27 +137,6 @@ fn stage(role: AgentRole) -> &'static str {
     }
 }
 
-/// A store request answered as a window's would be, its pushes collected for the caller to send.
-fn store_request(
-    conn: &mut Connection,
-    request: ServerRequest,
-    pushes: &mut Vec<ServerResponse>,
-) -> Result<ServerResponse, String> {
-    let (reply, more) = crate::task_store::requests::answer(conn, request)?;
-    pushes.extend(more);
-    Ok(reply)
-}
-
-fn note(body: String) -> NewTaskComment {
-    NewTaskComment {
-        kind: "note".to_string(),
-        author: "maestro".to_string(),
-        body: Some(body),
-        external_ref: None,
-        phase: None,
-    }
-}
-
 fn add_note(
     conn: &mut Connection,
     project_path: &str,
@@ -170,7 +149,7 @@ fn add_note(
         task_id,
         comment: note(body),
     });
-    if let Err(e) = store_request(conn, request, pushes) {
+    if let Err(e) = answer_into(conn, request, pushes) {
         send_diag("warn", format!("[task] could not file a note: {e}"));
     }
 }
@@ -184,15 +163,8 @@ fn transition(
     comment: Option<NewTaskComment>,
     pushes: &mut Vec<ServerResponse>,
 ) -> Result<Option<Task>, String> {
-    let request = ServerRequest::ApplyTaskTransition(ApplyTaskTransitionRequest {
-        project_path: project_path.to_string(),
-        task_id,
-        event,
-        guard,
-        update: None,
-        comment,
-    });
-    match store_request(conn, request, pushes)? {
+    let request = requests::transition(project_path, task_id, event, guard, None, comment);
+    match answer_into(conn, request, pushes)? {
         ServerResponse::ApplyTaskTransitionOk(reply) => Ok(reply.task),
         _ => Err("unexpected reply to a transition".to_string()),
     }
@@ -217,7 +189,7 @@ pub(crate) fn begin(
     agents: &[DiscoveredAgentWithSpawn],
     pushes: &mut Vec<ServerResponse>,
 ) -> Result<Begun, NotBegun> {
-    let project_path = crate::automations::canonical_project_path(&request.project_path);
+    let project_path = crate::project_path::canonical_project_path(&request.project_path);
     let task = crate::task_store::get(conn, &project_path, request.task_id)?
         .ok_or_else(|| format!("No task {} in this project", request.task_id))?;
 
@@ -277,18 +249,11 @@ pub(crate) fn begin(
     if request.respect_capacity {
         if let Ok(status) = crate::pipeline_settings::capacity_status(conn) {
             let full = used_slots >= status.slots.max(0) as usize;
-            if full && status.settings.concurrency_mode == ConcurrencyMode::Hard {
-                let ask = ServerRequest::RequestTaskExecution(RequestTaskExecutionRequest {
-                    project_path: project_path.clone(),
-                    task_id: task.id,
-                });
-                if let ServerResponse::RequestTaskExecutionOk(reply) =
-                    store_request(conn, ask, pushes)?
-                {
-                    if reply.deferred {
-                        return Ok(Begun::Deferred);
-                    }
-                }
+            if full
+                && status.settings.concurrency_mode == ConcurrencyMode::Hard
+                && requests::request_execution(conn, &project_path, task.id, pushes)?
+            {
+                return Ok(Begun::Deferred);
             }
         }
     }
@@ -422,6 +387,46 @@ pub(crate) struct Launcher {
     pub settle_tx: crate::dispatch::SettleTx,
     /// The requester's sink: one reply goes there.
     pub reply: crate::ClientOut,
+}
+
+/// `StartTask`: steps one to four on the loop, then the launch on a task of its own, which answers
+/// once the session is in the map or the start has failed.
+pub(crate) async fn answer_start(
+    launcher: Launcher,
+    request: StartTaskRequest,
+    sessions: &SessionMap,
+    agents: &mut Vec<DiscoveredAgentWithSpawn>,
+) {
+    // A custom agent added since startup is merged before it is looked for, as `ListAgents` does
+    // on every call.
+    crate::agent::registry::apply_custom_agents(agents);
+    let mut pushes = Vec::new();
+    let begun = begin(
+        &mut *launcher.store.lock().await,
+        &request,
+        crate::pipeline_settings::taken_slots(sessions),
+        agents,
+        &mut pushes,
+    );
+    for push in pushes {
+        broadcast(&launcher.reply, push).await;
+    }
+    match begun {
+        Ok(Begun::Deferred | Begun::Gated) => {
+            let response = ServerResponse::StartTaskOk(StartTaskResponse {
+                session_id: None,
+                skipped_attachments: vec![],
+            });
+            crate::helpers::reply(&launcher.reply, &response).await
+        }
+        Ok(Begun::Claimed(claimed)) => {
+            tokio::spawn(Box::pin(launch(launcher, claimed)));
+        }
+        Err(e) => {
+            let response = crate::helpers::error_response(e.to_string());
+            crate::helpers::reply(&launcher.reply, &response).await
+        }
+    }
 }
 
 /// Steps five onwards, off the loop. Hands a started session to the loop, or releases the claim
@@ -736,33 +741,8 @@ pub(crate) fn capabilities(
                     .collect()
             })
             .unwrap_or_default(),
-        supports_effort: crate::automation_runner::effort_option_id(config_options).is_some(),
+        supports_effort: crate::sessions::effort_option_id(config_options).is_some(),
     }
-}
-
-/// The stage's model, effort and permission mode as commands, sent ahead of a prompt. Each is a
-/// request the agent answers in order, and the prompt behind them cannot overtake them on one
-/// command channel, so none is waited on.
-pub(crate) fn settings_commands(
-    settings: &profiles::StageSettings,
-    config_options: Option<&Vec<serde_json::Value>>,
-) -> Vec<SessionCommand> {
-    let effort = settings
-        .effort
-        .clone()
-        .zip(crate::automation_runner::effort_option_id(config_options))
-        .map(|(value, config_id)| SessionCommand::SetConfigOption { config_id, value });
-    [
-        settings.model.clone().map(SessionCommand::SetModel),
-        effort,
-        settings
-            .permission_mode
-            .clone()
-            .map(SessionCommand::SetMode),
-    ]
-    .into_iter()
-    .flatten()
-    .collect()
 }
 
 /// Steps seven to ten on a session that is up: settings, prompt, review cleared, task moved on.
@@ -852,7 +832,12 @@ async fn prepare(
         );
     }
 
-    let mut commands = settings_commands(&settings, config_options);
+    let mut commands = crate::sessions::settings_commands(
+        settings.model.clone(),
+        settings.effort.clone(),
+        settings.permission_mode.clone(),
+        config_options,
+    );
     commands.push(SessionCommand::PromptStructured(composed.blocks));
     for command in commands {
         if session.cmd_tx.send(command).await.is_err() {
@@ -870,7 +855,7 @@ async fn prepare(
                 project_path: project_path.to_string(),
                 task_id: task.id,
             });
-            if let Err(e) = store_request(&mut conn, clear, &mut pushes) {
+            if let Err(e) = answer_into(&mut conn, clear, &mut pushes) {
                 send_diag("warn", format!("[task] could not clear a review: {e}"));
             }
         }
@@ -982,7 +967,7 @@ pub(crate) async fn adopt(
             **id != session_id
                 && session.project.as_ref().is_some_and(|binding| {
                     binding.meta.task_id == Some(push.task_id)
-                        && crate::automations::canonical_project_path(&binding.project_path)
+                        && crate::project_path::canonical_project_path(&binding.project_path)
                             == push.project_path
                 })
         })
@@ -1040,7 +1025,7 @@ mod tests {
             )
             .unwrap();
         }
-        let project = crate::automations::canonical_project_path(&dir.path().to_string_lossy());
+        let project = crate::project_path::canonical_project_path(&dir.path().to_string_lossy());
         let mut conn = crate::project_store::open_in_memory();
         let task = crate::task_store::create(
             &mut conn,

@@ -8,6 +8,9 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use maestro_protocol::attachments::{
+    image_too_large, is_image_extension, is_pdf_extension, mime_for_extension, scale_image,
+};
 use maestro_protocol::{AgentRole, Task, TaskPhase};
 use rusqlite::Connection;
 use serde_json::{json, Value};
@@ -18,7 +21,7 @@ use crate::task_store;
 /// `useExecuteTask.ts` for why it is worded as it is.
 const COMPLETION_PROTOCOL: &str = concat!(
     "When the task is complete and needs no further work, end your final message with `",
-    crate::turn::completion_marker!(),
+    maestro_protocol::completion_marker!(),
     "` — it moves the task to review, so omit it if you are asking a question or reporting a blocker."
 );
 
@@ -43,9 +46,6 @@ const JUDGE_PROTOCOL: &str = "You are the judge of a loop: another agent has wor
 /// Where a task's attachments are copied, relative to the project root.
 #[cfg(test)]
 const TASK_ATTACHMENTS_DIR: &str = ".maestro/attachments/tasks";
-
-const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
-const SCALE_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
 
 pub struct ComposedPrompt {
     /// ACP content blocks, as `SessionCommand::PromptStructured` takes them.
@@ -466,12 +466,8 @@ fn attachment_block(path: &str) -> Result<Value, String> {
     let mime = mime_for_extension(path);
 
     if is_image_extension(path) {
-        if size > MAX_IMAGE_BYTES {
-            return Err(format!(
-                "Image too large ({} MB, max {} MB)",
-                size / 1_048_576,
-                MAX_IMAGE_BYTES / 1_048_576
-            ));
+        if let Some(reason) = image_too_large(size) {
+            return Err(reason);
         }
         let bytes = std::fs::read(path).map_err(|e| format!("Cannot read '{path}': {e}"))?;
         let bytes = scale_image(bytes)?;
@@ -500,82 +496,6 @@ fn attachment_block(path: &str) -> Result<Value, String> {
         resource["mimeType"] = m.into();
     }
     Ok(json!({ "type": "resource", "resource": resource }))
-}
-
-fn extension(path: &str) -> String {
-    Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase()
-}
-
-fn mime_for_extension(path: &str) -> Option<&'static str> {
-    Some(match extension(path).as_str() {
-        "rs" => "text/x-rust",
-        "ts" | "tsx" => "text/typescript",
-        "js" | "jsx" => "text/javascript",
-        "py" => "text/x-python",
-        "go" => "text/x-go",
-        "rb" => "text/x-ruby",
-        "java" => "text/x-java",
-        "c" | "h" => "text/x-c",
-        "cpp" => "text/x-c++",
-        "toml" => "text/x-toml",
-        "json" => "application/json",
-        "md" => "text/markdown",
-        "yaml" | "yml" => "text/yaml",
-        "sh" => "text/x-sh",
-        "html" => "text/html",
-        "css" => "text/css",
-        "sql" => "text/x-sql",
-        "graphql" => "text/x-graphql",
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "svg" => "image/svg+xml",
-        "pdf" => "application/pdf",
-        _ => return None,
-    })
-}
-
-fn is_image_extension(path: &str) -> bool {
-    matches!(
-        extension(path).as_str(),
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "tiff" | "bmp" | "ico" | "svg"
-    )
-}
-
-fn is_pdf_extension(path: &str) -> bool {
-    extension(path) == "pdf"
-}
-
-/// An image over the threshold scaled down to it, as the app's `prepare_image_bytes` does. The
-/// mime type stays the file's, as it does there.
-fn scale_image(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
-    let size = bytes.len() as u64;
-    if size <= SCALE_THRESHOLD_BYTES {
-        return Ok(bytes);
-    }
-    let ratio = (SCALE_THRESHOLD_BYTES as f64 / size as f64).sqrt();
-    if ratio >= 0.9 {
-        return Ok(bytes);
-    }
-    let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
-    let resized = img.resize(
-        (img.width() as f64 * ratio) as u32,
-        (img.height() as f64 * ratio) as u32,
-        image::imageops::FilterType::Triangle,
-    );
-    let mut output = Vec::new();
-    resized
-        .write_to(
-            &mut std::io::Cursor::new(&mut output),
-            image::ImageFormat::Png,
-        )
-        .map_err(|e| e.to_string())?;
-    Ok(output)
 }
 
 #[cfg(test)]

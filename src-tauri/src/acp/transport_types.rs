@@ -1,8 +1,8 @@
 //! Low-level ACP transport primitives: frame parsing, serialization, and read/write sources.
 
-use crate::acp::transport::{write_message, ServerRequest, ServerResponse};
 use maestro_protocol::{
-    decode_message, encode_message, read_message_with_id, RequestId, MAX_MESSAGE_SIZE,
+    decode_message, encode_message, read_message_with_id, take_frame, write_message, RequestId,
+    ServerRequest, ServerResponse,
 };
 use russh::ChannelMsg;
 use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
@@ -119,33 +119,14 @@ pub(crate) async fn perform_handshake(source: &mut AcpReadSource) -> Result<(), 
 pub(crate) fn try_parse_acp_frame<T: serde::de::DeserializeOwned>(
     buf: &mut Vec<u8>,
 ) -> Result<Option<T>, String> {
-    Ok(take_frame_body(buf)?.and_then(|body| serde_json::from_slice::<T>(&body).ok()))
+    Ok(take_frame(buf)?.and_then(|body| serde_json::from_slice::<T>(&body).ok()))
 }
 
 /// [`try_parse_acp_frame`] for the server's own messages, keeping the request id beside them.
 fn try_parse_message(
     buf: &mut Vec<u8>,
 ) -> Result<Option<(Option<RequestId>, ServerResponse)>, String> {
-    Ok(take_frame_body(buf)?.and_then(|body| decode_message(&body).ok()))
-}
-
-fn take_frame_body(buf: &mut Vec<u8>) -> Result<Option<Vec<u8>>, String> {
-    let Some(prefix) = buf.first_chunk::<4>() else {
-        return Ok(None);
-    };
-    let len = u32::from_le_bytes(*prefix) as usize;
-    if len > MAX_MESSAGE_SIZE {
-        return Err(format!(
-            "Message too large: {len} bytes (max {MAX_MESSAGE_SIZE})"
-        ));
-    }
-    if buf.len() < 4 + len {
-        return Ok(None);
-    }
-    // Drain first so a corrupt frame never loops — caller retries with the next frame.
-    let frame_bytes = buf[4..4 + len].to_vec();
-    buf.drain(..4 + len);
-    Ok(Some(frame_bytes))
+    Ok(take_frame(buf)?.and_then(|body| decode_message(&body).ok()))
 }
 
 /// Low-level write + flush to a `BufWriter<ChildStdin>`.
@@ -161,24 +142,4 @@ pub(crate) async fn write_to_acp_session_raw(
         .await
         .map_err(|e| format!("flush failed: {}", e))?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::take_frame_body;
-    use maestro_protocol::MAX_MESSAGE_SIZE;
-
-    #[test]
-    fn frame_body_waits_for_a_whole_frame_and_rejects_an_oversized_prefix() {
-        let mut buf = 3u32.to_le_bytes().to_vec();
-        buf.extend_from_slice(b"ab");
-        assert_eq!(take_frame_body(&mut buf), Ok(None));
-        buf.push(b'c');
-        assert_eq!(take_frame_body(&mut buf), Ok(Some(b"abc".to_vec())));
-        assert!(buf.is_empty());
-
-        // A corrupt prefix must fail rather than leave the reader buffering toward it.
-        let mut buf = ((MAX_MESSAGE_SIZE + 1) as u32).to_le_bytes().to_vec();
-        assert!(take_frame_body(&mut buf).is_err());
-    }
 }

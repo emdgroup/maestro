@@ -13,11 +13,11 @@ use tauri::State;
 
 use crate::acp::ConnectionKey;
 use crate::connectivity::docker_handlers::run_blocking;
+use crate::connectivity::exec_channel::shell_quote;
 use crate::connectivity::exec_channel::{run_on, run_with_stdin, ExecTarget};
 use crate::connectivity::filesystem_handlers::{self, FileEntry};
+use crate::connectivity::GitConnection;
 use crate::core::AppState;
-use crate::git::remote::shell_quote;
-use crate::models::GitConnection;
 
 /// Text files above this are refused rather than streamed into the UI.
 pub(crate) const TEXT_LIMIT: usize = 512 * 1024;
@@ -713,6 +713,76 @@ pub async fn delete_file(
         recursive,
     )
     .await
+}
+
+/// Create the destination directory and copy into it in one command, so a copy costs one round
+/// trip rather than two.
+fn copy_script(dir: &str, source: &str, dest: &str) -> String {
+    format!(
+        "mkdir -p {} && cp {} {}",
+        shell_quote(dir),
+        shell_quote(source),
+        shell_quote(dest)
+    )
+}
+
+/// Copy a host file to `dest` on the machine `conn` points at, creating `dir` first. The one
+/// transfer path for prompt attachments and task attachments alike.
+pub(crate) async fn copy_to_machine(
+    app_state: &AppState,
+    conn: &GitConnection,
+    source: &std::path::Path,
+    dir: &str,
+    dest: &str,
+) -> Result<(), String> {
+    let name = source.file_name().and_then(|n| n.to_str()).unwrap_or(dest);
+    match conn {
+        GitConnection::Local { .. } => {
+            tokio::fs::create_dir_all(dir)
+                .await
+                .map_err(|e| format!("Failed to create {dir}: {e}"))?;
+            tokio::fs::copy(source, dest)
+                .await
+                .map_err(|e| format!("Failed to copy '{name}' to {dest}: {e}"))?;
+        }
+        GitConnection::Remote { ssh, .. } => {
+            crate::connectivity::files::create_dir_all(conn, dir).await?;
+            crate::connectivity::ssh::sftp::upload_file(
+                ssh,
+                source,
+                dest,
+                &format!("attach-{dest}"),
+                &app_state.app_handle,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+        // The host's drives are already mounted inside the distro, so this copies without the
+        // bytes ever leaving the machine.
+        GitConnection::Wsl { distro, .. } => {
+            let source = source.to_str().ok_or("Source path is not valid UTF-8")?;
+            let source = crate::connectivity::wsl::to_wsl_path(distro, source).await?;
+            let output = crate::connectivity::exec_channel::run_on(
+                conn,
+                None,
+                "sh",
+                &["-c", &copy_script(dir, &source, dest)],
+            )
+            .await?;
+            if !output.success() {
+                return Err(format!(
+                    "Failed to copy '{name}' into {distro}: {}",
+                    output.stderr_string()
+                ));
+            }
+        }
+        GitConnection::Docker { container_name, .. } => {
+            crate::connectivity::files::create_dir_all(conn, dir).await?;
+            let cli = crate::connectivity::docker::ContainerCli::detect()?;
+            crate::connectivity::docker::copy_into(&cli, container_name, source, dest).await?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

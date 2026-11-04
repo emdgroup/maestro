@@ -3,7 +3,6 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::AppHandle;
-use tauri::Emitter;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::connectivity::ssh::{RemoteSshSession, SshError};
@@ -82,7 +81,8 @@ pub async fn upload_file(
         // Deliberately not logged, unlike the other emit sites: this fires once per buffer, so a
         // webview that has gone away would turn one transfer into thousands of identical warnings.
         // The transfer itself still succeeds or fails on its own errors above.
-        let _ = app_handle.emit(
+        crate::core::emit_or_log(
+            app_handle,
             &format!("sftp://transfer-progress/{}", transfer_id),
             FileTransferProgress {
                 transfer_id: transfer_id.to_string(),
@@ -173,7 +173,8 @@ pub async fn download_file(
         // Deliberately not logged, unlike the other emit sites: this fires once per buffer, so a
         // webview that has gone away would turn one transfer into thousands of identical warnings.
         // The transfer itself still succeeds or fails on its own errors above.
-        let _ = app_handle.emit(
+        crate::core::emit_or_log(
+            app_handle,
             &format!("sftp://transfer-progress/{}", transfer_id),
             FileTransferProgress {
                 transfer_id: transfer_id.to_string(),

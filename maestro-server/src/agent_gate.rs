@@ -118,7 +118,7 @@ pub(crate) fn turn_ended(
                 conn.execute(
                     "UPDATE tasks SET gated_agent_id = ?3 WHERE project_path = ?1 AND id = ?2",
                     params![
-                        crate::automations::canonical_project_path(path),
+                        crate::project_path::canonical_project_path(path),
                         task_id,
                         agent_id
                     ],
@@ -256,15 +256,9 @@ fn parse(at: &str) -> Option<DateTime<Utc>> {
 /// The thread's note on a task whose turn was refused.
 pub(crate) fn note(until: DateTime<Utc>) -> NewTaskComment {
     let at = until.with_timezone(&chrono::Local).format("%a %H:%M");
-    NewTaskComment {
-        kind: "note".to_string(),
-        author: "maestro".to_string(),
-        body: Some(format!(
-            "The agent hit its usage limit, so this task waits until {at} and then goes on."
-        )),
-        external_ref: None,
-        phase: None,
-    }
+    crate::task_store::requests::note(format!(
+        "The agent hit its usage limit, so this task waits until {at} and then goes on."
+    ))
 }
 
 /// `OpenAgentGate`: Try now. The drain starts the agent's waiting tasks.

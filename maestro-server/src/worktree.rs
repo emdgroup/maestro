@@ -13,10 +13,11 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, LazyLock, Mutex};
 
-use crate::command_ext::NoConsoleWindow;
-
-/// Where an automation's worktrees live, under the same root the app uses for its own.
-const WORKTREE_DIR: &str = ".maestro/worktrees";
+use maestro_protocol::command_ext::NoConsoleWindow;
+use maestro_protocol::worktree_names::{
+    automation_branch_name, automation_worktree_path, loop_sandbox_path, tip_contained_elsewhere,
+    worktree_path_for_task, MAESTRO_BRANCH_PREFIX, WORKTREE_DIR,
+};
 
 /// One lock per project, taken around `git worktree add`: two adds at once in one repository race
 /// on its `.git/worktrees` and config locks, and one of them fails.
@@ -121,16 +122,6 @@ pub fn slugify(name: &str) -> String {
     }
 }
 
-/// Where one run's worktree goes, relative to the repository root.
-pub fn relative_path(slug: &str, ordinal: i64) -> String {
-    format!("{WORKTREE_DIR}/automation-{slug}-{ordinal}")
-}
-
-/// The branch that worktree is created on.
-pub fn branch_name(slug: &str, ordinal: i64) -> String {
-    format!("maestro/automation-{slug}-{ordinal}")
-}
-
 /// What one run got: an absolute directory and the branch checked out in it.
 pub struct Provisioned {
     pub path: String,
@@ -156,8 +147,8 @@ pub async fn create(
         ));
     }
 
-    let relative = relative_path(slug, ordinal);
-    let branch = branch_name(slug, ordinal);
+    let relative = automation_worktree_path(slug, ordinal);
+    let branch = automation_branch_name(slug, ordinal);
     tokio::fs::create_dir_all(Path::new(project_path).join(WORKTREE_DIR))
         .await
         .map_err(|e| format!("cannot make {WORKTREE_DIR}: {e}"))?;
@@ -208,22 +199,11 @@ pub async fn reason_to_keep(worktree_path: &str, branch: &str) -> Result<Option<
         ],
     )
     .await?;
-    if !contained_elsewhere(&containing, branch) {
+    if !tip_contained_elsewhere(&containing, branch) {
         return Ok(Some("its branch has commits of its own".to_string()));
     }
 
     Ok(None)
-}
-
-/// Whether anything other than `branch` itself contains the tip.
-fn contained_elsewhere(containing: &str, branch: &str) -> bool {
-    containing
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        // A detached worktree prints this instead of a name, and it is not another ref.
-        .filter(|line| !line.starts_with("(HEAD detached"))
-        .any(|line| line != branch)
 }
 
 /// Remove a worktree and the branch it was on.
@@ -269,16 +249,6 @@ pub async fn discard(project_path: &str, worktree_path: &str, branch: &str) -> R
         git(project_path, &["branch", "-D", branch]).await?;
     }
     Ok(())
-}
-
-/// The namespace every branch Maestro makes for itself lives under. The app's
-/// `list_prunable_branches` decides what it may delete from this prefix alone.
-const MAESTRO_BRANCH_PREFIX: &str = "maestro/";
-
-/// Where a task's worktree goes, relative to the repository root. The app's
-/// `worktree_path_for_task`.
-pub fn task_relative_path(task_id: i32) -> String {
-    format!("{WORKTREE_DIR}/task-{task_id}")
 }
 
 /// Free text as a git-safe branch segment, exactly as the app's `slugifyName`: lowercase, runs of
@@ -365,15 +335,9 @@ async fn verify(project_path: &str, reference: &str) -> bool {
     .is_ok_and(|out| !out.trim().is_empty())
 }
 
-/// Where a loop's sandbox goes: a second worktree of the task's, where its worker and its judge work
-/// without the sealed files. Not named `task-`, so the app's sweeps never take it for a task's.
-pub fn sandbox_relative_path(task_id: i32) -> String {
-    format!("{WORKTREE_DIR}/loop-{task_id}")
-}
-
 /// The loop's sandbox directory, whether or not it exists yet.
 pub(crate) fn sandbox_dir(project_path: &str, task_id: i32) -> String {
-    absolute(project_path, &sandbox_relative_path(task_id))
+    absolute(project_path, &loop_sandbox_path(task_id))
 }
 
 /// The agent's notes in a loop's sandbox, which every iteration reads first and updates.
@@ -418,7 +382,7 @@ async fn sync_sandbox(
         git(&sandbox, &["reset", "-q", "--hard", head.trim()]).await?;
     } else {
         let head = git(context, &["rev-parse", "HEAD"]).await?;
-        let relative = sandbox_relative_path(task.id);
+        let relative = loop_sandbox_path(task.id);
         let _adding = adding(project_path).await;
         git(
             project_path,
@@ -491,12 +455,7 @@ pub(crate) async fn remove_sandbox(project_path: &str, task_id: i32) -> Result<(
     if is_checkout(&dir) {
         let removed = git(
             project_path,
-            &[
-                "worktree",
-                "remove",
-                "--force",
-                &sandbox_relative_path(task_id),
-            ],
+            &["worktree", "remove", "--force", &loop_sandbox_path(task_id)],
         )
         .await;
         if let Err(e) = removed {
@@ -607,7 +566,7 @@ pub async fn prepare_task_workspace(
                 tokio::fs::create_dir_all(Path::new(project_path).join(WORKTREE_DIR))
                     .await
                     .map_err(|e| format!("Failed to create worktree directory: {e}"))?;
-                let relative = task_relative_path(task.id);
+                let relative = worktree_path_for_task(task.id);
                 let new_branch = match task.workspace_branch_mode {
                     BranchMode::Checkout => None,
                     BranchMode::Create => Some(
@@ -708,7 +667,6 @@ mod tests {
         );
         assert_eq!(task_branch_name(7, "add caching"), "maestro/7-add-caching");
         assert_eq!(task_branch_name(9, "!!!"), "maestro/9-");
-        assert_eq!(task_relative_path(4), ".maestro/worktrees/task-4");
     }
 
     async fn repo_with_commit() -> tempfile::TempDir {
@@ -854,30 +812,6 @@ mod tests {
         assert_eq!(slugify("Revue quotidienne"), "revue-quotidienne");
         assert_eq!(slugify("***"), "automation");
         assert_eq!(slugify(&"a".repeat(80)).len(), 40);
-    }
-
-    #[test]
-    fn a_tip_only_its_own_branch_contains_is_worth_keeping() {
-        let branch = "maestro/automation-audit-3";
-        // Nothing else has these commits.
-        assert!(!contained_elsewhere(branch, branch));
-        // Merged into main, or pushed and therefore on the remote ref.
-        assert!(contained_elsewhere(&format!("{branch}\nmain"), branch));
-        assert!(contained_elsewhere(
-            &format!("{branch}\norigin/{branch}"),
-            branch
-        ));
-        // A detached head is not another ref holding the work.
-        assert!(!contained_elsewhere("(HEAD detached at 1a2b3c4)", branch));
-    }
-
-    #[test]
-    fn a_run_names_its_own_directory_and_branch() {
-        assert_eq!(
-            relative_path("audit", 3),
-            ".maestro/worktrees/automation-audit-3"
-        );
-        assert_eq!(branch_name("audit", 3), "maestro/automation-audit-3");
     }
 
     #[tokio::test]

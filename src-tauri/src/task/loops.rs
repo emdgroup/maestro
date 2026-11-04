@@ -7,209 +7,16 @@ use maestro_protocol::{
     AnswerLoopProposalRequest, NewTaskComment, OpenAgentGateRequest, SetLoopChecksRequest, TaskRef,
     TaskTransition, TickLoopCheckRequest, TransitionGuard,
 };
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use specta::Type;
 use tauri::State;
 
 use crate::acp::connection_server::{query_project_store, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub enum LoopCheckKind {
-    Command,
-    Judge,
-    Manual,
-    /// A command run before the checks, in list order.
-    Setup,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub enum LoopCheckState {
-    Pending,
-    Pass,
-    Fail,
-    Flaky,
-}
-
-/// One item of a loop's done criteria.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct LoopCheck {
-    pub id: i32,
-    pub position: i32,
-    pub kind: LoopCheckKind,
-    pub label: String,
-    #[specta(optional)]
-    pub command: Option<String>,
-    /// Its own time limit, in seconds. None takes the loop's `check_timeout_secs`.
-    #[specta(optional)]
-    pub timeout_secs: Option<u32>,
-    pub state: LoopCheckState,
-    /// The last output tail, or the judge's reason.
-    #[specta(optional)]
-    pub detail: Option<String>,
-    /// Proposed by the agent. Waiting for the user while `accepted` is false.
-    pub proposed: bool,
-    pub accepted: bool,
-    #[specta(optional)]
-    pub passed_at_sha: Option<String>,
-    pub updated_at: String,
-}
-
-/// What the user writes of a check.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct LoopCheckSpec {
-    pub kind: LoopCheckKind,
-    pub label: String,
-    #[specta(optional)]
-    pub command: Option<String>,
-    #[specta(optional)]
-    pub timeout_secs: Option<u32>,
-}
-
-/// One check of the user's list: `id` keeps a check, none adds one.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct LoopCheckEntry {
-    #[specta(optional)]
-    pub id: Option<i32>,
-    pub kind: LoopCheckKind,
-    pub label: String,
-    #[specta(optional)]
-    pub command: Option<String>,
-    #[specta(optional)]
-    pub timeout_secs: Option<u32>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub enum LoopIterationOutcome {
-    Running,
-    Checked,
-    Interrupted,
-    Empty,
-    Failed,
-    Blocked,
-}
-
-/// One attempt at one iteration.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct LoopIteration {
-    pub n: i32,
-    pub attempt: i32,
-    #[specta(optional)]
-    pub acp_session_id: Option<String>,
-    #[specta(optional)]
-    pub agent_id: Option<String>,
-    pub started_at: String,
-    #[specta(optional)]
-    pub ended_at: Option<String>,
-    pub outcome: LoopIterationOutcome,
-    pub counted: bool,
-    #[specta(optional)]
-    pub commit_sha: Option<String>,
-    pub files: i32,
-    pub added: i32,
-    pub removed: i32,
-    #[specta(optional)]
-    pub summary: Option<String>,
-    #[specta(optional)]
-    pub check_output: Option<String>,
-    #[specta(optional)]
-    pub tokens: Option<i64>,
-    /// Why the worker said it cannot go on.
-    #[specta(optional)]
-    pub blocked: Option<String>,
-    /// What each check concluded after this iteration, on the newest attempt of its number.
-    pub results: Vec<LoopCheckResult>,
-}
-
-/// One check's result after one iteration, as it was run.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct LoopCheckResult {
-    pub check_id: i32,
-    pub state: LoopCheckState,
-    /// The output tail, or the judge's reason.
-    #[specta(optional)]
-    pub detail: Option<String>,
-    /// What a command check ran.
-    #[specta(optional)]
-    pub command: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub enum LoopHalt {
-    Flaky,
-    Failing,
-    Stalled,
-    OutOfIterations,
-    Paused,
-    Stopped,
-    Blocked,
-    Conflict,
-}
-
-/// The automation run whose agent created a task.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct TaskDraft {
-    pub automation: String,
-    #[specta(optional)]
-    pub run: Option<u32>,
-}
-
-/// A loop as its card and its detail's meters show it, read with the task.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct LoopSummary {
-    pub iteration: i32,
-    pub counted: i32,
-    pub agent_secs: i64,
-    pub no_change: i32,
-    #[specta(optional)]
-    pub last_summary: Option<String>,
-    pub checks: Vec<LoopCheckState>,
-    pub proposals: i32,
-    /// Why it last stopped for the user. Read only while it waits on the user.
-    #[specta(optional)]
-    pub halt: Option<LoopHalt>,
-    /// A pause or stop asked for, taken once the running step ends.
-    #[specta(optional)]
-    pub hold: Option<LoopHalt>,
-}
-
-/// An agent's closed usage-limit gate, which a waiting task is held by.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct AgentGateState {
-    pub agent_id: String,
-    pub resume_at: String,
-    /// `five_hour` or `seven_day...`, when the agent named it.
-    #[specta(optional)]
-    pub window: Option<String>,
-    /// No reset time was known: the gate tries again at `resume_at`.
-    pub backoff: bool,
-}
-
-// ponytail: these types share their wire twin's serde shape, so one JSON round trip converts them
-// instead of a `From` per field. A shape that drifts fails here loudly, not silently.
-/// The app's mirror of a wire value.
-pub(crate) fn mirror<A: Serialize, B: DeserializeOwned>(value: A) -> Result<B, String> {
-    serde_json::to_value(value)
-        .and_then(serde_json::from_value)
-        .map_err(|e| format!("A loop row did not convert: {e}"))
-}
-
-fn mirror_all<A: Serialize, B: DeserializeOwned>(values: Vec<A>) -> Result<Vec<B>, String> {
-    values.into_iter().map(mirror).collect()
-}
+pub use maestro_protocol::{
+    AgentGateState, LoopCheck, LoopCheckEntry, LoopCheckKind, LoopCheckResult, LoopCheckSpec,
+    LoopCheckState, LoopHalt, LoopIteration, LoopIterationOutcome, LoopSummary, TaskDraft,
+};
 
 /// A loop's checks in list order, proposals included.
 #[tauri::command]
@@ -231,7 +38,7 @@ pub async fn list_loop_checks(
         reply!(ServerResponse::ListLoopChecksOk(list) => list.checks),
     )
     .await?;
-    mirror_all(checks)
+    Ok(checks)
 }
 
 /// The user's whole list. A kept check whose spec changed is pending again; proposals waiting
@@ -244,7 +51,6 @@ pub async fn set_loop_checks(
     task_id: i32,
     checks: Vec<LoopCheckEntry>,
 ) -> Result<Vec<LoopCheck>, String> {
-    let checks = mirror_all(checks)?;
     let checks = query_project_store(
         &app_state,
         project_id,
@@ -258,7 +64,7 @@ pub async fn set_loop_checks(
         reply!(ServerResponse::SetLoopChecksOk(list) => list.checks),
     )
     .await?;
-    mirror_all(checks)
+    Ok(checks)
 }
 
 /// Accept a proposed check as `accept`, sealing `seal`, or reject it with `None`.
@@ -272,7 +78,6 @@ pub async fn answer_loop_proposal(
     accept: Option<LoopCheckSpec>,
     seal: Vec<String>,
 ) -> Result<Vec<LoopCheck>, String> {
-    let accept = accept.map(mirror).transpose()?;
     let checks = query_project_store(
         &app_state,
         project_id,
@@ -288,7 +93,7 @@ pub async fn answer_loop_proposal(
         reply!(ServerResponse::AnswerLoopProposalOk(list) => list.checks),
     )
     .await?;
-    mirror_all(checks)
+    Ok(checks)
 }
 
 /// Tick or untick a manual check.
@@ -315,7 +120,7 @@ pub async fn tick_loop_check(
         reply!(ServerResponse::TickLoopCheckOk(list) => list.checks),
     )
     .await?;
-    mirror_all(checks)
+    Ok(checks)
 }
 
 /// Oldest first.
@@ -338,7 +143,7 @@ pub async fn list_loop_iterations(
         reply!(ServerResponse::ListLoopIterationsOk(list) => list.iterations),
     )
     .await?;
-    mirror_all(iterations)
+    Ok(iterations)
 }
 
 /// Take the sealed snapshot again and run the checks on the loop's commit. Not an iteration.
@@ -561,27 +366,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_check_entry_and_an_iteration_survive_the_trip_to_the_wire_and_back() {
-        let entry = LoopCheckEntry {
-            id: Some(3),
-            kind: LoopCheckKind::Command,
-            label: "Tests pass".to_string(),
-            command: Some("bun run test".to_string()),
-            timeout_secs: Some(90),
-        };
-        let wire: maestro_protocol::LoopCheckEntry = mirror(entry).unwrap();
-        assert_eq!(wire.id, Some(3));
-        assert_eq!(wire.spec.command.as_deref(), Some("bun run test"));
-        assert_eq!(wire.spec.timeout_secs, Some(90));
-
-        let summary = maestro_protocol::LoopSummary {
-            iteration: 2,
-            halt: Some(maestro_protocol::LoopHalt::OutOfIterations),
-            checks: vec![maestro_protocol::LoopCheckState::Flaky],
-            ..Default::default()
-        };
-        let app: LoopSummary = mirror(summary).unwrap();
-        assert_eq!(app.halt, Some(LoopHalt::OutOfIterations));
-        assert_eq!(app.checks, [LoopCheckState::Flaky]);
+    fn a_check_entry_reads_as_the_frontend_writes_it() {
+        let entry: LoopCheckEntry = serde_json::from_str(
+            r#"{"id":3,"kind":"Command","label":"Tests pass","command":"bun run test","timeout_secs":90}"#,
+        )
+        .unwrap();
+        assert_eq!(entry.id, Some(3));
+        assert_eq!(entry.spec.kind, LoopCheckKind::Command);
+        assert_eq!(entry.spec.command.as_deref(), Some("bun run test"));
+        assert_eq!(entry.spec.timeout_secs, Some(90));
     }
 }

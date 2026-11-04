@@ -1,8 +1,8 @@
 use crate::acp::connection_server::{query_project_store, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
-use crate::models::TaskAttachment;
+use crate::task::TaskAttachment;
 use maestro_protocol::{AddTaskAttachmentRequest, DeleteTaskAttachmentRequest, TaskRef};
+use maestro_protocol::{ServerRequest, ServerResponse};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashSet;
@@ -54,7 +54,7 @@ pub(crate) fn on_project_machine(project_path: &str, file_path: &str) -> String 
 }
 
 fn resolved(attachment: maestro_protocol::TaskAttachment, project_path: &str) -> TaskAttachment {
-    let mut attachment: TaskAttachment = attachment.into();
+    let mut attachment: TaskAttachment = attachment;
     attachment.file_path = on_project_machine(project_path, &attachment.file_path);
     attachment
 }
@@ -87,7 +87,7 @@ pub async fn list_task_attachments(
     project_id: i32,
     task_id: i32,
 ) -> Result<Vec<TaskAttachment>, String> {
-    let (_, project_path) = crate::project::automations::target(&app_state, project_id).await?;
+    let (_, project_path) = crate::project::crud::target(&app_state, project_id).await?;
     let rows = list_rows(&app_state, project_id, task_id).await?;
     Ok(rows
         .into_iter()
@@ -134,8 +134,7 @@ pub async fn add_task_attachment(
     let relative = attachment_relative_path(task_id, name, &taken);
     let dir = on_project_machine(&project.path, &format!("{TASK_ATTACHMENTS_DIR}/{task_id}"));
     let dest = on_project_machine(&project.path, &relative);
-    crate::acp::attachment_handlers::copy_to_machine(&app_state, &conn, source, &dir, &dest)
-        .await?;
+    crate::connectivity::files::copy_to_machine(&app_state, &conn, source, &dir, &dest).await?;
 
     let attachment = query_project_store(
         &app_state,
@@ -180,7 +179,6 @@ pub async fn delete_task_attachment(
 /// otherwise `rejection` says why a file that is there cannot be, and neither is set for a file
 /// that is not on the project's machine at all.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct PreparedTaskAttachment {
     pub content_block: Option<serde_json::Value>,
     pub rejection: Option<String>,

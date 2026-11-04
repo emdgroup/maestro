@@ -119,7 +119,7 @@ fn remote_autostart(status: &maestro_protocol::ServerStatus) -> Autostart {
 /// Returns the process exit code. Nothing is logged, because the logger is set up from a database
 /// this path never opens; a server that fails to start here is started by the next connection.
 pub fn start_server_at_login(args: &[std::ffi::OsString]) -> i32 {
-    use crate::command_ext::NoConsoleWindow;
+    use maestro_protocol::command_ext::NoConsoleWindow;
     let [server, daemon_dir] = args else {
         return 2;
     };
@@ -155,20 +155,12 @@ async fn login_arguments(app_state: &AppState) -> Result<Vec<String>, String> {
     ])
 }
 
-#[cfg(not(windows))]
-fn home() -> Result<PathBuf, String> {
-    std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map(PathBuf::from)
-        .map_err(|_| "cannot resolve the home directory".to_string())
-}
-
 #[cfg(windows)]
 const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 
 #[cfg(windows)]
 fn reg(args: &[&str]) -> Result<std::process::Output, String> {
-    use crate::command_ext::NoConsoleWindow;
+    use maestro_protocol::command_ext::NoConsoleWindow;
     std::process::Command::new("reg")
         .args(args)
         .no_console_window()
@@ -219,14 +211,19 @@ fn windows_command_line(args: &[String]) -> String {
 fn entry_path(app_state: &AppState) -> Result<PathBuf, String> {
     let name = entry_name(app_state);
     #[cfg(target_os = "macos")]
-    return Ok(home()?.join(format!("Library/LaunchAgents/{name}.plist")));
+    return Ok(
+        maestro_protocol::paths::home_dir()?.join(format!("Library/LaunchAgents/{name}.plist"))
+    );
     #[cfg(not(target_os = "macos"))]
     {
         let config = std::env::var("XDG_CONFIG_HOME")
             .ok()
             .filter(|value| !value.is_empty())
             .map(PathBuf::from)
-            .map_or_else(|| home().map(|home| home.join(".config")), Ok)?;
+            .map_or_else(
+                || maestro_protocol::paths::home_dir().map(|home| home.join(".config")),
+                Ok,
+            )?;
         Ok(config.join("autostart").join(format!("{name}.desktop")))
     }
 }

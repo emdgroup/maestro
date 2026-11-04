@@ -11,8 +11,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
-use maestro_protocol::{ProjectSession, SessionMeta};
+use maestro_protocol::{ProjectSession, ServerRequest, ServerResponse, SessionMeta};
 use rusqlite::{params, Connection, OptionalExtension};
+
+use crate::project_path::canonical_project_path;
+use crate::sessions::SessionMap;
 
 /// Shared like the automation store, and for the same reason: request handlers and the loop's own
 /// timers both write it. Never held across a request to an agent.
@@ -27,6 +30,72 @@ const CLOSED_RETENTION_DAYS: i64 = 90;
 
 pub const UNAVAILABLE: &str =
     "The project store could not be opened, so sessions and tasks are not recorded on this machine";
+
+/// The reply to a request answered from this store, and the pushes to broadcast after it: the
+/// session rows, the tasks and their worktrees, prompts, a board import and the pipeline settings.
+pub async fn answer(
+    store: &Store,
+    request: ServerRequest,
+    sessions: &SessionMap,
+) -> Result<(ServerResponse, Vec<ServerResponse>), String> {
+    use crate::task_store::project_import;
+    match request {
+        ServerRequest::RenameSession(req) => {
+            let project_path = canonical_project_path(&req.project_path);
+            rename(&*store.lock().await, &req, &project_path, Utc::now())?;
+            Ok((ServerResponse::RenameSessionOk, Vec::new()))
+        }
+        ServerRequest::CloseProjectSession(req) => {
+            // A session running under this key was loaded by somebody after the failure that
+            // prompted this. Closing its row would hide a running session from every client
+            // opening the project, and `Cancel` is how a running one is closed.
+            if !crate::dispatch::runs_under_key(sessions, &req.agent_id, &req.acp_session_id) {
+                close_dormant(
+                    &*store.lock().await,
+                    &req.agent_id,
+                    &req.acp_session_id,
+                    Utc::now(),
+                )?;
+            }
+            Ok((ServerResponse::CloseProjectSessionOk, Vec::new()))
+        }
+        request @ (ServerRequest::ListPrompts(_)
+        | ServerRequest::GetPrompt(_)
+        | ServerRequest::CreatePrompt(_)
+        | ServerRequest::UpdatePrompt(_)
+        | ServerRequest::SetPromptFavorite(_)
+        | ServerRequest::DeletePrompt(_)) => {
+            crate::prompt_store::answer(&*store.lock().await, request)
+        }
+        ServerRequest::BeginImport(request) => {
+            let live =
+                project_import::live(&canonical_project_path(&request.project_path), sessions);
+            project_import::begin(&mut *store.lock().await, request, &live).map(|r| (r, Vec::new()))
+        }
+        ServerRequest::ImportChunk(request) => {
+            project_import::chunk(request).map(|r| (r, Vec::new()))
+        }
+        ServerRequest::CommitImport(request) => {
+            let staged = project_import::take_staged(&request.import_id)?;
+            let live = project_import::live(staged.project_path(), sessions);
+            project_import::answer(&mut *store.lock().await, staged, &live)
+        }
+        request @ (ServerRequest::GetCapacity
+        | ServerRequest::SetCapacity(_)
+        | ServerRequest::GetAutoMode(_)
+        | ServerRequest::SetAutoMode(_)
+        | ServerRequest::GetLoopWaitCap(_)
+        | ServerRequest::SetLoopWaitCap(_)) => {
+            let (mut response, pushes) =
+                crate::pipeline_settings::answer(&*store.lock().await, request)?;
+            if let ServerResponse::GetCapacityOk(status) = &mut response {
+                status.used = crate::pipeline_settings::taken_slots(sessions) as u32;
+            }
+            Ok((response, pushes))
+        }
+        request => crate::task_store::requests::answer(&mut *store.lock().await, request),
+    }
+}
 
 const V1_SESSIONS: &str = "
 CREATE TABLE IF NOT EXISTS sessions (
@@ -98,35 +167,35 @@ pub fn open(dir: &Path) -> Result<Connection, String> {
         .map_err(|e| format!("cannot set busy_timeout on {path:?}: {e}"))?;
     conn.pragma_update(None, "foreign_keys", "ON")
         .map_err(|e| format!("cannot enable foreign keys on {path:?}: {e}"))?;
-    migrate(&mut conn)?;
+    migrate(&mut conn, "projects.db", MIGRATIONS)?;
     Ok(conn)
 }
 
-/// Bring the schema up to date, each step in a transaction of its own with the version it reaches.
-fn migrate(conn: &mut Connection) -> Result<(), String> {
-    let version: i64 = conn
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .map_err(|e| format!("cannot read the project schema version: {e}"))?;
-    if version > MIGRATIONS.len() as i64 {
+/// The schema version `PRAGMA user_version` records, 0 for a file that never set one.
+pub(crate) fn schema_version(conn: &Connection, file: &str) -> Result<i64, String> {
+    conn.query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|e| format!("cannot read the schema version of {file}: {e}"))
+}
+
+/// Bring `file`'s schema up to date through the append-only `steps`, each in a transaction of its
+/// own with the version it reaches. A file newer than this binary knows is refused, not opened.
+pub(crate) fn migrate(conn: &mut Connection, file: &str, steps: &[&str]) -> Result<(), String> {
+    let version = schema_version(conn, file)?;
+    if version > steps.len() as i64 {
         return Err(format!(
-            "projects.db is at schema version {version}, newer than this maestro-server knows \
+            "{file} is at schema version {version}, newer than this maestro-server knows \
              ({}); update Maestro",
-            MIGRATIONS.len()
+            steps.len()
         ));
     }
-    for (index, step) in MIGRATIONS.iter().enumerate().skip(version as usize) {
+    for (index, step) in steps.iter().enumerate().skip(version as usize) {
         let tx = conn
             .transaction()
-            .map_err(|e| format!("cannot migrate the project schema: {e}"))?;
+            .map_err(|e| format!("cannot migrate {file}: {e}"))?;
         tx.execute_batch(step)
             .and_then(|()| tx.pragma_update(None, "user_version", index as i64 + 1))
             .and_then(|()| tx.commit())
-            .map_err(|e| {
-                format!(
-                    "cannot migrate the project schema to version {}: {e}",
-                    index + 1
-                )
-            })?;
+            .map_err(|e| format!("cannot migrate {file} to version {}: {e}", index + 1))?;
     }
     Ok(())
 }
@@ -137,7 +206,7 @@ pub fn open_in_memory() -> Connection {
     let mut conn = Connection::open_in_memory().expect("in-memory database");
     conn.pragma_update(None, "foreign_keys", "ON")
         .expect("foreign keys");
-    migrate(&mut conn).expect("schema");
+    migrate(&mut conn, "projects.db", MIGRATIONS).expect("schema");
     conn
 }
 
@@ -881,12 +950,12 @@ mod tests {
     fn listing_asks_by_the_canonical_path() {
         let directory = tempfile::tempdir().expect("tempdir");
         let given = directory.path().to_string_lossy().into_owned();
-        let canonical = crate::automations::canonical_project_path(&given);
+        let canonical = crate::project_path::canonical_project_path(&given);
         let conn = store();
         start(&conn, "a", &canonical, &full_meta(), true, "live-1");
 
         let trailing = format!("{given}/");
-        let asked = crate::automations::canonical_project_path(&trailing);
+        let asked = crate::project_path::canonical_project_path(&trailing);
         assert_eq!(list(&conn, &asked, false).expect("list").len(), 1);
     }
 

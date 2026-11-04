@@ -1,22 +1,12 @@
-use crate::acp::connection_server::{query_via_server, reply};
+use crate::acp::connection_server::{query_via_server_within, reply, send_via_server};
 use crate::acp::session_types::AgentAuthInfo;
-use crate::acp::transport_types::serialize_message;
 use crate::core::AppState;
 use maestro_protocol::{
     AuthTerminalInputRequest, AuthenticateRequest, KillAuthTerminalRequest, LogoutRequest,
     ServerRequest, ServerResponse, SpawnAuthTerminalRequest,
 };
 use std::sync::Arc;
-use tauri::{Emitter, State};
-
-fn connection_key_id(key: &crate::acp::ConnectionKey) -> String {
-    match key {
-        crate::acp::ConnectionKey::Local => "local".to_string(),
-        crate::acp::ConnectionKey::Ssh { id } => format!("ssh-{id}"),
-        crate::acp::ConnectionKey::Wsl { id } => format!("wsl-{id}"),
-        crate::acp::ConnectionKey::Docker { id } => format!("docker-{id}"),
-    }
-}
+use tauri::State;
 
 /// Remove a session that never completed spawn (e.g., auth_required) from in-memory state
 /// without sending a Cancel to maestro-server and without tearing down the connection server.
@@ -27,12 +17,7 @@ pub async fn discard_failed_spawn(
     app_state: State<'_, Arc<AppState>>,
     session_id: &str,
 ) -> Result<(), String> {
-    let mut sessions = app_state.acp.sessions.lock().await;
-    if let Some(mut session) = sessions.remove(session_id) {
-        if let Some(cancel_tx) = session.reader_cancel_tx.take() {
-            let _ = cancel_tx.send(());
-        }
-    }
+    app_state.acp.sessions.lock().await.remove(session_id);
     Ok(())
 }
 
@@ -59,10 +44,9 @@ pub async fn acp_authenticate(
     // (xdg-open returns immediately and the subprocess exits before auth completes).
     // The URL/code is shown in the modal's output area where the user can open it manually.
     let force_no_browser = true;
-    query_via_server(
+    query_via_server_within(
         connection,
         &app_state,
-        &format!("No connection server for connection {:?}", connection),
         ServerRequest::Authenticate(AuthenticateRequest {
             agent_id: agent_id.clone(),
             method_id,
@@ -71,7 +55,6 @@ pub async fn acp_authenticate(
         reply!(ServerResponse::AuthenticateOk => ()),
         // 5-minute timeout — OAuth flows may require browser interaction.
         300,
-        "Authentication timed out",
     )
     .await?;
     let mut map = app_state.acp.agent_auth_info.lock().await;
@@ -88,16 +71,14 @@ pub async fn acp_logout(
     agent_id: String,
     connection: crate::acp::ConnectionKey,
 ) -> Result<(), String> {
-    query_via_server(
+    query_via_server_within(
         connection,
         &app_state,
-        &format!("No connection server for connection {:?}", connection),
         ServerRequest::Logout(LogoutRequest {
             agent_id: agent_id.clone(),
         }),
         reply!(ServerResponse::LogoutOk => ()),
         30,
-        "Logout timed out",
     )
     .await?;
     let mut map = app_state.acp.agent_auth_info.lock().await;
@@ -116,15 +97,7 @@ pub async fn acp_start_auth_terminal(
     connection: crate::acp::ConnectionKey,
     session_id: String,
 ) -> Result<String, String> {
-    let writer_tx = {
-        let servers = app_state.acp.connection_servers.lock().await;
-        let server = servers
-            .get(&connection)
-            .ok_or_else(|| format!("No connection server for connection {:?}", connection))?;
-        server.writer_tx.clone()
-    };
-
-    let terminal_id = format!("auth-terminal-{}", connection_key_id(&connection));
+    let terminal_id = format!("auth-terminal-{}", connection.event_id());
 
     let req = ServerRequest::SpawnAuthTerminal(SpawnAuthTerminalRequest {
         agent_id,
@@ -132,20 +105,14 @@ pub async fn acp_start_auth_terminal(
         terminal_id: terminal_id.clone(),
         session_id: session_id.clone(),
     });
-    let bytes = serialize_message(&req)?;
-    writer_tx
-        .send(bytes)
-        .await
-        .map_err(|_| "Connection server writer channel closed".to_string())?;
+    send_via_server(connection, &app_state, req).await?;
 
     // Emit empty-output event so AgentActivityPanel opens the terminal tab immediately.
-    app_state
-        .app_handle
-        .emit(
-            &format!("acp://terminal-output/{}", session_id),
-            &serde_json::json!({ "terminal_id": terminal_id, "output": "" }),
-        )
-        .ok();
+    crate::core::emit_or_log(
+        &app_state.app_handle,
+        &format!("acp://terminal-output/{}", session_id),
+        &serde_json::json!({ "terminal_id": terminal_id, "output": "" }),
+    );
 
     Ok(terminal_id)
 }
@@ -157,21 +124,9 @@ pub async fn acp_send_auth_pty_input(
     connection: crate::acp::ConnectionKey,
     data: Vec<u8>,
 ) -> Result<(), String> {
-    let writer_tx = {
-        let servers = app_state.acp.connection_servers.lock().await;
-        servers
-            .get(&connection)
-            .ok_or_else(|| format!("No connection server for connection {:?}", connection))?
-            .writer_tx
-            .clone()
-    };
-    let terminal_id = format!("auth-terminal-{}", connection_key_id(&connection));
+    let terminal_id = format!("auth-terminal-{}", connection.event_id());
     let req = ServerRequest::AuthTerminalInput(AuthTerminalInputRequest { terminal_id, data });
-    let bytes = serialize_message(&req)?;
-    writer_tx
-        .send(bytes)
-        .await
-        .map_err(|_| "Connection server writer channel closed".to_string())
+    send_via_server(connection, &app_state, req).await
 }
 
 #[tauri::command]
@@ -180,19 +135,7 @@ pub async fn acp_abort_auth_terminal(
     app_state: State<'_, Arc<AppState>>,
     connection: crate::acp::ConnectionKey,
 ) -> Result<(), String> {
-    let writer_tx = {
-        let servers = app_state.acp.connection_servers.lock().await;
-        servers
-            .get(&connection)
-            .ok_or_else(|| format!("No connection server for connection {:?}", connection))?
-            .writer_tx
-            .clone()
-    };
-    let terminal_id = format!("auth-terminal-{}", connection_key_id(&connection));
+    let terminal_id = format!("auth-terminal-{}", connection.event_id());
     let req = ServerRequest::KillAuthTerminal(KillAuthTerminalRequest { terminal_id });
-    let bytes = serialize_message(&req)?;
-    writer_tx
-        .send(bytes)
-        .await
-        .map_err(|_| "Connection server writer channel closed".to_string())
+    send_via_server(connection, &app_state, req).await
 }

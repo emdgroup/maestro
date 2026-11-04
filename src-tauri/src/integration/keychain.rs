@@ -9,7 +9,7 @@ use keyring::Entry;
 use rand::TryRng;
 use sha2::{Digest, Sha256};
 
-use crate::models::integration::IntegrationCredentials;
+use crate::integration::integration_models::IntegrationCredentials;
 
 /// Signals which storage backend served the operation.
 pub enum KeychainOutcome<T> {
@@ -495,7 +495,7 @@ impl KeychainStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::integration::CredentialSource;
+    use crate::integration::integration_models::CredentialSource;
 
     #[test]
     fn long_secrets_split_under_the_windows_limit_and_rejoin() {

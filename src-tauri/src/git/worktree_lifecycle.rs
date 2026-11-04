@@ -3,13 +3,18 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::acp::connection_server::{query_project_store, reply};
-use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
-use crate::models::{Worktree, WORKTREE_DIR};
+use crate::git::Worktree;
+use maestro_protocol::paths::path_is_within;
+use maestro_protocol::worktree_names::{
+    is_maestro_created_worktree, tip_contained_elsewhere, worktree_path_for_session,
+    worktree_path_for_task, MAESTRO_BRANCH_PREFIX, WORKTREE_DIR,
+};
 use maestro_protocol::{
     DeleteWorktreesRequest, InsertWorktreeRequest, ListWorktreesRequest, ProjectRef,
     UpdateWorktreeRequest,
 };
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 /// The project's worktree rows, or only the one a task owns: the daemon keeps a task to one.
 pub(crate) async fn list_worktree_rows(
@@ -88,16 +93,7 @@ pub fn canonicalize_repo_path(path: &str) -> Result<String, String> {
         .to_string_lossy()
         .to_string();
 
-    #[cfg(windows)]
-    if let Some(stripped) = canonical.strip_prefix(r"\\?\UNC\") {
-        return Ok(format!(r"\\{}", stripped));
-    }
-    #[cfg(windows)]
-    if let Some(stripped) = canonical.strip_prefix(r"\\?\") {
-        return Ok(stripped.to_string());
-    }
-
-    Ok(canonical)
+    Ok(maestro_protocol::paths::strip_verbatim(&canonical))
 }
 
 // ============================================================================
@@ -117,7 +113,7 @@ struct PullRequestCheckout {
 impl PullRequestCheckout {
     async fn create(
         &self,
-        git_conn: &crate::models::GitConnection,
+        git_conn: &crate::connectivity::GitConnection,
         relative_path: &str,
     ) -> Result<String, String> {
         crate::git::create_pull_request_worktree(
@@ -236,7 +232,7 @@ pub async fn create_worktree(
 
     let worktree = match task_id {
         Some(tid) => {
-            let relative_path = crate::models::worktree_path_for_task(tid);
+            let relative_path = worktree_path_for_task(tid);
             // The name comes back from git rather than being guessed from `base_branch`: checking
             // out `origin/foo` lands the worktree on a local `foo`, and a row saying `origin/foo`
             // would match no worktree git ever reports.
@@ -296,7 +292,7 @@ pub async fn create_worktree(
             )
             .await?;
 
-            let relative_path = crate::models::worktree_path_for_session(worktree_id);
+            let relative_path = worktree_path_for_session(worktree_id);
             // Suffix rather than probing for an existing branch: a check-then-create pair races
             // with a second spawn, an id cannot collide. Only for a generated name — see the note
             // on `unique_suffix` above.
@@ -409,39 +405,13 @@ pub async fn delete_worktree(
     Ok(())
 }
 
-/// True when another ref already contains the worktree's tip, i.e. the branch holds no commits
-/// of its own. `containing` is `git branch --all --contains HEAD --format=%(refname:short)`;
-/// `--all` matters because the base branch may have been a remote-tracking ref with no local
-/// branch at that commit.
-fn branch_has_no_own_commits(containing: &str, branch_name: &str) -> bool {
-    containing
-        .lines()
-        .map(str::trim)
-        .filter(|other| !other.is_empty())
-        // A detached worktree prints this instead of a name, and it is not another ref.
-        .filter(|other| !other.starts_with("(HEAD detached"))
-        .any(|other| other != branch_name)
-}
-
-/// True when `cwd` is the worktree root or a directory inside it. A session's working directory
-/// is usually the worktree itself, but an agent may have been pointed at a subdirectory.
-pub fn path_is_within(cwd: &str, worktree_path: &str) -> bool {
-    let cwd = cwd.trim_end_matches(['/', '\\']);
-    let root = worktree_path.trim_end_matches(['/', '\\']);
-    match cwd.strip_prefix(root) {
-        Some("") => true,
-        Some(rest) => rest.starts_with('/') || rest.starts_with('\\'),
-        None => false,
-    }
-}
-
 /// `Some(reason)` when removing this worktree would lose work, `None` when nothing would be lost:
 /// no uncommitted changes and no commits that live solely on its branch.
 ///
 /// The commit check has to happen up front: `git branch -d` refuses an unmerged branch, but it
 /// runs after `git worktree remove --force` has already thrown the working tree away.
 async fn reason_to_keep(
-    git_conn: &crate::models::GitConnection,
+    git_conn: &crate::connectivity::GitConnection,
     worktree_path: &str,
     branch_name: &str,
 ) -> Result<Option<String>, String> {
@@ -468,7 +438,7 @@ async fn reason_to_keep(
         ],
     )
     .await?;
-    if !branch_has_no_own_commits(&containing, branch_name) {
+    if !tip_contained_elsewhere(&containing, branch_name) {
         log::debug!(
             "keeping worktree {}: only {} contains its tip",
             worktree_path,
@@ -546,14 +516,10 @@ pub async fn running_session_cwds(app_state: &Arc<AppState>) -> Vec<String> {
 /// "none" would delete the folder a dormant session loads into, and that session with it.
 pub async fn live_session_cwds(
     app_state: &Arc<AppState>,
-    project: &crate::models::Project,
+    project: &crate::project::Project,
 ) -> Result<Vec<String>, String> {
     let mut live_cwds = running_session_cwds(app_state).await;
-    let connection_key = crate::acp::ConnectionKey::from_all_ids(
-        project.connection_id,
-        project.wsl_connection_id,
-        project.docker_connection_id,
-    );
+    let connection_key = project.connection_key();
     match crate::acp::connection_server::query_project_sessions_via_server(
         connection_key,
         project.path.clone(),
@@ -613,7 +579,7 @@ async fn sweep_leftover_worktree_dirs(
             continue;
         }
         let relative = format!("{}/{}", WORKTREE_DIR, entry.file_name().to_string_lossy());
-        if !crate::models::is_maestro_created_worktree(&relative) {
+        if !is_maestro_created_worktree(&relative) {
             continue;
         }
 
@@ -685,7 +651,7 @@ pub async fn cleanup_zombie_worktrees(
 
     let mut to_delete: Vec<(i32, &str, &str)> = Vec::new();
     for (id, relative_path, branch_name) in &candidates {
-        if !crate::models::is_maestro_created_worktree(relative_path) {
+        if !is_maestro_created_worktree(relative_path) {
             continue;
         }
 
@@ -874,14 +840,8 @@ pub async fn discard_task_workspace(
 // Stale branch pruning
 // ============================================================================
 
-/// Namespace every branch Maestro creates for itself lives under — sessions from
-/// `SpawnSessionDialog` and tasks from `useExecuteTask`, both through `MAESTRO_BRANCH_PREFIX`
-/// in `generateSessionName.ts`.
-///
-/// This prefix is the entire basis on which a branch may be deleted here. A branch outside it
-/// is indistinguishable from one the user made by hand, so it is never a candidate; anything a
-/// future feature creates inside it becomes prunable the moment it does.
-const MAESTRO_BRANCH_PREFIX: &str = "maestro/";
+/// Where a local branch under `MAESTRO_BRANCH_PREFIX` lives. That prefix is the entire basis on
+/// which a branch may be deleted here; see its documentation.
 const LOCAL_MAESTRO_REF_PREFIX: &str = "refs/heads/maestro/";
 
 /// Where a pushed Maestro branch lives, for the project's configured remote.
@@ -978,7 +938,7 @@ fn prunable_maestro_branches(
 /// git invocation costs a full interop spawn, and this runs whenever the Worktrees tab opens.
 /// Best-effort throughout — a branch whose stats cannot be read still lists, just without them.
 async fn fill_unmerged_branch_stats(
-    git_conn: &crate::models::GitConnection,
+    git_conn: &crate::connectivity::GitConnection,
     candidates: &mut [PrunableBranch],
 ) {
     let unmerged: Vec<usize> = candidates
@@ -1191,76 +1151,8 @@ mod tests {
 
     use std::collections::HashSet;
 
-    use super::{
-        branch_has_no_own_commits, canonicalize_repo_path, path_is_within,
-        prunable_maestro_branches, sweep_leftover_worktree_dirs,
-    };
-    use crate::models::{
-        is_loop_sandbox, is_maestro_created_worktree, worktree_path_for_session,
-        worktree_path_for_task, WORKTREE_DIR,
-    };
-
-    #[test]
-    fn only_maestro_conventions_count_as_auto_created() {
-        assert!(is_maestro_created_worktree(&worktree_path_for_task(7)));
-        assert!(is_maestro_created_worktree(&worktree_path_for_session(7)));
-        // A hand-made worktree, and the pre-id name-based session path — both must read as
-        // user-made so cleanup leaves them alone.
-        assert!(!is_maestro_created_worktree("../scratch"));
-        assert!(!is_maestro_created_worktree(
-            ".maestro/worktrees/maestro/hardy-anchor"
-        ));
-        // A loop's sandbox is the daemon's, never swept and never listed.
-        assert!(!is_maestro_created_worktree(".maestro/worktrees/loop-7"));
-        assert!(is_loop_sandbox("C:/repo/.maestro/worktrees/loop-7"));
-        assert!(is_loop_sandbox(r"C:\repo\.maestro\worktrees\loop-7"));
-        assert!(!is_loop_sandbox("/repo/.maestro/worktrees/task-7"));
-        assert!(!is_loop_sandbox("/repo/loop-7"));
-    }
-
-    #[test]
-    fn live_session_cwd_matches_its_worktree() {
-        let worktree = "/repo/.maestro/worktrees/session-3";
-        assert!(path_is_within(worktree, worktree));
-        assert!(path_is_within(
-            "/repo/.maestro/worktrees/session-3/",
-            worktree
-        ));
-        assert!(path_is_within(
-            "/repo/.maestro/worktrees/session-3/src",
-            worktree
-        ));
-        // A prefix that is not a path boundary is a different worktree, not a child.
-        assert!(!path_is_within(
-            "/repo/.maestro/worktrees/session-30",
-            worktree
-        ));
-        assert!(!path_is_within("/repo", worktree));
-    }
-
-    #[test]
-    fn own_commits_detected_from_containing_branches() {
-        // Branch tip still shared with main — nothing was committed on it.
-        assert!(branch_has_no_own_commits(
-            "maestro/foo\nmain\n",
-            "maestro/foo"
-        ));
-        // Only the branch itself contains the tip — it holds work.
-        assert!(!branch_has_no_own_commits("maestro/foo\n", "maestro/foo"));
-        assert!(!branch_has_no_own_commits("", "maestro/foo"));
-        // A detached HEAD is listed as a pseudo-ref, which is not somewhere else the commits live.
-        assert!(!branch_has_no_own_commits(
-            "(HEAD detached at 1a2b3c4)
-",
-            "maestro/foo"
-        ));
-        assert!(branch_has_no_own_commits(
-            "(HEAD detached at 1a2b3c4)
-main
-",
-            "maestro/foo"
-        ));
-    }
+    use super::{canonicalize_repo_path, prunable_maestro_branches, sweep_leftover_worktree_dirs};
+    use maestro_protocol::worktree_names::WORKTREE_DIR;
 
     /// Every reason a Maestro branch must not be offered for deletion, against the real shape of
     /// `for-each-ref` output.
