@@ -138,17 +138,17 @@ fn maestro_mcp_server(maestro_session_id: &str) -> Option<McpServer> {
         "info",
         format!(
             "[mcp] forwarding {} (stdio)",
-            maestro_protocol::MCP_SERVER_NAME
+            crate::mcp_gateway::MCP_SERVER_NAME
         ),
     );
     Some(McpServer::Stdio(
-        McpServerStdio::new(maestro_protocol::MCP_SERVER_NAME, executable)
+        McpServerStdio::new(crate::mcp_gateway::MCP_SERVER_NAME, executable)
             .args(vec!["mcp".to_string()])
             .env(vec![
-                EnvVariable::new(maestro_protocol::MCP_GATEWAY_PORT_ENV, port.to_string()),
-                EnvVariable::new(maestro_protocol::MCP_GATEWAY_TOKEN_ENV, token.clone()),
+                EnvVariable::new(crate::mcp_gateway::MCP_GATEWAY_PORT_ENV, port.to_string()),
+                EnvVariable::new(crate::mcp_gateway::MCP_GATEWAY_TOKEN_ENV, token.clone()),
                 EnvVariable::new(
-                    maestro_protocol::MCP_GATEWAY_SESSION_ENV,
+                    crate::mcp_gateway::MCP_GATEWAY_SESSION_ENV,
                     maestro_session_id.to_string(),
                 ),
             ]),

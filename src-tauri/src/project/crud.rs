@@ -1,11 +1,34 @@
 use crate::acp::ConnectionKey;
 use crate::core::{project_storage, AppState};
-use crate::models::Project;
+use crate::project::Project;
 use chrono::Utc;
 use rusqlite::params;
 use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
+
+/// The project's row.
+pub(crate) fn load_project(app_state: &AppState, project_id: i32) -> Result<Project, String> {
+    let conn = app_state.db()?;
+    conn.query_row(
+        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
+        [project_id],
+        Project::from_row,
+    )
+    .map_err(|e| format!("Project {} not found: {}", project_id, e))
+}
+
+/// Which server to ask, and what this project is called on it.
+///
+/// Read from the `projects` row alone: every task, worktree and review request comes through here,
+/// and building a `GitConnection` for each would look up the connection's credentials to no end.
+pub(crate) async fn target(
+    app_state: &AppState,
+    project_id: i32,
+) -> Result<(ConnectionKey, String), String> {
+    let project = load_project(app_state, project_id)?;
+    Ok((project.connection_key(), project.path))
+}
 
 /// Register a project in the database (check-or-insert) and initialize .maestro folder.
 /// Returns the full Project row.
@@ -20,10 +43,7 @@ pub(crate) async fn register_project_in_db(
     let wsl_connection_id = connection_key.wsl_id();
     let docker_connection_id = connection_key.docker_id();
     let project_id = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         let existing: Option<i32> = conn.query_row(
             "SELECT id FROM projects WHERE path = ? AND connection_id IS ? AND wsl_connection_id IS ? AND docker_connection_id IS ?",
             params![path, connection_id, wsl_connection_id, docker_connection_id],
@@ -44,16 +64,7 @@ pub(crate) async fn register_project_in_db(
 
     init_project_storage(app_state, path, connection_key).await;
 
-    // Read back full project row
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    conn.query_row(
-        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-        params![project_id],
-        Project::from_row,
-    ).map_err(|e| e.to_string())
+    load_project(app_state, project_id)
 }
 
 /// Fetch projects for a connection from an open DB connection.
@@ -114,10 +125,7 @@ pub(crate) fn fetch_projects_from_db(
 #[tauri::command]
 #[specta::specta]
 pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state.db()?;
 
     let mut stmt = conn
         .prepare("SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects ORDER BY last_opened DESC NULLS LAST")
@@ -137,30 +145,17 @@ pub fn get_project(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<Project, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-
-    // Try to find existing project
-    let existing: Result<Project, _> = conn.query_row(
-        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-        [&project_id],
-        Project::from_row
-    );
-
-    if let Ok(project) = existing {
-        // Update last_opened timestamp when project is selected
-        let now = Utc::now().to_rfc3339();
-        conn.execute(
+    let project = load_project(&app_state, project_id)?;
+    // Update last_opened timestamp when project is selected
+    let now = Utc::now().to_rfc3339();
+    app_state
+        .db()?
+        .execute(
             "UPDATE projects SET last_opened = ? WHERE id = ?",
             rusqlite::params![&now, project.id],
         )
         .map_err(|e| e.to_string())?;
-        Ok(project)
-    } else {
-        Err("Project not found".to_string())
-    }
+    Ok(project)
 }
 
 /// Open a project by ID: acquire the project lock, update last_opened, and return the Project.
@@ -174,16 +169,13 @@ pub async fn open_project(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<Project, String> {
-    let project = crate::project::lock::load_project(&app_state, project_id)?;
+    let project = load_project(&app_state, project_id)?;
 
     // Errors if another window holds it, or if its server cannot be reached to ask.
     crate::project::lock::acquire(&app_state, &project).await?;
 
     {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE projects SET last_opened = ? WHERE id = ?",
@@ -245,23 +237,19 @@ pub async fn release_active_project_lock(
     Ok(())
 }
 
-/// remove projects by connection id
-pub fn remove_projects_by_connection_id(
-    app_state: State<'_, Arc<AppState>>,
-    connection_id: i32,
+/// Forget every project on a connection, as deleting the connection does.
+pub(crate) fn remove_projects_on(
+    conn: &rusqlite::Connection,
+    connection_key: ConnectionKey,
 ) -> Result<(), String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-
-    // Delete from database
-    conn.execute(
-        "DELETE FROM projects WHERE connection_id = ?",
-        [connection_id],
-    )
-    .map_err(|e| e.to_string())?;
-
+    let (column, id) = match connection_key {
+        ConnectionKey::Ssh { id } => ("connection_id", id),
+        ConnectionKey::Wsl { id } => ("wsl_connection_id", id),
+        ConnectionKey::Docker { id } => ("docker_connection_id", id),
+        ConnectionKey::Local => return Err("Local projects belong to no connection".to_string()),
+    };
+    conn.execute(&format!("DELETE FROM projects WHERE {column} = ?"), [id])
+        .map_err(|e| format!("Failed to remove projects: {e}"))?;
     Ok(())
 }
 
@@ -280,10 +268,7 @@ pub async fn create_project(
     // NOTE: This older handler has similar logic to register_project_in_db but also
     // updates last_opened via get_project(). Could be unified in a future cleanup.
     let project_id = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         let existing: Option<i32> = conn.query_row(
             "SELECT id FROM projects WHERE path = ? AND connection_id IS ? AND wsl_connection_id IS ? AND docker_connection_id IS ?",
             params![path, connection_id, wsl_connection_id, docker_connection_id],
@@ -392,5 +377,30 @@ mod tests {
         let remote = fetch_projects_from_db(&conn, ConnectionKey::Ssh { id: ssh_conn_id }).unwrap();
         assert_eq!(remote.len(), 1);
         assert_eq!(remote[0].name, "Remote Project");
+    }
+
+    #[test]
+    fn removing_a_connection_s_projects_leaves_every_other_project() {
+        let conn = test_db();
+        conn.execute(
+            "INSERT INTO ssh_connections (connection_string, username, host, port, auth_method, last_used_at, created_at, updated_at)              VALUES ('user@host:22', 'user', 'host', 22, 'password', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        let ssh_conn_id = conn.last_insert_rowid() as i32;
+        insert_project(&conn, "Local Project", "/local/path", None);
+        insert_project(&conn, "Remote Project", "/remote/path", Some(ssh_conn_id));
+
+        assert!(remove_projects_on(&conn, ConnectionKey::Local).is_err());
+        remove_projects_on(&conn, ConnectionKey::Ssh { id: ssh_conn_id }).unwrap();
+
+        let ssh = ConnectionKey::Ssh { id: ssh_conn_id };
+        assert!(fetch_projects_from_db(&conn, ssh).unwrap().is_empty());
+        assert_eq!(
+            fetch_projects_from_db(&conn, ConnectionKey::Local)
+                .unwrap()
+                .len(),
+            1
+        );
     }
 }

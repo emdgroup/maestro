@@ -7,13 +7,13 @@
 //! task blocked and waits for a user, and the mark is cleared when one answers.
 
 use maestro_protocol::{
-    AgentRole, ApplyTaskTransitionRequest, EndTaskTurnRequest, ServerRequest, ServerResponse, Task,
-    TaskPhase, TaskTransition, TransitionGuard, TurnEnding,
+    AgentRole, ServerRequest, ServerResponse, Task, TaskPhase, TaskTransition, TransitionGuard,
 };
 use serde_json::Value;
 
 use crate::helpers::{broadcast, send_diag};
 use crate::sessions::{SessionRouter, SharedSessionState};
+use crate::task_store::requests;
 
 /// What the daemon does with a task session's permission request, decided from the payload alone.
 #[derive(Debug, PartialEq)]
@@ -155,21 +155,6 @@ async fn write(request: ServerRequest, stdout: &crate::ClientOut) -> Option<Serv
     }
 }
 
-fn transition_request(
-    (project_path, task_id): &(String, i32),
-    event: TaskTransition,
-    guard: TransitionGuard,
-) -> ServerRequest {
-    ServerRequest::ApplyTaskTransition(ApplyTaskTransitionRequest {
-        project_path: project_path.clone(),
-        task_id: *task_id,
-        event,
-        guard,
-        update: None,
-        comment: None,
-    })
-}
-
 /// Move the task, under `guard`, and push the change.
 pub(crate) async fn transition(
     task: &(String, i32),
@@ -177,7 +162,11 @@ pub(crate) async fn transition(
     guard: TransitionGuard,
     stdout: &crate::ClientOut,
 ) {
-    write(transition_request(task, event, guard), stdout).await;
+    write(
+        requests::transition(&task.0, task.1, event, guard, None, None),
+        stdout,
+    )
+    .await;
 }
 
 /// The user answered, so the agent is running again.
@@ -257,17 +246,23 @@ async fn take_plan(
 ) -> Option<Task> {
     let review_approved =
         crate::turn::classify_verdict(&plan) == crate::turn::ReviewVerdict::Approved;
-    let request = ServerRequest::EndTaskTurn(EndTaskTurnRequest {
+    let turn = crate::task_store::EndTurn {
         project_path: project_path.clone(),
         task_id: *task_id,
-        ending: TurnEnding::ArtifactDelivered,
+        ending: crate::task_store::TurnEnding::ArtifactDelivered,
         review_approved,
         closing_message: plan,
-    });
-    match write(request, stdout).await? {
-        ServerResponse::EndTaskTurnOk(ended) => ended.task,
-        _ => None,
+    };
+    let store = crate::project_store::SHARED.get()?;
+    let mut pushes = Vec::new();
+    let ended = requests::end_turn(&mut *store.lock().await, turn, &mut pushes);
+    for push in pushes {
+        broadcast(stdout, push).await;
     }
+    ended
+        .map_err(|e| send_diag("warn", format!("[task] {e}")))
+        .ok()
+        .flatten()
 }
 
 #[cfg(test)]
@@ -408,8 +403,11 @@ mod tests {
         .unwrap();
         let task = (project.clone(), created.id);
         let mut apply = |event, guard| {
-            crate::task_store::requests::answer(&mut conn, transition_request(&task, event, guard))
-                .unwrap();
+            crate::task_store::requests::answer(
+                &mut conn,
+                requests::transition(&task.0, task.1, event, guard, None, None),
+            )
+            .unwrap();
             crate::task_store::get(&conn, &project, created.id)
                 .unwrap()
                 .unwrap()

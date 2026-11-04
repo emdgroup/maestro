@@ -4,7 +4,7 @@ use base64::Engine as _;
 use tauri::State;
 
 use crate::core::AppState;
-use crate::models::issue_tracking::{
+use crate::integration::issue_tracking_models::{
     AzureDevOpsProjectOption, AzureDevOpsRepoOption, BitbucketProjectOption, BitbucketRepoOption,
     JiraProjectOption,
 };

@@ -8,7 +8,6 @@ pub use maestro_protocol::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct Task {
     pub id: i32,
     pub project_id: i32,
@@ -173,43 +172,4 @@ impl Task {
             drafted_by: task.drafted_by.map(|draft| *draft),
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct ProjectConfigResponse {
-    pub default_agent: Option<String>,
-    pub startup_tab: Option<String>,
-    /// Deliberately absent from `ProjectConfigRequest`: the settings form submits the whole
-    /// request, and a colour field there would let a form save clobber a colour picked in the
-    /// header moments earlier. Writes go through `set_project_accent_color` instead.
-    pub accent_color: Option<String>,
-    /// `Some(false)` once the colour has been decided; see `ProjectConfig`.
-    pub accent_color_auto_assign: Option<bool>,
-    /// Resolved, never `None`: the settings file may predate the key, and the UI needs an answer.
-    pub default_workspace_mode: WorkspaceMode,
-    /// The configured git remote, or `None` for "auto" — deliberately *not* resolved, because the
-    /// picker has to be able to show that no choice has been made.
-    pub remote_name: Option<String>,
-    /// The configured base branch for new worktrees, or `None` for "auto". Not resolved either,
-    /// and for the same reason as `remote_name` above.
-    pub base_branch: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct ProjectConfigRequest {
-    pub default_agent: Option<String>,
-    pub startup_tab: Option<String>,
-    /// Only `NewWorktree` and `RepositoryDirectory` are offered in Settings — a project default
-    /// cannot name a specific workspace — but the field is the full enum so the two places that
-    /// read it do not have to translate between two types.
-    pub default_workspace_mode: WorkspaceMode,
-    /// `None` selects auto-detection; a name must be one the project actually has, which is why
-    /// the form offers a picker rather than a text field.
-    pub remote_name: Option<String>,
-    /// `None` selects the branch the repository is on. Same reasoning as `remote_name` for why the
-    /// form offers a picker: a mistyped branch would only surface when a worktree failed to be
-    /// created for it.
-    pub base_branch: Option<String>,
 }

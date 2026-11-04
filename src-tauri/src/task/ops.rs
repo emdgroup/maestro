@@ -1,12 +1,12 @@
 use crate::acp::connection_server::{query_project_store, reply};
 use crate::core::AppState;
-use crate::models::Task;
+use crate::task::Task;
 use maestro_protocol::{
     ApplyTaskTransitionRequest, CloseRefinementRequest, TaskPhase, TaskTransition, TransitionGuard,
 };
 use maestro_protocol::{ServerRequest, ServerResponse};
 use std::sync::Arc;
-use tauri::{Emitter, State};
+use tauri::State;
 
 /// Apply one transition in the daemon, its guard read under the same lock as the write. `None`
 /// when the guard refused it.
@@ -50,53 +50,6 @@ pub(crate) async fn apply_transition_writing(
     Ok(reply.task.map(|task| Task::from_wire(task, project_id)))
 }
 
-/// List git branches and the current branch for a project
-///
-/// Returns a tuple of (branches, current_branch).
-/// Falls back to ([], "main") if the project is not a git repo or git is unavailable.
-#[tauri::command]
-#[specta::specta]
-pub async fn list_project_branches(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-) -> Result<(crate::git::BranchList, String), String> {
-    // Look up the project to get its path
-    let project = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-            [project_id],
-            crate::models::Project::from_row,
-        )
-        .map_err(|e| e.to_string())?
-    };
-
-    // Uses get_git_connection directly (not get_project_with_git_conn) because
-    // branch listing should fall back to local path when SSH is disconnected,
-    // rather than failing entirely.
-    let git_conn = crate::core::get_git_connection(&project, &app_state)
-        .await
-        .unwrap_or_else(|_| crate::models::GitConnection::Local {
-            path: project.path.clone(),
-        });
-
-    let remote = crate::git::remote::project_remote(&app_state, project_id).await;
-    let (branches, current_branch) = tokio::join!(
-        crate::git::list_branches(&git_conn, &remote),
-        crate::git::get_current_branch(&git_conn),
-    );
-    let branches = branches.unwrap_or_else(|_| crate::git::BranchList {
-        local: vec![],
-        remote: vec![],
-    });
-    let current_branch = current_branch.unwrap_or_else(|_| "main".to_string());
-
-    Ok((branches, current_branch))
-}
-
 /// Stop the active ACP or PTY session for a task, then abandon everything the run produced.
 ///
 /// Stop is abandonment, not a pause: the worktree and its branch are deleted and the task returns
@@ -134,7 +87,7 @@ pub async fn interrupt_task(
 
     crate::git::worktree_lifecycle::discard_task_workspace(&app_state, project_id, task_id).await?;
 
-    app_state.app_handle.emit("sessions-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
     Ok(())
 }
 
@@ -173,7 +126,7 @@ pub async fn stop_task(
         }),
     )
     .await?;
-    app_state.app_handle.emit("sessions-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
     Ok(())
 }
 
@@ -448,12 +401,11 @@ pub async fn start_task(
     agent_id: Option<String>,
 ) -> Result<StartTaskResult, String> {
     let (connection_key, project_path) =
-        crate::project::automations::target(&app_state, project_id).await?;
+        crate::project::crud::target(&app_state, project_id).await?;
     // Spawning an agent, and signing it in, takes far longer than a store write.
-    crate::acp::connection_server::query_via_server(
+    crate::acp::connection_server::query_via_server_within(
         connection_key,
         &app_state,
-        &format!("No connection server for connection {connection_key:?}"),
         ServerRequest::StartTask(maestro_protocol::StartTaskRequest {
             project_path,
             task_id,
@@ -468,7 +420,6 @@ pub async fn start_task(
             skipped_attachments: response.skipped_attachments,
         }),
         120,
-        "The project's server did not start the task within 120s",
     )
     .await
 }
@@ -490,7 +441,7 @@ pub struct StartTaskResult {
 /// evidence" and treats the same as a non-git project.
 async fn task_has_changes(
     app_state: &Arc<crate::core::AppState>,
-    task: &crate::models::Task,
+    task: &crate::task::Task,
 ) -> Option<bool> {
     let (project_id, task_id) = (task.project_id, task.id);
     let worktree_path = match crate::acp::connection_server::query_project_store(
@@ -519,7 +470,7 @@ async fn task_has_changes(
 
     // Both worktree modes leave the row here: a reused workspace is claimed by the task when it
     // starts, exactly so that lookups like this one keep working.
-    let isolated = task.workspace_mode != crate::models::WorkspaceMode::RepositoryDirectory;
+    let isolated = task.workspace_mode != crate::task::WorkspaceMode::RepositoryDirectory;
 
     // An isolated task whose worktree row has gone missing must report no evidence rather than
     // fall through to the project root: the root is a different tree, and any unrelated dirt in
@@ -550,7 +501,7 @@ async fn task_has_changes(
     match crate::git::worktree_query::diff_stats_in(
         &git_conn,
         &cwd,
-        &crate::models::DiffTarget::Commit { sha: start_sha },
+        &crate::git::DiffTarget::Commit { sha: start_sha },
         &remote,
     )
     .await
@@ -566,35 +517,22 @@ async fn task_has_changes(
     }
 }
 
-/// `(path, connection_id, wsl_connection_id, docker_connection_id)`
-type ProjectLocationRow = (String, Option<i32>, Option<i32>, Option<i32>);
-
+/// Whether the project's folder is inside a git work tree, asked on the machine it lives on.
 async fn is_project_git_repo(app_state: &crate::core::AppState, project_id: i32) -> bool {
-    let result: Option<ProjectLocationRow> = app_state.db.lock().ok().and_then(|conn| {
-        conn.query_row(
-            "SELECT path, connection_id, wsl_connection_id, docker_connection_id \
-             FROM projects WHERE id = ?",
-            [project_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-        )
-        .ok()
-    });
-
-    let Some((path, connection_id, wsl_connection_id, docker_connection_id)) = result else {
-        return true;
-    };
-
-    if connection_id.is_none() && wsl_connection_id.is_none() && docker_connection_id.is_none() {
-        return std::path::Path::new(&path).join(".git").exists();
-    }
-
-    match crate::core::get_project_with_git_conn(app_state, project_id).await {
-        Ok((_project, git_conn)) => {
-            crate::git::run_git_in_dir(&git_conn, &path, &["rev-parse", "--is-inside-work-tree"])
-                .await
-                .map(|output| output.trim() == "true")
-                .unwrap_or(false)
+    let project = match crate::project::crud::load_project(app_state, project_id) {
+        Ok(project) => project,
+        Err(e) => {
+            log::warn!("[task] cannot tell whether project {project_id} is a git repository: {e}");
+            return false;
         }
-        Err(_) => false,
-    }
+    };
+    crate::project::git_ops::is_git_repo(
+        app_state,
+        project.path,
+        project.connection_id,
+        project.wsl_connection_id,
+        project.docker_connection_id,
+    )
+    .await
+    .unwrap_or(false)
 }

@@ -3,7 +3,6 @@ use specta::Type;
 
 /// Typed response for save_task_review and request_changes IPC commands
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct ReviewResult {
     pub success: bool,
     pub review_id: i32,
@@ -12,7 +11,6 @@ pub struct ReviewResult {
 
 /// Typed response for approve_task_and_merge IPC command
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct MergeResult {
     pub success: bool,
     pub task_status: String,

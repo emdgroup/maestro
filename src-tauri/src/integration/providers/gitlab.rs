@@ -1,4 +1,4 @@
-use crate::models::issue_tracking::RemoteIssue;
+use crate::integration::issue_tracking_models::RemoteIssue;
 use maestro_protocol::command_ext::NoConsoleWindow;
 use tokio::process::Command as TokioCommand;
 

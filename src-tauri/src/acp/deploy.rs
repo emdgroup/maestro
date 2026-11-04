@@ -1,3 +1,5 @@
+use crate::connectivity::exec_channel::shell_quote;
+use crate::connectivity::exec_channel::{cold_spawn, ExecTarget};
 use maestro_protocol::command_ext::NoConsoleWindow;
 use tauri::{AppHandle, Manager};
 
@@ -76,6 +78,11 @@ fn powershell_encoded(script: &str) -> String {
         "powershell -EncodedCommand {}",
         base64::engine::general_purpose::STANDARD.encode(&bytes)
     )
+}
+
+/// `s` as a single-quoted PowerShell string, which escapes a quote by doubling it.
+fn powershell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "''"))
 }
 
 /// Ensure maestro-server exists on remote with the correct version.
@@ -160,8 +167,8 @@ pub async fn ensure_remote_server(
 
     if is_windows_native {
         ssh.execute_command(&powershell_encoded(&format!(
-            "New-Item -ItemType Directory -Force -Path '{}' | Out-Null",
-            abs_dir
+            "New-Item -ItemType Directory -Force -Path {} | Out-Null",
+            powershell_quote(&abs_dir)
         )))
         .await
         .map_err(|e| format!("Failed to create remote dir: {}", e))?;
@@ -171,13 +178,14 @@ pub async fn ensure_remote_server(
         // retired or kept by `attach` afterwards, which is where that decision belongs. The
         // previous `.old` goes first, and may itself still be running, hence SilentlyContinue.
         ssh.execute_command(&powershell_encoded(&format!(
-            "if (Test-Path '{0}') {{ Remove-Item -Force '{0}.old' -ErrorAction SilentlyContinue; Move-Item -Force '{0}' '{0}.old' }}",
-            abs_remote_path
+            "if (Test-Path {0}) {{ Remove-Item -Force {1} -ErrorAction SilentlyContinue; Move-Item -Force {0} {1} }}",
+            powershell_quote(&abs_remote_path),
+            powershell_quote(&format!("{abs_remote_path}.old"))
         )))
         .await
         .map_err(|e| format!("Failed to move existing binary aside: {}", e))?;
     } else {
-        ssh.execute_command(&format!("mkdir -p {}", abs_dir))
+        ssh.execute_command(&format!("mkdir -p {}", shell_quote(&abs_dir)))
             .await
             .map_err(|e| format!("Failed to create remote dir: {}", e))?;
 
@@ -185,7 +193,7 @@ pub async fn ensure_remote_server(
         // orphaned connection server), Linux's sftp create would return ETXTBSY. Unlinking
         // first lets the kernel keep the inode alive for the running process while freeing
         // the path for the new file.
-        ssh.execute_command(&format!("rm -f {}", abs_remote_path))
+        ssh.execute_command(&format!("rm -f {}", shell_quote(&abs_remote_path)))
             .await
             .map_err(|e| format!("Failed to remove existing binary: {}", e))?;
     }
@@ -202,7 +210,7 @@ pub async fn ensure_remote_server(
     .map_err(|e| format!("SFTP upload failed: {}", e))?;
 
     if !is_windows_native {
-        ssh.execute_command(&format!("chmod +x {}", abs_remote_path))
+        ssh.execute_command(&format!("chmod +x {}", shell_quote(&abs_remote_path)))
             .await
             .map_err(|e| format!("chmod failed: {}", e))?;
     }
@@ -216,49 +224,70 @@ pub async fn ensure_remote_server(
 }
 
 /// Ensure maestro-server exists inside a WSL distro with the correct version.
-/// Downloads the binary matching the distro's architecture if needed, then deploys via stdin pipe.
 /// Returns the absolute Linux path to the binary.
 #[cfg(windows)]
 pub async fn ensure_wsl_server(
     distro: &str,
     app_handle: &AppHandle,
 ) -> Result<DeployResult, String> {
-    use tokio::io::AsyncWriteExt;
-
     // A stopped distro would otherwise cold-boot inside the probe's 15s budget and blow it, which
     // the user sees as a deploy failure rather than as the distro being asleep.
     crate::connectivity::wsl::ensure_running(distro).await?;
-
-    let probe_out = tokio::time::timeout(
-        std::time::Duration::from_secs(15),
-        tokio::process::Command::new("wsl.exe")
-            .args([
-                "-d", distro, "--",
-                "sh", "-c",
-                &format!(
-                    "printf '%s|||%s|||%s' \"$HOME\" \"$($HOME/{}/{} --app-version 2>/dev/null || echo MISSING)\" \"$(uname -m)\"",
-                    REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME
-                ),
-            ])
-            .no_console_window()
-            .output(),
+    ensure_linux_server(
+        &ExecTarget::Wsl { distro },
+        &format!("WSL distro {distro}"),
+        app_handle,
     )
     .await
-    .map_err(|_| format!("WSL probe timed out for distro {}", distro))?
-    .map_err(|e| format!("Failed to probe WSL distro {}: {}", distro, e))?;
+}
 
-    let text = crate::connectivity::wsl::decode_wsl_output(&probe_out.stdout)?;
-    let parts: Vec<&str> = text.trim().splitn(3, "|||").collect();
-    if parts.len() != 3 {
-        return Err(format!("Unexpected WSL probe output: {}", text.trim()));
+/// Ensure maestro-server exists inside a container with the correct version.
+/// Returns the absolute Linux path to the binary inside the container.
+pub async fn ensure_container_server(
+    cli: &crate::connectivity::docker::ContainerCli,
+    container_name: &str,
+    app_handle: &AppHandle,
+) -> Result<DeployResult, String> {
+    ensure_linux_server(
+        &ExecTarget::Docker {
+            cli: *cli,
+            container: container_name,
+        },
+        &format!("container {container_name}"),
+        app_handle,
+    )
+    .await
+}
+
+/// Probe a Linux machine this one reaches through a local CLI, a WSL distro or a container, and
+/// pipe the server in when its version differs.
+///
+/// Through `cold_spawn` rather than the exec channel: the binary is far larger than a channel frame,
+/// and the channel is served by the very binary being replaced.
+async fn ensure_linux_server(
+    target: &ExecTarget<'_>,
+    label: &str,
+    app_handle: &AppHandle,
+) -> Result<DeployResult, String> {
+    let probe = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        cold_spawn(target, None, "sh", &["-c", &linux_probe_script()], None),
+    )
+    .await
+    .map_err(|_| format!("Probing {label} timed out"))?
+    .map_err(|e| format!("Failed to probe {label}: {e}"))?;
+    if !probe.success() {
+        return Err(format!(
+            "Probing {label} failed: {}",
+            probe.stderr_string().trim()
+        ));
     }
-    let (home, remote_version, arch) = (parts[0].trim(), parts[1].trim(), parts[2].trim());
+    let text = probe.stdout_string();
+    let (home, remote_version, arch) = parse_linux_probe(&text)?;
 
-    let local_version = deployment_version();
     let abs_dir = format!("{}/{}", home, REMOTE_INSTALL_DIR);
     let abs_path = format!("{}/{}", abs_dir, REMOTE_BINARY_NAME);
-
-    if remote_version == local_version {
+    if remote_version == deployment_version() {
         return Ok(DeployResult {
             path: abs_path,
             deployed: false,
@@ -268,7 +297,7 @@ pub async fn ensure_wsl_server(
     // Probed rather than assumed: a WSL distro matches the host's architecture, so it is aarch64
     // on Windows-on-ARM. No native ARM64 Windows build ships today, but the x86_64 one runs there
     // under emulation, and deploying an x86_64 server into an aarch64 distro fails at exec time
-    // with the message discarded — the user only sees a handshake timeout. An unrecognised arch
+    // with the message discarded, so the user only sees a handshake timeout. An unrecognised arch
     // is an error rather than an x86_64 guess, for the same reason.
     let triple = linux_triple_for_arch(arch)?;
     let local_binary = ensure_remote_binary_local(app_handle, triple).await?;
@@ -276,48 +305,26 @@ pub async fn ensure_wsl_server(
         .await
         .map_err(|e| format!("Cannot read cached binary: {}", e))?;
 
-    // rm -f before writing: the destination can be a symlink left by a previous
-    // Linux-side install (dangling once its target cache is deleted, which makes
-    // `cat >` fail with "Directory nonexistent"), and unlinking first also avoids
-    // ETXTBSY when a running server still holds the old inode.
-    let mut child = tokio::process::Command::new("wsl.exe")
-        .args([
-            "-d",
-            distro,
-            "--",
+    let install = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        cold_spawn(
+            target,
+            None,
             "sh",
-            "-c",
-            &format!(
-                "mkdir -p '{0}' && rm -f '{1}' && cat > '{1}' && chmod +x '{1}'",
-                abs_dir, abs_path
-            ),
-        ])
-        .stdin(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .no_console_window()
-        .spawn()
-        .map_err(|e| format!("Failed to spawn WSL deploy shell: {}", e))?;
-
-    // If the shell fails early the stdin write breaks with EPIPE; defer that error
-    // so the shell's stderr (the actionable message) wins.
-    let write_result = match child.stdin.take() {
-        Some(mut stdin) => stdin.write_all(&binary_bytes).await,
-        None => Ok(()),
-    };
-
-    let output = tokio::time::timeout(std::time::Duration::from_secs(60), child.wait_with_output())
-        .await
-        .map_err(|_| format!("WSL deploy timed out for distro {}", distro))?
-        .map_err(|e| format!("WSL deploy process failed: {}", e))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+            &["-c", &linux_install_script(&abs_dir, &abs_path)],
+            Some(binary_bytes),
+        ),
+    )
+    .await
+    .map_err(|_| format!("Deploying to {label} timed out"))?
+    .map_err(|e| format!("Deploying to {label} failed: {e}"))?;
+    if !install.success() {
         return Err(format!(
-            "WSL deploy failed ({}): {}",
-            output.status,
-            stderr.trim()
+            "Deploying to {label} failed (exit {}): {}",
+            install.exit_code,
+            install.stderr_string().trim()
         ));
     }
-    write_result.map_err(|e| format!("Binary pipe write failed: {}", e))?;
 
     Ok(DeployResult {
         path: abs_path,
@@ -325,120 +332,30 @@ pub async fn ensure_wsl_server(
     })
 }
 
-/// Ensure maestro-server exists inside a container with the correct version.
-/// Probes via a single exec, downloads the Linux binary locally if needed, then deploys via stdin pipe.
-/// Returns the absolute Linux path to the binary inside the container.
-pub async fn ensure_container_server(
-    cli: &crate::connectivity::docker::ContainerCli,
-    container_name: &str,
-    app_handle: &AppHandle,
-) -> Result<DeployResult, String> {
-    use tokio::io::AsyncWriteExt;
-
-    let probe_out = tokio::time::timeout(
-        std::time::Duration::from_secs(15),
-        tokio::process::Command::new(cli.binary())
-            .args([
-                "exec", container_name,
-                "sh", "-c",
-                &format!(
-                    "printf '%s|||%s' \"$HOME\" \"$($HOME/{}/{} --app-version 2>/dev/null || echo MISSING)\"",
-                    REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME
-                ),
-            ])
-            .no_console_window()
-            .output(),
+/// Prints `home|||version|||arch`, the version being `MISSING` when no server is installed.
+fn linux_probe_script() -> String {
+    format!(
+        "printf '%s|||%s|||%s' \"$HOME\" \"$(\"$HOME\"/{}/{} --app-version 2>/dev/null || echo MISSING)\" \"$(uname -m)\"",
+        REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME
     )
-    .await
-    .map_err(|_| format!("Container probe timed out for {}", container_name))?
-    .map_err(|e| format!("Failed to probe container {}: {}", container_name, e))?;
+}
 
-    if !probe_out.status.success() {
-        return Err(format!(
-            "Container probe failed for {}: {}",
-            container_name,
-            String::from_utf8_lossy(&probe_out.stderr)
-        ));
+fn parse_linux_probe(text: &str) -> Result<(&str, &str, &str), String> {
+    match text.trim().splitn(3, "|||").collect::<Vec<_>>()[..] {
+        [home, version, arch] => Ok((home.trim(), version.trim(), arch.trim())),
+        _ => Err(format!("Unexpected probe output: {}", text.trim())),
     }
+}
 
-    let text = String::from_utf8_lossy(&probe_out.stdout);
-    let parts: Vec<&str> = text.trim().splitn(2, "|||").collect();
-    if parts.len() != 2 {
-        return Err(format!(
-            "Unexpected container probe output: {}",
-            text.trim()
-        ));
-    }
-    let (home, remote_version) = (parts[0].trim(), parts[1].trim());
-
-    let local_version = deployment_version();
-    let abs_dir = format!("{}/{}", home, REMOTE_INSTALL_DIR);
-    let abs_path = format!("{}/{}", abs_dir, REMOTE_BINARY_NAME);
-
-    if remote_version == local_version {
-        return Ok(DeployResult {
-            path: abs_path,
-            deployed: false,
-        });
-    }
-
-    // Detect the container arch via uname before downloading the right binary.
-    let arch_out = tokio::process::Command::new(cli.binary())
-        .args(["exec", container_name, "uname", "-m"])
-        .no_console_window()
-        .output()
-        .await
-        .map_err(|e| format!("Failed to probe container arch: {}", e))?;
-    let arch = String::from_utf8_lossy(&arch_out.stdout).trim().to_string();
-    let triple = linux_triple_for_arch(&arch)?;
-
-    let local_binary = ensure_remote_binary_local(app_handle, triple).await?;
-    let binary_bytes = tokio::fs::read(&local_binary)
-        .await
-        .map_err(|e| format!("Cannot read cached binary: {}", e))?;
-
-    // rm -f before writing for the same symlink/ETXTBSY reasons as the WSL deploy.
-    let mut child = tokio::process::Command::new(cli.binary())
-        .args([
-            "exec",
-            "-i",
-            container_name,
-            "sh",
-            "-c",
-            &format!(
-                "mkdir -p '{0}' && rm -f '{1}' && cat > '{1}' && chmod +x '{1}'",
-                abs_dir, abs_path
-            ),
-        ])
-        .stdin(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .no_console_window()
-        .spawn()
-        .map_err(|e| format!("Failed to spawn container deploy shell: {}", e))?;
-
-    let write_result = match child.stdin.take() {
-        Some(mut stdin) => stdin.write_all(&binary_bytes).await,
-        None => Ok(()),
-    };
-
-    let output = tokio::time::timeout(std::time::Duration::from_secs(60), child.wait_with_output())
-        .await
-        .map_err(|_| format!("Container deploy timed out for {}", container_name))?
-        .map_err(|e| format!("Container deploy process failed: {}", e))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!(
-            "Container deploy failed ({}): {}",
-            output.status,
-            stderr.trim()
-        ));
-    }
-    write_result.map_err(|e| format!("Binary pipe write failed: {}", e))?;
-
-    Ok(DeployResult {
-        path: abs_path,
-        deployed: true,
-    })
+/// Writes stdin to `path` as an executable.
+///
+/// `rm -f` before writing: the destination can be a symlink left by a previous Linux-side install
+/// (dangling once its target cache is deleted, which makes `cat >` fail with "Directory
+/// nonexistent"), and unlinking first also avoids ETXTBSY when a running server still holds the old
+/// inode.
+fn linux_install_script(dir: &str, path: &str) -> String {
+    let (dir, path) = (shell_quote(dir), shell_quote(path));
+    format!("mkdir -p {dir} && rm -f {path} && cat > {path} && chmod +x {path}")
 }
 
 /// Ensure the native platform maestro-server binary is cached in the app data dir.
@@ -769,6 +686,31 @@ fn emit_status(app_handle: &AppHandle, connection_id: i32, status: &str, message
 mod tests {
     use super::*;
     use std::path::{Path, PathBuf};
+
+    /// A home directory is the user's to name, and a space or a quote in it used to split or end
+    /// the path the deploy commands were given.
+    #[test]
+    fn deploy_commands_quote_every_path() {
+        assert_eq!(
+            linux_install_script("/home/o'neil x/.local/bin", "/home/o'neil x/.local/bin/m"),
+            "mkdir -p '/home/o'\\''neil x/.local/bin' && rm -f '/home/o'\\''neil x/.local/bin/m' \
+             && cat > '/home/o'\\''neil x/.local/bin/m' && chmod +x '/home/o'\\''neil x/.local/bin/m'"
+        );
+        assert_eq!(
+            powershell_quote("C:/Users/O'Brien/.local/bin"),
+            "'C:/Users/O''Brien/.local/bin'"
+        );
+    }
+
+    #[test]
+    fn the_linux_probe_reads_home_version_and_arch() {
+        assert_eq!(
+            parse_linux_probe("/home/a b|||MISSING|||aarch64\n"),
+            Ok(("/home/a b", "MISSING", "aarch64"))
+        );
+        assert!(parse_linux_probe("wsl: no such distro").is_err());
+        assert!(linux_probe_script().contains("\"$HOME\"/.local/bin/maestro-server --app-version"));
+    }
 
     fn write(path: &Path, contents: &str) {
         std::fs::write(path, contents).expect("test file should be writable");

@@ -5,7 +5,6 @@ use specta::Type;
 use crate::task::models::WorkspaceMode;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct Project {
     pub id: i32,
     pub name: String,
@@ -19,9 +18,13 @@ pub struct Project {
 }
 
 impl Project {
-    /// Check if this is a remote SSH project
-    pub fn is_remote(&self) -> bool {
-        self.connection_id.is_some()
+    /// The connection this project lives on.
+    pub fn connection_key(&self) -> crate::acp::ConnectionKey {
+        crate::acp::ConnectionKey::from_all_ids(
+            self.connection_id,
+            self.wsl_connection_id,
+            self.docker_connection_id,
+        )
     }
 
     /// Parse a Project from a rusqlite Row.
@@ -42,7 +45,6 @@ impl Project {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 #[serde(rename_all = "PascalCase")]
 pub enum ProjectStatus {
     Active,
@@ -52,7 +54,6 @@ pub enum ProjectStatus {
 /// Project-specific configuration stored in .maestro/settings.json
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(default)]
-#[specta(export)]
 pub struct ProjectConfig {
     pub default_agent: Option<String>,
     pub updated_at: String,
@@ -165,7 +166,6 @@ impl ProjectConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct ProjectIssueTrackingConfig {
     pub provider: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -192,7 +192,6 @@ pub struct ProjectIssueTrackingConfig {
 /// at approve time and deliberately not stored — a connected teammate must not be able to
 /// commit a file telling an unconnected one that a PR is available.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
-#[specta(export)]
 pub struct ProjectCodeHostingConfig {
     pub provider: String,
     /// Host of the remote URL, so a self-hosted instance stays distinguishable.
@@ -210,7 +209,6 @@ pub struct ProjectCodeHostingConfig {
 /// How approved work leaves Review.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
 #[serde(rename_all = "PascalCase")]
-#[specta(export)]
 pub enum LandingMode {
     /// Merge into the target branch locally. The default, and what shipped before PRs existed.
     #[default]
@@ -321,8 +319,8 @@ mod tests {
     /// has never written the file as one holding defaults.
     #[tokio::test]
     async fn a_settings_save_replaces_existing_json() {
+        use crate::connectivity::GitConnection;
         use crate::core::project_storage::{read_maestro_json, write_maestro_json};
-        use crate::models::GitConnection;
 
         let dir = tempfile::tempdir().expect("temp directory");
         let maestro_dir = dir.path().join(".maestro");
@@ -345,4 +343,41 @@ mod tests {
             1
         );
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct ProjectConfigResponse {
+    pub default_agent: Option<String>,
+    pub startup_tab: Option<String>,
+    /// Deliberately absent from `ProjectConfigRequest`: the settings form submits the whole
+    /// request, and a colour field there would let a form save clobber a colour picked in the
+    /// header moments earlier. Writes go through `set_project_accent_color` instead.
+    pub accent_color: Option<String>,
+    /// `Some(false)` once the colour has been decided; see `ProjectConfig`.
+    pub accent_color_auto_assign: Option<bool>,
+    /// Resolved, never `None`: the settings file may predate the key, and the UI needs an answer.
+    pub default_workspace_mode: WorkspaceMode,
+    /// The configured git remote, or `None` for "auto" — deliberately *not* resolved, because the
+    /// picker has to be able to show that no choice has been made.
+    pub remote_name: Option<String>,
+    /// The configured base branch for new worktrees, or `None` for "auto". Not resolved either,
+    /// and for the same reason as `remote_name` above.
+    pub base_branch: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct ProjectConfigRequest {
+    pub default_agent: Option<String>,
+    pub startup_tab: Option<String>,
+    /// Only `NewWorktree` and `RepositoryDirectory` are offered in Settings — a project default
+    /// cannot name a specific workspace — but the field is the full enum so the two places that
+    /// read it do not have to translate between two types.
+    pub default_workspace_mode: WorkspaceMode,
+    /// `None` selects auto-detection; a name must be one the project actually has, which is why
+    /// the form offers a picker rather than a text field.
+    pub remote_name: Option<String>,
+    /// `None` selects the branch the repository is on. Same reasoning as `remote_name` for why the
+    /// form offers a picker: a mistyped branch would only surface when a worktree failed to be
+    /// created for it.
+    pub base_branch: Option<String>,
 }

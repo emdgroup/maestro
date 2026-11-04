@@ -4,10 +4,10 @@
 //! The only place allowed to read the legacy task, worktree, review, prompt and alias tables, and
 //! the old `restorable_sessions` and `session_folders` of `.maestro/state.json`.
 
-use crate::acp::connection_server::{query_via_server, reply};
+use crate::acp::connection_server::{query_via_server_within, reply};
 use crate::acp::ConnectionKey;
+use crate::connectivity::GitConnection;
 use crate::core::AppState;
-use crate::models::GitConnection;
 use crate::task::attachments::{
     attachment_relative_path, on_project_machine, TASK_ATTACHMENTS_DIR,
 };
@@ -71,10 +71,7 @@ async fn import(
     connection_key: ConnectionKey,
 ) -> Result<(), String> {
     let mut request = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {e}"))?;
+        let conn = app_state.db()?;
         let stamped: Option<String> = conn
             .query_row(
                 "SELECT daemon_imported_at FROM projects WHERE id = ?1",
@@ -109,18 +106,12 @@ async fn import(
             log::warn!("[import] emitting project-importing failed: {e}");
         }
         let source_id = {
-            let conn = app_state
-                .db
-                .lock()
-                .map_err(|e| format!("Lock failed: {e}"))?;
-            crate::core::settings::install_id(&conn)?
+            let conn = app_state.db()?;
+            crate::settings::store::install_id(&conn)?
         };
-        let not_found = format!("No connection server for connection {connection_key:?}");
-        let timed_out = "The project's server did not finish the import in time";
-        let begun = query_via_server(
+        let begun = query_via_server_within(
             connection_key,
             app_state,
-            &not_found,
             ServerRequest::BeginImport(BeginImportRequest {
                 project_path: request.project_path.clone(),
                 floors: std::mem::take(&mut request.floors),
@@ -128,7 +119,6 @@ async fn import(
             }),
             reply!(ServerResponse::BeginImportOk(response) => response),
             IMPORT_TIMEOUT_SECS,
-            timed_out,
         )
         .await?;
         if begun.imported_before {
@@ -154,28 +144,24 @@ async fn import(
             .await;
             let import_id = begun.import_id;
             for chunk in split_import(request, IMPORT_CHUNK_BYTES) {
-                query_via_server(
+                query_via_server_within(
                     connection_key,
                     app_state,
-                    &not_found,
                     ServerRequest::ImportChunk(ImportChunkRequest {
                         import_id: import_id.clone(),
                         chunk,
                     }),
                     reply!(ServerResponse::ImportChunkOk => ()),
                     IMPORT_TIMEOUT_SECS,
-                    timed_out,
                 )
                 .await?;
             }
-            let response = query_via_server(
+            let response = query_via_server_within(
                 connection_key,
                 app_state,
-                &not_found,
                 ServerRequest::CommitImport(ImportRef { import_id }),
                 reply!(ServerResponse::ImportProjectOk(response) => response),
                 IMPORT_TIMEOUT_SECS,
-                timed_out,
             )
             .await?;
             log::info!(
@@ -193,10 +179,7 @@ async fn import(
     // Auto mode is per project in the daemon now. The app's old global switch survives only as
     // this settings row, read once here to seed the first project imported.
     let auto_mode = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {e}"))?;
+        let conn = app_state.db()?;
         conn.query_row(
             "SELECT value FROM settings WHERE key = 'auto_mode'",
             [],
@@ -207,25 +190,20 @@ async fn import(
         .is_some_and(|value| value == "true")
     };
     if first_in && auto_mode {
-        query_via_server(
+        query_via_server_within(
             connection_key,
             app_state,
-            &format!("No connection server for connection {connection_key:?}"),
             ServerRequest::SetAutoMode(maestro_protocol::AutoModeSetting {
                 project_path: project_path.to_string(),
                 enabled: true,
             }),
             reply!(ServerResponse::SetAutoModeOk => ()),
             IMPORT_TIMEOUT_SECS,
-            "The project's server did not set auto mode in time",
         )
         .await?;
     }
 
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {e}"))?;
+    let conn = app_state.db()?;
     conn.execute(
         "UPDATE projects SET daemon_imported_at = ?1 WHERE id = ?2",
         params![crate::project::now_rfc3339(), project_id],
@@ -245,10 +223,7 @@ fn read_aliases(
     app_state: &AppState,
     project_id: i32,
 ) -> Result<HashMap<(String, String), String>, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {e}"))?;
+    let conn = app_state.db()?;
     aliases(&conn, project_id).map_err(|e| format!("Failed to read session names: {e}"))
 }
 
@@ -919,7 +894,7 @@ async fn copy_attachments(
             &format!("{TASK_ATTACHMENTS_DIR}/{}", copy.task_id),
         );
         let dest = on_project_machine(project_path, &copy.relative);
-        if let Err(e) = crate::acp::attachment_handlers::copy_to_machine(
+        if let Err(e) = crate::connectivity::files::copy_to_machine(
             app_state,
             git_conn,
             &copy.source,

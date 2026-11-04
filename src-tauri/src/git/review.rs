@@ -4,7 +4,8 @@ use tauri::State;
 use crate::acp::connection_server::{query_project_store, reply};
 use crate::core::AppState;
 use crate::git;
-use crate::models::{ReviewResult, Task};
+use crate::git::ReviewResult;
+use crate::task::Task;
 use maestro_protocol::{
     ReviewCommentInput, SaveTaskReviewRequest, TaskRef, TaskTransition, TransitionGuard,
 };

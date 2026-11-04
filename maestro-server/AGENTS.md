@@ -77,10 +77,13 @@ map, the `spawn_result_rx` arm of `main.rs`, and an automation's session gets on
 Nothing about open sessions is kept app-side: not in `.maestro/state.json`, and a session's name
 is `RenameSession` on the row rather than the app's `session_aliases` table.
 
-**`projects.db` migrates by `user_version`.** `MIGRATIONS` in `project_store.rs` is an append-only
-list, one frozen literal per version, and each step runs in its own transaction with the version it
-reaches. A daemon refuses a file at a version newer than it knows, as the app refuses a newer
-database. A remote daemon directory, `~/.maestro/daemon/`, is shared by every build on that host,
+**`projects.db` and `automations.db` migrate by `user_version`.** Each has `MIGRATIONS`, in
+`project_store.rs` and `automations.rs`, an append-only list, one frozen literal per version, run by
+`project_store::migrate`: each step in its own transaction with the version it reaches. A daemon
+refuses a file at a version newer than it knows, as the app refuses a newer database.
+`automations.db` kept no version before, so its version 1 is the schema those releases shipped,
+written with `IF NOT EXISTS`, and an unversioned file first gets the columns builds added to its
+existing tables (`LATE_COLUMNS`). A remote daemon directory, `~/.maestro/daemon/`, is shared by every build on that host,
 dev and released alike, so a dev build that migrated it leaves an older daemon there without its
 store until that one is updated. That is accepted, as it is for the app database.
 
@@ -194,8 +197,10 @@ the canonical path from the app's `project_id`.
   task 3, every command naming a task or worktree carries `project_id` too, and so does every task
   query key in the frontend.
 - **A guarded step is one request.** A transition travels with its guard (`TransitionGuard`) and runs
-  under the store's lock, as do the composite steps: the turn end (`EndTaskTurn`), closing a
-  refinement and requesting execution. A step the guard refuses writes nothing and pushes nothing.
+  under the store's lock, as do the composite steps: the turn end (`task_store::end_turn`), closing
+  a refinement and requesting execution. The turn end and the deferred execution are the daemon's
+  own, so they are functions in `task_store::requests` rather than wire requests. A step the guard
+  refuses writes nothing and pushes nothing.
 - **Nothing on the shared reader awaits a daemon reply.** The reply to a daemon request comes back
   through the same reader that would be waiting for it, so `reader_task` spawns such requests onto
   a task of their own. A permission request of a task session is settled that way, its blocked
@@ -267,8 +272,8 @@ is handed over. The claim on the task keeps a second start from doing anything. 
 on session close, hold release and a one-minute tick.
 
 **A guarded step is still one request.** The turn end classifies the turn, runs the diff gate with
-local `git` (the daemon is on the repository's machine), and writes the outcome as one `EndTaskTurn`
-under the store's lock, exactly as a window's would. A start that cannot go ahead with nobody
+local `git` (the daemon is on the repository's machine), and writes the outcome as one
+`requests::end_turn` under the store's lock. A start that cannot go ahead with nobody
 watching, for want of an agent or a sign-in, fails with a note in the thread rather than retrying.
 The claim overwrites the phase with `Spawning`, so it keeps the one it took in `claimed_from`: a start
 that does not come up goes back to that phase, failed, where the stage it hands to can claim it again,
@@ -521,7 +526,8 @@ Three files:
   `assets/mcp-tools.json` and forwards every call to the gateway.
 - `maestro-server/src/mcp_gateway.rs` — the loopback listener in the running server. Draws canvas
   surfaces itself by emitting a `SessionUpdate`, and parks every call — canvas ones included — in
-  `PendingHostTools` until Tauri answers.
+  `PendingHostTools` until Tauri answers. The tools it answers itself are beside it in
+  `mcp_gateway/`: `task_tools.rs`, `loop_tools.rs` and `prompt_tools.rs`.
 - `src-tauri/src/acp/host_tools.rs` — the host end: `canvas_await`, with the automation and
   template tools in `acp/automation_tools.rs` and the shared prompt tools in `prompts.rs`.
 
@@ -571,7 +577,7 @@ sees its own surface, so this is the only way a blocked asset or a thrown except
 They arrive on the **next** call by necessity — the frame has not rendered this one yet.
 
 **Adding a tool** is two edits: an entry in `assets/mcp-tools.json` and an arm in
-`host_tools::handle`, or in `mcp_gateway.rs` for a task tool. The entry's `description` is the _only_ documentation the agent gets — it
+`host_tools::handle`, or in `mcp_gateway/task_tools.rs` for a task tool. The entry's `description` is the _only_ documentation the agent gets — it
 carries what the skill prose used to — so it is prose, not a label, and belongs in that asset
 rather than in Rust for the same reason `registry.json` does. `build_tools` loads it and does
 nothing else.

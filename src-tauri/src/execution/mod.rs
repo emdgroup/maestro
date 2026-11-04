@@ -1,5 +1,4 @@
 pub mod capacity;
-pub mod handlers;
 pub mod models;
 pub mod pty;
 pub mod pty_ops;
@@ -8,7 +7,6 @@ pub mod queue;
 pub mod spawn;
 
 pub use models::{
-    ActiveSessionInfo, AheadBehind, ExecutionMode, PtySessionMeta, SessionListEntryDto,
-    SessionListResult, Worktree, WorktreeWithStatus,
+    ActiveSessionInfo, ExecutionMode, PtySessionMeta, SessionListEntryDto, SessionListResult,
 };
 pub use pty::{spawn_agent_cli_pty, PtySession};

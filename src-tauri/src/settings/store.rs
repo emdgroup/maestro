@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-use crate::models::{
+use crate::settings::models::{
     ActivityVisibility, AgentStreamWidth, AppSettings, EnterKeyBehavior, NewProjectColor,
     TerminalColorMode,
 };
@@ -308,13 +308,13 @@ mod tests {
 
         let settings = AppSettings {
             theme_preference: Some("dark".to_string()),
-            thinking_visibility: crate::models::ActivityVisibility::Auto,
-            tool_call_visibility: crate::models::ActivityVisibility::Auto,
+            thinking_visibility: crate::settings::models::ActivityVisibility::Auto,
+            tool_call_visibility: crate::settings::models::ActivityVisibility::Auto,
             accent_color: None,
-            new_project_color: crate::models::NewProjectColor::Global,
-            terminal_color_mode: crate::models::TerminalColorMode::FollowTheme,
-            enter_key_behavior: crate::models::EnterKeyBehavior::SendPrompt,
-            agent_stream_width: crate::models::AgentStreamWidth::Full,
+            new_project_color: crate::settings::models::NewProjectColor::Global,
+            terminal_color_mode: crate::settings::models::TerminalColorMode::FollowTheme,
+            enter_key_behavior: crate::settings::models::EnterKeyBehavior::SendPrompt,
+            agent_stream_width: crate::settings::models::AgentStreamWidth::Full,
             updated_at: chrono::Utc::now().to_rfc3339(),
             auto_update: false,
             ui_scale: None,
@@ -336,7 +336,7 @@ mod tests {
         assert_eq!(loaded.log_directory, settings.log_directory);
         assert_eq!(
             loaded.new_project_color,
-            crate::models::NewProjectColor::Global
+            crate::settings::models::NewProjectColor::Global
         );
         assert!(!loaded.notify_on_done);
         assert!(loaded.notify_on_input_needed);
@@ -456,7 +456,7 @@ mod tests {
         let loaded = load_settings(&conn).unwrap();
         assert_eq!(
             loaded.new_project_color,
-            crate::models::NewProjectColor::Auto
+            crate::settings::models::NewProjectColor::Auto
         );
     }
 

@@ -2,9 +2,9 @@ use super::crud::register_project_in_db;
 use crate::acp::ConnectionKey;
 use crate::connectivity::exec_channel::{run_on, ExecTarget};
 use crate::connectivity::files;
+use crate::connectivity::GitConnection;
 use crate::core::AppState;
 use crate::git::exec::git_prefix_args;
-use crate::models::GitConnection;
 use std::sync::Arc;
 use tauri::State;
 
@@ -116,14 +116,7 @@ async fn build_provider_auth_header(
 
     // GitHub supports a fallback to the `gh` CLI token when no keychain entry exists.
     let token_result = if provider == "github" {
-        match crate::integration::issue_tracking_handlers::get_integration_creds(
-            provider, app_state,
-        ) {
-            Ok(creds) => Ok(creds.token),
-            Err(_) => crate::integration::github::try_gh_cli_token()
-                .await
-                .ok_or_else(|| "No GitHub credentials found".to_string()),
-        }
+        crate::integration::lookup::get_github_token(app_state).await
     } else {
         crate::integration::issue_tracking_handlers::get_integration_creds(provider, app_state)
             .map(|creds| creds.token)
@@ -176,7 +169,7 @@ pub async fn clone_project(
     wsl_connection_id: Option<i32>,
     docker_connection_id: Option<i32>,
     provider: Option<String>,
-) -> Result<crate::models::Project, String> {
+) -> Result<crate::project::Project, String> {
     let connection_key =
         ConnectionKey::from_all_ids(connection_id, wsl_connection_id, docker_connection_id);
     let auth_header = match provider.as_deref() {
@@ -224,7 +217,7 @@ pub async fn create_new_project(
     connection_id: Option<i32>,
     wsl_connection_id: Option<i32>,
     docker_connection_id: Option<i32>,
-) -> Result<crate::models::Project, String> {
+) -> Result<crate::project::Project, String> {
     let connection_key =
         ConnectionKey::from_all_ids(connection_id, wsl_connection_id, docker_connection_id);
     // Build full path string (works for both local and remote — remote paths are POSIX)
@@ -254,4 +247,30 @@ pub async fn create_new_project(
         connection_key,
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// What a `.git` existence check got wrong, and why sending a task to review asks git instead:
+    /// a project opened at a subdirectory of a repository is still in one.
+    #[tokio::test]
+    async fn a_subdirectory_of_a_repository_is_inside_its_work_tree() {
+        let temp = tempfile::tempdir().expect("create temporary directory");
+        let repo = temp.path().join("repo");
+        let subdirectory = repo.join("packages").join("app");
+        std::fs::create_dir_all(&subdirectory).expect("create subdirectory");
+        let init = std::process::Command::new("git")
+            .args(["init", "-b", "main"])
+            .arg(&repo)
+            .output()
+            .expect("run git init");
+        assert!(init.status.success(), "git init failed");
+
+        let path = subdirectory.to_string_lossy().into_owned();
+        let conn = GitConnection::Local { path: path.clone() };
+        assert!(!subdirectory.join(".git").exists());
+        assert!(inside_work_tree(&conn, &path).await);
+    }
 }

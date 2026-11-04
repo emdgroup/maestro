@@ -284,10 +284,7 @@ pub(crate) fn with_shared<T>(
     f: impl FnOnce(&Connection) -> Result<T, String>,
 ) -> Result<T, String> {
     let result = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         f(&conn)?
     };
     if write {

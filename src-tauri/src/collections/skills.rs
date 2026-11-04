@@ -25,10 +25,11 @@ use specta::Type;
 use tauri::State;
 
 use crate::acp::connection_server::{
-    query_apply_skill_via_server, query_delete_skill_via_server, query_list_skills_via_server,
+    query_apply_skill_via_server, query_via_server, query_via_server_within, reply,
 };
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 /// A skill the size of this is not a skill; it keeps a bad download off the wire.
 const MAX_SKILL_BYTES: usize = 8 * 1024 * 1024;
@@ -93,7 +94,13 @@ pub async fn list_skills(
     connection: ConnectionKey,
     project_path: Option<String>,
 ) -> Result<SkillLibrary, String> {
-    let list = query_list_skills_via_server(connection, project_path, &app_state).await?;
+    let list = query_via_server(
+        connection,
+        &app_state,
+        ServerRequest::ListSkills(maestro_protocol::ProjectScopedRequest { project_path }),
+        reply!(ServerResponse::ListSkillsOk(response) => response),
+    )
+    .await?;
     Ok(SkillLibrary {
         skills: list
             .skills
@@ -211,7 +218,14 @@ pub async fn delete_skill(
     connection: ConnectionKey,
     name: String,
 ) -> Result<(), String> {
-    query_delete_skill_via_server(connection, name, &app_state).await
+    query_via_server_within(
+        connection,
+        &app_state,
+        ServerRequest::DeleteSkill(maestro_protocol::DeleteSkillRequest { name }),
+        reply!(ServerResponse::DeleteSkillOk => ()),
+        150,
+    )
+    .await
 }
 
 /// Install a catalog skill into the connection's library and for `agents`. The daemon fetches it

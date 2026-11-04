@@ -3,8 +3,8 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::connectivity::files;
+use crate::connectivity::GitConnection;
 use crate::core::AppState;
-use crate::models::GitConnection;
 
 /// Where a session keeps its canvases, and the connection to reach them over.
 ///

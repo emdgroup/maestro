@@ -1,0 +1,82 @@
+use serde::{Deserialize, Serialize};
+use specta::Type;
+
+/// Ahead/behind commit counts relative to the upstream tracking branch.
+///
+/// Not against the base branch: a worktree's own commits are counted separately as
+/// `WorktreeWithStatus::commit_count`, and these two answer different questions — how much work is
+/// here, versus how much of it has reached the remote. `None` means there is no upstream at all,
+/// which `DeleteWorktreeDialog` reads as "this branch exists only locally".
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct AheadBehind {
+    pub ahead: u32,
+    pub behind: u32,
+}
+
+/// Worktree record from database (schema v6)
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct Worktree {
+    pub id: i32,
+    pub project_id: i32,
+    pub task_id: Option<i32>, // nullable — None for manually created worktrees
+    pub branch_name: String,
+    pub base_branch: Option<String>, // origin branch this worktree was created from
+    pub path: String,
+    pub git_status: Option<String>, // raw git status --porcelain output
+    pub created_at: String,
+}
+
+impl Worktree {
+    /// The daemon's row, filed under the project the request named, as `Task::from_wire` does.
+    pub fn from_wire(worktree: maestro_protocol::Worktree, project_id: i32) -> Self {
+        Worktree {
+            id: worktree.id,
+            project_id,
+            task_id: worktree.task_id,
+            branch_name: worktree.branch_name,
+            base_branch: worktree.base_branch,
+            path: worktree.path,
+            git_status: worktree.git_status,
+            created_at: worktree.created_at,
+        }
+    }
+}
+
+/// View model for the Worktrees view — enriched with task info and derived status fields
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct WorktreeWithStatus {
+    pub id: Option<i32>, // None if orphan (on-disk but no DB row)
+    pub project_id: Option<i32>,
+    pub task_id: Option<i32>,
+    pub branch_name: String,
+    pub path: String,
+    pub changed_files_count: u32, // number of changed + untracked files; 0 if clean
+    pub created_at: Option<String>,
+    pub task_name: Option<String>,         // from tasks table join
+    pub is_zombie: bool,                   // task_id IS NULL AND path matches agent convention
+    pub is_orphan: bool,                   // on-disk but not in DB
+    pub diff_stat: Option<String>, // raw output of `git diff HEAD --shortstat`; None if clean
+    pub base_branch: Option<String>, // origin branch persisted at worktree creation time
+    pub ahead_behind: Option<AheadBehind>, // ahead/behind counts vs upstream tracking branch
+    /// Commits this worktree's branch has that its base branch does not — the work done here.
+    /// `None` when there is no base branch to count against, or it no longer resolves.
+    pub commit_count: Option<u32>,
+    /// When anything last happened here, as RFC 3339: the newest modification time among the files
+    /// git reports as changed, or the last commit's date when the working tree is clean.
+    pub last_activity_at: Option<String>,
+    /// Subject line of the newest commit, which the pull request dialog offers as its default
+    /// title. `None` on a branch with no commits, and on a worktree git could not be asked about.
+    pub last_commit_subject: Option<String>,
+    /// The short sha HEAD points at when the worktree is not on a branch at all. `branch_name`
+    /// still carries the name recorded at creation, because that is what branch operations need —
+    /// but showing it would claim a branch that is not checked out.
+    pub detached_at: Option<String>,
+    /// The full sha HEAD points at, on a branch or not. Compared against a pull request's head sha
+    /// to tell a branch whose work has landed from one that has moved on past the merge.
+    pub head_sha: String,
+    /// Whether this branch had an upstream that has since been deleted — what a forge does to the
+    /// head branch when it merges a pull request. Read from `%(upstream:track)` saying `gone`, and
+    /// never inferred from `ahead_behind` being `None`: that covers a branch which was never pushed
+    /// just as much as one whose upstream was pruned, and those want opposite offers.
+    pub upstream_gone: bool,
+}

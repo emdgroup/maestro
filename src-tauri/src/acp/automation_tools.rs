@@ -22,9 +22,8 @@ use crate::acp::connection_server::{
 };
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
-use crate::project::automations::{
-    target, Automation, AutomationRun, AutomationWorkspace, WebhookOverlap,
-};
+use crate::project::automations::{Automation, AutomationRun, AutomationWorkspace, WebhookOverlap};
+use crate::project::crud::target;
 use crate::templates::{self, AutomationTemplate, TemplateBody};
 use maestro_protocol::HostToolCall;
 
@@ -155,7 +154,7 @@ async fn save(
     let saved: Automation =
         query_save_automation_via_server(project.key, project.path.clone(), automation, app_state)
             .await?;
-    app_state.app_handle.emit("automations-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "automations-changed", ());
     Ok(automation_json(&saved))
 }
 
@@ -217,7 +216,7 @@ pub(super) async fn create_automation(
             .unwrap_or_default(),
     };
     let workspace = match config.default_workspace_mode() {
-        crate::models::WorkspaceMode::NewWorktree => AutomationWorkspace::NewWorktree {
+        crate::task::WorkspaceMode::NewWorktree => AutomationWorkspace::NewWorktree {
             base_branch: super::host_tools::default_base_branch(app_state, project.id, &config)
                 .await,
         },
@@ -285,7 +284,7 @@ pub(super) async fn delete_automation(
 ) -> Result<Value, String> {
     let (project, automation) = find_automation(app_state, session_id, arguments, "id").await?;
     query_delete_automation_via_server(project.key, automation.id.clone(), app_state).await?;
-    app_state.app_handle.emit("automations-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "automations-changed", ());
     Ok(json!({ "deleted": automation.id }))
 }
 
@@ -478,10 +477,7 @@ impl FoundTemplate {
 
 fn all_templates(app_state: &Arc<AppState>) -> Result<Vec<FoundTemplate>, String> {
     let stored = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         templates::list(&conn)?
     };
     let own = stored.into_iter().map(|template| FoundTemplate {
@@ -538,13 +534,10 @@ fn save_template(
     body: &TemplateBody,
 ) -> Result<Value, String> {
     let saved = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         templates::save(&conn, id, name, tag, body)?
     };
-    app_state.app_handle.emit("templates-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "templates-changed", ());
     Ok(FoundTemplate {
         id: format!("user-{}", saved.id),
         name: saved.name,
@@ -627,13 +620,10 @@ pub(super) fn delete_template(
 ) -> Result<Value, String> {
     let (id, template) = find_own_template(app_state, arguments)?;
     {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state.db()?;
         templates::delete(&conn, id)?;
     }
-    app_state.app_handle.emit("templates-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "templates-changed", ());
     Ok(json!({ "deleted": template.id }))
 }
 

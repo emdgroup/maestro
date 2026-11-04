@@ -1,7 +1,7 @@
 //! Branch-oriented pull request commands, for the session side panel.
 //!
 //! Distinct from the task-oriented ones in `git::merge`, and deliberately so. Those are steps in
-//! the pipeline: they move a task's phase, and `reconcile_pull_requests` sweeps what they wrote.
+//! the pipeline: they move a task's phase, and `pull_request_sweep` sweeps what they wrote.
 //! These two know nothing about tasks. They take a branch, ask the forge about it, and write
 //! nothing — which is what lets the panel show a pull request opened outside Maestro, and what
 //! keeps a session that has no task from needing a row to hang state on.
@@ -28,7 +28,6 @@ use crate::integration::pull_request::{
 /// Mirrors [`PullRequestState`], which cannot be exported itself: it is `Copy` plumbing shared by
 /// every provider and giving it a `specta` derive would put forge internals in the bindings.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
-#[specta(export)]
 #[serde(rename_all = "PascalCase")]
 pub enum BranchPullRequestState {
     Open,
@@ -37,14 +36,12 @@ pub enum BranchPullRequestState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct PullRequestCheckInfo {
     pub name: String,
     pub status: PullRequestCheckStatus,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
-#[specta(export)]
 #[serde(rename_all = "PascalCase")]
 pub enum PullRequestCheckStatus {
     Passed,
@@ -53,7 +50,6 @@ pub enum PullRequestCheckStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct OpenedPullRequest {
     pub number: i64,
     pub url: String,
@@ -68,7 +64,6 @@ pub struct OpenedPullRequest {
 ///
 /// No state, because every entry here is open by definition.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct ProjectPullRequest {
     pub number: i64,
     pub url: String,
@@ -97,7 +92,6 @@ pub struct ProjectPullRequest {
 /// The same shape whether it arrived inside the list or from the per-row command, so the frontend
 /// has one type for "what this row knows" and no branch on where it came from.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct PullRequestRowDetail {
     pub additions: Option<i64>,
     pub deletions: Option<i64>,
@@ -112,7 +106,6 @@ pub struct PullRequestRowDetail {
 /// Names are still read where they are shown: the session panel and the worktree card chip both ask
 /// about a single branch and get the full list.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
-#[specta(export)]
 #[serde(rename_all = "PascalCase")]
 pub enum PullRequestCiRollup {
     Passing,
@@ -123,7 +116,6 @@ pub enum PullRequestCiRollup {
 
 /// One page of a project's open pull requests.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct PullRequestPageInfo {
     pub items: Vec<ProjectPullRequest>,
     /// Pass back verbatim to ask for the next page. Opaque — a GraphQL cursor on GitHub, a row
@@ -142,7 +134,6 @@ pub struct PullRequestPageInfo {
 /// all of it costs one point — and that splitting them is what let the card's header and its check
 /// ring describe two different moments.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct BranchPullRequestInfo {
     pub number: i64,
     pub url: String,
@@ -171,7 +162,7 @@ async fn resolve_target(
     project_id: i32,
 ) -> Result<
     (
-        crate::models::project::ProjectCodeHostingConfig,
+        crate::project::models::ProjectCodeHostingConfig,
         String,
         Option<String>,
     ),

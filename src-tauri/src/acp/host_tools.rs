@@ -50,8 +50,6 @@ pub(crate) async fn handle(app_state: Arc<AppState>, session_id: &str, call: Hos
             automation_tools::save_as_template(&app_state, session_id, &call.arguments).await
         }
         "delete_template" => automation_tools::delete_template(&app_state, &call.arguments),
-        // A direct session's own reader; the shared reader answers through `answer_prompt_tool`.
-        name if is_prompt_tool(name) => prompt_tool(&app_state, &call),
         "canvas_await" => canvas_await(&app_state, session_id, &call).await,
         "canvas_create" | "canvas_update" | "canvas_data" => {
             canvas_ack(&app_state, session_id, &call.arguments).await

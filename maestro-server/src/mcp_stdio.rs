@@ -12,10 +12,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-use maestro_protocol::{
-    read_frame, write_frame, GatewayRequest, HostToolCall, HostToolResult, MCP_GATEWAY_PORT_ENV,
-    MCP_GATEWAY_SESSION_ENV, MCP_GATEWAY_TOKEN_ENV,
+use crate::mcp_gateway::{
+    GatewayRequest, MCP_GATEWAY_PORT_ENV, MCP_GATEWAY_SESSION_ENV, MCP_GATEWAY_TOKEN_ENV,
 };
+use maestro_protocol::{read_frame, write_frame, HostToolCall, HostToolResult};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;

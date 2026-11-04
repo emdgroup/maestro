@@ -15,47 +15,21 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::acp::connection_server::{
-    query_automation_runs_via_server, query_delete_automation_run_via_server,
-    query_delete_automation_via_server, query_list_automations_via_server,
-    query_preview_schedule_via_server, query_roll_webhook_secret_via_server,
-    query_run_automation_via_server, query_save_automation_via_server,
-    query_set_run_retention_via_server, query_webhook_deliveries_via_server,
-    query_webhook_settings_via_server,
+    query_automation_runs_via_server, query_delete_automation_via_server,
+    query_list_automations_via_server, query_run_automation_via_server,
+    query_save_automation_via_server, query_via_server, query_via_server_within,
+    query_webhook_settings_via_server, reply,
 };
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
+use crate::project::crud::target;
+use maestro_protocol::{ServerRequest, ServerResponse};
 
 pub use maestro_protocol::{
     Automation, AutomationRun, AutomationRunStatus, AutomationWorkspace, DeliveryOutcome,
     ListAutomationsResponse, RunRetention, RunTrigger, WebhookDelivery, WebhookOverlap,
     WebhookSettings, WebhookStatus,
 };
-
-/// Which server to ask, and what this project is called on it.
-///
-/// Read from the `projects` row alone: every task, worktree and review request comes through here,
-/// and building a `GitConnection` for each would look up the connection's credentials to no end.
-pub(crate) async fn target(
-    app_state: &Arc<AppState>,
-    project_id: i32,
-) -> Result<(ConnectionKey, String), String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {e}"))?;
-    conn.query_row(
-        "SELECT path, connection_id, wsl_connection_id, docker_connection_id
-         FROM projects WHERE id = ?1",
-        [project_id],
-        |row| {
-            Ok((
-                ConnectionKey::from_all_ids(row.get(1)?, row.get(2)?, row.get(3)?),
-                row.get(0)?,
-            ))
-        },
-    )
-    .map_err(|e| format!("Project {project_id} not found: {e}"))
-}
 
 #[tauri::command]
 #[specta::specta]
@@ -123,8 +97,16 @@ pub async fn preview_schedule(
     timezone: String,
 ) -> Result<Option<String>, String> {
     let (connection_key, _) = target(&app_state, project_id).await?;
-    let response =
-        query_preview_schedule_via_server(connection_key, cron, timezone, &app_state).await?;
+    // Short timeout on purpose: this fires while somebody edits a field, and a preview nobody is
+    // waiting for any more is worth less than the editor staying responsive.
+    let response = query_via_server_within(
+        connection_key,
+        &app_state,
+        ServerRequest::PreviewSchedule(maestro_protocol::PreviewScheduleRequest { cron, timezone }),
+        reply!(ServerResponse::PreviewScheduleOk(response) => response),
+        5,
+    )
+    .await?;
     Ok(response.next)
 }
 
@@ -176,7 +158,15 @@ pub async fn delete_automation_run(
     run_id: String,
 ) -> Result<(), String> {
     let (connection_key, _) = target(&app_state, project_id).await?;
-    query_delete_automation_run_via_server(connection_key, run_id, &app_state).await
+    query_via_server_within(
+        connection_key,
+        &app_state,
+        ServerRequest::DeleteAutomationRun(maestro_protocol::DeleteAutomationRunRequest { run_id }),
+        reply!(ServerResponse::DeleteAutomationRunOk => ()),
+        // Removing a worktree is a git process over a whole checkout.
+        60,
+    )
+    .await
 }
 
 /// Set how much run history this project keeps. Applied straight away.
@@ -188,7 +178,18 @@ pub async fn set_run_retention(
     retention: RunRetention,
 ) -> Result<(), String> {
     let (connection_key, project_path) = target(&app_state, project_id).await?;
-    query_set_run_retention_via_server(connection_key, project_path, retention, &app_state).await
+    query_via_server_within(
+        connection_key,
+        &app_state,
+        ServerRequest::SetRunRetention(maestro_protocol::SetRunRetentionRequest {
+            project_path,
+            retention,
+        }),
+        reply!(ServerResponse::SetRunRetentionOk => ()),
+        // Answered after trimming, which removes worktrees.
+        60,
+    )
+    .await
 }
 
 /// This machine's webhook listener, for the connection's Settings page.
@@ -222,7 +223,13 @@ pub async fn roll_webhook_secret(
     automation_id: String,
 ) -> Result<Automation, String> {
     let (connection_key, _) = target(&app_state, project_id).await?;
-    query_roll_webhook_secret_via_server(connection_key, automation_id, &app_state).await
+    query_via_server(
+        connection_key,
+        &app_state,
+        ServerRequest::RollWebhookSecret(maestro_protocol::AutomationIdRequest { automation_id }),
+        reply!(ServerResponse::RollWebhookSecretOk(response) => response),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -233,7 +240,14 @@ pub async fn list_webhook_deliveries(
     automation_id: String,
 ) -> Result<Vec<WebhookDelivery>, String> {
     let (connection_key, _) = target(&app_state, project_id).await?;
-    let response =
-        query_webhook_deliveries_via_server(connection_key, automation_id, &app_state).await?;
+    let response = query_via_server(
+        connection_key,
+        &app_state,
+        ServerRequest::ListWebhookDeliveries(maestro_protocol::AutomationIdRequest {
+            automation_id,
+        }),
+        reply!(ServerResponse::ListWebhookDeliveriesOk(response) => response),
+    )
+    .await?;
     Ok(response.deliveries)
 }

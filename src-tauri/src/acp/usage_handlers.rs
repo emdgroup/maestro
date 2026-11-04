@@ -54,14 +54,11 @@ pub async fn get_session_usage(
     let response = query_via_server(
         connection,
         &app_state,
-        &format!("No connection server for connection {:?}", connection),
         ServerRequest::SessionUsage(maestro_protocol::SessionUsageRequest {
             agent_id,
             acp_session_id,
         }),
         reply!(ServerResponse::SessionUsageOk(response) => response),
-        15,
-        "The connection's server did not answer within 15s",
     )
     .await?;
     Ok(response.turns.into_iter().map(Into::into).collect())

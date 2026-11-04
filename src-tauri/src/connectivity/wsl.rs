@@ -3,7 +3,6 @@ use specta::Type;
 
 /// A WSL distro as reported by `wsl.exe --list --verbose`.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct WslDistro {
     pub name: String,
     pub state: WslDistroState,
@@ -11,7 +10,6 @@ pub struct WslDistro {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
-#[specta(export)]
 #[serde(rename_all = "PascalCase")]
 pub enum WslDistroState {
     Running,
@@ -20,7 +18,6 @@ pub enum WslDistroState {
 
 /// A WSL connection record stored in the database.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct WslConnection {
     pub id: i32,
     pub distro_name: String,

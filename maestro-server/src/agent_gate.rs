@@ -256,15 +256,9 @@ fn parse(at: &str) -> Option<DateTime<Utc>> {
 /// The thread's note on a task whose turn was refused.
 pub(crate) fn note(until: DateTime<Utc>) -> NewTaskComment {
     let at = until.with_timezone(&chrono::Local).format("%a %H:%M");
-    NewTaskComment {
-        kind: "note".to_string(),
-        author: "maestro".to_string(),
-        body: Some(format!(
-            "The agent hit its usage limit, so this task waits until {at} and then goes on."
-        )),
-        external_ref: None,
-        phase: None,
-    }
+    crate::task_store::requests::note(format!(
+        "The agent hit its usage limit, so this task waits until {at} and then goes on."
+    ))
 }
 
 /// `OpenAgentGate`: Try now. The drain starts the agent's waiting tasks.

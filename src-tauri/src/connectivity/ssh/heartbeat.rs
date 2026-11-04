@@ -1,7 +1,6 @@
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::Emitter;
 
 use super::session::{ReconnectingPayload, RemoteSshSession, SshConnectionState};
 use crate::connectivity::ssh::error::is_transient_error;
@@ -39,7 +38,7 @@ async fn cleanup_pty_sessions_for_connection(
         }
     }
 
-    app_state.app_handle.emit("sessions-changed", ()).ok();
+    crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
 }
 
 /// Spawn a background heartbeat task for an SSH connection.
@@ -137,12 +136,17 @@ pub fn spawn_heartbeat_task(
                                             .remove(&connection_id)
                                             .unwrap_or_default();
                                     for s in remaining {
-                                        let _ = restore_state.app_handle.emit(
+                                        crate::core::emit_or_log(
+                                            &restore_state.app_handle,
                                             &format!("acp://session-ended/{}", s.session_id),
                                             (),
                                         );
                                     }
-                                    restore_state.app_handle.emit("sessions-changed", ()).ok();
+                                    crate::core::emit_or_log(
+                                        &restore_state.app_handle,
+                                        "sessions-changed",
+                                        (),
+                                    );
                                 }
                                 crate::core::emit_or_log(
                                     &restore_handle,
@@ -165,11 +169,14 @@ pub fn spawn_heartbeat_task(
                             .unwrap_or_default();
                         let had_restorable = !remaining.is_empty();
                         for s in remaining {
-                            let _ = app_handle
-                                .emit(&format!("acp://session-ended/{}", s.session_id), ());
+                            crate::core::emit_or_log(
+                                &app_handle,
+                                &format!("acp://session-ended/{}", s.session_id),
+                                (),
+                            );
                         }
                         if had_restorable {
-                            app_state.app_handle.emit("sessions-changed", ()).ok();
+                            crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
                         }
                         crate::core::emit_or_log(
                             &app_handle,

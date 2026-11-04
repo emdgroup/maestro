@@ -9,7 +9,7 @@ use tauri::State;
 
 use crate::acp::connection_server::{query_project_store, reply};
 use crate::core::AppState;
-use crate::models::TaskComment;
+use crate::task::TaskComment;
 use maestro_protocol::{ServerRequest, ServerResponse};
 
 /// Read a task's thread, oldest first.

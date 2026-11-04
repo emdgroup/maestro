@@ -1,6 +1,7 @@
+use crate::connectivity::GitConnection;
 use crate::core::project_storage::{read_maestro_json, write_maestro_json};
 use crate::core::AppState;
-use crate::models::{GitConnection, ProjectConfig};
+use crate::project::ProjectConfig;
 use chrono::Utc;
 use std::sync::Arc;
 use tauri::State;
@@ -58,11 +59,11 @@ where
 pub async fn get_project_settings(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
-) -> Result<crate::models::ProjectConfigResponse, String> {
+) -> Result<crate::project::ProjectConfigResponse, String> {
     let config = load_project_config_for(&app_state, project_id).await?;
     // Resolved before the fields below are moved out of `config`.
     let default_workspace_mode = config.default_workspace_mode();
-    Ok(crate::models::ProjectConfigResponse {
+    Ok(crate::project::ProjectConfigResponse {
         default_agent: config.default_agent,
         startup_tab: config.startup_tab,
         accent_color: config.accent_color,
@@ -105,7 +106,7 @@ pub async fn set_project_accent_color(
 pub async fn update_project_settings(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
-    settings: crate::models::ProjectConfigRequest,
+    settings: crate::project::ProjectConfigRequest,
 ) -> Result<(), String> {
     let (_project, conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 

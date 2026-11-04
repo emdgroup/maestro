@@ -1,4 +1,4 @@
-use crate::models::issue_tracking::RemoteIssue;
+use crate::integration::issue_tracking_models::RemoteIssue;
 
 // ── Response structs ────────────────────────────────────────────────────────
 
@@ -52,7 +52,6 @@ struct TeamsConnection {
 
 /// A Linear team, exported to TypeScript bindings for the team picker (Phase 55).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
-#[specta(export)]
 pub struct LinearTeam {
     pub id: String,
     pub name: String,

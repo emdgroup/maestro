@@ -189,17 +189,10 @@ pub fn builtins() -> &'static [BuiltinTemplate] {
     })
 }
 
-fn db(app_state: &AppState) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
-    app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))
-}
-
 #[tauri::command]
 #[specta::specta]
 pub fn list_templates(app_state: State<Arc<AppState>>) -> Result<Vec<Template>, String> {
-    list(&*db(&app_state)?)
+    list(&*app_state.db()?)
 }
 
 /// Create a template, or replace the one `id` names.
@@ -212,13 +205,13 @@ pub fn save_template(
     tag: Option<String>,
     body: TemplateBody,
 ) -> Result<Template, String> {
-    save(&*db(&app_state)?, id, &name, tag.as_deref(), &body)
+    save(&*app_state.db()?, id, &name, tag.as_deref(), &body)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn delete_template(app_state: State<Arc<AppState>>, id: i32) -> Result<(), String> {
-    delete(&*db(&app_state)?, id).map(|_| ())
+    delete(&*app_state.db()?, id).map(|_| ())
 }
 
 #[cfg(test)]

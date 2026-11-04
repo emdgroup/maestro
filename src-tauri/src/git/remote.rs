@@ -3,12 +3,6 @@ use tauri::State;
 
 use crate::core::AppState;
 
-/// Shell-safe quoting for paths used in SSH commands.
-/// Wraps in single quotes and escapes internal single quotes as '\'' (end quote, escaped quote, restart quote).
-pub fn shell_quote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
-
 /// A git remote URL split into the host that serves it and the path below it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedRemote {
@@ -195,7 +189,7 @@ async fn resolve_project_remote(app_state: &AppState, project_id: i32) -> String
         return DEFAULT_REMOTE.to_string();
     };
 
-    let config: crate::models::ProjectConfig = crate::core::project_storage::read_maestro_json(
+    let config: crate::project::ProjectConfig = crate::core::project_storage::read_maestro_json(
         &git_conn,
         crate::project::settings::SETTINGS_FILE,
     )
@@ -213,6 +207,41 @@ async fn resolve_project_remote(app_state: &AppState, project_id: i32) -> String
             DEFAULT_REMOTE.to_string()
         }
     }
+}
+
+/// List git branches and the current branch for a project
+///
+/// Returns a tuple of (branches, current_branch).
+/// Falls back to ([], "main") if the project is not a git repo or git is unavailable.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_project_branches(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+) -> Result<(crate::git::BranchList, String), String> {
+    let project = crate::project::crud::load_project(&app_state, project_id)?;
+
+    // Uses get_git_connection directly (not get_project_with_git_conn) because
+    // branch listing should fall back to local path when SSH is disconnected,
+    // rather than failing entirely.
+    let git_conn = crate::core::get_git_connection(&project, &app_state)
+        .await
+        .unwrap_or_else(|_| crate::connectivity::GitConnection::Local {
+            path: project.path.clone(),
+        });
+
+    let remote = crate::git::remote::project_remote(&app_state, project_id).await;
+    let (branches, current_branch) = tokio::join!(
+        crate::git::list_branches(&git_conn, &remote),
+        crate::git::get_current_branch(&git_conn),
+    );
+    let branches = branches.unwrap_or_else(|_| crate::git::BranchList {
+        local: vec![],
+        remote: vec![],
+    });
+    let current_branch = current_branch.unwrap_or_else(|_| "main".to_string());
+
+    Ok((branches, current_branch))
 }
 
 /// Every remote configured for the project, for the Settings picker.

@@ -1,5 +1,5 @@
 use super::exec::{run_git_commands_lossy, run_git_in_dir, run_git_in_dir_lossy};
-use crate::models::GitConnection;
+use crate::connectivity::GitConnection;
 
 #[derive(serde::Serialize, specta::Type)]
 pub struct BranchList {
