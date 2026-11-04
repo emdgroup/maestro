@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.45.0](https://github.com/emdgroup/maestro/compare/v0.44.0...v0.45.0) (2026-11-04)
+
+
+### Features
+
+* **files:** flash the cited line or range when a #L link opens ([1a8cbbf](https://github.com/emdgroup/maestro/commit/1a8cbbfe13e3fba06a52ad437e6121e96ced4261))
+* **files:** keyboard shortcuts for the file tabs and the editor (Ctrl+E, Esc, Ctrl+O, Ctrl+W) ([e257d47](https://github.com/emdgroup/maestro/commit/e257d4743f1c70aba6717f463273fe81ad9d27f0))
+* **files:** make the side panel's Files tab a single tab that chat file links open into ([e257d47](https://github.com/emdgroup/maestro/commit/e257d4743f1c70aba6717f463273fe81ad9d27f0))
+* **files:** open files in tabs, with a two-sided split and drafts kept across both ([e257d47](https://github.com/emdgroup/maestro/commit/e257d4743f1c70aba6717f463273fe81ad9d27f0))
+* **kanban:** sweep pull requests every minute while the board has focus, and at once on returning to it ([62071e6](https://github.com/emdgroup/maestro/commit/62071e621a28bdf30de6fd2f1ce3dc02735a534f))
+* **sessions:** move Terminal and Files out of the agent grid ([f9af612](https://github.com/emdgroup/maestro/commit/f9af612830bbcbbe3bcb326b69b514ba57689dc2))
+
+
+### Bug Fixes
+
+* **annotations:** clear a session's notes when it closes ([d503c0c](https://github.com/emdgroup/maestro/commit/d503c0c322a4f7da42ce5191877c6aaa698be965))
+* **auth:** stop the sign-in modal leaking its event listener ([7a2554f](https://github.com/emdgroup/maestro/commit/7a2554fc1c4729d8ea4c1088bbbec3a02eb7f740))
+* **file-picker:** stop listing local folders while browsing WSL or Docker ([d503c0c](https://github.com/emdgroup/maestro/commit/d503c0c322a4f7da42ce5191877c6aaa698be965))
+* **files:** open #L line links from agent replies at the cited line ([1a8cbbf](https://github.com/emdgroup/maestro/commit/1a8cbbfe13e3fba06a52ad437e6121e96ced4261))
+* **paths:** match projects on network shares to their daemon updates ([bae39c8](https://github.com/emdgroup/maestro/commit/bae39c86ac8dbfb380fd5e4672508875830f0cd3))
+* **projects:** refresh Home after creating or cloning a project ([d503c0c](https://github.com/emdgroup/maestro/commit/d503c0c322a4f7da42ce5191877c6aaa698be965))
+* **projects:** show an error when creating a project fails ([7a2554f](https://github.com/emdgroup/maestro/commit/7a2554fc1c4729d8ea4c1088bbbec3a02eb7f740))
+* **server:** close idle sessions the way Cancel does ([d503c0c](https://github.com/emdgroup/maestro/commit/d503c0c322a4f7da42ce5191877c6aaa698be965))
+* **server:** keep the daemon running when a reply cannot be encoded ([d503c0c](https://github.com/emdgroup/maestro/commit/d503c0c322a4f7da42ce5191877c6aaa698be965))
+* **server:** read the rest of settings.json past a bad workspace mode ([bae39c8](https://github.com/emdgroup/maestro/commit/bae39c86ac8dbfb380fd5e4672508875830f0cd3))
+* **shortcuts:** leave keys alone that no view handles ([d503c0c](https://github.com/emdgroup/maestro/commit/d503c0c322a4f7da42ce5191877c6aaa698be965))
+* **ui:** tint the answered question card header in the session stream ([f2a8bef](https://github.com/emdgroup/maestro/commit/f2a8bef00d58e445fe8675a50088f46252c74bf9))
+* **worktrees:** keep detached worktrees that hold unique commits ([d503c0c](https://github.com/emdgroup/maestro/commit/d503c0c322a4f7da42ce5191877c6aaa698be965))
+
 ## [0.44.0](https://github.com/emdgroup/maestro/compare/v0.43.1...v0.44.0) (2026-11-02)
 
 
