@@ -393,7 +393,7 @@ export function AgentActivityPanel({
       // Tool calls report Windows paths with backslashes and an arbitrarily cased
       // drive letter, so compare on a normalised copy: a missed prefix would send
       // an absolute path to a panel that resolves everything against the workspace.
-      const { path, line } = splitLineAnchor(uri);
+      const { path, lines } = splitLineAnchor(uri);
       const abs = fileUriToPath(path);
       // A spreadsheet or archive has no viewer in the panel, so it goes to the system's own app.
       if (opensExternally(abs)) {
@@ -405,7 +405,7 @@ export function AgentActivityPanel({
       }
       const base = toPosixPath(workspacePath).replace(/\/+$/, "");
       const inWorkspace = base !== "" && abs.toLowerCase().startsWith(`${base.toLowerCase()}/`);
-      addDynamicTab("files", inWorkspace ? abs.slice(base.length + 1) : abs, line);
+      addDynamicTab("files", inWorkspace ? abs.slice(base.length + 1) : abs, lines);
       setSidePanelCollapsed(false);
     },
     [addDynamicTab, workspacePath, setSidePanelCollapsed, connection, wslDistroName],

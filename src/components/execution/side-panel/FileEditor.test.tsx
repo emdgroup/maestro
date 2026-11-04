@@ -32,7 +32,8 @@ describe("FileEditor", () => {
     expect(container.querySelector(".cm-lineNumbers")).not.toBeNull();
   });
 
-  it("puts the cursor on the line a link asked for", async () => {
+  it("puts the cursor on the line a link asked for and flashes the range", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const doc = Array.from({ length: 50 }, (_, i) => `line ${i + 1}`).join("\n");
     const { container } = render(
       <FileEditor
@@ -40,15 +41,20 @@ describe("FileEditor", () => {
         docEpoch={0}
         fileName="a.ts"
         readOnly
-        revealLine={30}
+        revealLines={{ from: 30, to: 32 }}
         onChange={() => {}}
         onSave={() => {}}
       />,
     );
     await waitFor(() => expect(container.querySelector(".cm-editor")).not.toBeNull());
     const view = EditorView.findFromDOM(container.querySelector(".cm-editor") as HTMLElement)!;
-    const head = view.state.selection.main.head;
-    expect(view.state.doc.lineAt(head).number).toBe(30);
+    expect(view.state.doc.lineAt(view.state.selection.main.head).number).toBe(30);
+    const flashed = [...container.querySelectorAll(".cm-flash-line")].map((l) => l.textContent);
+    expect(flashed).toEqual(["line 30", "line 31", "line 32"]);
+
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(container.querySelector(".cm-flash-line")).toBeNull();
+    vi.useRealTimers();
   });
 
   it("reports edits to its parent rather than owning the draft", async () => {

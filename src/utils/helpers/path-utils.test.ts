@@ -94,14 +94,17 @@ describe("splitLineAnchor", () => {
   it("takes the line off a relative link and a file URI", () => {
     expect(splitLineAnchor("src/providers/ThemeProvider.tsx#L263")).toEqual({
       path: "src/providers/ThemeProvider.tsx",
-      line: 263,
+      lines: { from: 263, to: 263 },
     });
-    expect(splitLineAnchor("file:///C:/p/a.ts#L5")).toEqual({ path: "file:///C:/p/a.ts", line: 5 });
+    expect(splitLineAnchor("file:///C:/p/a.ts#L5")).toEqual({
+      path: "file:///C:/p/a.ts",
+      lines: { from: 5, to: 5 },
+    });
   });
 
-  it("takes the first line of a range", () => {
-    expect(splitLineAnchor("a.ts#L10-L20")).toEqual({ path: "a.ts", line: 10 });
-    expect(splitLineAnchor("a.ts#L10-20")).toEqual({ path: "a.ts", line: 10 });
+  it("takes a range in either spelling", () => {
+    expect(splitLineAnchor("a.ts#L10-L20")).toEqual({ path: "a.ts", lines: { from: 10, to: 20 } });
+    expect(splitLineAnchor("a.ts#L10-20")).toEqual({ path: "a.ts", lines: { from: 10, to: 20 } });
   });
 
   it("leaves a path without a line anchor alone", () => {
