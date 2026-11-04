@@ -195,6 +195,7 @@ export function FileTabBar({
           <ContextMenuItem onClick={act(onOpenExternally)}>
             <ExternalLink className="size-3.5" />
             Open in default application
+            <ContextMenuShortcut>Ctrl+O</ContextMenuShortcut>
           </ContextMenuItem>
         </ContextMenuContent>
       </MenuPrimitive.Root>

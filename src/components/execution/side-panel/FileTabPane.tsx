@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { Eye, FilePen, Save, X, Code, Columns2, Link2, Unlink2, TriangleAlert } from "lucide-react";
 import { SEGMENT_GROUP } from "@/lib/segmented";
@@ -215,10 +215,57 @@ export function FileTabPane({
   const showSyncToggle = inEdit && effectiveLayout === "split" && previewKind === "markdown";
   const syncLabel = scrollSync ? "Turn off synced scrolling" : "Turn on synced scrolling";
 
+  // Leaving the editor takes the focus out of it, since it stops being editable; the file keeps
+  // it, so its keys (Ctrl+E again, Ctrl+O) go on working without a click. The dialogs that ask
+  // first hand it back the same way, through `finalFocus`.
+  const paneRef = useRef<HTMLDivElement>(null);
+  const wasEditing = useRef(false);
+  useEffect(() => {
+    const left = wasEditing.current && !inEdit;
+    wasEditing.current = inEdit;
+    const pane = paneRef.current;
+    const focus = document.activeElement;
+    if (left && pane && (focus === document.body || pane.contains(focus))) {
+      pane.focus({ preventScroll: true });
+    }
+  }, [inEdit]);
+
+  /** Back to reading; `leaveEdit` asks first when the draft is unsaved. */
+  function leave() {
+    // Refetched only when it actually left: reading over an undecided edit would be worse than
+    // stale.
+    if (leaveEdit()) void refetch();
+  }
+
   return (
     <div
+      ref={paneRef}
       data-side={side}
-      className={cn("file-pane relative flex flex-col min-h-0 min-w-0", className)}
+      // Focusable, and focused by a press anywhere in it, so the file's keys come here. CodeMirror
+      // takes a press for itself and, read-only, focuses nothing, which left them on the page.
+      tabIndex={-1}
+      onMouseDown={(e) => {
+        if (!e.currentTarget.contains(document.activeElement)) {
+          e.currentTarget.focus({ preventScroll: true });
+        }
+      }}
+      onKeyDown={(e) => {
+        // A dialog's keys reach here through its portal, and the editor's own Escape (closing its
+        // search, say) arrives already handled: neither is ours.
+        if (e.defaultPrevented || !e.currentTarget.contains(e.target as Node)) return;
+        // Ctrl+C stays the editor's copy; Esc is the way out of editing.
+        if (e.key === "Escape" && inEdit) {
+          // Stopped here: the discard prompt this may open listens for Escape on the document, and
+          // would close on the same key press.
+          e.preventDefault();
+          e.stopPropagation();
+          leave();
+        } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "e") {
+          e.preventDefault();
+          if (!inEdit && editable) enterEdit(content);
+        }
+      }}
+      className={cn("file-pane relative flex flex-col min-h-0 min-w-0 outline-none", className)}
       style={style}
     >
       {body}
@@ -275,13 +322,9 @@ export function FileTabPane({
                 the discard prompt itself when there is something to discard. */}
             <ToolbarButton
               label={isDirty ? "Discard" : "Close"}
-              tooltip={isDirty ? "Discard unsaved changes" : "Close the editor"}
+              tooltip={isDirty ? "Discard unsaved changes (Esc)" : "Close the editor (Esc)"}
               disabled={saving}
-              // Refetched only when it actually left — a dirty buffer raises the discard prompt
-              // instead, and reading over an undecided edit would be worse than stale.
-              onClick={() => {
-                if (leaveEdit()) void refetch();
-              }}
+              onClick={leave}
             >
               <X className="size-3.5" />
             </ToolbarButton>
@@ -291,7 +334,7 @@ export function FileTabPane({
             {editable && (
               <ToolbarButton
                 label="Edit"
-                tooltip="Edit this file"
+                tooltip="Edit this file (Ctrl+E)"
                 onClick={() => enterEdit(content)}
               >
                 <FilePen className="size-3.5" />
@@ -310,6 +353,7 @@ export function FileTabPane({
         open={conflict !== null}
         onDismiss={() => setConflict(null)}
         title="This file changed while you were editing"
+        returnFocus={paneRef}
         description={`${fileName} was written by something else — most likely the agent — since you started editing. Overwriting replaces those changes with yours; reloading discards yours.`}
       >
         <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -328,6 +372,7 @@ export function FileTabPane({
         open={discardPrompt}
         onDismiss={() => setDiscardPrompt(false)}
         title="Discard unsaved changes?"
+        returnFocus={paneRef}
         description={`${fileName} has edits that have not been written to disk. They will be lost.`}
       >
         <AlertDialogCancel>Keep editing</AlertDialogCancel>
@@ -340,6 +385,7 @@ export function FileTabPane({
         open={confirmClose}
         onDismiss={() => onCloseResolved(false)}
         title={`Save changes to ${fileName}?`}
+        returnFocus={paneRef}
         description="Closing the tab loses the edits that have not been written to disk."
       >
         <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -476,12 +522,15 @@ function PaneDialog({
   onDismiss,
   title,
   description,
+  returnFocus,
   children,
 }: {
   open: boolean;
   onDismiss: () => void;
   title: string;
   description: string;
+  /** Where the focus goes when it closes: the editor it came from may no longer take it. */
+  returnFocus: React.RefObject<HTMLElement | null>;
   children: React.ReactNode;
 }) {
   return (
@@ -491,7 +540,13 @@ function PaneDialog({
         if (!next) onDismiss();
       }}
     >
-      <AlertDialogContent>
+      <AlertDialogContent
+        // Focused here rather than handed to base-ui, which moves on to the first button inside.
+        finalFocus={() => {
+          returnFocus.current?.focus({ preventScroll: true });
+          return false;
+        }}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>

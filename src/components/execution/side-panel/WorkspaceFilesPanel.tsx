@@ -362,8 +362,11 @@ export function WorkspaceFilesPanel({
   return (
     <div
       className="absolute inset-0 flex flex-col"
+      // Ctrl+W closes a file and Ctrl+O opens it in the default application. Ctrl+E and Esc,
+      // which act on the edit, are the file pane's own.
       onKeyDown={(e) => {
-        if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "w") return;
+        const key = e.key.toLowerCase();
+        if (!(e.ctrlKey || e.metaKey) || (key !== "w" && key !== "o")) return;
         // A dialog over the panel is portalled out of it, but React still bubbles its keys here.
         if (!e.currentTarget.contains(e.target as Node)) return;
         // The tab the key is pressed on, else the file in front of the focused side.
@@ -374,7 +377,8 @@ export function WorkspaceFilesPanel({
         // here it closes a file, and only with no file open does it reach the session.
         e.preventDefault();
         e.stopPropagation();
-        requestClose(sideOf(tabs, path), path);
+        if (key === "w") requestClose(sideOf(tabs, path), path);
+        else openExternally(path);
       }}
     >
       <ReviewLayout panel={panel} renderPanel={renderTree} plain>

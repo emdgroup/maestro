@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { openFileWithConnection } from "@/services/connection.service";
 import type { ConnectionKey } from "@/types/bindings";
 
 const readFile = vi.fn();
@@ -85,6 +86,8 @@ vi.mock("./FileEditor", () => ({
         <div
           data-testid="read-view"
           data-reveal={revealLines ? `${revealLines.from}-${revealLines.to}` : undefined}
+          // As CodeMirror does: it handles a press itself, so the browser focuses nothing.
+          onMouseDown={(e) => e.preventDefault()}
         >
           {fileName}:{doc}
         </div>
@@ -397,6 +400,86 @@ describe("WorkspaceFilesPanel edit mode", () => {
  * The pin is gone: `ReviewLayout` decides from a measured width whether the list is a column or
  * an overlay, which is the choice the pin was being asked to make by hand.
  */
+describe("WorkspaceFilesPanel keyboard shortcuts", () => {
+  it("enters edit mode on Ctrl+E in the file", async () => {
+    renderPanel();
+    await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("original"));
+    fireEvent.keyDown(screen.getByTestId("read-view"), { key: "e", ctrlKey: true });
+    expect(await screen.findByTestId("editor")).toBeInTheDocument();
+  });
+
+  /** The shortcuts are reached by clicking the file, which CodeMirror does not focus when read-only. */
+  it("takes the keys of a file clicked into, read-only as it is", async () => {
+    renderPanel();
+    await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("original"));
+    await userEvent.click(screen.getByTestId("read-view"));
+    await userEvent.keyboard("{Control>}e{/Control}");
+    expect(await screen.findByTestId("editor")).toBeInTheDocument();
+  });
+
+  it("leaves edit mode on Esc when nothing was changed", async () => {
+    renderPanel();
+    await enterEditMode();
+    fireEvent.keyDown(screen.getByTestId("editor"), { key: "Escape" });
+    expect(await screen.findByTestId("read-view")).toBeInTheDocument();
+  });
+
+  /**
+   * The Esc goes no further than the pane: the prompt it opens listens for Escape on the document,
+   * and would close on the very key that opened it.
+   */
+  it("asks before Esc drops an unsaved draft, and keeps it on Keep editing", async () => {
+    const onDocument = vi.fn();
+    document.addEventListener("keydown", onDocument);
+    renderPanel();
+    await enterEditMode();
+    typeDraft("edited");
+    fireEvent.keyDown(screen.getByTestId("editor"), { key: "Escape" });
+    document.removeEventListener("keydown", onDocument);
+    expect(onDocument).not.toHaveBeenCalled();
+
+    expect(await screen.findByText("Discard unsaved changes?")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect(screen.getByTestId("editor")).toHaveValue("edited");
+  });
+
+  /** Leaving the editor takes the focus out of it; the file keeps it, so the keys go on working. */
+  it("keeps the keys on the file after Esc, so Ctrl+E edits again", async () => {
+    renderPanel();
+    await enterEditMode();
+    await userEvent.click(screen.getByTestId("editor"));
+    await userEvent.keyboard("{Escape}");
+    await screen.findByTestId("read-view");
+
+    await userEvent.keyboard("{Control>}e{/Control}");
+
+    expect(await screen.findByTestId("editor")).toBeInTheDocument();
+  });
+
+  /** Ctrl+C is the editor's copy; it never leaves edit mode. */
+  it("stays in edit mode on Ctrl+C", async () => {
+    renderPanel();
+    await enterEditMode();
+    fireEvent.keyDown(screen.getByTestId("editor"), { key: "c", ctrlKey: true });
+    expect(screen.getByTestId("editor")).toBeInTheDocument();
+  });
+
+  it("opens the file in the default application on Ctrl+O, from the file or its tab", async () => {
+    vi.mocked(openFileWithConnection).mockResolvedValue(undefined);
+    renderPanel();
+    await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("original"));
+    fireEvent.keyDown(screen.getByTestId("read-view"), { key: "o", ctrlKey: true });
+    fireEvent.keyDown(screen.getByRole("tab", { name: /main\.ts/ }), { key: "o", ctrlKey: true });
+
+    expect(openFileWithConnection).toHaveBeenCalledTimes(2);
+    expect(openFileWithConnection).toHaveBeenCalledWith(
+      CONNECTION,
+      `${WORKSPACE}/src/main.ts`,
+      expect.anything(),
+    );
+  });
+});
+
 describe("WorkspaceFilesPanel file list", () => {
   beforeEach(() => {
     listContents.mockImplementation((_conn: unknown, path: string) =>
