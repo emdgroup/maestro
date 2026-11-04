@@ -128,14 +128,22 @@ export function WorkspaceFilesPanel({
   if (!splitAllowed && tabs.groups.length > 1) setTabs(joinSides(tabs));
 
   const openPaths = useMemo(() => tabs.groups.flatMap((g) => g.tabs), [tabs]);
+  // In an order no tab move changes, so moving a tab never moves its pane in the page: a moved
+  // node reloads an iframe preview and loses its scroll. The grid places each pane anyway.
+  const panePaths = useMemo(() => [...openPaths].sort(), [openPaths]);
   const selected = focusedPath(tabs);
+  // A link's lines flash in the tab it opened. Closing that tab ends it, so the file opened again
+  // later starts fresh.
+  if (reveal && !openPaths.includes(reveal.path)) setReveal(null);
 
-  // Reported by every pane, including the ones closed since: only the open ones count.
+  // Reported by every pane. A pane closed with a draft never reports itself clean, so its report
+  // is dropped with its tab, or the file would come back marked dirty when opened again.
   const [reportedDirty, setReportedDirty] = useState<ReadonlySet<string>>(() => new Set());
   const dirty = useMemo(
     () => new Set(openPaths.filter((p) => reportedDirty.has(p))),
     [openPaths, reportedDirty],
   );
+  if (dirty.size !== reportedDirty.size) setReportedDirty(dirty);
   function handleDirtyChange(path: string, isDirty: boolean) {
     setReportedDirty((prev) => {
       if (prev.has(path) === isDirty) return prev;
@@ -404,7 +412,7 @@ export function WorkspaceFilesPanel({
               </div>
             ))}
 
-            {openPaths.map((path) => {
+            {panePaths.map((path) => {
               const side = sideOf(tabs, path);
               const shown = tabs.groups[side].active === path;
               return (

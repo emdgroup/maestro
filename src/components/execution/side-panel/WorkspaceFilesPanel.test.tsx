@@ -67,6 +67,7 @@ vi.mock("./FileEditor", () => ({
     readOnly,
     onChange,
     onSave,
+    revealLines,
   }: {
     doc: string;
     docEpoch: number;
@@ -74,13 +75,17 @@ vi.mock("./FileEditor", () => ({
     readOnly?: boolean;
     onChange: (v: string) => void;
     onSave: () => void;
+    revealLines?: { from: number; to: number };
   }) => {
     useEffect(() => {
       editorMountCount += 1;
     }, []);
     if (readOnly) {
       return (
-        <div data-testid="read-view">
+        <div
+          data-testid="read-view"
+          data-reveal={revealLines ? `${revealLines.from}-${revealLines.to}` : undefined}
+        >
           {fileName}:{doc}
         </div>
       );
@@ -936,6 +941,59 @@ describe("WorkspaceFilesPanel tabs", () => {
 
     fireEvent.doubleClick(divider);
     expect(divider).toHaveAttribute("aria-valuenow", "50");
+  });
+
+  it("flashes a link's lines once, not again when the file is closed and opened anew", async () => {
+    renderPanel({ openRequest: request("src/main.ts", { from: 2, to: 3 }) });
+    await waitFor(() =>
+      expect(screen.getByTestId("read-view")).toHaveAttribute("data-reveal", "2-3"),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Close main.ts" }));
+    await userEvent.click(await screen.findByRole("button", { name: /^src/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /main\.ts/ }));
+
+    await screen.findByRole("tab", { name: /main\.ts/ });
+    expect(screen.getByTestId("read-view")).not.toHaveAttribute("data-reveal");
+  });
+
+  it("does not count a discarded draft against the file once it is opened again", async () => {
+    const onDirtyChange = vi.fn();
+    renderPanel({ onDirtyChange });
+    await enterEditMode();
+    typeDraft("edited");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Close main.ts, which has unsaved changes" }),
+    );
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Discard" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("tab")).toBeNull());
+    onDirtyChange.mockClear();
+
+    await userEvent.click(await screen.findByRole("button", { name: /^src/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /main\.ts/ }));
+
+    expect(await screen.findByRole("button", { name: "Close main.ts" })).toBeInTheDocument();
+    expect(onDirtyChange).not.toHaveBeenCalledWith(true);
+  });
+
+  /** Moving a node out and back in reloads an iframe preview and loses its scroll. */
+  it("moves a tab across without moving its file in the page", async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    await screen.findByRole("tab", { name: /notes\.md/ });
+    const removed: Node[] = [];
+    const observer = new MutationObserver((records) =>
+      records.forEach((r) => removed.push(...r.removedNodes)),
+    );
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    fireEvent.contextMenu(screen.getByRole("tab", { name: /main\.ts/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Move to the side" }));
+    await waitFor(() => expect(document.querySelectorAll("[data-tab-row]")).toHaveLength(2));
+    observer.disconnect();
+
+    expect(removed.filter((n) => n instanceof Element && n.matches(".file-pane"))).toEqual([]);
   });
 
   /** A rename or delete would drop the pane, and the draft in it, without a word. */
