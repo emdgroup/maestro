@@ -383,19 +383,29 @@ export function FileTabPane({
 
       <PaneDialog
         open={confirmClose}
-        onDismiss={() => onCloseResolved(false)}
+        // A save under way cannot be called off: the write goes on either way, and closing the tab
+        // when it lands would drop whatever had been typed after the question was put away.
+        onDismiss={() => {
+          if (!saving) onCloseResolved(false);
+        }}
         title={`Save changes to ${fileName}?`}
-        returnFocus={paneRef}
         description="Closing the tab loses the edits that have not been written to disk."
+        returnFocus={paneRef}
       >
-        <AlertDialogCancel>Cancel</AlertDialogCancel>
-        <AlertDialogAction variant="destructive" onClick={() => onCloseResolved(true)}>
+        <AlertDialogCancel disabled={saving}>Cancel</AlertDialogCancel>
+        <AlertDialogAction
+          variant="destructive"
+          disabled={saving}
+          onClick={() => onCloseResolved(true)}
+        >
           Discard
         </AlertDialogAction>
         <AlertDialogAction
+          disabled={saving}
           // A conflict or a failed write keeps the tab open, with the reason on screen.
           onClick={() => void handleSave().then((saved) => onCloseResolved(saved))}
         >
+          {saving && <Spinner className="size-3.5" />}
           Save
         </AlertDialogAction>
       </PaneDialog>

@@ -1103,6 +1103,34 @@ describe("WorkspaceFilesPanel tabs", () => {
     expect(screen.getByText("No file open")).toBeInTheDocument();
   });
 
+  /**
+   * A save that is still writing cannot be called off: Cancel used to close the question while the
+   * write went on, and the write then closed the tab over whatever had been typed since.
+   */
+  it("holds the close question open, with no way out, until Save has written", async () => {
+    let finishWrite: () => void = () => {};
+    writeFile.mockImplementation(
+      () => new Promise<null>((resolve) => (finishWrite = () => resolve(null))),
+    );
+    renderPanel();
+    await enterEditMode();
+    typeDraft("edited");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Close main.ts, which has unsaved changes" }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(writeFile).toHaveBeenCalled());
+
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Discard" })).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+
+    act(() => finishWrite());
+    await waitFor(() => expect(screen.queryByRole("tab")).toBeNull());
+  });
+
   it("closes a clean tab without asking", async () => {
     renderPanel();
     await userEvent.click(await screen.findByRole("button", { name: "Close main.ts" }));
