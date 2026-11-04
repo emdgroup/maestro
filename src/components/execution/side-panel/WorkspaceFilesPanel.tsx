@@ -73,6 +73,9 @@ type DropTarget =
   /** `right` opens the second side; `all` moves the tab onto the other one. */
   | { kind: "well"; side: number; zone: "right" | "all" };
 
+/** The narrowest either side of a split can be dragged to. */
+const MIN_SIDE_PX = 240;
+
 // A press that moves a few pixels is still a click on the tab.
 const TAB_SENSORS = [
   PointerSensor.configure({
@@ -218,6 +221,15 @@ export function WorkspaceFilesPanel({
 
   const [drop, setDrop] = useState<DropTarget | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+
+  // The first side's share of the width. Not kept across restarts, as the tabs themselves are not.
+  const [splitRatio, setSplitRatio] = useState(0.5);
+  /** Keeps either side from being dragged narrower than a readable column. */
+  function resizeTo(ratio: number) {
+    const width = gridRef.current?.clientWidth ?? 0;
+    const min = width > 0 ? Math.min(0.5, MIN_SIDE_PX / width) : 0.2;
+    setSplitRatio(Math.min(1 - min, Math.max(min, ratio)));
+  }
 
   /** Measured off the rows and wells on screen, against the pointer, as the mock does. */
   function dropTargetAt(x: number, y: number, from: TabDragData): DropTarget | null {
@@ -372,9 +384,11 @@ export function WorkspaceFilesPanel({
         >
           <div
             ref={gridRef}
-            className="grid flex-1 min-h-0"
+            className="relative grid flex-1 min-h-0"
             style={{
-              gridTemplateColumns: `repeat(${tabs.groups.length}, minmax(0, 1fr))`,
+              gridTemplateColumns: split
+                ? `minmax(0, ${splitRatio}fr) minmax(0, ${1 - splitRatio}fr)`
+                : "minmax(0, 1fr)",
               gridTemplateRows: "auto minmax(0, 1fr)",
             }}
             // Whatever is pressed in a side — a tab, the file — makes it the one the tree opens on.
@@ -456,6 +470,38 @@ export function WorkspaceFilesPanel({
               >
                 <FileText className="size-5" />
                 No file open
+              </div>
+            )}
+
+            {/* The line between the sides, dragged to share the width differently. A grid item placed
+                absolutely, so it sits on the second side's left edge, under the tabs, without
+                taking a column of its own. Double-click evens the sides again. */}
+            {split && (
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize the sides"
+                aria-valuenow={Math.round(splitRatio * 100)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                tabIndex={0}
+                onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
+                onPointerMove={(e) => {
+                  if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                  const box = gridRef.current!.getBoundingClientRect();
+                  resizeTo((e.clientX - box.left) / box.width);
+                }}
+                onDoubleClick={() => setSplitRatio(0.5)}
+                onKeyDown={(e) => {
+                  const step = e.key === "ArrowLeft" ? -0.05 : e.key === "ArrowRight" ? 0.05 : 0;
+                  if (step === 0) return;
+                  e.preventDefault();
+                  resizeTo(splitRatio + step);
+                }}
+                className="group/split absolute inset-y-0 left-0 z-30 flex w-2 -translate-x-1/2 cursor-col-resize items-center justify-center outline-none"
+                style={place(1, 2)}
+              >
+                <div className="h-6 w-1 rounded-lg bg-border transition-colors group-hover/split:bg-accent group-focus-visible/split:bg-accent" />
               </div>
             )}
 

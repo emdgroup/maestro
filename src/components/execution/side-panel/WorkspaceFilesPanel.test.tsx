@@ -921,6 +921,20 @@ describe("WorkspaceFilesPanel tabs", () => {
     await waitFor(() => expect(document.querySelectorAll("[data-tab-row]")).toHaveLength(1));
   });
 
+  it("resizes the two sides from the line between them, and evens them on double-click", async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: /notes\.md/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Move to the side" }));
+    const divider = await screen.findByRole("separator", { name: "Resize the sides" });
+
+    fireEvent.keyDown(divider, { key: "ArrowRight" });
+    expect(divider).toHaveAttribute("aria-valuenow", "55");
+
+    fireEvent.doubleClick(divider);
+    expect(divider).toHaveAttribute("aria-valuenow", "50");
+  });
+
   it("offers no split where the panel has no room for one", async () => {
     renderPanel({ splitAllowed: false });
     await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
