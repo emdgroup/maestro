@@ -126,7 +126,8 @@ pub async fn ensure_connection_server(
                                 error: None,
                             },
                             maestro_server_path: None,
-                            fetched_at: std::time::Instant::now(),
+                            // Only the path is known: `discover_agents` must still ask.
+                            fetched_at: None,
                         })
                         .maestro_server_path = Some(path.clone());
                     path
@@ -462,7 +463,7 @@ async fn cache_discovery(
         AgentDiscoveryCacheEntry {
             result,
             maestro_server_path,
-            fetched_at: std::time::Instant::now(),
+            fetched_at: Some(std::time::Instant::now()),
         },
     );
 }
@@ -505,7 +506,7 @@ pub async fn discover_agents(
     {
         let cache = app_state.acp.discovery_cache.lock().await;
         if let Some(entry) = cache.get(&connection_key) {
-            if entry.fetched_at.elapsed() < Duration::from_secs(300) {
+            if entry.is_fresh(Duration::from_secs(300)) {
                 return Ok(entry.result.clone());
             }
         }

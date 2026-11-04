@@ -31,5 +31,45 @@ pub struct AgentDiscoveryCacheEntry {
     /// For remote: resolved via SSH `which maestro-server` at connect time.
     /// For local: None (spawn_acp_process resolves via `which::which` at spawn time).
     pub maestro_server_path: Option<String>,
-    pub fetched_at: Instant,
+    /// When `result` was discovered. `None` for an entry that only records where a deploy put
+    /// the server: its empty `result` is a placeholder, not an answer, so it never counts as fresh.
+    pub fetched_at: Option<Instant>,
+}
+
+impl AgentDiscoveryCacheEntry {
+    /// Whether `result` is a discovery younger than `max_age`.
+    pub fn is_fresh(&self, max_age: std::time::Duration) -> bool {
+        self.fetched_at.is_some_and(|at| at.elapsed() < max_age)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn entry(fetched_at: Option<Instant>) -> AgentDiscoveryCacheEntry {
+        AgentDiscoveryCacheEntry {
+            result: AgentDiscoveryResult {
+                maestro_server_available: true,
+                agents: Vec::new(),
+                error: None,
+            },
+            maestro_server_path: Some("/home/me/.maestro/bin/maestro-server".into()),
+            fetched_at,
+        }
+    }
+
+    /// A deploy records the server path before any discovery ran; serving that entry's empty
+    /// agent list as an answer hid every installed agent for five minutes.
+    #[test]
+    fn a_path_only_entry_is_never_fresh() {
+        assert!(!entry(None).is_fresh(Duration::from_secs(300)));
+    }
+
+    #[test]
+    fn a_discovery_is_fresh_until_it_ages_out() {
+        assert!(entry(Some(Instant::now())).is_fresh(Duration::from_secs(300)));
+        assert!(!entry(Some(Instant::now())).is_fresh(Duration::ZERO));
+    }
 }
