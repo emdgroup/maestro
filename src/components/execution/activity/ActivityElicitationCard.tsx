@@ -13,7 +13,7 @@ export function ActivityElicitationCard({ item }: Props) {
 
   if (item.declined) {
     return (
-      <div className="glass-tile rounded-lg px-3 py-2 flex items-center gap-2">
+      <div className="rounded-lg border border-border bg-card/30 backdrop-blur-xl px-3 py-2 flex items-center gap-2">
         <MessageCircleQuestionMark className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
         <span className="text-xs font-medium text-foreground flex-1 truncate">{item.message}</span>
         <span className="text-xs text-muted-foreground italic">Declined</span>
@@ -28,9 +28,9 @@ export function ActivityElicitationCard({ item }: Props) {
     <Collapsible
       open={expanded}
       onOpenChange={setExpanded}
-      className="glass-tile rounded-lg overflow-hidden"
+      className="rounded-lg overflow-hidden border border-accent/30 bg-card/30 backdrop-blur-xl"
     >
-      <CollapsibleTrigger className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-foreground/7 transition-colors">
+      <CollapsibleTrigger className="flex items-center gap-2 w-full px-3 py-2 text-left bg-accent/10 hover:bg-accent/15 transition-colors">
         <MessageCircleQuestionMark className="w-3.5 h-3.5 text-accent shrink-0" />
         <span className="text-xs font-medium text-foreground flex-1 truncate">{item.message}</span>
         <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
@@ -43,7 +43,7 @@ export function ActivityElicitationCard({ item }: Props) {
           )}
         />
       </CollapsibleTrigger>
-      <CollapsibleContent className="border-t border-foreground/7 divide-y divide-foreground/7">
+      <CollapsibleContent className="border-t border-accent/20 divide-y divide-foreground/7">
         {item.fields.map((f) => (
           <div key={f.key} className="px-3 py-2 flex flex-col gap-1">
             <span className="text-xs text-muted-foreground break-words">{f.question}</span>
