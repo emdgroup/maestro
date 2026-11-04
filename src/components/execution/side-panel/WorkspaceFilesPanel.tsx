@@ -1,25 +1,9 @@
-import { useEffect, useRef } from "react";
-import { SegmentThumb } from "@/components/common/SegmentThumb";
-import {
-  PanelLeft,
-  FilePlus,
-  FolderPlus,
-  Eye,
-  EyeOff,
-  FilePen,
-  Save,
-  X,
-  MoreHorizontal,
-  Code,
-  Columns2,
-  Link2,
-  Unlink2,
-  TriangleAlert,
-} from "lucide-react";
-import { SEGMENT_GROUP } from "@/lib/segmented";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DragDropProvider, PointerSensor } from "@dnd-kit/react";
+import { PointerActivationConstraints } from "@dnd-kit/dom";
+import { PanelLeft, FilePlus, FolderPlus, Eye, EyeOff, FileText, Columns2 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { Button } from "@/ui/button";
 import { Spinner } from "@/ui/spinner";
 import {
   AlertDialog,
@@ -31,39 +15,39 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuCheckboxItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-} from "@/ui/dropdown-menu";
-import { useConnectionFileQuery } from "@/services/connection.service";
-import { binaryMimeForExtension } from "@/components/execution/activity/fileTypeUtils";
+import { openFileWithConnection } from "@/services/connection.service";
 import { LazyFileTree } from "./LazyFileTree";
 import type { ConnectionKey } from "@/types/bindings";
-import { WorkspaceFileContent } from "./WorkspaceFileContent";
-import { FileEditor } from "./FileEditor";
 import { FileNameDialog } from "./FileNameDialog";
-import {
-  canEditFile,
-  filePollInterval,
-  folderLabel,
-  previewKindFor,
-  type MarkdownEditLayout,
-} from "./file-edit-utils";
-import { useFileDraft } from "./useFileDraft";
-import { useFileTreeState } from "./useFileTreeState";
-import { useMarkdownLayout } from "./useMarkdownLayout";
+import { nameDialogCopy, useFileTreeState } from "./useFileTreeState";
 import { ToolbarButton } from "./ToolbarButton";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/ui/resizable";
 import { ReviewLayout } from "@/components/execution/diff/ReviewLayout";
 import { useReviewPanelLayout } from "@/components/execution/diff/useReviewPanelLayout";
-import { isAbsolutePath, basename, type LineRange } from "@/lib/path-utils";
-import { FileHeaderActions, FileNameCopyButton } from "./FileHeaderActions";
+import { basename, isAbsolutePath } from "@/lib/path-utils";
+import { FileTabPane } from "./FileTabPane";
+import { FileTabBar } from "./FileTabBar";
+import {
+  NO_TABS,
+  canSplit,
+  closeTab,
+  closeTabs,
+  dropTab,
+  dropTargetAt,
+  focusSide,
+  focusedPath,
+  joinSides,
+  moveTab,
+  openTab,
+  openToSide,
+  removePaths,
+  renamePaths,
+  sideOf,
+  type DropLayout,
+  type DropTarget,
+  type FileOpenRequest,
+  type FileTabsState,
+  type TabDragData,
+} from "./file-tabs";
 
 interface WorkspaceFilesPanelProps {
   /**
@@ -75,57 +59,116 @@ interface WorkspaceFilesPanelProps {
   connection: ConnectionKey;
   wslDistroName?: string;
   isActive?: boolean;
-  initialPath?: string;
-  /** Lines of `initialPath` to scroll to and flash when it opens. */
-  initialLines?: LineRange;
+  openRequest?: FileOpenRequest;
+  /**
+   * Whether the panel has the room for two files side by side. Losing it folds the second side
+   * into the first, as restoring a maximized side panel does.
+   */
+  splitAllowed?: boolean;
   /** Drives the warning shown on entering edit mode: the agent may be writing this file. */
   isProcessing?: boolean;
-  /** Lets the panel's own tab refuse to close while an unsaved draft is open. */
+  /** Lets the panel's host refuse to close it while an unsaved draft is open in any tab. */
   onDirtyChange?: (dirty: boolean) => void;
-  /** Reports the open file, so the tab that holds this panel can name it on hover. */
+  /** Reports the file in front, so the tab that holds this panel can name it on hover. */
   onSelectedChange?: (path: string | null) => void;
 }
 
-/** The three markdown arrangements, rendered as a group in the header and as radio items in the
- *  overflow menu when the header is too narrow to hold the group. */
-const MARKDOWN_LAYOUTS: ReadonlyArray<{
-  value: MarkdownEditLayout;
-  Icon: typeof Code;
-  label: string;
-}> = [
-  { value: "source", Icon: Code, label: "Source only" },
-  { value: "split", Icon: Columns2, label: "Source and preview" },
-  { value: "preview", Icon: Eye, label: "Preview only" },
+/** The narrowest either side of a split can be dragged to. */
+const MIN_SIDE_PX = 240;
+
+// A press that moves a few pixels is still a click on the tab.
+const TAB_SENSORS = [
+  PointerSensor.configure({
+    activationConstraints: [new PointerActivationConstraints.Distance({ value: 4 })],
+  }),
 ];
 
+function sameDrop(a: DropTarget | null, b: DropTarget | null): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * The Files panel, in a files session and in an agent session's side panel alike: the workspace
+ * tree beside one or two sides of open files, each with its own row of tabs.
+ *
+ * Every open file keeps its pane mounted, in one flat list keyed by path, and a CSS grid places
+ * each in its side. Moving a tab across is then a change of grid column rather than a remount, so
+ * an unsaved draft goes with it.
+ */
 export function WorkspaceFilesPanel({
   workspacePath,
   connection,
   wslDistroName,
   isActive = true,
-  initialPath,
-  initialLines,
+  openRequest,
+  splitAllowed = true,
   isProcessing = false,
   onDirtyChange,
   onSelectedChange,
 }: WorkspaceFilesPanelProps) {
   // The same layout the Changes tab uses in this very panel: a resizable column where there is
-  // room, a floating overlay where there is not. That measurement is what the pin used to be doing
-  // by hand. Its own storage prefix, or toggling the list here would toggle it there too.
-  // A tab opened without a file has nothing but "No file selected" to show, so the list starts
-  // open there — including in the overlay layout, which otherwise starts dismissed.
-  const panel = useReviewPanelLayout("files", !initialPath);
+  // room, a floating overlay where there is not. Its own storage prefix, or toggling the list here
+  // would toggle it there too. A panel opened without a file has nothing to show but "No file
+  // open", so the list starts open there — including in the overlay layout, which otherwise starts
+  // dismissed.
+  const panel = useReviewPanelLayout("files", !openRequest);
 
-  const tree = useFileTreeState({
-    connection,
-    workspacePath,
-    panelOpen: panel.panelOpen,
-    isActive,
-    initialPath,
+  const [tabs, setTabs] = useState<FileTabsState>(() =>
+    openRequest ? openTab(NO_TABS, openRequest.path) : NO_TABS,
+  );
+  const [reveal, setReveal] = useState(openRequest?.lines ? openRequest : null);
+  const [seenNonce, setSeenNonce] = useState(openRequest?.nonce);
+  // State following a changed input, so adjusted during render rather than from an effect.
+  if (openRequest && openRequest.nonce !== seenNonce) {
+    setSeenNonce(openRequest.nonce);
+    setTabs((s) => openTab(s, openRequest.path));
+    setReveal(openRequest.lines ? openRequest : null);
+  }
+  if (!splitAllowed && tabs.groups.length > 1) setTabs(joinSides(tabs));
+
+  const openPaths = useMemo(() => tabs.groups.flatMap((g) => g.tabs), [tabs]);
+  // In an order no tab move changes, so moving a tab never moves its pane in the page: a moved
+  // node reloads an iframe preview and loses its scroll. The grid places each pane anyway.
+  const panePaths = useMemo(() => [...openPaths].sort(), [openPaths]);
+  const selected = focusedPath(tabs);
+  // A link's lines flash in the tab it opened. Closing that tab ends it, so the file opened again
+  // later starts fresh.
+  if (reveal && !openPaths.includes(reveal.path)) setReveal(null);
+
+  // Reported by every pane. A pane closed with a draft never reports itself clean, so its report
+  // is dropped with its tab, or the file would come back marked dirty when opened again.
+  const [reportedDirty, setReportedDirty] = useState<ReadonlySet<string>>(() => new Set());
+  const dirty = useMemo(
+    () => new Set(openPaths.filter((p) => reportedDirty.has(p))),
+    [openPaths, reportedDirty],
+  );
+  if (dirty.size !== reportedDirty.size) setReportedDirty(dirty);
+  function handleDirtyChange(path: string, isDirty: boolean) {
+    setReportedDirty((prev) => {
+      if (prev.has(path) === isDirty) return prev;
+      const next = new Set(prev);
+      if (isDirty) next.add(path);
+      else next.delete(path);
+      return next;
+    });
+  }
+
+  // Through refs because the hosts bind inline callbacks, which are new functions on every render.
+  const onSelectedChangeRef = useRef(onSelectedChange);
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  useEffect(() => {
+    onSelectedChangeRef.current = onSelectedChange;
+    onDirtyChangeRef.current = onDirtyChange;
   });
+  useEffect(() => {
+    onSelectedChangeRef.current?.(selected);
+  }, [selected]);
+  const anyDirty = dirty.size > 0;
+  useEffect(() => {
+    onDirtyChangeRef.current?.(anyDirty);
+  }, [anyDirty]);
+
   const {
-    selected,
-    setSelected,
     showHidden,
     setShowHidden,
     expandedFolders,
@@ -145,119 +188,151 @@ export function WorkspaceFilesPanel({
     createInTarget,
     handleNameConfirm,
     handleDeleteConfirm,
-  } = tree;
-
-  // Through a ref for the same reason `useFileDraft` reports dirtiness that way: the parent binds
-  // an inline callback to this tab's id, so it is a new function on every render.
-  const onSelectedChangeRef = useRef(onSelectedChange);
-  useEffect(() => {
-    onSelectedChangeRef.current = onSelectedChange;
+  } = useFileTreeState({
+    connection,
+    workspacePath,
+    panelOpen: panel.panelOpen,
+    isActive,
+    selected,
+    dirty,
+    onOpen: (path) => setTabs((s) => openTab(s, path)),
+    onRenamed: (from, to) => setTabs((s) => renamePaths(s, from, to)),
+    onDeleted: (path) =>
+      setTabs((s) => removePaths(s, (p) => p === path || p.startsWith(`${path}/`))),
   });
-  useEffect(() => {
-    onSelectedChangeRef.current?.(selected ?? null);
-  }, [selected]);
 
   // A file link in the stream can point outside the project — an agent reads
   // config from a home directory, a log from /tmp — and `handleOpenFile` hands
   // those over absolute because there is no root to make them relative to.
   // Joining one onto `workspacePath` anyway produced `C:/project/C:/Users/…`,
   // which the read rejects (os error 123) and the OS opener cannot find.
-  const fullPath = selected
-    ? isAbsolutePath(selected)
-      ? selected
-      : `${workspacePath}/${selected}`
-    : null;
-  const fileDir = fullPath ? fullPath.replace(/\/[^/]+$/, "") : undefined;
+  const fullPathOf = (path: string) => (isAbsolutePath(path) ? path : `${workspacePath}/${path}`);
 
-  const binaryMime = selected ? binaryMimeForExtension(selected) : undefined;
+  // Closing a tab with an unsaved draft asks first; its pane holds the question, since it is the
+  // one that can save.
+  const [closePrompt, setClosePrompt] = useState<string | null>(null);
+  function requestClose(side: number, path: string) {
+    if (dirty.has(path)) setClosePrompt(path);
+    else setTabs((s) => closeTab(s, side, path));
+  }
 
-  // Above the read query, which reads `mode` from its poll interval.
-  const {
-    mode,
-    draft,
-    setDraft,
-    docEpoch,
-    saveError,
-    conflict,
-    setConflict,
-    saving,
-    isDirty,
-    discardPrompt,
-    setDiscardPrompt,
-    discardDraft,
-    enterEdit,
-    leaveEdit,
-    handleSave,
-    handleOverwrite,
-    handleReloadFromDisk,
-  } = useFileDraft({ connection, fullPath, onDirtyChange });
+  function openExternally(path: string) {
+    const full = fullPathOf(path);
+    openFileWithConnection(connection, full, {
+      sshConnectionId: connection.type === "ssh" ? connection.id : undefined,
+      wslDistroName,
+    }).catch((e) => toast.error(`Could not open ${full}: ${e}`));
+  }
 
-  const {
-    data: content,
-    isLoading: contentLoading,
-    error: contentError,
-    refetch,
-  } = useConnectionFileQuery(connection, binaryMime ? null : fullPath, false, {
-    refetchInterval: (query) =>
-      filePollInterval({ hasError: query.state.error != null, isActive, mode }),
-  });
-  const {
-    data: binaryContent,
-    isLoading: binaryLoading,
-    error: binaryError,
-  } = useConnectionFileQuery(connection, binaryMime ? fullPath : null, true);
+  const [drop, setDrop] = useState<DropTarget | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    if (isActive && fullPath && !binaryMime && mode === "view") {
-      void refetch();
-    }
-  }, [isActive, fullPath, binaryMime, mode, refetch]);
+  // The narrowest share of the width either side may have, in whole percent so a window being
+  // resized re-renders the panel every few dozen pixels rather than on every one.
+  const [minShare, setMinShare] = useState(0.2);
+  // A callback ref, so the observer follows the grid element if a layout change replaces it.
+  const attachGrid = useCallback((grid: HTMLDivElement | null) => {
+    gridRef.current = grid;
+    if (!grid) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry.contentRect.width;
+      if (width > 0) setMinShare(Math.min(0.5, Math.ceil((MIN_SIDE_PX / width) * 100) / 100));
+    });
+    observer.observe(grid);
+    return () => {
+      observer.disconnect();
+      gridRef.current = null;
+    };
+  }, []);
+  const clampShare = (share: number) => Math.min(1 - minShare, Math.max(minShare, share));
+  // The first side's share of the width, as dragged; what is shown is kept within the minimum, so
+  // a panel narrowed after a drag still has room for both sides. A split that closes forgets it,
+  // and the next one opens even. Not kept across restarts, as the tabs themselves are not.
+  const [dragShare, setDragShare] = useState(0.5);
+  if (tabs.groups.length < 2 && dragShare !== 0.5) setDragShare(0.5);
+  const splitRatio = clampShare(dragShare);
+  const resizeTo = (share: number) => setDragShare(clampShare(share));
 
-  const fileName = selected ? basename(selected) : null;
-  const editable = canEditFile({ fileName: selected, binaryMime, error: contentError, content });
-  const previewKind = previewKindFor(selected);
+  /** The rows and files on screen, measured for `dropTargetAt` while a tab is dragged. */
+  function measureDropLayout(): DropLayout {
+    const grid = gridRef.current;
+    if (!grid) return { rows: [], wells: [] };
+    return {
+      rows: [...grid.querySelectorAll<HTMLElement>("[data-tab-row]")].map((row) => ({
+        side: Number(row.dataset.tabRow),
+        band: row.parentElement!.getBoundingClientRect(),
+        tabs: [...row.querySelectorAll("[data-file-tab]")].map((t) => t.getBoundingClientRect()),
+      })),
+      wells: [...grid.querySelectorAll<HTMLElement>("[data-well]")].map((well) => ({
+        side: Number(well.dataset.well),
+        box: well.getBoundingClientRect(),
+      })),
+    };
+  }
 
-  // Markdown, HTML, images, PDFs, load errors and the empty state keep their own renderers; plain
-  // text is the editor in both modes. Keeping the same element type across the mode toggle is what
-  // stops React remounting it — and with it the scroll position.
-  const showsEditorSurface =
-    (mode === "edit" && fullPath != null) || (mode === "view" && editable && previewKind === null);
+  function focusSideOf(e: React.SyntheticEvent) {
+    const at = (e.target as HTMLElement).closest<HTMLElement>("[data-side]");
+    if (at) setTabs((s) => focusSide(s, Number(at.dataset.side)));
+  }
 
-  const {
-    chooseLayout,
-    effectiveLayout,
-    splitFits,
-    scrollSync,
-    chooseScrollSync,
-    editAreaRef,
-    setEditorScroller,
-    setPreviewScroller,
-  } = useMarkdownLayout({ hasPreview: previewKind !== null, showsEditorSurface });
+  const togglePanel = (
+    <ToolbarButton
+      label={panel.panelOpen ? "Hide file list" : "Show file list"}
+      active={panel.panelOpen}
+      onClick={() => panel.setPanelOpen(!panel.panelOpen)}
+    >
+      <PanelLeft className="size-4" />
+    </ToolbarButton>
+  );
 
-  // Bridges the two hooks: which file is open is the tree's business, but whether leaving the
-  // current one is allowed to happen without asking is the draft's.
-  function handleSelectFile(next: string) {
-    if (isDirty) {
-      setDiscardPrompt({ reason: "select", next });
-      return;
-    }
-    setSelected(next);
+  /** Opens a file picked in the tree, and gets an overlaid tree out of the way of it. */
+  function openFromTree(
+    open: (state: FileTabsState, path: string) => FileTabsState,
+    path: string,
+    onDismiss?: () => void,
+  ) {
+    setTabs((s) => open(s, path));
+    onDismiss?.();
   }
 
   /**
-   * The tree, wherever `ReviewLayout` decides to draw it. `onDismiss` is given only in the overlay
-   * layout, where the panel covers what it is navigating and picking a file has to close it.
+   * The tree, wherever `ReviewLayout` decides to draw it, under the tools that act on it.
+   * `onDismiss` is given only in the overlay layout, where the panel covers what it is navigating
+   * and picking a file has to close it.
    */
   const renderTree = ({ onDismiss }: { onDismiss?: () => void }) => (
     <div ref={treeRef} className="flex flex-col flex-1 min-h-0">
+      <div className={cn("flex items-center gap-1 h-10 px-2 shrink-0", !onDismiss && "mt-2")}>
+        {togglePanel}
+        <ToolbarButton
+          label={`New file in ${targetLabel}`}
+          onClick={() => createInTarget("new-file")}
+        >
+          <FilePlus className="size-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          label={`New folder in ${targetLabel}`}
+          onClick={() => createInTarget("new-folder")}
+        >
+          <FolderPlus className="size-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          label={showHidden ? "Hide hidden files" : "Show hidden files"}
+          active={showHidden}
+          onClick={() => setShowHidden((v) => !v)}
+        >
+          {showHidden ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+        </ToolbarButton>
+      </div>
       <LazyFileTree
         root={workspacePath}
         connection={connection}
         selectedFile={selected}
-        onSelectFile={(path) => {
-          handleSelectFile(path);
-          onDismiss?.();
-        }}
+        onSelectFile={(path) => openFromTree(openTab, path, onDismiss)}
+        onOpenFileToSide={
+          splitAllowed ? (path) => openFromTree(openToSide, path, onDismiss) : undefined
+        }
+        dirtyFiles={dirty}
         expandedFolders={expandedFolders}
         onExpandedFoldersChange={setExpandedFolders}
         showHidden={showHidden}
@@ -270,458 +345,223 @@ export function WorkspaceFilesPanel({
     </div>
   );
 
-  // One editor for both modes, so read and edit cannot disagree about colour and the toggle keeps
-  // the scroll position. In view mode it follows what was read from disk; in edit mode it owns the
-  // draft and reports it back.
-  const editor = (
-    <FileEditor
-      doc={mode === "edit" ? draft : (content ?? "")}
-      docEpoch={docEpoch}
-      fileName={selected ?? ""}
-      readOnly={mode === "view"}
-      onChange={setDraft}
-      onSave={() => void handleSave()}
-      onScrollerChange={setEditorScroller}
-      revealLines={selected === initialPath ? initialLines : undefined}
-    />
-  );
-
-  // The draft, not the file — previewing what is on disk while editing something else would be
-  // worse than no preview at all.
-  const draftPreview = (
-    <WorkspaceFileContent
-      content={draft}
-      isLoading={false}
-      error={null}
-      fileName={selected}
-      fileDir={fileDir}
-      scrollRef={setPreviewScroller}
-    />
-  );
-
-  const body = showsEditorSurface ? (
-    <div ref={editAreaRef} data-slot="markdown-edit-area" className="flex-1 flex flex-col min-h-0">
-      {mode === "edit" && isProcessing && (
-        <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-muted-foreground border-b border-accent/10 shrink-0">
-          <TriangleAlert className="w-3 h-3 shrink-0" />
-          The agent is running and may write to this file. Your save will check first.
-        </div>
-      )}
-      {mode === "edit" && saveError && (
-        <div className="flex items-center px-3 py-1.5 text-[11px] text-destructive bg-destructive/10 border-b border-accent/10 shrink-0">
-          {saveError}
-        </div>
-      )}
-      {effectiveLayout === "preview" ? (
-        draftPreview
-      ) : effectiveLayout === "split" ? (
-        // The two panes scroll independently. Aligning them needs source-line anchors on the
-        // rendered blocks, which is a change to the shared markdown renderer — deliberately not
-        // part of this.
-        <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0 overflow-hidden">
-          <ResizablePanel defaultSize="50%" minSize="6rem" className="flex flex-col min-h-0">
-            {editor}
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel minSize="6rem" className="flex flex-col min-h-0">
-            {draftPreview}
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      ) : (
-        editor
-      )}
-    </div>
-  ) : (
-    <WorkspaceFileContent
-      content={binaryMime ? (binaryContent ?? null) : (content ?? null)}
-      isLoading={binaryMime ? binaryLoading : contentLoading}
-      error={
-        binaryMime
-          ? binaryError
-            ? String(binaryError)
-            : null
-          : contentError
-            ? String(contentError)
-            : null
-      }
-      fileName={selected}
-      mimeType={binaryMime}
-      fileDir={fileDir}
-    />
-  );
-
-  const inEdit = selected != null && mode === "edit";
-  const saveDisabled = saving || !isDirty;
-  const showLayoutGroup = inEdit && previewKind !== null;
-  // Markdown only: the HTML preview is a cross-origin iframe, whose scroll position the parent
-  // cannot read without `allow-same-origin` — which is the one thing the sandbox is there for.
-  const showSyncToggle = inEdit && effectiveLayout === "split" && previewKind === "markdown";
-  const syncLabel = scrollSync ? "Turn off synced scrolling" : "Turn on synced scrolling";
-  const hiddenLabel = showHidden ? "Hide hidden files" : "Show hidden files";
-  // The stored preference survives an unavailable split; only this rendering of it is withheld, so
-  // widening the panel brings split back without asking again.
-  const layoutUnavailable = (value: MarkdownEditLayout) => value === "split" && !splitFits;
-  const splitTooltip = "The panel is too narrow for a split view — widen or maximize it";
+  const split = tabs.groups.length > 1;
+  // Beside the tree, each side is a glass well under its own row of tabs; with the tree floating
+  // or hidden the panel's own glass is the surface, and a line under the tabs is all that is left.
+  // The second side butts against the first with a square corner, so its left edge meets their
+  // shared top edge in a T rather than a second rounded well beside the first.
+  const well = (side: number) =>
+    panel.inset
+      ? cn(
+          "inner-glass border-t overflow-hidden",
+          side === 0 ? "rounded-tl-[18px] border-l" : "border-l",
+        )
+      : cn("border-t border-accent/10", side > 0 && "border-l");
+  const place = (side: number, row: number) => ({ gridColumn: side + 1, gridRow: row });
 
   return (
-    <div className="absolute inset-0 flex flex-col">
-      {/* No bottom border and the same surface as the file panel below it, so the two read as one
-          thing rather than a header stacked on a second header. It takes the gap above it that the
-          inset layout leaves below, which is what keeps its contents on the band's centre line.
-
-          A container query rather than a media one: what this row has to fit is decided by the side
-          panel's width, which is nothing the viewport knows. */}
-      <div
-        className={cn(
-          "@container flex items-center h-10 px-2 shrink-0 gap-1",
-          panel.inset && "mt-2",
-        )}
-      >
-        <div className="flex items-center gap-1 shrink-0">
-          <ToolbarButton
-            label={panel.panelOpen ? "Hide file list" : "Show file list"}
-            active={panel.panelOpen}
-            onClick={() => panel.setPanelOpen(!panel.panelOpen)}
+    <div
+      className="absolute inset-0 flex flex-col"
+      // Ctrl+W closes a file and Ctrl+O opens it in the default application. Ctrl+E and Esc,
+      // which act on the edit, are the file pane's own.
+      onKeyDown={(e) => {
+        const key = e.key.toLowerCase();
+        if (!(e.ctrlKey || e.metaKey) || (key !== "w" && key !== "o")) return;
+        // A dialog over the panel is portalled out of it, but React still bubbles its keys here.
+        if (!e.currentTarget.contains(e.target as Node)) return;
+        // The tab the key is pressed on, else the file in front of the focused side.
+        const onTab = (e.target as HTMLElement).closest<HTMLElement>("[data-file-tab]");
+        const path = onTab?.dataset.fileTab ?? selected;
+        if (!path) return;
+        // Kept from the Agents view's own Ctrl+W, which closes the whole session: with focus in
+        // here it closes a file, and only with no file open does it reach the session.
+        e.preventDefault();
+        e.stopPropagation();
+        if (key === "w") requestClose(sideOf(tabs, path), path);
+        else openExternally(path);
+      }}
+    >
+      <ReviewLayout panel={panel} renderPanel={renderTree} plain>
+        <DragDropProvider
+          sensors={TAB_SENSORS}
+          onDragMove={(event) => {
+            const from = event.operation.source?.data as TabDragData | undefined;
+            const { x, y } = event.operation.position.current;
+            const next = from
+              ? dropTargetAt(tabs, measureDropLayout(), x, y, from, splitAllowed)
+              : null;
+            setDrop((prev) => (sameDrop(prev, next) ? prev : next));
+          }}
+          onDragEnd={(event) => {
+            const from = event.operation.source?.data as TabDragData | undefined;
+            if (!event.canceled && from && drop) setTabs((s) => dropTab(s, drop, from));
+            setDrop(null);
+          }}
+        >
+          <div
+            ref={attachGrid}
+            data-slot="files-grid"
+            className="relative grid flex-1 min-h-0"
+            style={{
+              gridTemplateColumns: split
+                ? `minmax(0, ${splitRatio}fr) minmax(0, ${1 - splitRatio}fr)`
+                : "minmax(0, 1fr)",
+              gridTemplateRows: "auto minmax(0, 1fr)",
+            }}
+            // Whatever is pressed or tabbed into in a side, a tab or the file, makes it the one the
+            // tree opens on.
+            onPointerDownCapture={focusSideOf}
+            onFocusCapture={focusSideOf}
           >
-            <PanelLeft className="size-4" />
-          </ToolbarButton>
-
-          {/* Mounted with the list they act on, so they arrive and leave with it. They sit left of
-              the centred filename, which does mean the name shifts when the list is toggled —
-              inherent to flex centring, and the price of matching the Changes tab. */}
-          {panel.panelOpen && (
-            <div className="flex items-center gap-1 @max-[280px]:hidden">
-              <ToolbarButton
-                label={`New file in ${targetLabel}`}
-                onClick={() => createInTarget("new-file")}
+            {tabs.groups.map((group, side) => (
+              <div
+                key={`band-${side}`}
+                data-side={side}
+                className={cn("flex items-center gap-1 h-10 px-2 min-w-0", panel.inset && "mt-2")}
+                style={place(side, 1)}
               >
-                <FilePlus className="size-3.5" />
-              </ToolbarButton>
-              <ToolbarButton
-                label={`New folder in ${targetLabel}`}
-                onClick={() => createInTarget("new-folder")}
-              >
-                <FolderPlus className="size-3.5" />
-              </ToolbarButton>
-              <ToolbarButton
-                label={hiddenLabel}
-                active={showHidden}
-                onClick={() => setShowHidden((v) => !v)}
-              >
-                {showHidden ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
-              </ToolbarButton>
-            </div>
-          )}
-
-          {/* Everything the row cannot afford below 280px. The layout group has to be in here or
-              the arithmetic does not close: at the docked 224px it is 92px on its own, which is
-              more than the filename would have left. */}
-          {(panel.panelOpen || showLayoutGroup || showSyncToggle) && (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="More actions"
-                    className="home-pane rounded-xl hidden @max-[280px]:inline-flex text-muted-foreground hover:text-foreground"
-                  />
-                }
-              >
-                <MoreHorizontal className="size-4" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-auto whitespace-nowrap">
-                {panel.panelOpen && (
-                  <>
-                    <DropdownMenuItem onClick={() => createInTarget("new-file")}>
-                      <FilePlus className="size-3.5" />
-                      New file in {targetLabel}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => createInTarget("new-folder")}>
-                      <FolderPlus className="size-3.5" />
-                      New folder in {targetLabel}
-                    </DropdownMenuItem>
-                    <DropdownMenuCheckboxItem
-                      checked={showHidden}
-                      onCheckedChange={(next) => setShowHidden(next)}
-                    >
-                      Show hidden files
-                    </DropdownMenuCheckboxItem>
-                  </>
-                )}
-                {panel.panelOpen && (showLayoutGroup || showSyncToggle) && (
-                  <DropdownMenuSeparator />
-                )}
-                {showLayoutGroup && (
-                  <DropdownMenuRadioGroup
-                    value={effectiveLayout}
-                    onValueChange={(next) => chooseLayout(next as MarkdownEditLayout)}
-                  >
-                    {MARKDOWN_LAYOUTS.map(({ value, Icon, label }) => (
-                      <DropdownMenuRadioItem
-                        key={value}
-                        value={value}
-                        disabled={layoutUnavailable(value)}
-                      >
-                        <Icon className="size-3.5" />
-                        {label}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                )}
-                {showSyncToggle && (
-                  <DropdownMenuCheckboxItem
-                    checked={scrollSync}
-                    onCheckedChange={(next) => chooseScrollSync(next)}
-                  >
-                    Synced scrolling
-                  </DropdownMenuCheckboxItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
-
-        {/* Centred, exactly as the Changes tab's header centres its own. The relative path is the
-            title rather than a second line: this bar is 40px tall and can be 224px wide. */}
-        <div className="flex-1 flex items-center justify-center gap-1.5 min-w-0 overflow-hidden">
-          {fileName ? (
-            <>
-              <FileNameCopyButton
-                fileName={fileName}
-                title={selected ?? ""}
-                absolutePath={fullPath ?? ""}
-              />
-              {isDirty && (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <span
-                        className="size-2 rounded-full bg-accent shrink-0"
-                        aria-label="Unsaved changes"
-                      />
+                {side === 0 && !panel.panelOpen && togglePanel}
+                <FileTabBar
+                  side={side}
+                  tabs={group.tabs}
+                  active={group.active}
+                  focused={!split || side === tabs.focus}
+                  dirty={dirty}
+                  dropIndex={drop?.kind === "row" && drop.side === side ? drop.index : null}
+                  canMove={canSplit(tabs, side, splitAllowed)}
+                  split={split}
+                  onActivate={(path) => setTabs((s) => openTab(s, path, side))}
+                  onClose={(path) => requestClose(side, path)}
+                  onCloseMany={(close) => {
+                    // An unsaved tab is never closed without asking, and one question per tab
+                    // would be a queue of dialogs: they stay open, and the user is told why.
+                    const kept = group.tabs.filter((p, i) => close(p, i) && dirty.has(p));
+                    setTabs((s) => closeTabs(s, side, (p, i) => !dirty.has(p) && close(p, i)));
+                    if (kept.length > 0) {
+                      const they = kept.length === 1 ? "it has" : "they have";
+                      toast.info(
+                        `Kept ${kept.map(basename).join(", ")} open: ${they} unsaved changes.`,
+                      );
                     }
-                  />
-                  <TooltipContent>Unsaved changes</TooltipContent>
-                </Tooltip>
-              )}
-            </>
-          ) : (
-            <span className="text-xs text-muted-foreground truncate">No file selected</span>
-          )}
-        </div>
+                  }}
+                  onMove={(path) =>
+                    setTabs((s) => moveTab(s, side, path, side === 0 ? 1 : 0, Infinity))
+                  }
+                  onOpenExternally={openExternally}
+                  fullPathOf={fullPathOf}
+                />
+              </div>
+            ))}
 
-        {selected && (
-          <div className="flex items-center gap-1 shrink-0">
-            {mode === "edit" ? (
-              // The pairing that confused people was a floppy disk beside a tick: the tick reads
-              // as "confirm", which is the opposite of what it does on a dirty buffer. An X always
-              // means "leave", and its tooltip is what says whether leaving will cost anything.
-              <>
-                {/* Only in split: with one pane there is nothing to keep in step, and a toggle
-                    that does nothing is worse than no toggle. It sits beside what it modifies. */}
-                {showSyncToggle && (
-                  <ToolbarButton
-                    label={syncLabel}
-                    tooltip={
-                      scrollSync
-                        ? "The panes scroll together — click to unlink"
-                        : "The panes scroll independently — click to link"
-                    }
-                    active={scrollSync}
-                    onClick={() => chooseScrollSync(!scrollSync)}
-                    className="@max-[280px]:hidden"
-                  >
-                    {scrollSync ? <Link2 className="size-3.5" /> : <Unlink2 className="size-3.5" />}
-                  </ToolbarButton>
+            {panePaths.map((path) => {
+              const side = sideOf(tabs, path);
+              const shown = tabs.groups[side].active === path;
+              return (
+                <FileTabPane
+                  key={path}
+                  path={path}
+                  fullPath={fullPathOf(path)}
+                  connection={connection}
+                  wslDistroName={wslDistroName}
+                  isActive={isActive && shown}
+                  isProcessing={isProcessing}
+                  revealLines={reveal?.path === path ? reveal.lines : undefined}
+                  revealKey={reveal?.nonce}
+                  onDirtyChange={(d) => handleDirtyChange(path, d)}
+                  confirmClose={closePrompt === path}
+                  onCloseResolved={(close) => {
+                    setClosePrompt(null);
+                    if (close)
+                      setTabs((s) => {
+                        const at = sideOf(s, path);
+                        return at < 0 ? s : closeTab(s, at, path);
+                      });
+                  }}
+                  className={cn(well(side), !shown && "hidden")}
+                  style={place(side, 2)}
+                  side={side}
+                />
+              );
+            })}
+
+            {tabs.groups[0].tabs.length === 0 && (
+              <div
+                className={cn(
+                  well(0),
+                  "flex flex-col items-center justify-center gap-1.5 text-xs text-muted-foreground",
                 )}
-                {showLayoutGroup && (
-                  // 24px items in a 3px-padded, bordered container come to 32, so the group lines
-                  // up with every other control rather than sitting short of them.
+                style={place(0, 2)}
+              >
+                <FileText className="size-5" />
+                No file open
+              </div>
+            )}
+
+            {/* The line between the sides, dragged to share the width differently. A grid item placed
+                absolutely, so it sits on the second side's left edge, under the tabs, without
+                taking a column of its own. Double-click evens the sides again. */}
+            {split && (
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize the sides"
+                aria-valuenow={Math.round(splitRatio * 100)}
+                aria-valuemin={Math.round(minShare * 100)}
+                aria-valuemax={Math.round((1 - minShare) * 100)}
+                tabIndex={0}
+                onPointerDown={(e) => {
+                  // Or the drag selects the text of the files it passes over.
+                  e.preventDefault();
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                }}
+                onPointerMove={(e) => {
+                  if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                  const box = gridRef.current!.getBoundingClientRect();
+                  resizeTo((e.clientX - box.left) / box.width);
+                }}
+                onDoubleClick={() => setDragShare(0.5)}
+                onKeyDown={(e) => {
+                  const step = e.key === "ArrowLeft" ? -0.05 : e.key === "ArrowRight" ? 0.05 : 0;
+                  if (step === 0) return;
+                  e.preventDefault();
+                  resizeTo(splitRatio + step);
+                }}
+                className="group/split absolute inset-y-0 left-0 z-30 flex w-2 -translate-x-1/2 cursor-col-resize items-center justify-center outline-none"
+                style={place(1, 2)}
+              >
+                <div className="h-6 w-1 rounded-lg bg-border transition-colors group-hover/split:bg-accent group-focus-visible/split:bg-accent" />
+              </div>
+            )}
+
+            {/* Over each side, where a dragged tab is shown landing: on the right half of a lone
+                side to open a second, or on the other side to move there. */}
+            {tabs.groups.map((_, side) => (
+              <div
+                key={`well-${side}`}
+                data-well={side}
+                className="relative z-20 pointer-events-none"
+                style={place(side, 2)}
+              >
+                {drop?.kind === "well" && drop.side === side && (
                   <div
                     className={cn(
-                      SEGMENT_GROUP,
-                      "flex items-center gap-0.5 shrink-0 @max-[280px]:hidden",
+                      "absolute top-1.5 bottom-1.5 flex items-center justify-center gap-1.5 rounded-[14px] border border-dashed border-accent/60 bg-accent/14 backdrop-blur-sm text-xs text-foreground",
+                      drop.zone === "right" ? "left-1/2 right-1.5" : "left-1.5 right-1.5",
                     )}
                   >
-                    <SegmentThumb />
-                    {MARKDOWN_LAYOUTS.map(({ value, Icon, label }) => {
-                      const unavailable = layoutUnavailable(value);
-                      return (
-                        <Tooltip key={value}>
-                          <TooltipTrigger render={<span className="inline-flex" />}>
-                            <button
-                              type="button"
-                              onClick={() => chooseLayout(value)}
-                              disabled={unavailable}
-                              aria-label={label}
-                              aria-pressed={effectiveLayout === value}
-                              className={cn(
-                                "relative inline-flex items-center justify-center size-6 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none",
-                                effectiveLayout === value
-                                  ? "text-foreground"
-                                  : "text-muted-foreground hover:text-foreground",
-                              )}
-                            >
-                              <Icon className="size-3.5" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent>{unavailable ? splitTooltip : label}</TooltipContent>
-                        </Tooltip>
-                      );
-                    })}
+                    <Columns2 className="size-3.5" />
+                    {drop.zone === "right" ? "Open to the side" : "Move here"}
                   </div>
                 )}
-                {/* Set apart from the layout group: that group is a view preference, this writes
-                    to disk, and at `gap-0.5` the two read as one strip of controls. */}
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label="Save"
-                        onClick={() => void handleSave()}
-                        disabled={saveDisabled}
-                        // The accent is what says "there is unsaved work here". Wearing it with
-                        // nothing to save promised an action the button would not perform.
-                        className={cn(
-                          "home-pane rounded-xl ml-1.5",
-                          !saveDisabled && "text-accent",
-                        )}
-                      />
-                    }
-                  >
-                    {saving ? <Spinner className="size-3.5" /> : <Save className="size-3.5" />}
-                  </TooltipTrigger>
-                  <TooltipContent>Save (Ctrl+S)</TooltipContent>
-                </Tooltip>
-                {/* One icon, two meanings, and the tooltip is what separates them. `leaveEdit`
-                    raises the discard prompt itself when there is something to discard. */}
-                <ToolbarButton
-                  label={isDirty ? "Discard" : "Close"}
-                  tooltip={isDirty ? "Discard unsaved changes" : "Close the editor"}
-                  disabled={saving}
-                  // Refetched only when it actually left — a dirty buffer raises the discard
-                  // prompt instead, and reading over an undecided edit would be worse than stale.
-                  onClick={() => {
-                    if (leaveEdit()) void refetch();
-                  }}
-                >
-                  <X className="size-3.5" />
-                </ToolbarButton>
-              </>
-            ) : (
-              <>
-                {editable && (
-                  <ToolbarButton
-                    label="Edit"
-                    tooltip="Edit this file"
-                    onClick={() => enterEdit(content)}
-                  >
-                    <FilePen className="size-3.5" />
-                  </ToolbarButton>
-                )}
-                <FileHeaderActions
-                  connection={connection}
-                  path={fullPath}
-                  wslDistroName={wslDistroName}
-                />
-              </>
-            )}
+              </div>
+            ))}
           </div>
-        )}
-      </div>
-
-      {/* A resizable column where there is room, a floating overlay where there is not — the same
-          toggle drives either, and the same component decides which. */}
-      <ReviewLayout panel={panel} renderPanel={renderTree}>
-        {body}
+        </DragDropProvider>
       </ReviewLayout>
-
-      <AlertDialog
-        open={conflict !== null}
-        onOpenChange={(open) => {
-          if (!open) setConflict(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>This file changed while you were editing</AlertDialogTitle>
-            <AlertDialogDescription>
-              {fileName} was written by something else — most likely the agent — since you started
-              editing. Overwriting replaces those changes with yours; reloading discards yours.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => conflict && handleReloadFromDisk(conflict.onDisk)}
-            >
-              Reload, discarding mine
-            </AlertDialogAction>
-            <AlertDialogAction variant="destructive" onClick={() => void handleOverwrite()}>
-              Overwrite
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={discardPrompt !== null}
-        onOpenChange={(open) => {
-          if (!open) setDiscardPrompt(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {fileName} has edits that have not been written to disk. They will be lost.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep editing</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => {
-                const prompt = discardPrompt;
-                discardDraft();
-                if (prompt?.reason === "select") setSelected(prompt.next);
-              }}
-            >
-              Discard
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <FileNameDialog
         open={nameDialog !== null}
-        title={
-          nameDialog?.kind === "rename"
-            ? "Rename"
-            : nameDialog?.kind === "new-folder"
-              ? "New folder"
-              : "New file"
-        }
-        description={
-          nameDialog?.kind === "rename"
-            ? `Rename “${nameDialog.target.name}”.`
-            : // Naming the destination is the whole point: the header's buttons act on the
-              // highlighted folder, and "somewhere" is not something a user can verify.
-              `Created in ${folderLabel(nameDialog?.parentAbsolutePath ?? workspacePath, workspacePath)}.`
-        }
-        confirmLabel={nameDialog?.kind === "rename" ? "Rename" : "Create"}
-        initialName={nameDialog?.kind === "rename" ? nameDialog.target.name : ""}
-        siblings={
-          nameDialog?.kind === "rename"
-            ? // Its own name is not a collision: typing a change and undoing it must not leave the
-              // dialog stuck reporting that the file already exists.
-              nameDialog.target.siblings.filter((s) => s !== nameDialog.target.name)
-            : (nameDialog?.siblings ?? [])
-        }
+        {...nameDialogCopy(nameDialog, workspacePath)}
         pending={namePending}
         onConfirm={(name) => void handleNameConfirm(name)}
         onClose={() => setNameDialog(null)}

@@ -1,8 +1,10 @@
 import { cloneElement, useEffect, type ReactElement, type ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { openFileWithConnection } from "@/services/connection.service";
 import type { ConnectionKey } from "@/types/bindings";
 
 const readFile = vi.fn();
@@ -31,6 +33,8 @@ vi.mock("@/lib/tauri-utils", () => ({
     saveSettings: (...a: unknown[]) => saveSettings(...a),
   },
 }));
+
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
 vi.mock("@/services/connection.service", async (importOriginal) => ({
   ...(await importOriginal()),
@@ -64,6 +68,7 @@ vi.mock("./FileEditor", () => ({
     readOnly,
     onChange,
     onSave,
+    revealLines,
   }: {
     doc: string;
     docEpoch: number;
@@ -71,13 +76,19 @@ vi.mock("./FileEditor", () => ({
     readOnly?: boolean;
     onChange: (v: string) => void;
     onSave: () => void;
+    revealLines?: { from: number; to: number };
   }) => {
     useEffect(() => {
       editorMountCount += 1;
     }, []);
     if (readOnly) {
       return (
-        <div data-testid="read-view">
+        <div
+          data-testid="read-view"
+          data-reveal={revealLines ? `${revealLines.from}-${revealLines.to}` : undefined}
+          // As CodeMirror does: it handles a press itself, so the browser focuses nothing.
+          onMouseDown={(e) => e.preventDefault()}
+        >
           {fileName}:{doc}
         </div>
       );
@@ -150,10 +161,24 @@ function resizeEditArea(width: number) {
   });
 }
 
+function resizeFilesGrid(width: number) {
+  act(() => {
+    for (const { element, notify } of observed) {
+      if (element.getAttribute("data-slot") === "files-grid") notify(width);
+    }
+  });
+}
+
 import { WorkspaceFilesPanel } from "./WorkspaceFilesPanel";
 
 const CONNECTION = { type: "local" } as unknown as ConnectionKey;
 const WORKSPACE = "/work/repo";
+
+let nonce = 0;
+function request(path: string, lines?: { from: number; to: number }) {
+  nonce += 1;
+  return { path, lines, nonce };
+}
 
 function renderPanel(props: Partial<Parameters<typeof WorkspaceFilesPanel>[0]> = {}) {
   const client = new QueryClient({
@@ -164,7 +189,7 @@ function renderPanel(props: Partial<Parameters<typeof WorkspaceFilesPanel>[0]> =
       <WorkspaceFilesPanel
         workspacePath={WORKSPACE}
         connection={CONNECTION}
-        initialPath="src/main.ts"
+        openRequest={request("src/main.ts")}
         {...props}
       />
     </QueryClientProvider>,
@@ -230,7 +255,7 @@ describe("WorkspaceFilesPanel edit mode", () => {
    * would open empty and its save would truncate the real file.
    */
   it("offers no editing for a binary file", async () => {
-    renderPanel({ initialPath: "docs/diagram.png" });
+    renderPanel({ openRequest: request("docs/diagram.png") });
     await waitFor(() => expect(screen.getByTestId("read-view")).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
   });
@@ -375,6 +400,86 @@ describe("WorkspaceFilesPanel edit mode", () => {
  * The pin is gone: `ReviewLayout` decides from a measured width whether the list is a column or
  * an overlay, which is the choice the pin was being asked to make by hand.
  */
+describe("WorkspaceFilesPanel keyboard shortcuts", () => {
+  it("enters edit mode on Ctrl+E in the file", async () => {
+    renderPanel();
+    await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("original"));
+    fireEvent.keyDown(screen.getByTestId("read-view"), { key: "e", ctrlKey: true });
+    expect(await screen.findByTestId("editor")).toBeInTheDocument();
+  });
+
+  /** The shortcuts are reached by clicking the file, which CodeMirror does not focus when read-only. */
+  it("takes the keys of a file clicked into, read-only as it is", async () => {
+    renderPanel();
+    await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("original"));
+    await userEvent.click(screen.getByTestId("read-view"));
+    await userEvent.keyboard("{Control>}e{/Control}");
+    expect(await screen.findByTestId("editor")).toBeInTheDocument();
+  });
+
+  it("leaves edit mode on Esc when nothing was changed", async () => {
+    renderPanel();
+    await enterEditMode();
+    fireEvent.keyDown(screen.getByTestId("editor"), { key: "Escape" });
+    expect(await screen.findByTestId("read-view")).toBeInTheDocument();
+  });
+
+  /**
+   * The Esc goes no further than the pane: the prompt it opens listens for Escape on the document,
+   * and would close on the very key that opened it.
+   */
+  it("asks before Esc drops an unsaved draft, and keeps it on Keep editing", async () => {
+    const onDocument = vi.fn();
+    document.addEventListener("keydown", onDocument);
+    renderPanel();
+    await enterEditMode();
+    typeDraft("edited");
+    fireEvent.keyDown(screen.getByTestId("editor"), { key: "Escape" });
+    document.removeEventListener("keydown", onDocument);
+    expect(onDocument).not.toHaveBeenCalled();
+
+    expect(await screen.findByText("Discard unsaved changes?")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect(screen.getByTestId("editor")).toHaveValue("edited");
+  });
+
+  /** Leaving the editor takes the focus out of it; the file keeps it, so the keys go on working. */
+  it("keeps the keys on the file after Esc, so Ctrl+E edits again", async () => {
+    renderPanel();
+    await enterEditMode();
+    await userEvent.click(screen.getByTestId("editor"));
+    await userEvent.keyboard("{Escape}");
+    await screen.findByTestId("read-view");
+
+    await userEvent.keyboard("{Control>}e{/Control}");
+
+    expect(await screen.findByTestId("editor")).toBeInTheDocument();
+  });
+
+  /** Ctrl+C is the editor's copy; it never leaves edit mode. */
+  it("stays in edit mode on Ctrl+C", async () => {
+    renderPanel();
+    await enterEditMode();
+    fireEvent.keyDown(screen.getByTestId("editor"), { key: "c", ctrlKey: true });
+    expect(screen.getByTestId("editor")).toBeInTheDocument();
+  });
+
+  it("opens the file in the default application on Ctrl+O, from the file or its tab", async () => {
+    vi.mocked(openFileWithConnection).mockResolvedValue(undefined);
+    renderPanel();
+    await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("original"));
+    fireEvent.keyDown(screen.getByTestId("read-view"), { key: "o", ctrlKey: true });
+    fireEvent.keyDown(screen.getByRole("tab", { name: /main\.ts/ }), { key: "o", ctrlKey: true });
+
+    expect(openFileWithConnection).toHaveBeenCalledTimes(2);
+    expect(openFileWithConnection).toHaveBeenCalledWith(
+      CONNECTION,
+      `${WORKSPACE}/src/main.ts`,
+      expect.anything(),
+    );
+  });
+});
+
 describe("WorkspaceFilesPanel file list", () => {
   beforeEach(() => {
     listContents.mockImplementation((_conn: unknown, path: string) =>
@@ -386,6 +491,18 @@ describe("WorkspaceFilesPanel file list", () => {
     renderPanel();
     await screen.findByRole("button", { name: "Hide file list" });
     expect(screen.queryByRole("button", { name: /pin/i })).toBeNull();
+  });
+
+  /** The panes hold the drafts, and the list moving them about in the layout must not remount them. */
+  it("keeps an unsaved draft when the list is hidden and shown again", async () => {
+    renderPanel();
+    await enterEditMode();
+    typeDraft("edited");
+
+    await userEvent.click(screen.getByRole("button", { name: "Hide file list" }));
+    expect(screen.getByTestId("editor")).toHaveValue("edited");
+    await userEvent.click(screen.getByRole("button", { name: "Show file list" }));
+    expect(screen.getByTestId("editor")).toHaveValue("edited");
   });
 
   it("hides and shows the list from the one toggle", async () => {
@@ -435,7 +552,7 @@ describe("WorkspaceFilesPanel create destination", () => {
   });
 
   it("names the workspace root as the destination before any folder is picked", async () => {
-    renderPanel({ initialPath: undefined });
+    renderPanel({ openRequest: undefined });
 
     expect(
       await screen.findByRole("button", { name: "New file in the workspace root" }),
@@ -443,14 +560,14 @@ describe("WorkspaceFilesPanel create destination", () => {
   });
 
   it("retargets the create buttons at a folder once it is clicked", async () => {
-    renderPanel({ initialPath: undefined });
+    renderPanel({ openRequest: undefined });
     await userEvent.click(await screen.findByRole("button", { name: /src/ }));
 
     expect(await screen.findByRole("button", { name: "New file in src" })).toBeInTheDocument();
   });
 
   it("spells out the destination in the create dialog", async () => {
-    renderPanel({ initialPath: undefined });
+    renderPanel({ openRequest: undefined });
     await userEvent.click(await screen.findByRole("button", { name: /src/ }));
     await userEvent.click(await screen.findByRole("button", { name: "New file in src" }));
 
@@ -462,7 +579,7 @@ describe("WorkspaceFilesPanel create destination", () => {
    * while a file elsewhere was open. Opening a file moves the highlight to its own parent.
    */
   it("moves the highlight to the parent of the file that is opened", async () => {
-    renderPanel({ initialPath: undefined });
+    renderPanel({ openRequest: undefined });
     await userEvent.click(await screen.findByRole("button", { name: /src/ }));
     expect(await screen.findByRole("button", { name: "New file in src" })).toBeInTheDocument();
 
@@ -475,7 +592,7 @@ describe("WorkspaceFilesPanel create destination", () => {
 
   it("creates in the highlighted folder, not the root", async () => {
     createFileAt.mockResolvedValue(null);
-    renderPanel({ initialPath: undefined });
+    renderPanel({ openRequest: undefined });
     await userEvent.click(await screen.findByRole("button", { name: /src/ }));
     await userEvent.click(await screen.findByRole("button", { name: "New file in src" }));
 
@@ -491,7 +608,7 @@ describe("WorkspaceFilesPanel create destination", () => {
 
 describe("WorkspaceFilesPanel markdown preview", () => {
   async function enterMarkdownEdit() {
-    renderPanel({ initialPath: "README.md" });
+    renderPanel({ openRequest: request("README.md") });
     await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("original"));
     await userEvent.click(screen.getByRole("button", { name: "Edit" }));
     await waitFor(() => expect(screen.getByTestId("editor")).toBeInTheDocument());
@@ -505,7 +622,7 @@ describe("WorkspaceFilesPanel markdown preview", () => {
   });
 
   it("offers no layout toggle for a file that is not markdown", async () => {
-    renderPanel({ initialPath: "src/main.ts" });
+    renderPanel({ openRequest: request("src/main.ts") });
     await enterEditMode();
 
     expect(screen.queryByRole("button", { name: "Preview only" })).toBeNull();
@@ -659,7 +776,7 @@ describe("WorkspaceFilesPanel markdown preview", () => {
 
 describe("WorkspaceFilesPanel html preview", () => {
   async function enterHtmlEdit() {
-    renderPanel({ initialPath: "index.html" });
+    renderPanel({ openRequest: request("index.html") });
     await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("original"));
     await userEvent.click(screen.getByRole("button", { name: "Edit" }));
     await waitFor(() => expect(screen.getByTestId("editor")).toBeInTheDocument());
@@ -667,7 +784,7 @@ describe("WorkspaceFilesPanel html preview", () => {
 
   /** The point of the feature: opening a page shows the page, not its source. */
   it("shows the rendered page rather than the source when not editing", async () => {
-    renderPanel({ initialPath: "index.html" });
+    renderPanel({ openRequest: request("index.html") });
 
     await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("original"));
     expect(screen.queryByTestId("editor")).toBeNull();
@@ -791,11 +908,474 @@ describe("WorkspaceFilesPanel unsaved-work guards", () => {
   });
 });
 
-describe("WorkspaceFilesPanel header", () => {
-  it("copies the absolute path when the file name is clicked", async () => {
+describe("WorkspaceFilesPanel tabs", () => {
+  beforeEach(() => {
+    listContents.mockImplementation((_conn: unknown, path: string) =>
+      Promise.resolve(
+        path === WORKSPACE
+          ? [
+              { name: "src", is_dir: true },
+              { name: "notes.md", is_dir: false },
+            ]
+          : [{ name: "main.ts", is_dir: false }],
+      ),
+    );
+  });
+
+  function tabNames() {
+    return screen.getAllByRole("tab").map((t) => t.textContent);
+  }
+
+  it("is one tab stop, moved along the row by the arrow keys, Home and End", async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    const row = await screen.findByRole("tablist");
+    const main = within(row).getByRole("tab", { name: /main\.ts/ });
+    const notes = within(row).getByRole("tab", { name: /notes\.md/ });
+    expect([main.tabIndex, notes.tabIndex]).toEqual([-1, 0]);
+
+    fireEvent.keyDown(notes, { key: "ArrowLeft" });
+    expect(main).toHaveAttribute("aria-selected", "true");
+    expect(main).toHaveFocus();
+    expect([main.tabIndex, notes.tabIndex]).toEqual([0, -1]);
+
+    fireEvent.keyDown(main, { key: "End" });
+    expect(notes).toHaveFocus();
+    fireEvent.keyDown(notes, { key: "Home" });
+    expect(main).toHaveFocus();
+  });
+
+  it("hands focus to the tab that takes over when the keyboard closes one", async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    const notes = await screen.findByRole("tab", { name: /notes\.md/ });
+    act(() => notes.focus());
+
+    fireEvent.keyDown(notes, { key: "Delete" });
+
+    await waitFor(() => expect(screen.getByRole("tab", { name: /main\.ts/ })).toHaveFocus());
+  });
+
+  /** Tabs past the edge of the row are reached by scrolling it, as in the session's side panel. */
+  it("scrolls the row of tabs sideways with the mouse wheel", async () => {
+    renderPanel();
+    const row = await screen.findByRole("tablist");
+    Object.defineProperties(row, {
+      scrollWidth: { configurable: true, value: 900 },
+      clientWidth: { configurable: true, value: 300 },
+    });
+
+    // Measured from where it is, since happy-dom does not clamp the scroll that put the active tab
+    // in view.
+    const before = row.scrollLeft;
+    fireEvent.wheel(row, { deltaY: 120 });
+
+    expect(row.scrollLeft - before).toBe(120);
+  });
+
+  it("closes a tab from the keyboard with Delete", async () => {
+    renderPanel();
+    fireEvent.keyDown(await screen.findByRole("tab", { name: /main\.ts/ }), { key: "Delete" });
+    await waitFor(() => expect(screen.queryByRole("tab")).toBeNull());
+  });
+
+  it("keeps unsaved tabs open on Close others, and says so", async () => {
+    renderPanel();
+    await enterEditMode();
+    typeDraft("edited");
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: /notes\.md/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Close others" }));
+
+    expect(tabNames()).toEqual(["main.ts", "notes.md"]);
+    expect(toast.info).toHaveBeenCalledWith("Kept main.ts open: it has unsaved changes.");
+  });
+
+  /** The point of keeping every pane in one list: a move is not a remount. */
+  it("takes a draft along when its tab moves to the other side", async () => {
+    renderPanel();
+    await enterEditMode();
+    typeDraft("edited");
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: /main\.ts/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Move to the side" }));
+
+    await waitFor(() => expect(document.querySelectorAll("[data-tab-row]")).toHaveLength(2));
+    expect(screen.getByTestId("editor")).toHaveValue("edited");
+  });
+
+  it("opens a file to the side with Ctrl+Enter on its row in the tree", async () => {
+    renderPanel();
+    await screen.findByRole("tab", { name: /main\.ts/ });
+    fireEvent.keyDown(await screen.findByRole("button", { name: /notes\.md/ }), {
+      key: "Enter",
+      ctrlKey: true,
+    });
+
+    await waitFor(() =>
+      expect(
+        [...document.querySelectorAll("[data-tab-row]")].map((r) =>
+          [...r.querySelectorAll("[role=tab]")].map((t) => t.textContent),
+        ),
+      ).toEqual([["main.ts"], ["notes.md"]]),
+    );
+  });
+
+  it("asks before Ctrl+W closes a tab with unsaved changes", async () => {
+    renderPanel();
+    await enterEditMode();
+    typeDraft("edited");
+    fireEvent.keyDown(screen.getByRole("tab", { name: /main\.ts/ }), { key: "w", ctrlKey: true });
+
+    expect(await screen.findByText("Save changes to main.ts?")).toBeInTheDocument();
+  });
+
+  it("copies the absolute path from the tab's menu", async () => {
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
     renderPanel();
-    await userEvent.click(await screen.findByRole("button", { name: "main.ts" }));
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: /main\.ts/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Copy path" }));
     expect(writeText).toHaveBeenCalledWith("/work/repo/src/main.ts");
+  });
+
+  it("opens a file from the tree in a tab of its own, beside the one already open", async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    await waitFor(() => expect(tabNames()).toEqual(["main.ts", "notes.md"]));
+    expect(screen.getByRole("tab", { name: /notes\.md/ })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("focuses a file that is already open rather than opening it twice", async () => {
+    const { rerender } = renderPanel();
+    await screen.findByRole("tab", { name: /main\.ts/ });
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    await screen.findByRole("tab", { name: /notes\.md/ });
+
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <WorkspaceFilesPanel
+          workspacePath={WORKSPACE}
+          connection={CONNECTION}
+          openRequest={request("src/main.ts", { from: 2, to: 3 })}
+        />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /main\.ts/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
+    expect(tabNames()).toEqual(["main.ts", "notes.md"]);
+  });
+
+  /** Each tab keeps its own pane mounted, so switching away and back loses nothing. */
+  it("keeps a draft across a switch to another tab and back", async () => {
+    renderPanel();
+    await enterEditMode();
+    typeDraft("edited");
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    await screen.findByRole("tab", { name: /notes\.md/ });
+
+    await userEvent.click(screen.getByRole("tab", { name: /main\.ts/ }));
+
+    expect(screen.getByTestId("editor")).toHaveValue("edited");
+  });
+
+  it("asks before closing a tab with unsaved changes, and saves when asked to", async () => {
+    renderPanel();
+    await enterEditMode();
+    typeDraft("edited");
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Close main.ts, which has unsaved changes" }),
+    );
+    expect(await screen.findByText("Save changes to main.ts?")).toBeInTheDocument();
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Save" }),
+    );
+
+    await waitFor(() =>
+      expect(writeFile).toHaveBeenCalledWith(CONNECTION, `${WORKSPACE}/src/main.ts`, "edited"),
+    );
+    await waitFor(() => expect(screen.queryByRole("tab")).toBeNull());
+    expect(screen.getByText("No file open")).toBeInTheDocument();
+  });
+
+  /**
+   * A save that is still writing cannot be called off: Cancel used to close the question while the
+   * write went on, and the write then closed the tab over whatever had been typed since.
+   */
+  it("holds the close question open, with no way out, until Save has written", async () => {
+    let finishWrite: () => void = () => {};
+    writeFile.mockImplementation(
+      () => new Promise<null>((resolve) => (finishWrite = () => resolve(null))),
+    );
+    renderPanel();
+    await enterEditMode();
+    typeDraft("edited");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Close main.ts, which has unsaved changes" }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(writeFile).toHaveBeenCalled());
+
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Discard" })).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+
+    act(() => finishWrite());
+    await waitFor(() => expect(screen.queryByRole("tab")).toBeNull());
+  });
+
+  it("closes a clean tab without asking", async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: "Close main.ts" }));
+    await waitFor(() => expect(screen.queryByRole("tab")).toBeNull());
+  });
+
+  /** The Agents view closes the whole session on Ctrl+W, from a listener on the window. */
+  it("closes the file in front on Ctrl+W, and keeps the key from the session", async () => {
+    const onWindow = vi.fn();
+    window.addEventListener("keydown", onWindow);
+    renderPanel();
+    fireEvent.keyDown(await screen.findByRole("tab", { name: /main\.ts/ }), {
+      key: "w",
+      ctrlKey: true,
+    });
+    window.removeEventListener("keydown", onWindow);
+
+    await waitFor(() => expect(screen.queryByRole("tab")).toBeNull());
+    expect(onWindow).not.toHaveBeenCalled();
+  });
+
+  it("closes the tab Ctrl+W is pressed on, not the one in front", async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    await screen.findByRole("tab", { name: /notes\.md/ });
+
+    fireEvent.keyDown(screen.getByRole("tab", { name: /main\.ts/ }), { key: "w", ctrlKey: true });
+
+    await waitFor(() => expect(tabNames()).toEqual(["notes.md"]));
+  });
+
+  /** React hands a dialog's keys to the panel behind it, through the portal. */
+  it("leaves the tabs alone on Ctrl+W typed in a dialog over the panel", async () => {
+    renderPanel();
+    fireEvent.contextMenu(await screen.findByRole("button", { name: /notes\.md/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Rename" }));
+
+    fireEvent.keyDown(await screen.findByRole("textbox"), { key: "w", ctrlKey: true });
+
+    // The modal hides the panel from role queries, so the tab is looked up directly.
+    expect(document.querySelector('[data-file-tab="src/main.ts"]')).not.toBeNull();
+  });
+
+  it("lets Ctrl+W through to the session when no file is open", async () => {
+    const onWindow = vi.fn();
+    window.addEventListener("keydown", onWindow);
+    renderPanel({ openRequest: undefined });
+    fireEvent.keyDown(await screen.findByRole("button", { name: /notes\.md/ }), {
+      key: "w",
+      ctrlKey: true,
+    });
+    window.removeEventListener("keydown", onWindow);
+
+    expect(onWindow).toHaveBeenCalled();
+  });
+
+  /** The tree opens on the focused side, and the keyboard moves that focus as a click does. */
+  it("opens from the tree on the side the keyboard last went into", async () => {
+    listContents.mockResolvedValue([
+      { name: "a.ts", is_dir: false },
+      { name: "notes.md", is_dir: false },
+    ]);
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: /notes\.md/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Move to the side" }));
+    await waitFor(() => expect(document.querySelectorAll("[data-tab-row]")).toHaveLength(2));
+
+    act(() => screen.getByRole("tab", { name: /main\.ts/ }).focus());
+    fireEvent.contextMenu(screen.getByRole("button", { name: /a\.ts/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Open" }));
+
+    await waitFor(() =>
+      expect(
+        [...document.querySelectorAll("[data-tab-row]")].map((r) =>
+          [...r.querySelectorAll("[role=tab]")].map((t) => t.textContent),
+        ),
+      ).toEqual([["main.ts", "a.ts"], ["notes.md"]]),
+    );
+  });
+
+  it("moves a tab to a second side from its menu, and the split closes with it", async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: /notes\.md/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Move to the side" }));
+
+    await waitFor(() => expect(document.querySelectorAll("[data-tab-row]")).toHaveLength(2));
+
+    await userEvent.click(screen.getByRole("button", { name: "Close notes.md" }));
+    await waitFor(() => expect(document.querySelectorAll("[data-tab-row]")).toHaveLength(1));
+  });
+
+  it("resizes the two sides from the line between them, and evens them on double-click", async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: /notes\.md/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Move to the side" }));
+    const divider = await screen.findByRole("separator", { name: "Resize the sides" });
+
+    fireEvent.keyDown(divider, { key: "ArrowRight" });
+    expect(divider).toHaveAttribute("aria-valuenow", "55");
+
+    fireEvent.doubleClick(divider);
+    expect(divider).toHaveAttribute("aria-valuenow", "50");
+  });
+
+  it("flashes a link's lines once, not again when the file is closed and opened anew", async () => {
+    renderPanel({ openRequest: request("src/main.ts", { from: 2, to: 3 }) });
+    await waitFor(() =>
+      expect(screen.getByTestId("read-view")).toHaveAttribute("data-reveal", "2-3"),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Close main.ts" }));
+    await userEvent.click(await screen.findByRole("button", { name: /^src/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /main\.ts/ }));
+
+    await screen.findByRole("tab", { name: /main\.ts/ });
+    expect(screen.getByTestId("read-view")).not.toHaveAttribute("data-reveal");
+  });
+
+  it("does not count a discarded draft against the file once it is opened again", async () => {
+    const onDirtyChange = vi.fn();
+    renderPanel({ onDirtyChange });
+    await enterEditMode();
+    typeDraft("edited");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Close main.ts, which has unsaved changes" }),
+    );
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Discard" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("tab")).toBeNull());
+    onDirtyChange.mockClear();
+
+    await userEvent.click(await screen.findByRole("button", { name: /^src/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /main\.ts/ }));
+
+    expect(await screen.findByRole("button", { name: "Close main.ts" })).toBeInTheDocument();
+    expect(onDirtyChange).not.toHaveBeenCalledWith(true);
+  });
+
+  /** Moving a node out and back in reloads an iframe preview and loses its scroll. */
+  it("moves a tab across without moving its file in the page", async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    await screen.findByRole("tab", { name: /notes\.md/ });
+    const removed: Node[] = [];
+    const observer = new MutationObserver((records) =>
+      records.forEach((r) => removed.push(...r.removedNodes)),
+    );
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    fireEvent.contextMenu(screen.getByRole("tab", { name: /main\.ts/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Move to the side" }));
+    await waitFor(() => expect(document.querySelectorAll("[data-tab-row]")).toHaveLength(2));
+    observer.disconnect();
+
+    expect(removed.filter((n) => n instanceof Element && n.matches(".file-pane"))).toEqual([]);
+  });
+
+  /** A rename or delete would drop the pane, and the draft in it, without a word. */
+  it.each(["Rename", "Delete"])(
+    "refuses to %s a folder holding a file with unsaved changes",
+    async (action) => {
+      renderPanel();
+      await enterEditMode();
+      typeDraft("edited");
+      fireEvent.contextMenu(await screen.findByRole("button", { name: /^src/ }));
+      await userEvent.click(await screen.findByRole("menuitem", { name: action }));
+
+      expect(toast.error).toHaveBeenCalledWith("Save or discard the changes to main.ts first.");
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(screen.getByTestId("editor")).toHaveValue("edited");
+    },
+  );
+
+  async function splitNotes() {
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: /notes\.md/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Move to the side" }));
+    return screen.findByRole("separator", { name: "Resize the sides" });
+  }
+
+  it("keeps each side at least 240px wide, even when the panel narrows after a drag", async () => {
+    renderPanel();
+    const divider = await splitNotes();
+    resizeFilesGrid(1200);
+    for (let i = 0; i < 12; i++) fireEvent.keyDown(divider, { key: "ArrowRight" });
+    expect(divider).toHaveAttribute("aria-valuenow", "80");
+    expect(divider).toHaveAttribute("aria-valuemax", "80");
+
+    resizeFilesGrid(600);
+
+    expect(divider).toHaveAttribute("aria-valuenow", "60");
+    expect(divider).toHaveAttribute("aria-valuemin", "40");
+    expect(divider).toHaveAttribute("aria-valuemax", "60");
+  });
+
+  it("opens a new split evenly, whatever the last one was dragged to", async () => {
+    renderPanel();
+    fireEvent.keyDown(await splitNotes(), { key: "ArrowRight" });
+    await userEvent.click(screen.getByRole("button", { name: "Close notes.md" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("separator", { name: "Resize the sides" })).toBeNull(),
+    );
+
+    expect(await splitNotes()).toHaveAttribute("aria-valuenow", "50");
+  });
+
+  it("selects no text while the line between the sides is dragged", async () => {
+    renderPanel();
+    expect(fireEvent.pointerDown(await splitNotes(), { pointerId: 1 })).toBe(false);
+  });
+
+  /** A maximized side panel restored to its column has no room for two sides. */
+  it("joins the sides into one when the room for a split goes", async () => {
+    const client = new QueryClient();
+    const panel = (splitAllowed: boolean) => (
+      <QueryClientProvider client={client}>
+        <WorkspaceFilesPanel
+          workspacePath={WORKSPACE}
+          connection={CONNECTION}
+          openRequest={FIRST}
+          splitAllowed={splitAllowed}
+        />
+      </QueryClientProvider>
+    );
+    const FIRST = request("src/main.ts");
+    const { rerender } = render(panel(true));
+    await splitNotes();
+
+    rerender(panel(false));
+
+    await waitFor(() => expect(document.querySelectorAll("[data-tab-row]")).toHaveLength(1));
+    expect(tabNames()).toEqual(["main.ts", "notes.md"]);
+  });
+
+  it("offers no split where the panel has no room for one", async () => {
+    renderPanel({ splitAllowed: false });
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: /notes\.md/ }));
+
+    expect(await screen.findByRole("menuitem", { name: "Move to the side" })).toHaveAttribute(
+      "data-disabled",
+    );
   });
 });

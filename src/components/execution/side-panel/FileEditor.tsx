@@ -120,6 +120,8 @@ interface FileEditorProps {
   onScrollerChange?: (element: HTMLElement | null) => void;
   /** Lines to scroll to and flash, once per file, as soon as the document is long enough to have them. */
   revealLines?: LineRange;
+  /** Changed to flash `revealLines` again, for a link to the same lines followed a second time. */
+  revealKey?: number;
 }
 
 export function FileEditor({
@@ -131,6 +133,7 @@ export function FileEditor({
   onSave,
   onScrollerChange,
   revealLines,
+  revealKey,
 }: FileEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -277,7 +280,7 @@ export function FileEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view || !revealFrom || !revealTo) return;
-    const key = `${revealFrom}-${revealTo}`;
+    const key = `${revealKey}:${revealFrom}-${revealTo}`;
     const revealed = revealedRef.current;
     if ((revealed?.view === view && revealed.key === key) || revealFrom > view.state.doc.lines) {
       return;
@@ -296,7 +299,7 @@ export function FileEditor({
     window.setTimeout(() => {
       if (viewRef.current === view) view.dispatch({ effects: setFlash.of(null) });
     }, FLASH_MS);
-  }, [revealFrom, revealTo, doc]);
+  }, [revealFrom, revealTo, revealKey, doc]);
 
   return <div ref={hostRef} className="flex-1 min-h-0 overflow-hidden [&_.cm-editor]:h-full" />;
 }

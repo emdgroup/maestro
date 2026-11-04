@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -109,5 +110,30 @@ describe("ReviewLayout with a host-rendered panel", () => {
     );
     await userEvent.keyboard("{Escape}");
     expect(setPanelOpen).toHaveBeenCalledWith(false);
+  });
+});
+
+// What the layout holds — a diff's scroll, the Files tab's unsaved drafts — lives in its children,
+// so moving the panel between its arrangements must not remount them.
+describe("ReviewLayout keeping what it holds", () => {
+  it("keeps its children mounted as the panel opens, closes and moves between arrangements", () => {
+    let mounts = 0;
+    function Held() {
+      useEffect(() => {
+        mounts += 1;
+      }, []);
+      return <div>diff</div>;
+    }
+    const at = (overrides: Partial<ReviewPanelState>) => (
+      <ReviewLayout panel={panelState(overrides)} files={FILES}>
+        <Held />
+      </ReviewLayout>
+    );
+    const { rerender } = render(at({ layout: "fixed", inset: true }));
+    rerender(at({ layout: "fixed", inset: false, panelOpen: false }));
+    rerender(at({ layout: "overlay", inset: false, panelOpen: true }));
+    rerender(at({ layout: "fixed", inset: true }));
+
+    expect(mounts).toBe(1);
   });
 });

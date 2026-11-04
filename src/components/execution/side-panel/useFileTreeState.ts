@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   useCreateFile,
   useCreateDirectory,
@@ -7,7 +8,7 @@ import {
   useListDirContents,
   useInvalidateFileBrowser,
 } from "@/services/connection.service";
-import { isAbsolutePath } from "@/lib/path-utils";
+import { basename, isAbsolutePath } from "@/lib/path-utils";
 import { folderLabel } from "./file-edit-utils";
 import type { FileTreeAction, FileTreeTarget } from "./LazyFileTree";
 import type { ConnectionKey } from "@/types/bindings";
@@ -15,6 +16,31 @@ import type { ConnectionKey } from "@/types/bindings";
 export type NameDialogState =
   | { kind: "new-file" | "new-folder"; parentAbsolutePath: string; siblings: string[] }
   | { kind: "rename"; target: FileTreeTarget };
+
+/** What the name dialog says for `dialog`, and the names a new one may not take. */
+export function nameDialogCopy(dialog: NameDialogState | null, workspacePath: string) {
+  if (dialog?.kind === "rename") {
+    const { name, siblings } = dialog.target;
+    return {
+      title: "Rename",
+      description: `Rename “${name}”.`,
+      confirmLabel: "Rename",
+      initialName: name,
+      // Its own name is not a collision: typing a change and undoing it must not leave the dialog
+      // stuck reporting that the file already exists.
+      siblings: siblings.filter((s) => s !== name),
+    };
+  }
+  return {
+    title: dialog?.kind === "new-folder" ? "New folder" : "New file",
+    // Naming the destination is the whole point: the header's buttons act on the highlighted
+    // folder, and "somewhere" is not something a user can verify.
+    description: `Created in ${folderLabel(dialog?.parentAbsolutePath ?? workspacePath, workspacePath)}.`,
+    confirmLabel: "Create",
+    initialName: "",
+    siblings: dialog?.siblings ?? [],
+  };
+}
 
 /**
  * Absolute path of the folder holding `relativePath`, or `null` for the workspace root — which is
@@ -34,43 +60,55 @@ interface UseFileTreeStateOptions {
   panelOpen: boolean;
   /** Whether this tab is the visible one. */
   isActive: boolean;
-  initialPath?: string;
+  /** The file on screen, relative to the workspace, which the tree highlights. */
+  selected: string | null;
+  /** Open files with unsaved changes, relative to the workspace: renaming or deleting one waits. */
+  dirty: ReadonlySet<string>;
+  /** Opens a file the user just created. */
+  onOpen: (relativePath: string) => void;
+  /** Follows a rename of a file or folder, both relative to the workspace. */
+  onRenamed: (from: string, to: string) => void;
+  /** Lets go of a deleted file or folder, relative to the workspace. */
+  onDeleted: (relativePath: string) => void;
 }
 
 /**
  * What the tree is showing, and everything that changes its shape.
  *
- * Selection, expansion and the create/rename/delete operations are one unit because they all speak
- * absolute paths against `workspacePath` and all have to keep `selected` pointing somewhere real —
- * a rename follows the open file, a delete clears it.
+ * Expansion and the create/rename/delete operations are one unit because they all speak absolute
+ * paths against `workspacePath`. Which files are open is the panel's: a rename or a delete is
+ * reported back so the tabs can follow it.
  */
 export function useFileTreeState({
   connection,
   workspacePath,
   panelOpen,
   isActive,
-  initialPath,
+  selected,
+  dirty,
+  onOpen,
+  onRenamed,
+  onDeleted,
 }: UseFileTreeStateOptions) {
   const invalidateFileBrowser = useInvalidateFileBrowser();
-  const [selected, setSelectedPath] = useState<string | null>(initialPath ?? null);
   const [showHidden, setShowHidden] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FileTreeTarget | null>(null);
   /** `null` is the workspace root. Drives the tree highlight and the header's create buttons. */
   const [selectedFolder, setSelectedFolder] = useState<string | null>(() =>
-    initialPath ? folderOf(initialPath, workspacePath) : null,
+    selected ? folderOf(selected, workspacePath) : null,
   );
   const treeRef = useRef<HTMLDivElement>(null);
 
-  /**
-   * A folder is highlighted either because the user picked it or because it holds the open file —
-   * never because it was picked before an unrelated sibling file was opened. So every selection
-   * moves the highlight with it; only clearing the selection leaves it where it was.
-   */
-  function setSelected(relativePath: string | null) {
-    setSelectedPath(relativePath);
-    if (relativePath != null) setSelectedFolder(folderOf(relativePath, workspacePath));
+  // A folder is highlighted either because the user picked it or because it holds the open file —
+  // never because it was picked before an unrelated sibling file was opened. So every selection
+  // moves the highlight with it; only clearing the selection leaves it where it was. Adjusted
+  // during render: this is state following a changed input.
+  const [seenSelected, setSeenSelected] = useState(selected);
+  if (seenSelected !== selected) {
+    setSeenSelected(selected);
+    if (selected != null) setSelectedFolder(folderOf(selected, workspacePath));
   }
 
   const targetFolder = selectedFolder ?? workspacePath;
@@ -119,6 +157,15 @@ export function useFileTreeState({
   }
 
   function handleTreeAction(action: FileTreeAction) {
+    if (action.type === "rename" || action.type === "delete") {
+      // Either one closes the file's tab, and its draft with it.
+      const at = toSelection(action.target.absolutePath);
+      const held = [...dirty].find((p) => p === at || p.startsWith(`${at}/`));
+      if (held) {
+        toast.error(`Save or discard the changes to ${basename(held)} first.`);
+        return;
+      }
+    }
     if (action.type === "delete") setDeleteTarget(action.target);
     else if (action.type === "rename") setNameDialog({ kind: "rename", target: action.target });
     else
@@ -143,16 +190,13 @@ export function useFileTreeState({
         const { target } = nameDialog;
         const to = `${target.parentAbsolutePath}/${name}`;
         await renamePath.mutateAsync({ connection, from: target.absolutePath, to });
-        // Following the rename keeps the open file open rather than blanking the pane. Only the
-        // exact file matters — a renamed ancestor directory is not tracked here.
-        if (selected != null && toSelection(target.absolutePath) === selected) {
-          setSelected(toSelection(to));
-        }
+        // Following the rename keeps the open files open rather than blanking their tabs.
+        onRenamed(toSelection(target.absolutePath), toSelection(to));
       } else {
         const path = `${nameDialog.parentAbsolutePath}/${name}`;
         if (nameDialog.kind === "new-file") {
           await createFile.mutateAsync({ connection, path });
-          setSelected(toSelection(path));
+          onOpen(toSelection(path));
         } else {
           await createDirectory.mutateAsync({ connection, path });
         }
@@ -171,9 +215,7 @@ export function useFileTreeState({
         path: deleteTarget.absolutePath,
         recursive: deleteTarget.isDir,
       });
-      if (selected != null && toSelection(deleteTarget.absolutePath) === selected) {
-        setSelected(null);
-      }
+      onDeleted(toSelection(deleteTarget.absolutePath));
       setDeleteTarget(null);
     } catch {
       // Reported by the mutation's own error handler.
@@ -181,8 +223,6 @@ export function useFileTreeState({
   }
 
   return {
-    selected,
-    setSelected,
     showHidden,
     setShowHidden,
     expandedFolders,

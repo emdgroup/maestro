@@ -467,8 +467,12 @@
 .pr-row:not(.selected):hover::before {
   background: color-mix(in oklab, var(--foreground) 6%, transparent);
 }
-/* The selected pill of a switcher: clear glass over whatever sits behind it. */
-.glass-pill {
+/* The selected pill of a switcher: clear glass over whatever sits behind it. A Files tab's floating
+   actions (FileTabPane) are each a pane of the same glass, with no tray behind them, and keep it on
+   hover, where `home-pane` would otherwise turn them opaque. */
+.glass-pill,
+.file-float .home-pane,
+.file-float .home-pane:hover {
   background: linear-gradient(
     135deg,
     color-mix(in oklab, white 70%, transparent),
@@ -480,7 +484,9 @@
     0 2px 8px color-mix(in oklab, var(--foreground) 8%, transparent);
   backdrop-filter: blur(10px) saturate(160%);
 }
-.dark .glass-pill {
+.dark .glass-pill,
+.dark .file-float .home-pane,
+.dark .file-float .home-pane:hover {
   background: linear-gradient(
     135deg,
     color-mix(in oklab, white 14%, transparent),
@@ -722,6 +728,22 @@
   45% {
     background-color: color-mix(in oklab, var(--accent) 28%, transparent);
   }
+}
+
+/* A Files tab's own actions, floating over the file's corner (FileTabPane): gone until the pointer
+   is over the file, faint until it is over them, so they cover as little of the text as they can.
+   Keyboard focus shows them in full. Plain CSS because the three states have to outrank each other
+   in this order, which variant order in a class list does not promise. */
+.file-float {
+  opacity: 0;
+  transition: opacity 150ms;
+}
+.file-pane:hover .file-float {
+  opacity: 0.28;
+}
+.file-pane .file-float:hover,
+.file-pane .file-float:focus-within {
+  opacity: 1;
 }
 
 @keyframes blink {

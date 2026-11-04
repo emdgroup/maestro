@@ -50,6 +50,11 @@ interface ReviewLayoutProps {
   renderPanel?: (options: { onDismiss?: () => void }) => React.ReactNode;
   /** The card stack. Seated on the inset surface when the panel is beside it. */
   children: React.ReactNode;
+  /**
+   * Draw `children` as they are, for a host that seats its own surfaces: the Files tab puts a row of
+   * tabs above each of its sides, outside the glass.
+   */
+  plain?: boolean;
 }
 
 /**
@@ -67,7 +72,7 @@ interface ReviewLayoutProps {
  * tree rather than a list of changed files, which is what `renderPanel` is for. Everything else —
  * which arrangement, how wide, how the overlay is dismissed — it shares with the other three.
  */
-export function ReviewLayout({ panel, files, renderPanel, children }: ReviewLayoutProps) {
+export function ReviewLayout({ panel, files, renderPanel, children, plain }: ReviewLayoutProps) {
   const {
     containerRef,
     inset,
@@ -78,7 +83,9 @@ export function ReviewLayout({ panel, files, renderPanel, children }: ReviewLayo
     commitSidebarWidth,
   } = panel;
 
-  const diffSurface = (
+  const diffSurface = plain ? (
+    <div className="flex flex-col flex-1 min-h-0">{children}</div>
+  ) : (
     <div className={cn("flex flex-col flex-1 min-h-0", inset && "pt-2")}>
       <div
         className={cn(
@@ -93,19 +100,24 @@ export function ReviewLayout({ panel, files, renderPanel, children }: ReviewLayo
     </div>
   );
 
+  // One tree for both arrangements, with the column and its handle the only parts that come and
+  // go: the diff (or the Files tab's open files, drafts and all) sits at the same place in it either
+  // way, so moving the panel never remounts it. Swapping a panel group for a plain wrapper did, and
+  // took every unsaved draft with it.
   return (
     <div ref={containerRef} className="relative flex flex-1 min-h-0">
-      {inset ? (
-        <ResizablePanelGroup
-          orientation="horizontal"
-          className="flex-1 min-h-0"
-          // Only once the pointer is released. Adopting the width on every drag frame would change
-          // `defaultSize` mid-drag, and the panel re-registers when that happens.
-          onLayoutChanged={(_layout, meta) => {
-            if (meta.isUserInteraction) commitSidebarWidth();
-          }}
-        >
+      <ResizablePanelGroup
+        orientation="horizontal"
+        className="flex-1 min-h-0"
+        // Only once the pointer is released. Adopting the width on every drag frame would change
+        // `defaultSize` mid-drag, and the panel re-registers when that happens.
+        onLayoutChanged={(_layout, meta) => {
+          if (meta.isUserInteraction) commitSidebarWidth();
+        }}
+      >
+        {inset && (
           <ResizablePanel
+            id="review-panel"
             defaultSize={sidebarWidth}
             minSize={SIDEBAR_MIN_WIDTH}
             maxSize={SIDEBAR_MAX_WIDTH}
@@ -114,32 +126,38 @@ export function ReviewLayout({ panel, files, renderPanel, children }: ReviewLayo
           >
             {renderPanel ? renderPanel({}) : files && <ReviewFilePanel {...files} />}
           </ResizablePanel>
-          {/* No bar of its own: the diff surface's left border is already the line between the
-              two, and the handle runs the full height, so a hover tint on it painted a stripe past
-              the rounded corner. The grip lights up instead. */}
+        )}
+        {/* No bar of its own: the diff surface's left border is already the line between the
+            two, and the handle runs the full height, so a hover tint on it painted a stripe past
+            the rounded corner. The grip lights up instead. */}
+        {inset && (
           <ResizableHandle
             withHandle
             className="bg-transparent hover:bg-transparent hover:[&>div]:bg-accent"
           />
-          <ResizablePanel className="flex flex-col min-w-0 min-h-0">{diffSurface}</ResizablePanel>
-        </ResizablePanelGroup>
-      ) : (
-        <>
+        )}
+        <ResizablePanel id="review-main" className="flex flex-col min-w-0 min-h-0">
           {/* Hidden, not unmounted, under the floating panel: the panel is see-through, and the
               diff keeps its scroll position for when the panel closes. */}
-          <div className={cn("flex-1 flex flex-col min-w-0", panelOpen && "invisible")}>
+          <div
+            className={cn(
+              "flex-1 flex flex-col min-w-0 min-h-0",
+              !inset && panelOpen && "invisible",
+            )}
+          >
             {diffSurface}
           </div>
-          {panelOpen &&
-            (renderPanel ? (
-              <ReviewPanelOverlayShell onDismiss={() => setPanelOpen(false)}>
-                {renderPanel({ onDismiss: () => setPanelOpen(false) })}
-              </ReviewPanelOverlayShell>
-            ) : (
-              files && <ReviewFilePanelOverlay {...files} onDismiss={() => setPanelOpen(false)} />
-            ))}
-        </>
-      )}
+        </ResizablePanel>
+      </ResizablePanelGroup>
+      {!inset &&
+        panelOpen &&
+        (renderPanel ? (
+          <ReviewPanelOverlayShell onDismiss={() => setPanelOpen(false)}>
+            {renderPanel({ onDismiss: () => setPanelOpen(false) })}
+          </ReviewPanelOverlayShell>
+        ) : (
+          files && <ReviewFilePanelOverlay {...files} onDismiss={() => setPanelOpen(false)} />
+        ))}
     </div>
   );
 }

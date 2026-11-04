@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { CanvasSurface } from "@/components/execution/activity/types";
 import type { LineRange } from "@/lib/path-utils";
+import type { FileOpenRequest } from "./file-tabs";
 
 export type TabKind =
   | "overview"
@@ -17,9 +18,8 @@ export interface SidePanelTab {
   kind: TabKind;
   label: string;
   closeable: boolean;
-  initialPath?: string;
-  /** Lines of `initialPath` to scroll to and flash, from a `#L42` or `#L42-L50` link. */
-  initialLines?: LineRange;
+  /** The Files tab's latest file to open, from a link in the stream. */
+  openRequest?: FileOpenRequest;
   acpTerminalId?: string;
   isAuthTerminal?: boolean;
 }
@@ -46,7 +46,8 @@ function makeTab(kind: TabKind, id?: string): SidePanelTab {
   };
 }
 
-// Singleton kinds use kind as ID — only one instance allowed
+// Singleton kinds use kind as ID — only one instance allowed. Files is one: it holds tabs of its
+// own, so a second file is a tab in there rather than another Files tab here.
 const SINGLETONS = new Set<TabKind>([
   "overview",
   "plan",
@@ -54,6 +55,7 @@ const SINGLETONS = new Set<TabKind>([
   "canvas",
   "review",
   "artifacts",
+  "files",
 ]);
 
 export interface UseSidePanelTabsResult {
@@ -61,11 +63,8 @@ export interface UseSidePanelTabsResult {
   activeTabId: string;
   setActiveTabId: (id: string) => void;
   closeTab: (id: string) => void;
-  addDynamicTab: (
-    kind: "terminal" | "files",
-    initialPath?: string,
-    initialLines?: LineRange,
-  ) => string;
+  /** Opens a file in the Files tab, which opens too, and flashes `lines` in it. */
+  openFile: (path: string, lines?: LineRange) => void;
   openTabKind: (kind: TabKind) => void;
   openAcpTerminalTab: (terminalId: string, opts?: { isAuthTerminal?: boolean }) => void;
   latestCanvasSurfaceId: string | null;
@@ -203,16 +202,16 @@ export function useSidePanelTabs({
     [markTabSeen],
   );
 
-  const addDynamicTab = useCallback(
-    (kind: "terminal" | "files", initialPath?: string, initialLines?: LineRange): string => {
-      counterRef.current += 1;
-      const id = `${kind}-${counterRef.current}`;
-      setTabs((prev) => [...prev, { ...makeTab(kind, id), initialPath, initialLines }]);
-      setActiveTabId(id);
-      return id;
-    },
-    [],
-  );
+  const openFile = useCallback((path: string, lines?: LineRange) => {
+    counterRef.current += 1;
+    const openRequest = { path, lines, nonce: counterRef.current };
+    setTabs((prev) =>
+      prev.some((t) => t.id === "files")
+        ? prev.map((t) => (t.id === "files" ? { ...t, openRequest } : t))
+        : [...prev, { ...makeTab("files"), openRequest }],
+    );
+    setActiveTabId("files");
+  }, []);
 
   const openAcpTerminalTab = useCallback(
     (terminalId: string, opts?: { isAuthTerminal?: boolean }) => {
@@ -238,27 +237,27 @@ export function useSidePanelTabs({
     [markUnseen],
   );
 
-  const openTabKind = useCallback(
-    (kind: TabKind) => {
-      if (SINGLETONS.has(kind)) {
-        setTabs((prev) => {
-          if (prev.some((t) => t.id === kind)) return prev;
-          return [...prev, makeTab(kind)];
-        });
-        setActiveTabId(kind);
-      } else {
-        addDynamicTab(kind as "terminal" | "files");
-      }
-    },
-    [addDynamicTab],
-  );
+  const openTabKind = useCallback((kind: TabKind) => {
+    if (SINGLETONS.has(kind)) {
+      setTabs((prev) => {
+        if (prev.some((t) => t.id === kind)) return prev;
+        return [...prev, makeTab(kind)];
+      });
+      setActiveTabId(kind);
+    } else {
+      counterRef.current += 1;
+      const id = `${kind}-${counterRef.current}`;
+      setTabs((prev) => [...prev, makeTab(kind, id)]);
+      setActiveTabId(id);
+    }
+  }, []);
 
   return {
     tabs,
     activeTabId,
     setActiveTabId,
     closeTab,
-    addDynamicTab,
+    openFile,
     openTabKind,
     openAcpTerminalTab,
     latestCanvasSurfaceId,
