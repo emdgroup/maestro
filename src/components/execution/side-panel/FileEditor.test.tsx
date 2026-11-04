@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -35,16 +36,20 @@ describe("FileEditor", () => {
   it("puts the cursor on the line a link asked for and flashes the range", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const doc = Array.from({ length: 50 }, (_, i) => `line ${i + 1}`).join("\n");
+    // StrictMode, as the app runs: it builds the view twice, and the reveal has to land on the one
+    // that stays.
     const { container } = render(
-      <FileEditor
-        doc={doc}
-        docEpoch={0}
-        fileName="a.ts"
-        readOnly
-        revealLines={{ from: 30, to: 32 }}
-        onChange={() => {}}
-        onSave={() => {}}
-      />,
+      <StrictMode>
+        <FileEditor
+          doc={doc}
+          docEpoch={0}
+          fileName="a.ts"
+          readOnly
+          revealLines={{ from: 30, to: 32 }}
+          onChange={() => {}}
+          onSave={() => {}}
+        />
+      </StrictMode>,
     );
     await waitFor(() => expect(container.querySelector(".cm-editor")).not.toBeNull());
     const view = EditorView.findFromDOM(container.querySelector(".cm-editor") as HTMLElement)!;

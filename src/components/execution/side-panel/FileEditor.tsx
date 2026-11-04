@@ -267,17 +267,22 @@ export function FileEditor({
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
   }, [doc, docEpoch, readOnly]);
 
-  // After the effect above, so it sees the document that just landed. Keyed by file and line so the
-  // panel's poll does not yank the view back after the user has scrolled away.
-  const revealedRef = useRef<string | null>(null);
+  // After the effect above, so it sees the document that just landed. Once per view and range, so
+  // the panel's poll does not yank the view back after the user has scrolled away. Per view, not
+  // per component: StrictMode builds the view twice, and a guard that outlived the first one
+  // skipped the second, which is the one on screen.
+  const revealedRef = useRef<{ view: EditorView; key: string } | null>(null);
   const revealFrom = revealLines?.from;
   const revealTo = revealLines?.to;
   useEffect(() => {
     const view = viewRef.current;
     if (!view || !revealFrom || !revealTo) return;
-    const key = `${fileName}:${revealFrom}-${revealTo}`;
-    if (revealedRef.current === key || revealFrom > view.state.doc.lines) return;
-    revealedRef.current = key;
+    const key = `${revealFrom}-${revealTo}`;
+    const revealed = revealedRef.current;
+    if ((revealed?.view === view && revealed.key === key) || revealFrom > view.state.doc.lines) {
+      return;
+    }
+    revealedRef.current = { view, key };
     const pos = view.state.doc.line(revealFrom).from;
     view.dispatch({
       selection: { anchor: pos },
@@ -291,7 +296,7 @@ export function FileEditor({
     window.setTimeout(() => {
       if (viewRef.current === view) view.dispatch({ effects: setFlash.of(null) });
     }, FLASH_MS);
-  }, [revealFrom, revealTo, fileName, doc]);
+  }, [revealFrom, revealTo, doc]);
 
   return <div ref={hostRef} className="flex-1 min-h-0 overflow-hidden [&_.cm-editor]:h-full" />;
 }
