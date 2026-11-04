@@ -3,12 +3,6 @@ import { readFile, useWriteFile } from "@/services/connection.service";
 import { decideSave } from "./file-edit-utils";
 import type { ConnectionKey } from "@/types/bindings";
 
-/**
- * Why the user is being asked before losing a draft: they tried to leave edit mode, or to open
- * another file. The second carries where they were going, so confirming can still go there.
- */
-export type DiscardPrompt = { reason: "leave" } | { reason: "select"; next: string } | null;
-
 interface UseFileDraftOptions {
   connection: ConnectionKey;
   /** Absolute path of the open file, or `null` when nothing is open. */
@@ -37,7 +31,8 @@ export function useFileDraft({ connection, fullPath, onDirtyChange }: UseFileDra
   const [saveError, setSaveError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<{ onDisk: string } | null>(null);
   const [saving, setSaving] = useState(false);
-  const [discardPrompt, setDiscardPrompt] = useState<DiscardPrompt>(null);
+  /** The user tried to leave edit mode with unsaved changes and is being asked first. */
+  const [discardPrompt, setDiscardPrompt] = useState(false);
 
   const writeFile = useWriteFile();
   const isDirty = mode === "edit" && draft !== baseline;
@@ -78,7 +73,7 @@ export function useFileDraft({ connection, fullPath, onDirtyChange }: UseFileDra
    */
   function leaveEdit(): boolean {
     if (isDirty) {
-      setDiscardPrompt({ reason: "leave" });
+      setDiscardPrompt(true);
       return false;
     }
     setMode("view");
@@ -86,12 +81,9 @@ export function useFileDraft({ connection, fullPath, onDirtyChange }: UseFileDra
     return true;
   }
 
-  /**
-   * Leaves edit mode without saving. The caller decides what to do next — the "select" prompt
-   * carries a file to open once the draft is gone.
-   */
+  /** Leaves edit mode without saving. */
   function discardDraft() {
-    setDiscardPrompt(null);
+    setDiscardPrompt(false);
     setMode("view");
     setSaveError(null);
   }
@@ -103,11 +95,13 @@ export function useFileDraft({ connection, fullPath, onDirtyChange }: UseFileDra
     setSaveError(null);
   }
 
-  async function handleSave() {
+  /** Resolves to whether the draft is now on disk; a conflict or a failed write leaves it unsaved. */
+  async function handleSave(): Promise<boolean> {
     // `disabled` on a base-ui `TooltipTrigger` becomes `data-trigger-disabled`, not the DOM
     // attribute, so the button stays clickable and the guard has to live here. Saving a clean
     // buffer would otherwise raise a conflict dialog over an edit the user never made.
-    if (!fullPath || saving || !isDirty) return;
+    if (!fullPath || saving) return false;
+    if (!isDirty) return true;
     setSaving(true);
     setSaveError(null);
     try {
@@ -117,11 +111,14 @@ export function useFileDraft({ connection, fullPath, onDirtyChange }: UseFileDra
         setBaseline(draft);
       } else if (decision.kind === "conflict") {
         setConflict({ onDisk });
+        return false;
       } else {
         await commit(draft);
       }
+      return true;
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
+      return false;
     } finally {
       setSaving(false);
     }

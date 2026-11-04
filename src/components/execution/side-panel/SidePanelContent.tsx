@@ -52,6 +52,8 @@ interface SidePanelContentProps {
   onTabDirtyChange?: (tabId: string, dirty: boolean) => void;
   /** Reports the file a Files tab has open, so the tab can name it on hover. */
   onTabFileChange?: (tabId: string, path: string | null) => void;
+  /** The panel fills the session, which is the only room the Files tab has for a split. */
+  maximized?: boolean;
 }
 
 export function SidePanelContent({
@@ -59,6 +61,7 @@ export function SidePanelContent({
   activeTabId,
   onTabDirtyChange,
   onTabFileChange,
+  maximized = false,
 }: SidePanelContentProps) {
   const {
     isSessionActive,
@@ -300,7 +303,7 @@ export function SidePanelContent({
 
   return (
     <>
-      {tabs.map(({ id, kind, initialPath, initialLines, acpTerminalId, isAuthTerminal }) => {
+      {tabs.map(({ id, kind, openRequest, acpTerminalId, isAuthTerminal }) => {
         const isActive = isSessionActive && activeTabId === id;
         const ptyEntry = kind === "terminal" && !acpTerminalId ? ptyState.get(id) : undefined;
         return (
@@ -597,8 +600,8 @@ export function SidePanelContent({
                 connection={connection}
                 wslDistroName={wslDistroName}
                 isActive={isActive}
-                initialPath={initialPath}
-                initialLines={initialLines}
+                openRequest={openRequest}
+                splitAllowed={maximized}
                 isProcessing={isProcessing}
                 onDirtyChange={(dirty) => onTabDirtyChange?.(id, dirty)}
                 onSelectedChange={(path) => onTabFileChange?.(id, path)}

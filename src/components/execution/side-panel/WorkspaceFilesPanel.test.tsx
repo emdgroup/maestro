@@ -1,6 +1,6 @@
 import { cloneElement, useEffect, type ReactElement, type ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ConnectionKey } from "@/types/bindings";
@@ -155,6 +155,12 @@ import { WorkspaceFilesPanel } from "./WorkspaceFilesPanel";
 const CONNECTION = { type: "local" } as unknown as ConnectionKey;
 const WORKSPACE = "/work/repo";
 
+let nonce = 0;
+function request(path: string, lines?: { from: number; to: number }) {
+  nonce += 1;
+  return { path, lines, nonce };
+}
+
 function renderPanel(props: Partial<Parameters<typeof WorkspaceFilesPanel>[0]> = {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
@@ -164,7 +170,7 @@ function renderPanel(props: Partial<Parameters<typeof WorkspaceFilesPanel>[0]> =
       <WorkspaceFilesPanel
         workspacePath={WORKSPACE}
         connection={CONNECTION}
-        initialPath="src/main.ts"
+        openRequest={request("src/main.ts")}
         {...props}
       />
     </QueryClientProvider>,
@@ -230,7 +236,7 @@ describe("WorkspaceFilesPanel edit mode", () => {
    * would open empty and its save would truncate the real file.
    */
   it("offers no editing for a binary file", async () => {
-    renderPanel({ initialPath: "docs/diagram.png" });
+    renderPanel({ openRequest: request("docs/diagram.png") });
     await waitFor(() => expect(screen.getByTestId("read-view")).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
   });
@@ -435,7 +441,7 @@ describe("WorkspaceFilesPanel create destination", () => {
   });
 
   it("names the workspace root as the destination before any folder is picked", async () => {
-    renderPanel({ initialPath: undefined });
+    renderPanel({ openRequest: undefined });
 
     expect(
       await screen.findByRole("button", { name: "New file in the workspace root" }),
@@ -443,14 +449,14 @@ describe("WorkspaceFilesPanel create destination", () => {
   });
 
   it("retargets the create buttons at a folder once it is clicked", async () => {
-    renderPanel({ initialPath: undefined });
+    renderPanel({ openRequest: undefined });
     await userEvent.click(await screen.findByRole("button", { name: /src/ }));
 
     expect(await screen.findByRole("button", { name: "New file in src" })).toBeInTheDocument();
   });
 
   it("spells out the destination in the create dialog", async () => {
-    renderPanel({ initialPath: undefined });
+    renderPanel({ openRequest: undefined });
     await userEvent.click(await screen.findByRole("button", { name: /src/ }));
     await userEvent.click(await screen.findByRole("button", { name: "New file in src" }));
 
@@ -462,7 +468,7 @@ describe("WorkspaceFilesPanel create destination", () => {
    * while a file elsewhere was open. Opening a file moves the highlight to its own parent.
    */
   it("moves the highlight to the parent of the file that is opened", async () => {
-    renderPanel({ initialPath: undefined });
+    renderPanel({ openRequest: undefined });
     await userEvent.click(await screen.findByRole("button", { name: /src/ }));
     expect(await screen.findByRole("button", { name: "New file in src" })).toBeInTheDocument();
 
@@ -475,7 +481,7 @@ describe("WorkspaceFilesPanel create destination", () => {
 
   it("creates in the highlighted folder, not the root", async () => {
     createFileAt.mockResolvedValue(null);
-    renderPanel({ initialPath: undefined });
+    renderPanel({ openRequest: undefined });
     await userEvent.click(await screen.findByRole("button", { name: /src/ }));
     await userEvent.click(await screen.findByRole("button", { name: "New file in src" }));
 
@@ -491,7 +497,7 @@ describe("WorkspaceFilesPanel create destination", () => {
 
 describe("WorkspaceFilesPanel markdown preview", () => {
   async function enterMarkdownEdit() {
-    renderPanel({ initialPath: "README.md" });
+    renderPanel({ openRequest: request("README.md") });
     await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("original"));
     await userEvent.click(screen.getByRole("button", { name: "Edit" }));
     await waitFor(() => expect(screen.getByTestId("editor")).toBeInTheDocument());
@@ -505,7 +511,7 @@ describe("WorkspaceFilesPanel markdown preview", () => {
   });
 
   it("offers no layout toggle for a file that is not markdown", async () => {
-    renderPanel({ initialPath: "src/main.ts" });
+    renderPanel({ openRequest: request("src/main.ts") });
     await enterEditMode();
 
     expect(screen.queryByRole("button", { name: "Preview only" })).toBeNull();
@@ -659,7 +665,7 @@ describe("WorkspaceFilesPanel markdown preview", () => {
 
 describe("WorkspaceFilesPanel html preview", () => {
   async function enterHtmlEdit() {
-    renderPanel({ initialPath: "index.html" });
+    renderPanel({ openRequest: request("index.html") });
     await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("original"));
     await userEvent.click(screen.getByRole("button", { name: "Edit" }));
     await waitFor(() => expect(screen.getByTestId("editor")).toBeInTheDocument());
@@ -667,7 +673,7 @@ describe("WorkspaceFilesPanel html preview", () => {
 
   /** The point of the feature: opening a page shows the page, not its source. */
   it("shows the rendered page rather than the source when not editing", async () => {
-    renderPanel({ initialPath: "index.html" });
+    renderPanel({ openRequest: request("index.html") });
 
     await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("original"));
     expect(screen.queryByTestId("editor")).toBeNull();
@@ -791,11 +797,122 @@ describe("WorkspaceFilesPanel unsaved-work guards", () => {
   });
 });
 
-describe("WorkspaceFilesPanel header", () => {
-  it("copies the absolute path when the file name is clicked", async () => {
+describe("WorkspaceFilesPanel tabs", () => {
+  beforeEach(() => {
+    listContents.mockImplementation((_conn: unknown, path: string) =>
+      Promise.resolve(
+        path === WORKSPACE
+          ? [
+              { name: "src", is_dir: true },
+              { name: "notes.md", is_dir: false },
+            ]
+          : [{ name: "main.ts", is_dir: false }],
+      ),
+    );
+  });
+
+  function tabNames() {
+    return screen.getAllByRole("tab").map((t) => t.textContent);
+  }
+
+  it("copies the absolute path from the tab's menu", async () => {
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
     renderPanel();
-    await userEvent.click(await screen.findByRole("button", { name: "main.ts" }));
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: /main\.ts/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Copy path" }));
     expect(writeText).toHaveBeenCalledWith("/work/repo/src/main.ts");
+  });
+
+  it("opens a file from the tree in a tab of its own, beside the one already open", async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    await waitFor(() => expect(tabNames()).toEqual(["main.ts", "notes.md"]));
+    expect(screen.getByRole("tab", { name: /notes\.md/ })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("focuses a file that is already open rather than opening it twice", async () => {
+    const { rerender } = renderPanel();
+    await screen.findByRole("tab", { name: /main\.ts/ });
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    await screen.findByRole("tab", { name: /notes\.md/ });
+
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <WorkspaceFilesPanel
+          workspacePath={WORKSPACE}
+          connection={CONNECTION}
+          openRequest={request("src/main.ts", { from: 2, to: 3 })}
+        />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /main\.ts/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
+    expect(tabNames()).toEqual(["main.ts", "notes.md"]);
+  });
+
+  /** Each tab keeps its own pane mounted, so switching away and back loses nothing. */
+  it("keeps a draft across a switch to another tab and back", async () => {
+    renderPanel();
+    await enterEditMode();
+    typeDraft("edited");
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    await screen.findByRole("tab", { name: /notes\.md/ });
+
+    await userEvent.click(screen.getByRole("tab", { name: /main\.ts/ }));
+
+    expect(screen.getByTestId("editor")).toHaveValue("edited");
+  });
+
+  it("asks before closing a tab with unsaved changes, and saves when asked to", async () => {
+    renderPanel();
+    await enterEditMode();
+    typeDraft("edited");
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Close main.ts, which has unsaved changes" }),
+    );
+    expect(await screen.findByText("Save changes to main.ts?")).toBeInTheDocument();
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Save" }),
+    );
+
+    await waitFor(() =>
+      expect(writeFile).toHaveBeenCalledWith(CONNECTION, `${WORKSPACE}/src/main.ts`, "edited"),
+    );
+    await waitFor(() => expect(screen.queryByRole("tab")).toBeNull());
+    expect(screen.getByText("No file open")).toBeInTheDocument();
+  });
+
+  it("closes a clean tab without asking", async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: "Close main.ts" }));
+    await waitFor(() => expect(screen.queryByRole("tab")).toBeNull());
+  });
+
+  it("moves a tab to a second side from its menu, and the split closes with it", async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: /notes\.md/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Move to the side" }));
+
+    await waitFor(() => expect(document.querySelectorAll("[data-tab-row]")).toHaveLength(2));
+
+    await userEvent.click(screen.getByRole("button", { name: "Close notes.md" }));
+    await waitFor(() => expect(document.querySelectorAll("[data-tab-row]")).toHaveLength(1));
+  });
+
+  it("offers no split where the panel has no room for one", async () => {
+    renderPanel({ splitAllowed: false });
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: /notes\.md/ }));
+
+    expect(await screen.findByRole("menuitem", { name: "Move to the side" })).toHaveAttribute(
+      "data-disabled",
+    );
   });
 });

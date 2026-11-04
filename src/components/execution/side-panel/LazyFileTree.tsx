@@ -11,12 +11,18 @@ import {
   FolderPlus,
   Pencil,
   Trash2,
+  Columns2,
 } from "lucide-react";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { cn } from "@/lib/utils";
 import { Reveal } from "@/components/common/Reveal";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from "@/ui/context-menu";
+import {
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+} from "@/ui/context-menu";
 import { useListDirContents, useListWorkspaceFiles } from "@/services/connection.service";
 import { ToolbarButton } from "./ToolbarButton";
 import type { ConnectionKey } from "@/types/bindings";
@@ -61,6 +67,13 @@ interface LazyFileTreeProps {
    */
   selectedFolder?: string | null;
   onSelectFolder?: (absolutePath: string) => void;
+  /** Files with unsaved edits open, marked with a dot. Relative paths, as `selectedFile`. */
+  dirtyFiles?: ReadonlySet<string>;
+  /**
+   * Opens a file on the other side of a split panel. Offered in a file's menu and on Ctrl+Enter;
+   * omit where there is no second side to open on.
+   */
+  onOpenFileToSide?: (relativePath: string) => void;
 }
 
 interface MenuState {
@@ -82,6 +95,8 @@ export function LazyFileTree({
   onRefresh,
   selectedFolder = null,
   onSelectFolder,
+  dirtyFiles,
+  onOpenFileToSide,
 }: LazyFileTreeProps) {
   const [filter, setFilter] = useState("");
   const normalizedFilter = filter.trim().toLowerCase();
@@ -142,7 +157,17 @@ export function LazyFileTree({
           </ToolbarButton>
         )}
       </div>
-      <div className="flex-1 overflow-y-auto px-1.5 py-1">
+      <div
+        className="flex-1 overflow-y-auto px-1.5 py-1"
+        onKeyDown={(e) => {
+          // Ahead of the row's own Enter, which would open the file on this side first.
+          const row = (e.target as HTMLElement).closest<HTMLElement>("[data-file-path]");
+          if (onOpenFileToSide && row && e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            onOpenFileToSide(row.dataset.filePath!);
+          }
+        }}
+      >
         {normalizedFilter ? (
           <FilterResults
             root={root}
@@ -151,6 +176,7 @@ export function LazyFileTree({
             selectedFile={selectedFile}
             onSelectFile={onSelectFile}
             onOpenMenu={openMenu}
+            dirtyFiles={dirtyFiles}
           />
         ) : (
           <DirContents
@@ -166,6 +192,7 @@ export function LazyFileTree({
             onOpenMenu={openMenu}
             selectedFolder={selectedFolder}
             onSelectFolder={onSelectFolder}
+            dirtyFiles={dirtyFiles}
           />
         )}
       </div>
@@ -211,6 +238,32 @@ export function LazyFileTree({
                 <ContextMenuSeparator />
               </>
             )}
+            {menu && !menu.target.isDir && (
+              <>
+                <ContextMenuItem
+                  onClick={() => {
+                    onSelectFile(relativeTo(root, menu.target.absolutePath));
+                    setMenu(null);
+                  }}
+                >
+                  <File className="w-3.5 h-3.5" />
+                  Open
+                </ContextMenuItem>
+                {onOpenFileToSide && (
+                  <ContextMenuItem
+                    onClick={() => {
+                      onOpenFileToSide(relativeTo(root, menu.target.absolutePath));
+                      setMenu(null);
+                    }}
+                  >
+                    <Columns2 className="w-3.5 h-3.5" />
+                    Open to the side
+                    <ContextMenuShortcut>Ctrl+Enter</ContextMenuShortcut>
+                  </ContextMenuItem>
+                )}
+                <ContextMenuSeparator />
+              </>
+            )}
             <ContextMenuItem
               onClick={() => {
                 if (menu) onAction({ type: "rename", target: menu.target });
@@ -234,6 +287,21 @@ export function LazyFileTree({
         </MenuPrimitive.Root>
       )}
     </div>
+  );
+}
+
+/** The tree's rows are absolute below `root`; the panel's selection is relative to it. */
+function relativeTo(root: string, absolutePath: string): string {
+  return absolutePath.startsWith(`${root}/`) ? absolutePath.slice(root.length + 1) : absolutePath;
+}
+
+/** An open file's unsaved edits, at the end of its row as on its tab. */
+function DirtyDot() {
+  return (
+    <span
+      aria-label="Unsaved changes"
+      className="ml-auto size-1.5 shrink-0 rounded-full bg-accent"
+    />
   );
 }
 
@@ -267,6 +335,7 @@ function FilterResults({
   selectedFile,
   onSelectFile,
   onOpenMenu,
+  dirtyFiles,
 }: {
   root: string;
   matches: string[];
@@ -274,6 +343,7 @@ function FilterResults({
   selectedFile: string | null;
   onSelectFile: (relativePath: string) => void;
   onOpenMenu?: (event: React.MouseEvent, target: FileTreeTarget) => void;
+  dirtyFiles?: ReadonlySet<string>;
 }) {
   if (matches.length === 0) {
     return <TreeNotice>No files match “{filter}”</TreeNotice>;
@@ -288,6 +358,7 @@ function FilterResults({
           <Tooltip key={relativePath}>
             <TooltipTrigger
               type="button"
+              data-file-path={relativePath}
               onClick={() => onSelectFile(relativePath)}
               onContextMenu={(e) =>
                 onOpenMenu?.(e, {
@@ -308,6 +379,7 @@ function FilterResults({
             >
               <File className="size-3 shrink-0 text-muted-foreground" />
               <span className="font-mono truncate">{name}</span>
+              {dirtyFiles?.has(relativePath) && <DirtyDot />}
             </TooltipTrigger>
             <TooltipContent>{relativePath}</TooltipContent>
           </Tooltip>
@@ -330,6 +402,7 @@ interface DirContentsProps {
   onOpenMenu?: (event: React.MouseEvent, target: FileTreeTarget) => void;
   selectedFolder?: string | null;
   onSelectFolder?: (absolutePath: string) => void;
+  dirtyFiles?: ReadonlySet<string>;
 }
 
 function DirContents({
@@ -345,6 +418,7 @@ function DirContents({
   onOpenMenu,
   selectedFolder,
   onSelectFolder,
+  dirtyFiles,
 }: DirContentsProps) {
   const { data: entries, isLoading } = useListDirContents(connection, absolutePath, showHidden);
   const siblings = (entries ?? []).map((e) => e.name);
@@ -440,6 +514,7 @@ function DirContents({
                   onOpenMenu={onOpenMenu}
                   selectedFolder={selectedFolder}
                   onSelectFolder={onSelectFolder}
+                  dirtyFiles={dirtyFiles}
                 />
               </Reveal>
             </div>
@@ -451,6 +526,7 @@ function DirContents({
           <button
             key={entry.name}
             type="button"
+            data-file-path={childRelative}
             onClick={() => onSelectFile(childRelative)}
             onContextMenu={(e) =>
               onOpenMenu?.(e, {
@@ -471,6 +547,7 @@ function DirContents({
           >
             <File className="size-3 shrink-0 text-muted-foreground" />
             <span className="font-mono truncate">{entry.name}</span>
+            {dirtyFiles?.has(childRelative) && <DirtyDot />}
           </button>
         );
       })}

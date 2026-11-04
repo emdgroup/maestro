@@ -25,7 +25,7 @@ interface ExecutionSidePanelProps {
   activeTabId: string;
   onTabChange: (id: string) => void;
   onTabClose: (id: string) => void;
-  onAddTab: (kind: "terminal" | "files", initialPath?: string) => string;
+  onAddTab: (kind: "terminal" | "files") => void;
   collapsed: boolean;
   onCollapsedChange: (c: boolean) => void;
   unseenTabIds: ReadonlySet<string>;
@@ -163,6 +163,7 @@ export function ExecutionSidePanel({
                 activeTabId={activeTabId}
                 onTabDirtyChange={handleTabDirtyChange}
                 onTabFileChange={handleTabFileChange}
+                maximized={maximized}
               />
             </div>
           </div>
@@ -179,7 +180,8 @@ export function ExecutionSidePanel({
           <AlertDialogHeader>
             <AlertDialogTitle>Close this tab and discard your edits?</AlertDialogTitle>
             <AlertDialogDescription>
-              This Files tab has changes that have not been written to disk. Closing it loses them.
+              A file open in the Files tab has changes that have not been written to disk. Closing
+              the tab loses them.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

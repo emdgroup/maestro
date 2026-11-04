@@ -50,6 +50,11 @@ interface ReviewLayoutProps {
   renderPanel?: (options: { onDismiss?: () => void }) => React.ReactNode;
   /** The card stack. Seated on the inset surface when the panel is beside it. */
   children: React.ReactNode;
+  /**
+   * Draw `children` as they are, for a host that seats its own surfaces: the Files tab puts a row of
+   * tabs above each of its sides, outside the glass.
+   */
+  plain?: boolean;
 }
 
 /**
@@ -67,7 +72,7 @@ interface ReviewLayoutProps {
  * tree rather than a list of changed files, which is what `renderPanel` is for. Everything else —
  * which arrangement, how wide, how the overlay is dismissed — it shares with the other three.
  */
-export function ReviewLayout({ panel, files, renderPanel, children }: ReviewLayoutProps) {
+export function ReviewLayout({ panel, files, renderPanel, children, plain }: ReviewLayoutProps) {
   const {
     containerRef,
     inset,
@@ -78,7 +83,9 @@ export function ReviewLayout({ panel, files, renderPanel, children }: ReviewLayo
     commitSidebarWidth,
   } = panel;
 
-  const diffSurface = (
+  const diffSurface = plain ? (
+    <div className="flex flex-col flex-1 min-h-0">{children}</div>
+  ) : (
     <div className={cn("flex flex-col flex-1 min-h-0", inset && "pt-2")}>
       <div
         className={cn(

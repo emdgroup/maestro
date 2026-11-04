@@ -724,6 +724,22 @@
   }
 }
 
+/* A Files tab's own actions, floating over the file's corner (FileTabPane): gone until the pointer
+   is over the file, faint until it is over them, so they cover as little of the text as they can.
+   Keyboard focus shows them in full. Plain CSS because the three states have to outrank each other
+   in this order, which variant order in a class list does not promise. */
+.file-float {
+  opacity: 0;
+  transition: opacity 150ms;
+}
+.file-pane:hover .file-float {
+  opacity: 0.28;
+}
+.file-pane .file-float:hover,
+.file-pane .file-float:focus-within {
+  opacity: 1;
+}
+
 @keyframes blink {
   0%,
   100% {

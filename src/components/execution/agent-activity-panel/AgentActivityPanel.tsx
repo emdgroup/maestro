@@ -231,7 +231,7 @@ export function AgentActivityPanel({
     activeTabId,
     setActiveTabId,
     closeTab,
-    addDynamicTab,
+    openFile,
     openTabKind,
     openAcpTerminalTab,
     latestCanvasSurfaceId,
@@ -405,10 +405,10 @@ export function AgentActivityPanel({
       }
       const base = toPosixPath(workspacePath).replace(/\/+$/, "");
       const inWorkspace = base !== "" && abs.toLowerCase().startsWith(`${base.toLowerCase()}/`);
-      addDynamicTab("files", inWorkspace ? abs.slice(base.length + 1) : abs, lines);
+      openFile(inWorkspace ? abs.slice(base.length + 1) : abs, lines);
       setSidePanelCollapsed(false);
     },
-    [addDynamicTab, workspacePath, setSidePanelCollapsed, connection, wslDistroName],
+    [openFile, workspacePath, setSidePanelCollapsed, connection, wslDistroName],
   );
 
   // The output itself is buffered by the session's runtime; this only opens its tab.
@@ -661,7 +661,7 @@ export function AgentActivityPanel({
                 activeTabId={activeTabId}
                 onTabChange={setActiveTabId}
                 onTabClose={closeTab}
-                onAddTab={addDynamicTab}
+                onAddTab={openTabKind}
                 collapsed={sidePanelCollapsed}
                 onCollapsedChange={(v) => setSidePanelCollapsed(v)}
                 unseenTabIds={unseenTabIds}
