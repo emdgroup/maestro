@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   useCreateFile,
   useCreateDirectory,
@@ -7,7 +8,7 @@ import {
   useListDirContents,
   useInvalidateFileBrowser,
 } from "@/services/connection.service";
-import { isAbsolutePath } from "@/lib/path-utils";
+import { basename, isAbsolutePath } from "@/lib/path-utils";
 import { folderLabel } from "./file-edit-utils";
 import type { FileTreeAction, FileTreeTarget } from "./LazyFileTree";
 import type { ConnectionKey } from "@/types/bindings";
@@ -36,6 +37,8 @@ interface UseFileTreeStateOptions {
   isActive: boolean;
   /** The file on screen, relative to the workspace, which the tree highlights. */
   selected: string | null;
+  /** Open files with unsaved changes, relative to the workspace: renaming or deleting one waits. */
+  dirty: ReadonlySet<string>;
   /** Opens a file the user just created. */
   onOpen: (relativePath: string) => void;
   /** Follows a rename of a file or folder, both relative to the workspace. */
@@ -57,6 +60,7 @@ export function useFileTreeState({
   panelOpen,
   isActive,
   selected,
+  dirty,
   onOpen,
   onRenamed,
   onDeleted,
@@ -128,6 +132,15 @@ export function useFileTreeState({
   }
 
   function handleTreeAction(action: FileTreeAction) {
+    if (action.type === "rename" || action.type === "delete") {
+      // Either one closes the file's tab, and its draft with it.
+      const at = toSelection(action.target.absolutePath);
+      const held = [...dirty].find((p) => p === at || p.startsWith(`${at}/`));
+      if (held) {
+        toast.error(`Save or discard the changes to ${basename(held)} first.`);
+        return;
+      }
+    }
     if (action.type === "delete") setDeleteTarget(action.target);
     else if (action.type === "rename") setNameDialog({ kind: "rename", target: action.target });
     else

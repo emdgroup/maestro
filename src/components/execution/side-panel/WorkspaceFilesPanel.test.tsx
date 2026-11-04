@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { toast } from "sonner";
 import type { ConnectionKey } from "@/types/bindings";
 
 const readFile = vi.fn();
@@ -31,6 +32,8 @@ vi.mock("@/lib/tauri-utils", () => ({
     saveSettings: (...a: unknown[]) => saveSettings(...a),
   },
 }));
+
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 vi.mock("@/services/connection.service", async (importOriginal) => ({
   ...(await importOriginal()),
@@ -934,6 +937,23 @@ describe("WorkspaceFilesPanel tabs", () => {
     fireEvent.doubleClick(divider);
     expect(divider).toHaveAttribute("aria-valuenow", "50");
   });
+
+  /** A rename or delete would drop the pane, and the draft in it, without a word. */
+  it.each(["Rename", "Delete"])(
+    "refuses to %s a folder holding a file with unsaved changes",
+    async (action) => {
+      renderPanel();
+      await enterEditMode();
+      typeDraft("edited");
+      fireEvent.contextMenu(await screen.findByRole("button", { name: /^src/ }));
+      await userEvent.click(await screen.findByRole("menuitem", { name: action }));
+
+      expect(toast.error).toHaveBeenCalledWith("Save or discard the changes to main.ts first.");
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(screen.getByTestId("editor")).toHaveValue("edited");
+    },
+  );
 
   it("offers no split where the panel has no room for one", async () => {
     renderPanel({ splitAllowed: false });

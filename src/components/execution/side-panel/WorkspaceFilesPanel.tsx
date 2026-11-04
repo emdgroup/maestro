@@ -187,6 +187,7 @@ export function WorkspaceFilesPanel({
     panelOpen: panel.panelOpen,
     isActive,
     selected,
+    dirty,
     onOpen: (path) => setTabs((s) => openTab(s, path)),
     onRenamed: (from, to) => setTabs((s) => renamePaths(s, from, to)),
     onDeleted: (path) =>
