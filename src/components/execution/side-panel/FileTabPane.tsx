@@ -267,7 +267,7 @@ export function FileTabPane({
     >
       {body}
 
-      <div className="file-float absolute top-2 right-3.5 z-10 flex flex-wrap justify-end items-center gap-0.5 p-0.5 max-w-[calc(100%-1.75rem)] rounded-[14px] border border-foreground/10 bg-background/80 backdrop-blur-md shadow-lg">
+      <div className="file-float absolute top-2 right-3.5 z-10 flex flex-wrap justify-end items-center gap-1 max-w-[calc(100%-1.75rem)]">
         {inEdit ? (
           // The pairing that confused people was a floppy disk beside a tick: the tick reads as
           // "confirm", which is the opposite of what it does on a dirty buffer. An X always means

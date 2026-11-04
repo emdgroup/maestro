@@ -467,8 +467,12 @@
 .pr-row:not(.selected):hover::before {
   background: color-mix(in oklab, var(--foreground) 6%, transparent);
 }
-/* The selected pill of a switcher: clear glass over whatever sits behind it. */
-.glass-pill {
+/* The selected pill of a switcher: clear glass over whatever sits behind it. A Files tab's floating
+   actions (FileTabPane) are each a pane of the same glass, with no tray behind them, and keep it on
+   hover, where `home-pane` would otherwise turn them opaque. */
+.glass-pill,
+.file-float .home-pane,
+.file-float .home-pane:hover {
   background: linear-gradient(
     135deg,
     color-mix(in oklab, white 70%, transparent),
@@ -480,7 +484,9 @@
     0 2px 8px color-mix(in oklab, var(--foreground) 8%, transparent);
   backdrop-filter: blur(10px) saturate(160%);
 }
-.dark .glass-pill {
+.dark .glass-pill,
+.dark .file-float .home-pane,
+.dark .file-float .home-pane:hover {
   background: linear-gradient(
     135deg,
     color-mix(in oklab, white 14%, transparent),
