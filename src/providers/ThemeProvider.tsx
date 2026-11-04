@@ -144,6 +144,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // A choice shows at once and is dropped again once the query carries it, or when its save fails,
   // which is the rollback: the values below fall back to what is stored, and the effects repaint.
   const [pending, setPending] = useState<AppearancePatch>({});
+  // Which save last set each pending key, so a failure only rolls back what it still owns.
+  const saveSeqRef = useRef(0);
+  const pendingOwnerRef = useRef<Partial<Record<keyof AppearancePatch, number>>>({});
   const stored = settingsQuery.data;
   useEffect(() => {
     if (!stored) return;
@@ -251,18 +254,23 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   /**
    * Shows `patch` at once and saves it on top of every other pending choice, so two quick changes
-   * cannot overwrite each other. A failed save drops the patch, which rolls the UI back; the
-   * mutation's own toast reports the error.
+   * cannot overwrite each other. A failed save drops the keys it still owns, which rolls the UI
+   * back; a key a later save has taken over stays, so an older failure cannot undo a newer choice.
+   * The mutation's own toast reports the error.
    */
   async function saveAppearance(patch: AppearancePatch): Promise<void> {
     if (!settings) return;
+    const save = ++saveSeqRef.current;
+    const keys = Object.keys(patch) as (keyof AppearancePatch)[];
+    for (const key of keys) pendingOwnerRef.current[key] = save;
     setPending((current) => ({ ...current, ...patch }));
     try {
       await saveSettings.mutateAsync({ ...settings, ...patch });
     } catch {
+      const owned = keys.filter((key) => pendingOwnerRef.current[key] === save);
       setPending((current) => {
         const next = { ...current };
-        for (const key of Object.keys(patch) as (keyof AppearancePatch)[]) delete next[key];
+        for (const key of owned) delete next[key];
         return next;
       });
     }

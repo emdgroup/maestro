@@ -14,6 +14,7 @@ const setSelectedProject = vi.hoisted(() => vi.fn());
 const toastError = vi.hoisted(() => vi.fn());
 const primeProjectServer = vi.hoisted(() => vi.fn());
 const releaseActiveProjectLock = vi.hoisted(() => vi.fn());
+const getProjectSettings = vi.hoisted(() => vi.fn());
 const eventHandlers = vi.hoisted(() => new Map<string, (event: { payload: unknown }) => void>());
 
 vi.mock("sonner", () => ({ toast: { error: toastError, success: vi.fn() } }));
@@ -26,7 +27,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 vi.mock("@/lib/tauri-utils", () => ({
-  api: { openProject, primeProjectServer, releaseActiveProjectLock },
+  api: { openProject, primeProjectServer, releaseActiveProjectLock, getProjectSettings },
 }));
 
 vi.mock("@/services/project.service", async (importOriginal) => {
@@ -69,6 +70,19 @@ describe("useOpenProject", () => {
     vi.clearAllMocks();
     primeProjectServer.mockResolvedValue(undefined);
     releaseActiveProjectLock.mockResolvedValue(undefined);
+    getProjectSettings.mockResolvedValue({ startup_tab: "kanban" });
+  });
+
+  // The startup tab comes from these settings, and another window may have changed them since
+  // they were cached: the shared query never goes stale on its own.
+  it("reads the project's settings again on every open", async () => {
+    openProject.mockResolvedValue({ id: 7, path: "/work/maestro" });
+    renderHarness();
+    fireEvent.click(screen.getByText("Open maestro"));
+    await waitFor(() => expect(setSelectedProject).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByText("Open maestro"));
+    await waitFor(() => expect(setSelectedProject).toHaveBeenCalledTimes(2));
+    expect(getProjectSettings).toHaveBeenCalledTimes(2);
   });
 
   describe("a project whose board could not be moved to its server", () => {

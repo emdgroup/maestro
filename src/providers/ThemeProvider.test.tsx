@@ -140,4 +140,25 @@ describe("ThemeProvider, saving a setting", () => {
     await act(() => seen.current!.setGlobalAccentColor(145));
     expect(seen.current!.globalAccentHue).toBeNull();
   });
+
+  it("keeps a newer choice when an older save of the same setting fails", async () => {
+    let failFirst: (error: Error) => void = () => {};
+    save.mockImplementationOnce(() => new Promise<void>((_, reject) => (failFirst = reject)));
+    save.mockImplementationOnce(() => new Promise<void>(() => {}));
+    const seen = renderWithContext();
+    await waitFor(() => expect(seen.current).not.toBeNull());
+
+    let first!: Promise<void>;
+    act(() => {
+      first = seen.current!.setUiScale("115");
+    });
+    act(() => {
+      void seen.current!.setUiScale("130");
+    });
+    await act(async () => {
+      failFirst(new Error("disk full"));
+      await first;
+    });
+    expect(seen.current!.uiScale).toBe("130");
+  });
 });

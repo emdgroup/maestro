@@ -126,7 +126,10 @@ export function useOpenProject(options: OpenProjectOptions = {}) {
           }),
         primeProject(projectId),
         // Read before the project shows, so `useProjectStartupTab` opens on its tab at once.
-        queryClient.prefetchQuery(projectSettingsOptions(project.id)),
+        // Fresh on every open: the settings may have changed in another window since they were
+        // cached, and the shared query never goes stale on its own. A prefetch, so a failed read
+        // still opens the project.
+        queryClient.prefetchQuery({ ...projectSettingsOptions(project.id), staleTime: 0 }),
       ]);
       const show = () => setSelectedProject(project, isGitRepo);
       await (options.switchTo ? options.switchTo(project, show) : show());
