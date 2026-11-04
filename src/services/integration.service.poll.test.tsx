@@ -246,6 +246,7 @@ describe("usePullRequestPoll on the board", () => {
       initialProps: { onBoard: false },
     });
     await settle();
+    await vi.advanceTimersByTimeAsync(5_000);
     reconcilePullRequests.mockClear();
 
     rerender({ onBoard: true });
@@ -260,6 +261,7 @@ describe("usePullRequestPoll on the board", () => {
   it("sweeps at once when the window comes back to the board", async () => {
     renderHook(() => usePullRequestPoll(7, NO_TASKS, true));
     await settle();
+    await vi.advanceTimersByTimeAsync(5_000);
     reconcilePullRequests.mockClear();
 
     window.dispatchEvent(new Event("focus"));
@@ -271,6 +273,7 @@ describe("usePullRequestPoll on the board", () => {
   it("ignores the window coming back to another tab", async () => {
     renderHook(() => usePullRequestPoll(7, NO_TASKS, false));
     await settle();
+    await vi.advanceTimersByTimeAsync(5_000);
     reconcilePullRequests.mockClear();
 
     window.dispatchEvent(new Event("focus"));
@@ -283,6 +286,7 @@ describe("usePullRequestPoll on the board", () => {
   it("does not leave two timers running after a wake", async () => {
     renderHook(() => usePullRequestPoll(7, NO_TASKS, true));
     await settle();
+    await vi.advanceTimersByTimeAsync(5_000);
 
     window.dispatchEvent(new Event("focus"));
     await settle();
@@ -291,6 +295,25 @@ describe("usePullRequestPoll on the board", () => {
     await vi.advanceTimersByTimeAsync(60 * 1000);
     await settle();
 
+    expect(reconcilePullRequests).toHaveBeenCalledTimes(1);
+  });
+
+  // Alt-tabbing back and forth must not cost a forge request per open pull request on every switch.
+  it("wakes at most once every five seconds", async () => {
+    renderHook(() => usePullRequestPoll(7, NO_TASKS, true));
+    await settle();
+    reconcilePullRequests.mockClear();
+
+    await vi.advanceTimersByTimeAsync(4_000);
+    window.dispatchEvent(new Event("focus"));
+    await settle();
+    expect(reconcilePullRequests).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    window.dispatchEvent(new Event("focus"));
+    await settle();
+    window.dispatchEvent(new Event("focus"));
+    await settle();
     expect(reconcilePullRequests).toHaveBeenCalledTimes(1);
   });
 });

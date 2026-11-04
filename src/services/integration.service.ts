@@ -488,6 +488,8 @@ const RECONCILE_POLL_MS = 3 * 60 * 1000;
  * Away from it, nobody is watching the cards, so the slower rate keeps the forge cost down.
  */
 const RECONCILE_FOCUSED_POLL_MS = 60 * 1000;
+/** The least time between a sweep and one woken by arriving on the board. */
+const WAKE_MIN_GAP_MS = 5_000;
 /**
  * The sweep's burst rate. Slower than the branch poll's, since each sweep asks about every open
  * pull request; `BURST_TRIES` of these cover the window a forge takes to queue its first check.
@@ -577,6 +579,7 @@ export function usePullRequestPoll(projectId: number | null, tasks: Task[], onBo
 
     let cancelled = false;
     let inFlight = false;
+    let lastSweepAt = 0;
     let timer: ReturnType<typeof setTimeout>;
     let burstsLeft = BURST_TRIES;
 
@@ -584,6 +587,7 @@ export function usePullRequestPoll(projectId: number | null, tasks: Task[], onBo
       if (cancelled) return;
       clearTimeout(timer);
       inFlight = true;
+      lastSweepAt = Date.now();
       try {
         const changed = await api.reconcilePullRequests(projectId);
         if (!cancelled && changed.length > 0) {
@@ -601,9 +605,10 @@ export function usePullRequestPoll(projectId: number | null, tasks: Task[], onBo
     };
 
     // A sweep already on the wire answers the same question, and starting a second would leave
-    // two timers chained after it.
+    // two timers chained after it. One that just started has answered it too: alt-tabbing back and
+    // forth would otherwise cost a forge request per open pull request on every switch.
     const wake = () => {
-      if (!inFlight) void sweep();
+      if (!inFlight && Date.now() - lastSweepAt >= WAKE_MIN_GAP_MS) void sweep();
     };
     const onWindowFocus = () => {
       if (onBoardRef.current) wake();
