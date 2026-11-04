@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { connectionKeyStr } from "@/lib/connection-utils";
 import { cn } from "@/lib/utils";
-import { humanizeTokenCount } from "@/lib/format-utils";
+import { formatTokens, formatCost, formatCountdown, plural } from "@/lib/format-utils";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/ui/hover-card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import {
@@ -12,7 +13,6 @@ import { getLifecycle, subscribeSession } from "@/components/execution/activity/
 import {
   PLAN_WINDOWS,
   elapsedShare,
-  formatCountdown,
   liveWindows,
   planLimitsKey,
   usePlanLimitsStore,
@@ -22,7 +22,6 @@ import {
   type WindowTone,
 } from "@/components/execution/activity/planLimits";
 import { useSessionUsageQuery } from "@/services/execution.service";
-import { connectionKeyId } from "@/store/homeStore";
 import type { ConnectionKey, UsageTurn } from "@/types/bindings";
 
 /** The context window popover's colours, so both popups speak one language. */
@@ -89,14 +88,6 @@ function Track({
   );
 }
 
-function money({ amount, currency }: { amount: number; currency: string }) {
-  try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
-  } catch {
-    return `${amount.toFixed(2)} ${currency}`;
-  }
-}
-
 /**
  * A turn's tokens by kind. Some agents count cache reads inside `input_tokens` and some do not: a
  * total smaller than every count added up says this one does, and its input is what is left.
@@ -134,7 +125,7 @@ export function SessionUsageMeters({
   agentId: string | null;
   connection: ConnectionKey;
 }) {
-  const connectionId = connectionKeyId(connection);
+  const connectionId = connectionKeyStr(connection);
   const subscribe = useCallback((fn: () => void) => subscribeSession(sessionId, fn), [sessionId]);
   const cost = useSyncExternalStore(subscribe, () => getLifecycle(sessionId).usageState?.cost);
   const limits = usePlanLimitsStore((s) =>
@@ -170,7 +161,9 @@ export function SessionUsageMeters({
             {/* One pill, cost and tokens as its two halves, since they open one card. */}
             <span className="flex overflow-hidden rounded-md border border-border/60 text-[11px] font-medium tabular-nums">
               {cost && (
-                <span className="bg-accent/15 px-1.5 py-0.5 text-accent">{money(cost)}</span>
+                <span className="bg-accent/15 px-1.5 py-0.5 text-accent">
+                  {formatCost(cost.amount, cost.currency)}
+                </span>
               )}
               {measured.length > 0 && (
                 <Tooltip>
@@ -184,7 +177,7 @@ export function SessionUsageMeters({
                       />
                     }
                   >
-                    {humanizeTokenCount(total)}
+                    {formatTokens(total)}
                   </TooltipTrigger>
                   <TooltipContent>{total.toLocaleString()} tokens</TooltipContent>
                 </Tooltip>
@@ -197,7 +190,7 @@ export function SessionUsageMeters({
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold">Session cost</span>
                   <span className="text-lg font-bold tabular-nums tracking-tight text-accent">
-                    {money(cost)}
+                    {formatCost(cost.amount, cost.currency)}
                   </span>
                 </div>
                 <div className="text-muted-foreground">
@@ -266,14 +259,14 @@ function TokenDetails({ turns, total }: { turns: UsageTurn[]; total: number }) {
           <TooltipTrigger
             render={<span className="text-lg font-bold tabular-nums tracking-tight" />}
           >
-            {humanizeTokenCount(total)}
+            {formatTokens(total)}
           </TooltipTrigger>
           <TooltipContent>{total.toLocaleString()}</TooltipContent>
         </Tooltip>
       </div>
       <div className="-mt-1.5 text-muted-foreground">
-        {turns.length} {turns.length === 1 ? "turn" : "turns"} · {formatCountdown(active)} active ·
-        last turn {humanizeTokenCount(last.total_tokens ?? 0)}
+        {plural(turns.length, "turn")} · {formatCountdown(active)} active · last turn{" "}
+        {formatTokens(last.total_tokens ?? 0)}
       </div>
       <div>
         <div className="flex h-7 items-end gap-px">
@@ -321,7 +314,7 @@ function TokenDetails({ turns, total }: { turns: UsageTurn[]; total: number }) {
             </span>
             {models.size > 1 && (
               <>
-                <span className="tabular-nums">{humanizeTokenCount(tokens)}</span>
+                <span className="tabular-nums">{formatTokens(tokens)}</span>
                 <span className="w-8 text-right tabular-nums text-muted-foreground">
                   {Math.round((tokens / Math.max(total, 1)) * 100)}%
                 </span>
@@ -350,7 +343,7 @@ function TokenDetails({ turns, total }: { turns: UsageTurn[]; total: number }) {
             <span className="text-muted-foreground">{label}</span>
             <Tooltip>
               <TooltipTrigger render={<span className="text-right tabular-nums" />}>
-                {humanizeTokenCount(sums[kind])}
+                {formatTokens(sums[kind])}
               </TooltipTrigger>
               <TooltipContent>{sums[kind].toLocaleString()}</TooltipContent>
             </Tooltip>

@@ -2,10 +2,9 @@ import { Download, FileWarning, Paperclip, X } from "lucide-react";
 import { toast } from "sonner";
 import type { ConnectionKey, TaskAttachment } from "@/types/bindings";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
-import { openFileWithConnection } from "@/lib/file-opener";
+import { openFileWithConnection, useWslConnections } from "@/services/connection.service";
 import { cn } from "@/lib/utils";
 import { useSelectedProject } from "@/store/projectStore";
-import { useWslConnections } from "@/services/connection.service";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { ZoomableContent } from "@/ui/zoomable-content";
@@ -15,17 +14,11 @@ import {
   useProxyImageQuery,
 } from "@/services/task.service";
 import { isImageExtension } from "@/components/execution/activity/fileTypeUtils";
+import { formatBytes } from "@/lib/format-utils";
 
 function isImage(filename: string): boolean {
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
   return isImageExtension(`.${ext}`);
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return "unknown size";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function AttachmentThumbnail({
@@ -197,7 +190,7 @@ export function AttachmentSection({
                     {att.filename}
                   </button>
                   <span className="text-xs text-muted-foreground shrink-0">
-                    {formatFileSize(att.file_size)}
+                    {att.file_size === 0 ? "unknown size" : formatBytes(att.file_size)}
                   </span>
                   {isEditable && (
                     <Button

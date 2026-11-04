@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { Brain, ChevronRight } from "lucide-react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/ui/collapsible";
 import type { ThinkingItem } from "./types";
-import { MarkdownBlock, getCompleteBlocksText } from "./MarkdownBlock";
+import { MarkdownBlock, getCompleteBlocksText } from "@/components/common/markdown/MarkdownBlock";
 import { useSettings } from "@/services/settings.service";
 
 interface ActivityThinkingBlockProps {

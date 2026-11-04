@@ -9,9 +9,10 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { cn } from "@/lib/utils";
-import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
-import { folderName, relativeAge } from "@/components/execution/worktree-card/worktree-usage";
+import { MarkdownBlock } from "@/components/common/markdown/MarkdownBlock";
+import { relativeAge } from "@/lib/format-utils";
 import { TRIGGER_LABEL, keptWorkspace, runDuration, type RunEntry } from "./runs";
+import { basename } from "@/lib/path-utils";
 
 /**
  * A finished run, read without going into its session.
@@ -77,7 +78,7 @@ export function RunDialog({
               <span>took {runDuration(run, now)}</span>
               <span>{TRIGGER_LABEL[run.trigger]}</span>
               {run.agent_id && <span>{agentName(run.agent_id)}</span>}
-              {run.cwd && <span>in {folderName(run.cwd)}</span>}
+              {run.cwd && <span>in {basename(run.cwd)}</span>}
             </DialogDescription>
           </DialogHeader>
 

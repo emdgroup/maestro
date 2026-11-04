@@ -2,10 +2,8 @@ import { useEffect, useRef } from "react";
 import { SegmentThumb } from "@/components/common/SegmentThumb";
 import {
   PanelLeft,
-  ExternalLink,
   FilePlus,
   FolderPlus,
-  FolderDown,
   Eye,
   EyeOff,
   FilePen,
@@ -43,7 +41,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
 } from "@/ui/dropdown-menu";
-import { useReadFile, useReadFileBinary } from "@/services/connection.service";
+import { useConnectionFileQuery } from "@/services/connection.service";
 import { binaryMimeForExtension } from "@/components/execution/activity/fileTypeUtils";
 import { LazyFileTree } from "./LazyFileTree";
 import type { ConnectionKey } from "@/types/bindings";
@@ -64,11 +62,8 @@ import { ToolbarButton } from "./ToolbarButton";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/ui/resizable";
 import { ReviewLayout } from "@/components/execution/diff/ReviewLayout";
 import { useReviewPanelLayout } from "@/components/execution/diff/useReviewPanelLayout";
-import { openFileWithConnection, downloadFileToFolder, opensViaHostCopy } from "@/lib/file-opener";
-import { isAbsolutePath } from "@/lib/path-utils";
-import { CopyStateIcon, useCopyToClipboard } from "@/components/execution/activity/HighlightedCode";
-import { TransferIcon } from "./TransferIcon";
-import { transferTooltip, useFileTransfer } from "./useFileTransfer";
+import { isAbsolutePath, basename } from "@/lib/path-utils";
+import { FileHeaderActions, FileNameCopyButton } from "./FileHeaderActions";
 
 interface WorkspaceFilesPanelProps {
   /**
@@ -111,9 +106,6 @@ export function WorkspaceFilesPanel({
   onDirtyChange,
   onSelectedChange,
 }: WorkspaceFilesPanelProps) {
-  const openTransfer = useFileTransfer();
-  const downloadTransfer = useFileTransfer();
-
   // The same layout the Changes tab uses in this very panel: a resizable column where there is
   // room, a floating overlay where there is not. That measurement is what the pin used to be doing
   // by hand. Its own storage prefix, or toggling the list here would toggle it there too.
@@ -173,7 +165,7 @@ export function WorkspaceFilesPanel({
       : `${workspacePath}/${selected}`
     : null;
   const fileDir = fullPath ? fullPath.replace(/\/[^/]+$/, "") : undefined;
-  const { copied, copy: copyPath } = useCopyToClipboard(fullPath ?? "");
+
   const binaryMime = selected ? binaryMimeForExtension(selected) : undefined;
 
   // Above the read query, which reads `mode` from its poll interval.
@@ -202,7 +194,7 @@ export function WorkspaceFilesPanel({
     isLoading: contentLoading,
     error: contentError,
     refetch,
-  } = useReadFile(connection, binaryMime ? null : fullPath, {
+  } = useConnectionFileQuery(connection, binaryMime ? null : fullPath, false, {
     refetchInterval: (query) =>
       filePollInterval({ hasError: query.state.error != null, isActive, mode }),
   });
@@ -210,7 +202,7 @@ export function WorkspaceFilesPanel({
     data: binaryContent,
     isLoading: binaryLoading,
     error: binaryError,
-  } = useReadFileBinary(connection, binaryMime ? fullPath : null);
+  } = useConnectionFileQuery(connection, binaryMime ? fullPath : null, true);
 
   useEffect(() => {
     if (isActive && fullPath && !binaryMime && mode === "view") {
@@ -218,7 +210,7 @@ export function WorkspaceFilesPanel({
     }
   }, [isActive, fullPath, binaryMime, mode, refetch]);
 
-  const basename = selected ? (selected.split("/").pop() ?? selected) : null;
+  const fileName = selected ? basename(selected) : null;
   const editable = canEditFile({ fileName: selected, binaryMime, error: contentError, content });
   const previewKind = previewKindFor(selected);
 
@@ -247,33 +239,6 @@ export function WorkspaceFilesPanel({
       return;
     }
     setSelected(next);
-  }
-
-  async function handleOpen() {
-    if (!fullPath) return;
-    const transferId = `open-${Date.now()}`;
-    await openTransfer.run({
-      transferId,
-      reportsProgress: connection.type === "ssh",
-      action: () =>
-        openFileWithConnection(connection, fullPath, {
-          sshConnectionId: connection.type === "ssh" ? connection.id : undefined,
-          transferId,
-          wslDistroName,
-        }),
-      // The file opening is its own confirmation, so success stays quiet here.
-    });
-  }
-
-  async function handleDownload() {
-    if (!fullPath || connection.type === "local") return;
-    const transferId = `dl-${Date.now()}`;
-    await downloadTransfer.run({
-      transferId,
-      reportsProgress: connection.type === "ssh",
-      action: () => downloadFileToFolder(connection, fullPath, transferId),
-      describeDone: (dest) => (dest === null ? null : `Saved to ${dest}`),
-    });
   }
 
   /**
@@ -516,32 +481,13 @@ export function WorkspaceFilesPanel({
         {/* Centred, exactly as the Changes tab's header centres its own. The relative path is the
             title rather than a second line: this bar is 40px tall and can be 224px wide. */}
         <div className="flex-1 flex items-center justify-center gap-1.5 min-w-0 overflow-hidden">
-          {basename ? (
+          {fileName ? (
             <>
-              {/* Clicking the name copies the absolute path; the icon shows on hover so the bar
-                  still reads as a title. */}
-              <Tooltip trackCursorAxis="x">
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      onClick={copyPath}
-                      className="group/name flex items-center gap-1 min-w-0 text-xs font-mono text-muted-foreground hover:text-foreground transition-colors"
-                    />
-                  }
-                >
-                  <span className="truncate">{basename}</span>
-                  <CopyStateIcon
-                    copied={copied}
-                    className={cn(
-                      "size-3 shrink-0",
-                      !copied &&
-                        "opacity-0 group-hover/name:opacity-100 group-focus-visible/name:opacity-100 transition-opacity",
-                    )}
-                  />
-                </TooltipTrigger>
-                <TooltipContent className="max-w-md break-all">{selected}</TooltipContent>
-              </Tooltip>
+              <FileNameCopyButton
+                fileName={fileName}
+                title={selected ?? ""}
+                absolutePath={fullPath ?? ""}
+              />
               {isDirty && (
                 <Tooltip>
                   <TooltipTrigger
@@ -672,44 +618,11 @@ export function WorkspaceFilesPanel({
                     <FilePen className="size-3.5" />
                   </ToolbarButton>
                 )}
-                <ToolbarButton
-                  label={
-                    opensViaHostCopy(connection)
-                      ? "Download and open"
-                      : "Open in default application"
-                  }
-                  tooltip={transferTooltip(
-                    openTransfer.state,
-                    opensViaHostCopy(connection)
-                      ? "Download and open"
-                      : "Open in default application",
-                  )}
-                  disabled={openTransfer.pending}
-                  onClick={() => void handleOpen()}
-                  className={cn(openTransfer.state.status === "error" && "text-destructive")}
-                >
-                  <TransferIcon
-                    state={openTransfer.state}
-                    idle={<ExternalLink className="size-3.5" />}
-                  />
-                </ToolbarButton>
-                {connection.type !== "local" && (
-                  <ToolbarButton
-                    label="Download to…"
-                    tooltip={transferTooltip(downloadTransfer.state, "Download to…")}
-                    disabled={downloadTransfer.pending}
-                    onClick={() => void handleDownload()}
-                    className={cn(
-                      downloadTransfer.state.status === "error" && "text-destructive",
-                      downloadTransfer.state.status === "done" && "text-emerald-600",
-                    )}
-                  >
-                    <TransferIcon
-                      state={downloadTransfer.state}
-                      idle={<FolderDown className="size-3.5" />}
-                    />
-                  </ToolbarButton>
-                )}
+                <FileHeaderActions
+                  connection={connection}
+                  path={fullPath}
+                  wslDistroName={wslDistroName}
+                />
               </>
             )}
           </div>
@@ -732,7 +645,7 @@ export function WorkspaceFilesPanel({
           <AlertDialogHeader>
             <AlertDialogTitle>This file changed while you were editing</AlertDialogTitle>
             <AlertDialogDescription>
-              {basename} was written by something else — most likely the agent — since you started
+              {fileName} was written by something else — most likely the agent — since you started
               editing. Overwriting replaces those changes with yours; reloading discards yours.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -761,7 +674,7 @@ export function WorkspaceFilesPanel({
           <AlertDialogHeader>
             <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
             <AlertDialogDescription>
-              {basename} has edits that have not been written to disk. They will be lost.
+              {fileName} has edits that have not been written to disk. They will be lost.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

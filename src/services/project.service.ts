@@ -1,7 +1,12 @@
-import { useEffect } from "react";
-import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
-import { listen } from "@tauri-apps/api/event";
+import {
+  queryOptions,
+  useQuery,
+  useQueries,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
+import { connectionKeyStr } from "@/lib/connection-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
 import type {
@@ -10,7 +15,6 @@ import type {
   ProjectConfigResponse,
   ProfilesDocument,
 } from "@/types/bindings";
-const localConnectionId = "local";
 
 /**
  * Project service providing type-safe operations for project management.
@@ -24,37 +28,79 @@ const localConnectionId = "local";
 export const projectQueryKeys = {
   base: ["projects"] as const,
   list: () => [...projectQueryKeys.base, "list"] as const,
-  listByConnection: (connectionId: number | string) =>
-    [...projectQueryKeys.list(), connectionId] as const,
+  listByConnection: (connectionId: string) => [...projectQueryKeys.list(), connectionId] as const,
   details: (id: number) => [...projectQueryKeys.base, "details", id] as const,
   settings: () => [...projectQueryKeys.base, "settings"] as const,
-  settingsDetail: (projectId: number) => [...projectQueryKeys.settings(), projectId] as const,
+  settingsDetail: (projectId: number | null) =>
+    [...projectQueryKeys.settings(), projectId] as const,
   locks: () => [...projectQueryKeys.base, "locks"] as const,
-  locksFor: (connectionId: number | string, ids: number[]) =>
+  locksFor: (connectionId: string, ids: number[]) =>
     [...projectQueryKeys.locks(), connectionId, ids] as const,
   home: () => [...projectQueryKeys.base, "home"] as const,
-  homeFor: (connectionId: number | string) => [...projectQueryKeys.home(), connectionId] as const,
-  profiles: (projectId: number) => [...projectQueryKeys.base, "profiles", projectId] as const,
-  remotes: (projectId: number) => [...projectQueryKeys.base, "remotes", projectId] as const,
+  homeFor: (connectionId: string) => [...projectQueryKeys.home(), connectionId] as const,
+  profiles: (projectId: number | null) =>
+    [...projectQueryKeys.base, "profiles", projectId] as const,
+  remotes: (projectId: number | null) => [...projectQueryKeys.base, "remotes", projectId] as const,
+  branches: (projectId: number | null) =>
+    [...projectQueryKeys.base, "branches", projectId] as const,
 };
 
-export function connectionQueryKey(connection: ConnectionKey): number | string {
-  if (connection.type === "docker") return `docker-${connection.id}`;
-  if (connection.type === "wsl") return `wsl-${connection.id}`;
-  if (connection.type === "ssh") return connection.id;
-  return localConnectionId;
+/**
+ * Open a project in this window: take its lock and answer with the project. Imperative, since what
+ * follows (priming its server, switching to it) is the caller's sequence.
+ */
+export const openProject = (projectId: number) => api.openProject(projectId);
+
+/** Start the project's server and bring its board over if it has not moved yet. */
+export const primeProjectServer = (projectId: number) => api.primeProjectServer(projectId);
+
+/** Give up the lock `openProject` took, for an open that failed after taking it. */
+export const releaseActiveProjectLock = () => api.releaseActiveProjectLock();
+
+/**
+ * The project's git branches, as `[BranchList, currentBranch]` where `BranchList` holds the local
+ * and remote names.
+ */
+export function useProjectBranchesQuery(projectId: number | null) {
+  return useQuery({
+    queryKey: projectQueryKeys.branches(projectId),
+    queryFn: () => api.listProjectBranches(projectId!),
+    enabled: projectId !== null,
+    staleTime: 60000, // 1 minute — branches don't change that often
+  });
+}
+
+/**
+ * The request that writes `patch` over the stored settings. The update command takes the whole
+ * config, so every field the response carries and the request also has is copied across, or it is
+ * written away. With nothing loaded yet each field takes its default.
+ */
+export function toProjectConfigRequest(
+  settings: ProjectConfigResponse | undefined,
+  patch: Partial<ProjectConfigRequest>,
+): ProjectConfigRequest {
+  return {
+    default_agent: settings?.default_agent ?? null,
+    startup_tab: settings?.startup_tab ?? null,
+    default_workspace_mode: settings?.default_workspace_mode ?? "NewWorktree",
+    remote_name: settings?.remote_name ?? null,
+    base_branch: settings?.base_branch ?? null,
+    ...patch,
+  };
 }
 
 /**
  * Query hook for fetching project settings/configuration
  */
 export function useProjectSettings(projectId: number | null) {
-  return useQuery({
-    queryKey: projectQueryKeys.settingsDetail(projectId ?? -1),
-    queryFn: () => {
-      if (projectId == null) throw new Error("projectId required");
-      return api.getProjectSettings(projectId);
-    },
+  return useQuery(projectSettingsOptions(projectId));
+}
+
+/** How a project's settings are read, for the hook and for a prefetch ahead of opening it. */
+export function projectSettingsOptions(projectId: number | null) {
+  return queryOptions({
+    queryKey: projectQueryKeys.settingsDetail(projectId),
+    queryFn: () => api.getProjectSettings(projectId!),
     staleTime: Infinity,
     enabled: projectId != null,
   });
@@ -68,7 +114,7 @@ export function useProjectSettings(projectId: number | null) {
  */
 export function useProjectRemotes(projectId: number | null) {
   return useQuery({
-    queryKey: projectQueryKeys.remotes(projectId ?? -1),
+    queryKey: projectQueryKeys.remotes(projectId),
     queryFn: () => {
       if (projectId == null) throw new Error("projectId required");
       return api.listProjectRemotes(projectId);
@@ -81,26 +127,14 @@ export function useProjectRemotes(projectId: number | null) {
 /**
  * What Home shows for each connection: its server's status and every project on it.
  *
- * Refetched every 5 seconds and whenever any server says a task, an automation run or a lock
- * changed. Only ask for attached connections: the rest fail with "No connection server".
+ * Refetched every 5 seconds, and by `useServerEventSync` whenever any server says a task, an
+ * automation run or a lock changed. Only ask for attached connections: the rest fail with "No
+ * connection server".
  */
-export function useHomeSummaries(connections: ConnectionKey[]) {
-  const queryClient = useQueryClient();
-  useEffect(() => {
-    const unlistens = ["tasks-changed", "automation-run-changed", "project-locks-changed"].map(
-      (event) =>
-        listen(event, () => {
-          void queryClient.invalidateQueries({ queryKey: projectQueryKeys.home() });
-        }),
-    );
-    return () => {
-      for (const unlisten of unlistens) void unlisten.then((stop) => stop());
-    };
-  }, [queryClient]);
-
+export function useHomeSummaryQueries(connections: ConnectionKey[]) {
   return useQueries({
     queries: connections.map((connection) => ({
-      queryKey: projectQueryKeys.homeFor(connectionQueryKey(connection)),
+      queryKey: projectQueryKeys.homeFor(connectionKeyStr(connection)),
       queryFn: () => api.getHomeSummary(connection),
       refetchInterval: 5000,
     })),
@@ -141,7 +175,7 @@ export function useCreateProject() {
       api.createProject(path, connection),
     onSuccess: (_data, { connection }) => {
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.homeFor(connectionQueryKey(connection)),
+        queryKey: projectQueryKeys.homeFor(connectionKeyStr(connection)),
       });
     },
     onError: createErrorToastHandler("Failed to create project"),
@@ -161,7 +195,7 @@ export function useCreateProject() {
  */
 export function useAgentProfilesQuery(projectId: number | null) {
   return useQuery({
-    queryKey: projectQueryKeys.profiles(projectId!),
+    queryKey: projectQueryKeys.profiles(projectId),
     queryFn: () => api.listAgentProfiles(projectId!),
     enabled: projectId != null,
   });
@@ -233,7 +267,7 @@ export function useUpdateProjectSettings() {
       // `remote_name` decides which refs the branch lists contain, and that query caches for a
       // minute — without this, changing the remote leaves the picker showing the old one's
       // branches with nothing to suggest a refresh is needed.
-      void queryClient.invalidateQueries({ queryKey: ["tasks", "branches", projectId] });
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.branches(projectId) });
     },
   });
 }
@@ -365,8 +399,6 @@ export function useCreateNewProject() {
       void queryClient.invalidateQueries({ queryKey: projectQueryKeys.home() });
       toast.success("Project created successfully");
     },
-    onError: (error) => {
-      console.error("Create project failed:", error);
-    },
+    onError: createErrorToastHandler("Failed to create project"),
   });
 }

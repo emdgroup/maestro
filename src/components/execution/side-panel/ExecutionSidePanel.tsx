@@ -15,95 +15,41 @@ import {
 import { SidePanelCollapsedStrip } from "./SidePanelCollapsedStrip";
 import { SidePanelTabBar } from "./SidePanelTabBar";
 import { SidePanelContent } from "./SidePanelContent";
-import type { SidePanelTab, TabKind } from "./useSidePanelTabs";
-import type { CanvasSurface, PlanEntry, ToolCallItem } from "@/components/execution/activity/types";
-import type { ArtifactFile } from "@/types/bindings";
-import type { ConnectionKey } from "@/types/bindings";
-import type { Annotation } from "@/store/annotationStore";
-import type { PendingCanvasAwait } from "@/components/execution/activity/canvas/await-matching";
+import type { SidePanelTab } from "./useSidePanelTabs";
 
 // Re-export so AgentActivityPanel can still import SidePanelTab from this file
 export type { SidePanelTab, TabKind } from "./useSidePanelTabs";
 
 interface ExecutionSidePanelProps {
-  sessionId: string;
   tabs: SidePanelTab[];
   activeTabId: string;
   onTabChange: (id: string) => void;
   onTabClose: (id: string) => void;
   onAddTab: (kind: "terminal" | "files", initialPath?: string) => string;
-  onOpenTabKind: (kind: TabKind) => void;
-  /** Opens a path (absolute, or project-relative) in a Files tab. */
-  onOpenFile: (path: string) => void;
-  workingFiles: ArtifactFile[];
-  taskId: number | null;
-  workspacePath: string;
-  connection: ConnectionKey;
-  canvasMap: Map<string, CanvasSurface>;
-  latestCanvasSurfaceId: string | null;
-  /** Set while the agent is blocked in `canvas_await`, which is what makes the controls live. */
-  pendingCanvasAwaits: PendingCanvasAwait[];
-  onCanvasEvent: (requestId: string | null, event: unknown) => void;
-  onCloseCanvas: (surfaceId: string) => void;
-  /** Takes a `.html` file on *this* machine and brings it in as a surface. */
-  onImportCanvas: (path: string) => void;
-  subagentItems: ToolCallItem[];
-  toolCallMap: Map<string, ToolCallItem>;
-  sidePanelPlan: { requestId: string; payload: Record<string, unknown> } | null;
-  planEntries?: PlanEntry[] | null;
-  planTitle?: string | null;
   collapsed: boolean;
   onCollapsedChange: (c: boolean) => void;
   unseenTabIds: ReadonlySet<string>;
   maximized?: boolean;
   onMaximizedChange?: (v: boolean) => void;
   fill?: boolean;
-  isSessionActive?: boolean;
-  onSpawnShell?: () => Promise<string | null>;
-  terminalBuffers?: Map<string, string>;
-  onSendAnnotations: (annotations: Annotation[]) => void;
-  isProcessing?: boolean;
-  canSendImages?: boolean;
-  onSeedPrompt?: (text: string) => void;
 }
 
+/**
+ * The session side panel's frame: its tab bar, the collapsed strip and the guard on closing a tab
+ * with unsaved edits. What the tabs show comes from `SessionPanelContext`.
+ */
 export function ExecutionSidePanel({
-  sessionId,
   tabs,
   activeTabId,
   onTabChange,
   onTabClose,
   onAddTab,
-  onOpenTabKind,
-  onOpenFile,
-  workingFiles,
-  taskId,
-  workspacePath,
-  connection,
-  canvasMap,
-  latestCanvasSurfaceId,
-  pendingCanvasAwaits,
-  onCanvasEvent,
-  onCloseCanvas,
-  onImportCanvas,
-  subagentItems,
-  toolCallMap,
-  sidePanelPlan,
-  planEntries,
-  planTitle,
   collapsed,
   onCollapsedChange,
   unseenTabIds,
   maximized = false,
   onMaximizedChange,
   fill = false,
-  isSessionActive = true,
-  onSpawnShell,
-  terminalBuffers,
-  onSendAnnotations,
-  isProcessing,
-  canSendImages,
-  onSeedPrompt,
 }: ExecutionSidePanelProps) {
   // Closing a Files tab unmounts its editor and takes the draft with it, and the tab bar's X is
   // several components away from the panel that knows about the draft — hence the registry here
@@ -215,31 +161,6 @@ export function ExecutionSidePanel({
               <SidePanelContent
                 tabs={tabs}
                 activeTabId={activeTabId}
-                isSessionActive={isSessionActive}
-                sessionId={sessionId}
-                subagentItems={subagentItems}
-                toolCallMap={toolCallMap}
-                sidePanelPlan={sidePanelPlan}
-                canvasMap={canvasMap}
-                latestCanvasSurfaceId={latestCanvasSurfaceId}
-                pendingCanvasAwaits={pendingCanvasAwaits}
-                onCanvasEvent={onCanvasEvent}
-                onCloseCanvas={onCloseCanvas}
-                onImportCanvas={onImportCanvas}
-                workingFiles={workingFiles}
-                taskId={taskId}
-                workspacePath={workspacePath}
-                connection={connection}
-                planEntries={planEntries}
-                planTitle={planTitle}
-                onOpenTabKind={onOpenTabKind}
-                onOpenFile={onOpenFile}
-                onSpawnShell={onSpawnShell}
-                terminalBuffers={terminalBuffers}
-                onSendAnnotations={onSendAnnotations}
-                isProcessing={isProcessing}
-                canSendImages={canSendImages}
-                onSeedPrompt={onSeedPrompt}
                 onTabDirtyChange={handleTabDirtyChange}
                 onTabFileChange={handleTabFileChange}
               />

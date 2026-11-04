@@ -1,0 +1,265 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+}));
+
+vi.mock("@/services/execution.service", () => ({
+  useAgentDiscoveryQuery: vi.fn(),
+  useSpawnAcpSessionMutation: vi.fn(),
+  useSpawnInteractiveExecutionMutation: vi.fn(),
+  useActiveSessionsQuery: vi.fn(),
+  useCancelActiveSessionMutation: vi.fn(),
+  useRenameAcpSessionMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useSessionListQuery: vi.fn(() => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  })),
+  useLoadAcpSessionMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useDeleteAcpSessionMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+}));
+
+vi.mock("@/services/worktree.service", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/services/worktree.service")>()),
+  useWorktreesQuery: vi.fn(),
+  useCreateWorktreeMutation: vi.fn(),
+}));
+
+// Only the two hooks the spawn dialog reads — everything else stays real.
+vi.mock("@/services/project.service", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/services/project.service")>()),
+  useProjectBranchesQuery: vi.fn(() => ({
+    data: [{ local: ["main", "dev"], remote: [] }, "main"],
+    isFetching: false,
+  })),
+}));
+
+vi.mock("@/store/projectStore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/store/projectStore")>()),
+  useIsGitRepo: vi.fn(() => true),
+  useSelectedProject: vi.fn(() => ({ id: 1, path: "/tmp/repo" })),
+}));
+
+vi.mock("@/store/navigationStore", () => ({
+  usePendingAgentId: vi.fn(() => null),
+  usePendingSessionKey: vi.fn(() => null),
+  useNavigationActions: vi.fn(() => ({
+    clearPendingAgent: vi.fn(),
+    clearPendingSession: vi.fn(),
+  })),
+  useActiveTab: vi.fn(() => "agents"),
+  useActiveTaskId: vi.fn(() => null),
+}));
+
+vi.mock("@/components/execution/side-panel/WorkspaceFilesPanel", () => ({
+  WorkspaceFilesPanel: ({ workspacePath }: { workspacePath: string }) => (
+    <div data-testid="files-panel">{workspacePath}</div>
+  ),
+}));
+
+import { useFileSessionStore } from "@/store/fileSessionStore";
+import {
+  useAgentDiscoveryQuery,
+  useSpawnAcpSessionMutation,
+  useSpawnInteractiveExecutionMutation,
+  useActiveSessionsQuery,
+  useCancelActiveSessionMutation,
+} from "@/services/execution.service";
+import { useWorktreesQuery, useCreateWorktreeMutation } from "@/services/worktree.service";
+import { AgentsView } from "@/views/agents/AgentsView";
+import type { DiscoveredAgent, WorktreeWithStatus } from "@/types/bindings";
+
+const mockAgents: DiscoveredAgent[] = [{ id: "claude-code", name: "Claude Code", icon: "" }];
+
+const mockWorktrees: WorktreeWithStatus[] = [
+  {
+    id: 1,
+    project_id: 1,
+    path: "/tmp/repo",
+    branch_name: "main",
+    base_branch: null,
+    task_id: null,
+    changed_files_count: 0,
+    diff_stat: "",
+    ahead_behind: null,
+    created_at: null,
+    task_name: null,
+    is_zombie: false,
+    is_orphan: false,
+    commit_count: null,
+    last_activity_at: null,
+    last_commit_subject: null,
+    detached_at: null,
+    head_sha: "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+    upstream_gone: false,
+  },
+];
+
+function renderView() {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={qc}>
+      <AgentsView projectId={1} repoPath="/tmp/repo" connection={{ type: "local" }} />
+    </QueryClientProvider>,
+  );
+}
+
+const mockCreateWorktree = vi.fn(() =>
+  Promise.resolve({ id: 7, branch_name: "maestro/swift-otter", path: ".maestro/worktrees/x" }),
+);
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  (useActiveSessionsQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: [] });
+  (useWorktreesQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: mockWorktrees });
+  (useCreateWorktreeMutation as ReturnType<typeof vi.fn>).mockReturnValue({
+    mutateAsync: mockCreateWorktree,
+    isPending: false,
+  });
+  (useAgentDiscoveryQuery as ReturnType<typeof vi.fn>).mockReturnValue({
+    data: { maestro_server_available: true, agents: mockAgents, error: null },
+    isLoading: false,
+  });
+  (useSpawnInteractiveExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+  });
+  (useSpawnAcpSessionMutation as ReturnType<typeof vi.fn>).mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+  });
+  (useCancelActiveSessionMutation as ReturnType<typeof vi.fn>).mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+  });
+});
+
+describe("New Session dialog — agent type selector", () => {
+  it("opens dialog with Terminal as default type when New Session clicked", async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(screen.getByRole("button", { name: /new session/i }));
+
+    expect(screen.getByRole("heading", { name: /new session/i })).toBeInTheDocument();
+    expect(screen.getByText("Terminal")).toBeInTheDocument();
+  });
+});
+
+describe("files session", () => {
+  function seedFileSession(dirty: boolean) {
+    useFileSessionStore.setState({ sessions: [] });
+    const id = useFileSessionStore
+      .getState()
+      .add({ projectId: 1, name: "browse", cwd: "/tmp/repo", branchName: "main" });
+    useFileSessionStore.getState().setDirty(id, dirty);
+  }
+
+  it("lists a session and shows its files, only for its own project", () => {
+    seedFileSession(false);
+    useFileSessionStore
+      .getState()
+      .add({ projectId: 2, name: "elsewhere", cwd: "/tmp/other", branchName: "main" });
+    renderView();
+
+    expect(screen.getByTestId("files-panel")).toHaveTextContent("/tmp/repo");
+    expect(screen.queryByText("elsewhere")).not.toBeInTheDocument();
+  });
+
+  it("closes a clean session straight away", async () => {
+    seedFileSession(false);
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(screen.getByRole("button", { name: /close session/i }));
+    expect(useFileSessionStore.getState().sessions).toHaveLength(0);
+  });
+
+  it("asks before closing a session holding an unsaved draft", async () => {
+    seedFileSession(true);
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(screen.getByRole("button", { name: /close session/i }));
+    expect(useFileSessionStore.getState().sessions).toHaveLength(1);
+
+    await user.click(await screen.findByRole("button", { name: /discard and close/i }));
+    expect(useFileSessionStore.getState().sessions).toHaveLength(0);
+  });
+});
+
+describe("spawn flow", () => {
+  it("never creates a worktree for a terminal — it spawns in the selected existing one", async () => {
+    const mockMutate = vi.fn();
+    (useSpawnInteractiveExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: mockMutate,
+      isPending: false,
+    });
+
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(screen.getByRole("button", { name: /new session/i }));
+    // Terminal is the default type. Creating a worktree is listed so the absence is explained,
+    // but it cannot be chosen — a terminal attaches to a checkout that already exists.
+    await user.click(screen.getByRole("combobox"));
+    expect(await screen.findByRole("option", { name: /create new worktree/i })).toHaveAttribute(
+      "data-disabled",
+    );
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: /start session/i }));
+
+    expect(mockCreateWorktree).not.toHaveBeenCalled();
+    expect(mockMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ worktreeId: 1, branchName: "main" }),
+      expect.anything(),
+    );
+  });
+
+  it("creates a maestro/ worktree from the base branch for an agent session", async () => {
+    const mockAcpMutate = vi.fn();
+    (useSpawnAcpSessionMutation as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: mockAcpMutate,
+      isPending: false,
+    });
+
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(screen.getByRole("button", { name: /new session/i }));
+    await user.click(screen.getByRole("button", { name: /claude code/i }));
+    // The restriction is the terminal's, not the dialog's: an agent may create one.
+    await user.click(screen.getByRole("combobox"));
+    expect(await screen.findByRole("option", { name: /create new worktree/i })).not.toHaveAttribute(
+      "data-disabled",
+    );
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByLabelText(/session name/i));
+    await user.paste("Fix Windows Path");
+    await user.click(screen.getByRole("button", { name: /start session/i }));
+
+    expect(mockCreateWorktree).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseBranch: "main",
+        newBranchName: "maestro/fix-windows-path",
+        taskId: null,
+      }),
+    );
+    expect(mockAcpMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "claude-code",
+        cwd: "/tmp/repo/.maestro/worktrees/x",
+        worktreeBranch: "maestro/swift-otter",
+      }),
+      expect.anything(),
+    );
+  });
+});

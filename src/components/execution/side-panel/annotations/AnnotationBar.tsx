@@ -7,10 +7,11 @@ import { Checkbox } from "@/ui/checkbox";
 import { Button } from "@/ui/button";
 import { useAnnotationStore, useSessionAnnotations } from "@/store/annotationStore";
 import type { Annotation } from "@/store/annotationStore";
+import { basename } from "@/lib/path-utils";
 
 export function annotationLabel(a: Annotation): string {
   if (a.kind === "diff") {
-    const base = a.filePath.split("/").pop() ?? a.filePath;
+    const base = basename(a.filePath);
     return a.lineNumber > 0 ? `${base}:${a.lineNumber}` : base;
   }
   if (a.kind === "canvas") {

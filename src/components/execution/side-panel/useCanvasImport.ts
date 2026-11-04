@@ -21,6 +21,7 @@ import {
 import { readImportedCanvasFile, saveCanvasImport } from "@/services/canvas.service";
 import { getErrorMessage } from "@/lib/error-utils";
 import type { CanvasSurface } from "@/components/execution/activity/types";
+import { basename } from "@/lib/path-utils";
 
 /** What the dialog is asking, with nothing in it the dialog does not display. */
 export type CanvasImportRequest =
@@ -79,7 +80,7 @@ export function useCanvasImport({
   const importFile = useCallback((path: string) => {
     void readImportedCanvasFile(path)
       .then((text) => {
-        const fileName = safeFileName(path.split(/[/\\]/).pop() ?? "import.html");
+        const fileName = safeFileName(basename(path));
         const surface = surfaceFromHtml(text);
         setStaged(
           surface

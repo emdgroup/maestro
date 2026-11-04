@@ -1,13 +1,21 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { concernsProject, taskQueryKeys } from "@/services/task.service";
-import { LOOP_QUERY_KINDS } from "@/services/loop.service";
+import { loopQueryKeys } from "@/services/loop.service";
 import { worktreeQueryKeys } from "@/services/worktree.service";
 import { executionQueryKeys } from "@/services/execution.service";
 import { automationQueryKeys } from "@/services/automation.service";
 import { templateQueryKeys } from "@/services/template.service";
 import { promptQueryKeys } from "@/services/prompt.service";
+import { projectQueryKeys } from "@/services/project.service";
+import { settingsQueryKeys } from "@/services/settings.service";
+
+/**
+ * One transition emits several of the events the queue capacity answers to, and answering each
+ * separately means several `get_queue_capacity` calls for one change.
+ */
+const CAPACITY_DEBOUNCE_MS = 400;
 
 /**
  * The backend's "something changed" events, subscribed once for the whole app.
@@ -28,84 +36,131 @@ export function useServerEventSync(projectId: number | undefined) {
     // The flag is what makes that case unsubscribe late rather than never.
     let cancelled = false;
     const unlisteners: Array<() => void> = [];
+    const invalidate = (queryKey: readonly unknown[]) =>
+      void queryClient.invalidateQueries({ queryKey });
 
+    // One native listener per event, however many caches it refreshes.
+    type Payload = { project_id?: number | null; collection?: "shared" | "project" };
+    const handlers = new Map<string, Array<(payload: Payload) => void>>();
     // `tasks-changed` and `worktrees-changed` name the project they concern; another project's
     // change is not this window's to refetch.
-    type Payload = { project_id?: number | null; collection?: "shared" | "project" };
-    const subscribe = (
-      event: string,
-      invalidate: (payload: Payload) => void,
-      projectScoped = false,
-    ) => {
-      const handler = ({ payload }: { payload: unknown }) => {
-        if (!projectScoped || concernsProject(payload as Payload, projectId))
-          invalidate((payload ?? {}) as Payload);
-      };
-      void listen(event, handler).then((unlisten) => {
-        if (cancelled) unlisten();
-        else unlisteners.push(unlisten);
+    const on = (event: string, handle: (payload: Payload) => void, projectScoped = false) => {
+      const list = handlers.get(event) ?? [];
+      list.push((payload) => {
+        if (!projectScoped || concernsProject(payload, projectId)) handle(payload);
       });
+      handlers.set(event, list);
     };
 
     // The open task's own queries too, so an edit from another machine reaches its detail modal.
     // Comments have their own event.
-    subscribe(
+    on(
       "tasks-changed",
       (payload) => {
-        void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+        invalidate(taskQueryKeys.lists());
+        // Each prefix takes the project id next, so naming it narrows the refetch to that project.
         const id = payload.project_id ?? null;
-        for (const kind of ["attachments", "commitMessage", ...LOOP_QUERY_KINDS]) {
-          const queryKey = [...taskQueryKeys.base, kind];
-          void queryClient.invalidateQueries({
-            queryKey: id === null ? queryKey : [...queryKey, id],
-          });
-        }
+        const prefixes = [
+          taskQueryKeys.attachmentsAll(),
+          taskQueryKeys.commitMessagesAll(),
+          loopQueryKeys.base,
+        ];
+        for (const queryKey of prefixes) invalidate(id === null ? queryKey : [...queryKey, id]);
       },
       true,
     );
 
-    subscribe(
-      "worktrees-changed",
-      () => {
-        void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
-      },
-      true,
-    );
+    on("worktrees-changed", () => invalidate(worktreeQueryKeys.base), true);
 
     // An agent changed them through Maestro's MCP tools, with no mutation here to invalidate.
-    subscribe("automations-changed", () => {
-      void queryClient.invalidateQueries({ queryKey: automationQueryKeys.base });
-    });
+    on("automations-changed", () => invalidate(automationQueryKeys.base));
 
-    subscribe("templates-changed", () => {
-      void queryClient.invalidateQueries({ queryKey: templateQueryKeys.list });
-    });
+    on("templates-changed", () => invalidate(templateQueryKeys.list()));
 
     // `collection` says which one changed. A project's push with no `project_id` names a path this
     // app could not match to a project, so every project's list is refetched rather than none.
-    subscribe("prompts-changed", (payload) => {
+    on("prompts-changed", (payload) => {
       const id = payload.project_id ?? null;
-      const queryKey =
+      invalidate(
         payload.collection === "shared"
-          ? promptQueryKeys.shared
+          ? promptQueryKeys.shared()
           : id === null
-            ? promptQueryKeys.projects
-            : promptQueryKeys.project(id);
-      void queryClient.invalidateQueries({ queryKey });
+            ? promptQueryKeys.projects()
+            : promptQueryKeys.project(id),
+      );
     });
 
+    // Home's summaries, whichever server said so: a task, a run or a lock anywhere moves a tile.
+    for (const event of ["tasks-changed", "automation-run-changed", "project-locks-changed"]) {
+      on(event, () => invalidate(projectQueryKeys.home()));
+    }
+
+    let capacityTimer: ReturnType<typeof setTimeout> | undefined;
     // Keyed on the project, so there is nothing to listen for until one is open.
     if (projectId !== undefined) {
-      subscribe("sessions-changed", () => {
-        void queryClient.invalidateQueries({
-          queryKey: executionQueryKeys.activeSessions(projectId),
+      on("sessions-changed", () => invalidate(executionQueryKeys.activeSessions(projectId)));
+
+      // Kept by the project's daemon and shared by every window on it.
+      on("settings-changed", () => {
+        invalidate(settingsQueryKeys.autoMode(projectId));
+        invalidate(settingsQueryKeys.loopWaitCap(projectId));
+      });
+
+      // The agent slots are the host's, which other projects share, so any project's change can
+      // move them. One transition emits several of these, and `tasks-changed` alone fires on
+      // every permission prompt and every answer to one, so they are answered once, together.
+      for (const event of ["tasks-changed", "sessions-changed", "settings-changed"]) {
+        on(event, () => {
+          clearTimeout(capacityTimer);
+          capacityTimer = setTimeout(
+            () => invalidate(executionQueryKeys.queueCapacity(projectId)),
+            CAPACITY_DEBOUNCE_MS,
+          );
         });
+      }
+    }
+
+    for (const [event, list] of handlers) {
+      void listen(event, ({ payload }) => {
+        for (const handle of list) handle((payload ?? {}) as Payload);
+      }).then((unlisten) => {
+        if (cancelled) unlisten();
+        else unlisteners.push(unlisten);
       });
     }
 
     return () => {
       cancelled = true;
+      clearTimeout(capacityTimer);
       for (const unlisten of unlisteners) unlisten();
     };
   }, [queryClient, projectId]);
+}
+
+/**
+ * Subscribe a component to one backend event while it is mounted, or until `name` changes. A null
+ * `name` subscribes to nothing. The newest `handler` is the one called, so it needs no memoising.
+ *
+ * Cancel-safe like `useServerEventSync`: `listen` resolves later, so an unmount before it does
+ * unsubscribes as soon as it can rather than never.
+ */
+export function useTauriEvent<T>(name: string | null, handler: (payload: T) => void) {
+  const handlerRef = useRef(handler);
+  useEffect(() => {
+    handlerRef.current = handler;
+  });
+
+  useEffect(() => {
+    if (name === null) return;
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void listen<T>(name, (event) => handlerRef.current(event.payload)).then((stop) => {
+      if (cancelled) stop();
+      else unlisten = stop;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [name]);
 }

@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { useProjectBranchesQuery, taskQueryKeys } from "@/services/task.service";
+import { projectQueryKeys, useProjectBranchesQuery } from "@/services/project.service";
 import { useSelectedProject } from "@/store/projectStore";
 
 interface BranchPickerProps {
@@ -214,7 +214,7 @@ export function BranchPicker({
         className="shrink-0"
         onClick={() =>
           void queryClient.invalidateQueries({
-            queryKey: [...taskQueryKeys.base, "branches", projectId],
+            queryKey: projectQueryKeys.branches(projectId),
           })
         }
         disabled={isFetching}

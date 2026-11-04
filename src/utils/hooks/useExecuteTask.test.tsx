@@ -31,7 +31,10 @@ vi.mock("@/services/task.service", () => ({
   useDeleteTaskAttachmentMutation: () => ({ mutateAsync: deleteAttachment }),
 }));
 vi.mock("@/services/worktree.service", () => ({
-  worktreeQueryKeys: { list: (id: number) => ["worktrees", id] },
+  worktreeListOptions: (id: number, path: string) => ({
+    queryKey: ["worktrees", id],
+    queryFn: () => api.listWorktreesWithStatus(id, path),
+  }),
 }));
 vi.mock("@/services/execution.service", () => ({
   useActiveSessionsQuery: () => ({ data: [] }),

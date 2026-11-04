@@ -14,9 +14,9 @@ const branches = vi.hoisted(() => ({
  * The picker fetches its own branches through the project store and a query; neither is what
  * these tests are about, so both are replaced by a fixed list.
  */
-vi.mock("@/services/task.service", () => ({
+vi.mock("@/services/project.service", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/services/project.service")>()),
   useProjectBranchesQuery: () => ({ data: [branches, "main"], isFetching: false }),
-  taskQueryKeys: { base: ["tasks"] },
 }));
 vi.mock("@/store/projectStore", () => ({ useSelectedProject: () => ({ id: 1, path: "/repo" }) }));
 

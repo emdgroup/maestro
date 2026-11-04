@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { SegmentThumb } from "@/components/common/SegmentThumb";
+import { Segmented } from "@/components/common/Segmented";
 import { CopyPlus, Ellipsis, Pencil, Plus, Search, Star, Trash2 } from "lucide-react";
 import {
   DragDropProvider,
@@ -14,8 +14,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
-import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
-import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
+
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,7 +33,8 @@ import {
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { CopyStateIcon, useCopyToClipboard } from "@/components/execution/activity/HighlightedCode";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+import { CopyStateIcon } from "@/components/common/CopyStateIcon";
 import {
   useCopyPromptMutation,
   useDeletePromptMutation,
@@ -413,28 +413,7 @@ export function PromptsPanel({
             className="home-field h-8 rounded-xl pl-8 text-xs"
           />
         </div>
-        <ToggleGroup
-          value={[filter]}
-          onValueChange={(values) => {
-            const next = values.find((value) => value !== filter);
-            if (next) setFilter(next as PromptFilter);
-          }}
-          aria-label="Show"
-          spacing={1}
-          className={SEGMENT_GROUP}
-        >
-          <SegmentThumb />
-          {FILTERS.map((option) => (
-            <ToggleGroupItem
-              key={option.value}
-              value={option.value}
-              size="sm"
-              className={SEGMENT_ITEM}
-            >
-              {option.label}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+        <Segmented label="Show" value={filter} onChange={setFilter} options={FILTERS} />
       </div>
       {tags.length > 0 && (
         <div className="flex flex-wrap gap-1" role="group" aria-label="Filter by tag">

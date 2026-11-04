@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useUsageReport } from "@/services/usage.service";
-import { formatCost } from "./format";
+import { formatCost } from "@/lib/format-utils";
 import { bucketKeys, resolveRange } from "./range";
 
 const BAR = 9;

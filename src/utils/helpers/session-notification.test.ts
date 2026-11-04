@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { ActiveSessionInfo } from "@/types/bindings";
 import {
-  agentLabel,
+  agentDisplayName,
   notificationBody,
   sessionLabel,
   signalForStopReason,
@@ -72,9 +72,9 @@ describe("labels", () => {
   });
 
   it("renders the agent id as a display name", () => {
-    expect(agentLabel(session())).toBe("Claude Code");
-    expect(agentLabel(session({ agent_id: "gemini" }))).toBe("Gemini");
-    expect(agentLabel(session({ agent_id: null }))).toBe("The agent");
+    expect(agentDisplayName(session())).toBe("Claude Code");
+    expect(agentDisplayName(session({ agent_id: "gemini" }))).toBe("Gemini");
+    expect(agentDisplayName(session({ agent_id: null }))).toBe("The agent");
   });
 
   it("joins the label and the detail into a body", () => {

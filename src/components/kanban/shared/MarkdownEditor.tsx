@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
+import { MarkdownBlock } from "@/components/common/markdown/MarkdownBlock";
 import { useSelectedProject } from "@/store/projectStore";
 import { Bold, Code, Heading2, Info, Italic, Link, List, ListOrdered, Quote } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";

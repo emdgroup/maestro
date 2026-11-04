@@ -8,6 +8,19 @@ import type {
   Task,
   TaskComment,
 } from "@/types/bindings";
+import {
+  Dice5,
+  Gavel,
+  GitMerge,
+  GitPullRequest,
+  Hammer,
+  Hourglass,
+  Terminal,
+  User,
+  type LucideIcon,
+} from "lucide-react";
+import { formatTimeOfDay, plural } from "@/lib/format-utils";
+import type { SessionActivityStatus } from "@/store/sessionActivityStore";
 
 /** What a card says on its phase line, and how loudly. */
 export interface StateLine {
@@ -36,7 +49,7 @@ const HALTS: Record<LoopHalt, { label: string; urgent: boolean }> = {
 /** `15:00`, or `Tue 15:00` once it is not today. */
 export function clockTime(iso: string, now: Date = new Date()): string {
   const at = new Date(iso);
-  const time = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const time = formatTimeOfDay(at);
   return at.toDateString() === now.toDateString()
     ? time
     : `${at.toLocaleDateString(undefined, { weekday: "short" })} ${time}`;
@@ -412,4 +425,409 @@ export function notesGiven(
     const written = Date.parse(c.created_at);
     return c.kind === "steer" && written > from && written <= to;
   });
+}
+
+const secsBetween = (from: string, to: number) => Math.max(0, (to - Date.parse(from)) / 1000);
+
+/** How long an iteration has run, or ran: to `now` while it runs, to its end once it has one. */
+export function iterationSecs(iteration: LoopIteration, now: number): number {
+  return secsBetween(iteration.started_at, now);
+}
+
+/** How long a finished iteration ran; zero for one that has not ended. */
+export function lasted(iteration: LoopIteration): number {
+  return secsBetween(iteration.started_at, Date.parse(iteration.ended_at ?? iteration.started_at));
+}
+
+/** What the Build's agent is doing, in the words its session gives. */
+const DOING: Record<SessionActivityStatus, string> = {
+  spawning: "Starting",
+  thinking: "Thinking",
+  acting: "Using tools",
+  awaiting_input: "Waiting for your answer",
+  idle: "Working",
+  stale: "Working",
+};
+
+/** Which of Build, Checks and Judge the current iteration is in. */
+type Step = 0 | 1 | 2;
+
+/** Why the head of the timeline is where it is. */
+export type Head =
+  /** An iteration building, being checked or judged. */
+  | {
+      kind: "live";
+      step: Step;
+      /** The Build's session, while there is one. */
+      activity: { status: SessionActivityStatus; since: number } | null;
+    }
+  /** Stopped through `loop_blocked`, its question waiting for an answer. */
+  | { kind: "blocked" }
+  /** Refused by a usage limit, running again once it resets. */
+  | { kind: "gated"; label: string; agentId: string; resumeAt: string; backoff: boolean }
+  | { kind: "halted"; halt: Exclude<LoopHalt, "Blocked"> }
+  | { kind: "signoff" }
+  | { kind: "merge" };
+
+/** A head that waits rather than works. */
+export type Held = Exclude<Head, { kind: "live" } | { kind: "blocked" }>;
+
+/** The iteration that heads the timeline, and why. */
+export interface CurrentState {
+  iteration: LoopIteration;
+  head: Head;
+}
+
+export type Tone = "accent" | "warning" | "destructive" | "success" | "muted";
+
+/** The ring on the timeline's rail: filled to `share`, two short lines in it. */
+export interface RingProps {
+  share: number;
+  tone: Tone;
+  big: string | number;
+  small: string;
+  glow?: "accent" | "warning";
+  label: string;
+}
+
+/** The ring of an iteration at work, which ticks: its Build clock against `limitSecs`. */
+export interface LiveRingSpec {
+  live: true;
+  building: boolean;
+  limitSecs: number;
+  amber: boolean;
+}
+
+export type TileState = "done" | "live" | "waiting" | "failed" | "todo";
+
+/** One step of an iteration, as a tile in the head card. */
+export interface Tile {
+  label: string;
+  icon: LucideIcon;
+  sub: string;
+  /** When set, the tile adds how long the agent has been at `sub`, ticking. */
+  since?: number;
+  state: TileState;
+  /** Runs only when the steps before it pass. */
+  optional?: boolean;
+}
+
+/** What the user's tile says while a halt waits on them. */
+const YOURS: Record<Exclude<LoopHalt, "Blocked">, string> = {
+  Paused: "resume when ready",
+  Stopped: "resume when ready",
+  Flaky: "fix or remove the check",
+  Conflict: "commit or revert, then resume",
+  Stalled: "resume when ready",
+  Failing: "resume when ready",
+  OutOfIterations: "raise the limit to go on",
+};
+
+/** A held loop's iteration through its steps, from the results it recorded. */
+export function heldTiles(
+  head: Held,
+  iteration: LoopIteration,
+  checks: LoopCheck[],
+  now: Date = new Date(),
+): Tile[] {
+  const outcomes = checkOutcomes(iteration, checks);
+  const commands = outcomes.filter((o) => o.check.kind === "Command");
+  const judge = outcomes.find((o) => o.check.kind === "Judge");
+  const passed = commands.filter((o) => o.result?.state === "Pass").length;
+  const flaky = commands.find((o) => o.result?.state === "Flaky");
+  const ran = commands.some((o) => o.result);
+  const stepFailed = failedStep(iteration, checks);
+  const tiles: Tile[] = [
+    head.kind === "gated"
+      ? {
+          label: "Build",
+          icon: Hourglass,
+          sub: `${head.label} · resumes ${clockTime(head.resumeAt, now)}`,
+          state: "waiting",
+        }
+      : iteration.outcome === "Interrupted"
+        ? {
+            label: "Build",
+            icon: Hammer,
+            sub: `cut off at ${formatDuration(lasted(iteration))}`,
+            state: "failed",
+          }
+        : {
+            label: "Build",
+            icon: Hammer,
+            sub: `done in ${formatDuration(lasted(iteration))}`,
+            state: "done",
+          },
+  ];
+  if (head.kind === "halted" && head.halt === "Conflict") {
+    tiles.push({ label: "Merge back", icon: GitMerge, sub: "changes in the way", state: "failed" });
+  } else {
+    tiles.push({
+      label: "Checks",
+      icon: flaky ? Dice5 : Terminal,
+      sub: stepFailed
+        ? `did not run: step ${stepFailed.n} failed`
+        : flaky
+          ? `"${flaky.check.label}" is flaky`
+          : ran
+            ? `${passed} of ${plural(commands.length, "command")} pass`
+            : "did not run",
+      state: stepFailed
+        ? "failed"
+        : flaky
+          ? "waiting"
+          : !ran
+            ? "todo"
+            : passed === commands.length
+              ? "done"
+              : "failed",
+    });
+    if (judge) {
+      const verdict = judge.result?.state;
+      tiles.push({
+        label: "Judge",
+        icon: Gavel,
+        sub: !verdict ? "not reached" : verdict === "Pass" ? "passed" : "failed",
+        state: !verdict ? "todo" : verdict === "Pass" ? "done" : "failed",
+        optional: true,
+      });
+    }
+  }
+  if (head.kind === "merge") {
+    tiles.push({ label: "Merge", icon: GitPullRequest, sub: "pull request open", state: "live" });
+  } else if (head.kind === "signoff") {
+    const manual = outcomes.filter((o) => o.check.kind === "Manual");
+    const ticked = manual.filter((o) => o.check.state === "Pass").length;
+    tiles.push({
+      label: "You",
+      icon: User,
+      sub: manual.length
+        ? `${ticked} of ${plural(manual.length, "check")} ticked`
+        : "review and approve",
+      state: "waiting",
+    });
+  } else if (head.kind === "halted") {
+    tiles.push({ label: "You", icon: User, sub: YOURS[head.halt], state: "waiting" });
+  }
+  return tiles;
+}
+
+/** The head card's tone, status word and ring for a loop that waits rather than works. */
+export function heldLook(
+  task: Task,
+  head: Held,
+  iteration: LoopIteration,
+  now: Date = new Date(),
+): { tone: Tone; word: string; ring: RingProps } {
+  const config = task.loop_config;
+  const used = lasted(iteration);
+  const ring = (
+    tone: Tone,
+    small: string,
+    share = 1,
+    big: string | number = formatDuration(used),
+  ): RingProps => ({ share, tone, big, small, label: `Iteration ${iteration.n}: ${small}` });
+  switch (head.kind) {
+    case "gated":
+      return {
+        tone: "warning",
+        word: head.backoff
+          ? `${head.agentId} hit its usage limit`
+          : `Waiting for the ${head.label.toLowerCase()}`,
+        ring: { ...ring("warning", "resumes", 1, clockTime(head.resumeAt, now)), glow: "warning" },
+      };
+    case "signoff":
+      return { tone: "warning", word: "Ready for you", ring: ring("success", "all pass") };
+    case "merge":
+      return { tone: "success", word: "Pull request open", ring: ring("success", "checks pass") };
+    case "halted":
+      switch (head.halt) {
+        case "Paused":
+          return { tone: "muted", word: "Paused", ring: ring("muted", "paused") };
+        case "Stopped":
+          return iteration.outcome === "Interrupted"
+            ? {
+                tone: "muted",
+                word: "Interrupted",
+                ring: ring(
+                  "muted",
+                  "cut off",
+                  Math.min(1, used / (config?.max_build_secs ?? 7200)),
+                ),
+              }
+            : { tone: "muted", word: "Stopped", ring: ring("muted", "stopped") };
+        case "Flaky":
+          return {
+            tone: "warning",
+            word: "Paused: a check is flaky",
+            ring: ring("warning", "paused"),
+          };
+        // Halts the loop decided on: they wait on the user, nothing broke.
+        case "Conflict":
+          return {
+            tone: "warning",
+            word: "Halted: could not merge back",
+            ring: ring("warning", "halted"),
+          };
+        case "Stalled":
+          return {
+            tone: "warning",
+            word: `Halted: ${config?.stall_limit ?? "several"} iterations changed nothing`,
+            ring: ring("warning", "halted"),
+          };
+        case "Failing":
+          return {
+            tone: "warning",
+            word: "Halted: the last three iterations failed",
+            ring: ring("warning", "halted"),
+          };
+        case "OutOfIterations":
+          return {
+            tone: "warning",
+            word: "Out of iterations",
+            ring: ring("warning", `of ${config?.max_iterations ?? "?"} used`, 1, iteration.n),
+          };
+      }
+  }
+}
+
+/** Why a held loop waits, in one paragraph. It explains; the footer holds what to do about it. */
+export function heldReason(
+  task: Task,
+  head: Held,
+  iteration: LoopIteration,
+  now: Date = new Date(),
+): string {
+  if (head.kind === "gated") {
+    return `The refused attempt is kept as a WIP commit and runs again at ${clockTime(head.resumeAt, now)}, without counting. The next session never sees the error.`;
+  }
+  if (head.kind === "signoff") {
+    return "Review the changes to approve them, or send the loop back with a note that goes into the next iteration.";
+  }
+  if (head.kind === "merge") {
+    return "The digest is the pull request's description. Same merge step as every task.";
+  }
+  switch (head.halt) {
+    case "Paused":
+      return `Paused after #${iteration.n}, as you asked. Resume starts #${iteration.n + 1}, with any note you add.`;
+    case "Stopped":
+      return iteration.outcome === "Interrupted"
+        ? `Its work so far is kept as a WIP commit. Resume runs #${iteration.n} again from there, and this attempt does not count.`
+        : `Stopped, as you asked. Resume starts #${iteration.n + 1}, with any note you add.`;
+    case "Flaky":
+      return `It failed, then passed when run again on the same commit, so the loop waits rather than spend iterations on it. Fix the test in the loop's worktree or remove the check, then re-run the checks: they run on the loop's worktree as it is, and cost no iteration.`;
+    case "Conflict":
+      return "The loop's worktree has changes in the way of this iteration's commit, which is kept. Commit or revert them there, then resume: the next iteration merges it first.";
+    case "OutOfIterations":
+      return `It used all ${plural(task.loop_config?.max_iterations ?? iteration.n, "iteration")} without every check passing. Raising the limit in Checks & settings lets it go on.`;
+    case "Stalled":
+      return "Its last iterations committed nothing, so it halted rather than spend more. What the agent said is below.";
+    case "Failing":
+      return "Its last iterations failed, so it halted rather than spend more. What the agent said is below.";
+  }
+}
+
+/** The head card of an iteration at work, or stopped on its question. */
+export function workingCard(
+  task: Task,
+  current: CurrentState & { head: { kind: "live" | "blocked" } },
+  checks: LoopCheck[],
+  commands: number,
+  judged: boolean,
+): { tone: Tone; word: string; ring: RingProps | LiveRingSpec; tiles: Tile[]; asking: boolean } {
+  const { iteration, head } = current;
+  // The round runs the steps, then the checks, in order: the first without a result is running.
+  const steps = setupOutcomes(iteration, checks);
+  const run = checkOutcomes(iteration, checks).filter((o) => o.check.kind === "Command");
+  const stepAt = steps.findIndex((o) => !o.result);
+  const checkAt = run.findIndex((o) => !o.result);
+  const stepFailed = failedStep(iteration, checks);
+  const limitSecs = task.loop_config?.max_build_secs ?? 7200;
+  const blocked = head.kind === "blocked";
+  const step = head.kind === "live" ? head.step : 0;
+  const activity = head.kind === "live" ? head.activity : null;
+  const asking = step === 0 && activity?.status === "awaiting_input";
+  const doing = activity ? DOING[activity.status] : "Working";
+  const tone: Tone = blocked || asking ? "warning" : "accent";
+  const ring: RingProps | LiveRingSpec = blocked
+    ? {
+        share: Math.min(1, lasted(iteration) / limitSecs),
+        tone: "warning",
+        big: formatDuration(lasted(iteration)),
+        small: "stopped",
+        label: `Build stopped after ${formatDuration(lasted(iteration))}`,
+      }
+    : { live: true, building: step === 0, limitSecs, amber: asking };
+  const tiles: Tile[] = [
+    {
+      label: "Build",
+      icon: Hammer,
+      sub: blocked
+        ? `stopped after ${formatDuration(lasted(iteration))}`
+        : step > 0
+          ? "done"
+          : doing,
+      since: !blocked && step === 0 ? activity?.since : undefined,
+      state: step > 0 ? "done" : tone === "warning" ? "waiting" : "live",
+    },
+    {
+      label: "Checks",
+      icon: Terminal,
+      sub:
+        step > 1
+          ? `${commands} of ${commands} commands pass`
+          : step === 1 && stepFailed
+            ? `step ${stepFailed.n} failed`
+            : step === 1 && stepAt >= 0
+              ? `step ${stepAt + 1} of ${steps.length} · ${steps[stepAt].check.label}`
+              : step === 1 && checkAt >= 0
+                ? `check ${checkAt + 1} of ${run.length} · ${run[checkAt].check.label}`
+                : steps.length > 0
+                  ? `${plural(steps.length, "step")}, then ${plural(commands, "command")}`
+                  : plural(commands, "command"),
+      state: step === 1 ? "live" : step > 1 ? "done" : "todo",
+    },
+  ];
+  if (judged) {
+    tiles.push({
+      label: "Judge",
+      icon: Gavel,
+      sub: step === 2 ? "reading the changes" : "if every command passes",
+      state: step === 2 ? "live" : "todo",
+      optional: true,
+    });
+  }
+  const word = blocked ? "Blocked" : step === 1 ? "Running checks" : step === 2 ? "Judging" : doing;
+  return { tone, word, ring, tiles, asking };
+}
+
+/** A markdown text's first line with something on it, its heading or list marks dropped. */
+export function plainFirstLine(text: string | null | undefined): string {
+  return (
+    (text ?? "")
+      .split("\n")
+      .map((l) => l.replace(/^[#>*\-\s]+/, "").trim())
+      .find(Boolean) ?? ""
+  );
+}
+
+/** What a row says where its dots would be, for an iteration whose checks did not run. */
+export function sideNote(iteration: LoopIteration): string | null {
+  switch (iteration.outcome) {
+    case "Interrupted":
+      return "cut off, not counted";
+    case "Empty":
+      return "changed nothing";
+    // A failed commit or merge back records git's reason; the agent failing records none.
+    case "Failed":
+      return iteration.check_output?.startsWith("The iteration's commit failed")
+        ? "commit failed"
+        : iteration.check_output?.includes("could not be merged")
+          ? "merge failed"
+          : "the agent failed";
+    case "Blocked":
+      return "blocked, checks not run";
+    default:
+      return null;
+  }
 }

@@ -22,7 +22,7 @@ export const CI_TONE: Record<CiRollup, string> = {
   unknown: "text-muted-foreground",
 };
 
-const CI_LABEL: Record<CiRollup, string> = {
+export const CI_LABEL: Record<CiRollup, string> = {
   passing: "All checks passed",
   failing: "Checks failing",
   running: "Checks running",

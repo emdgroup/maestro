@@ -16,9 +16,9 @@ vi.mock("@/components/kanban/shared/BranchPicker", () => ({
  * `NewWorktreeFields` reads the same branch query itself, to tell a remote-qualified base apart
  * from a local branch, so stubbing the picker alone no longer keeps the query out of the tree.
  */
-vi.mock("@/services/task.service", () => ({
+vi.mock("@/services/project.service", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/services/project.service")>()),
   useProjectBranchesQuery: () => ({ data: [{ local: [], remote: [] }, "main"] }),
-  taskQueryKeys: { base: ["tasks"] },
 }));
 vi.mock("@/store/projectStore", () => ({ useSelectedProject: () => ({ id: 1, path: "/repo" }) }));
 

@@ -9,7 +9,7 @@ import {
 } from "@/ui/dialog";
 import { Button } from "@/ui/button";
 import { useCloseRefinementMutation, useTaskCommentsQuery } from "@/services/task.service";
-import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
+import { MarkdownBlock } from "@/components/common/markdown/MarkdownBlock";
 import { useSelectedProject } from "@/store/projectStore";
 import type { Task } from "@/types/bindings";
 

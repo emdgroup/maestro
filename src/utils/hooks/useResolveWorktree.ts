@@ -1,6 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/tauri-utils";
-import { useCreateWorktreeMutation, worktreeQueryKeys } from "@/services/worktree.service";
+import { useCreateWorktreeMutation, worktreeListOptions } from "@/services/worktree.service";
 
 /** A worktree created for a session, so the caller can clean it up on close. */
 export interface CreatedWorktree {
@@ -57,10 +56,7 @@ export function useResolveWorktree() {
     pullRequest = null,
   }: ResolveWorktreeArgs): Promise<ResolvedWorktree> => {
     if (taskId !== null) {
-      const worktrees = await queryClient.fetchQuery({
-        queryKey: worktreeQueryKeys.list(projectId),
-        queryFn: () => api.listWorktreesWithStatus(projectId, repoPath),
-      });
+      const worktrees = await queryClient.fetchQuery(worktreeListOptions(projectId, repoPath));
       const existing = worktrees.find((w) => w.task_id === taskId);
       if (existing && existing.id != null) {
         return { cwd: existing.path, branchName: existing.branch_name, created: null };

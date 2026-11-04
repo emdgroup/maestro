@@ -5,7 +5,7 @@ import { Textarea } from "@/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { TaskComment } from "@/types/bindings";
 import { useTaskCommentsQuery, useAddTaskNoteMutation } from "@/services/task.service";
-import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
+import { MarkdownBlock } from "@/components/common/markdown/MarkdownBlock";
 import { useSelectedProject } from "@/store/projectStore";
 
 /**

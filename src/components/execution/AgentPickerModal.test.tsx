@@ -10,7 +10,8 @@ vi.mock("@/contexts/KanbanContext", () => ({
 vi.mock("@/services/execution.service", () => ({
   useAgentDiscoveryQuery: () => ({ data: { agents: [{ id: "codex", name: "Codex" }] } }),
 }));
-vi.mock("@/services/project.service", () => ({
+vi.mock("@/services/project.service", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/services/project.service")>()),
   useProjectSettings: () => ({
     data: { startup_tab: "kanban", default_workspace_mode: "NewWorktree" },
   }),

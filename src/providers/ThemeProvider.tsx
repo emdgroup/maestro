@@ -1,11 +1,16 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from "react";
+import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react";
 import type { AppSettings } from "@/types/bindings";
 import { oklch } from "culori";
 import { api } from "@/lib/tauri-utils";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import { useProjectSettings, useSetProjectAccentColor } from "@/services/project.service";
 import { useSelectedProject } from "@/store/projectStore";
-import { randomPresetHue } from "@/utils/constants/accentColors";
+import {
+  ACCENT_CHROMA,
+  ACCENT_LIGHTNESS,
+  randomPresetHue,
+  resolveProjectHue,
+} from "@/utils/constants/accentColors";
 import { reduceMotionDefault } from "@/lib/rendering";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { MotionConfig } from "framer-motion";
@@ -84,11 +89,10 @@ const CHART_SERIES: Array<{ hue: number; lightness: number; chroma: number }> = 
 
 function applyAccentHue(hue: number): void {
   const isDark = document.documentElement.classList.contains("dark");
-  const lightness = isDark ? 0.75 : 0.5;
-  const chroma = 0.15;
+  const lightness = isDark ? ACCENT_LIGHTNESS.dark : ACCENT_LIGHTNESS.light;
   document.documentElement.style.setProperty(
     "--accent",
-    `oklch(${lightness * 100}% ${chroma} ${hue})`,
+    `oklch(${lightness * 100}% ${ACCENT_CHROMA} ${hue})`,
   );
   document.documentElement.style.setProperty(
     "--accent-foreground",
@@ -122,19 +126,46 @@ function parseHue(value: string | null | undefined): number | null {
   return Number.isFinite(hue) ? hue : null;
 }
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<ThemeValue>("system");
+/** The appearance settings this provider owns, each saved the same way. */
+type AppearancePatch = Partial<
+  Pick<AppSettings, "theme_preference" | "accent_color" | "ui_scale" | "reduce_motion">
+>;
+
+export function ThemeProvider({ children }: { children: ReactNode }) {
   const [systemTheme, setSystemTheme] = useState<"light" | "dark">(() => getSystemTheme());
-  const [isReady, setIsReady] = useState(false);
-  const [globalAccentHue, setGlobalAccentHueState] = useState<number | null>(null);
-  const [uiScale, setUiScaleState] = useState<string | null>(null);
-  // Seeded from the machine so a software-rendering board is already quiet on the first render,
-  // before the settings query resolves and can confirm or override it.
-  const [reduceMotion, setReduceMotionState] = useState<boolean>(() => reduceMotionDefault());
+  // The machine's own answer, read once, so a software-rendering board is already quiet on the
+  // first render, before the settings query resolves and can confirm or override it.
+  const [machineReducesMotion] = useState(() => reduceMotionDefault());
   const [systemAccentHue, setSystemAccentHue] = useState<number | null>(null);
   const settingsQuery = useSettings();
   const saveSettings = useSaveSettings({ successToast: false });
   const systemAccentHueCacheRef = useRef<number | null>(null);
+
+  // A choice shows at once and is dropped again once the query carries it, or when its save fails,
+  // which is the rollback: the values below fall back to what is stored, and the effects repaint.
+  const [pending, setPending] = useState<AppearancePatch>({});
+  // Which save last set each pending key, so a failure only rolls back what it still owns.
+  const saveSeqRef = useRef(0);
+  const pendingOwnerRef = useRef<Partial<Record<keyof AppearancePatch, number>>>({});
+  const stored = settingsQuery.data;
+  useEffect(() => {
+    if (!stored) return;
+    setPending((current) => {
+      const kept = Object.entries(current).filter(
+        ([key, value]) => stored[key as keyof AppearancePatch] !== value,
+      );
+      return kept.length === Object.keys(current).length ? current : Object.fromEntries(kept);
+    });
+  }, [stored]);
+
+  const settings = stored ? { ...stored, ...pending } : undefined;
+  const isReady = settings != null;
+  const theme: ThemeValue = (settings?.theme_preference as ThemeValue) || "system";
+  const globalAccentHue = parseHue(settings?.accent_color);
+  const uiScale = settings?.ui_scale ?? null;
+  // `??`, not `||`: a stored `false` is a deliberate "keep the animation" on a machine the
+  // detection would otherwise switch off, and has to win over it.
+  const reduceMotion = settings?.reduce_motion ?? machineReducesMotion;
 
   const selectedProject = useSelectedProject();
   const projectSettingsQuery = useProjectSettings(selectedProject?.id ?? null);
@@ -151,6 +182,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return hue;
   }
 
+  /**
+   * Paints what a project hue resolves to. Synchronous unless it falls through to an OS accent not
+   * loaded yet; `cancelled` stops a late answer from painting over a newer one.
+   */
+  async function paintAccent(projectHue: number | null, cancelled?: () => boolean): Promise<void> {
+    const hue =
+      resolveProjectHue({
+        projectAccent: projectHue,
+        globalAccent: globalAccentHue,
+        systemAccent: systemAccentHueCacheRef.current,
+      }) ?? (await getSystemAccentHue());
+    if (!cancelled?.()) applyAccentHue(hue);
+  }
+
   // Loaded whether or not it is the hue being painted: the pickers preview what "follows the OS
   // accent" would look like even while an explicit colour is in effect.
   useEffect(() => {
@@ -158,41 +203,26 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Each setting is written to the DOM once the settings are known. The theme goes first: the
+  // accent effect below reads the dark class at call time.
   useEffect(() => {
-    if (settingsQuery.data == null || isReady) return;
-    const savedTheme = (settingsQuery.data.theme_preference as ThemeValue) || "system";
-    setThemeState(savedTheme);
-    applyTheme(savedTheme, systemTheme);
+    if (isReady) applyTheme(theme, systemTheme);
+  }, [isReady, theme, systemTheme]);
 
-    setGlobalAccentHueState(parseHue(settingsQuery.data.accent_color));
+  useEffect(() => {
+    if (isReady) applyReduceMotion(reduceMotion);
+  }, [isReady, reduceMotion]);
 
-    const savedScale = settingsQuery.data.ui_scale ?? null;
-    setUiScaleState(savedScale);
-    applyUiScale(savedScale);
-
-    // `??`, not `||`: a stored `false` is a deliberate "keep the animation" on a machine the
-    // detection would otherwise switch off, and has to win over it.
-    const savedReduceMotion = settingsQuery.data.reduce_motion ?? reduceMotionDefault();
-    setReduceMotionState(savedReduceMotion);
-    applyReduceMotion(savedReduceMotion);
-
-    setIsReady(true);
-  }, [settingsQuery.data, isReady, systemTheme]);
+  useEffect(() => {
+    if (isReady) applyUiScale(uiScale);
+  }, [isReady, uiScale]);
 
   // The single place the accent is painted. Reacts to project switches, colour changes and
-  // dark/light flips (the theme deps matter: applyAccentHue reads the dark class at call time,
-  // so this must re-run after applyTheme has toggled it).
+  // dark/light flips.
   useEffect(() => {
     if (!isReady) return;
     let cancelled = false;
-    const explicit = projectAccentHue ?? globalAccentHue;
-    if (explicit != null) {
-      applyAccentHue(explicit);
-      return;
-    }
-    void getSystemAccentHue().then((hue) => {
-      if (!cancelled) applyAccentHue(hue);
-    });
+    void paintAccent(projectAccentHue, () => cancelled);
     return () => {
       cancelled = true;
     };
@@ -222,42 +252,28 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     settingsQuery.data,
   ]);
 
-  async function handleSetTheme(newTheme: ThemeValue): Promise<void> {
-    const currentSettings = settingsQuery.data;
-    if (!currentSettings) return;
-
-    setThemeState(newTheme);
-    applyTheme(newTheme, systemTheme);
-
-    const updatedSettings: AppSettings = {
-      ...currentSettings,
-      theme_preference: newTheme,
-    };
+  /**
+   * Shows `patch` at once and saves it on top of every other pending choice, so two quick changes
+   * cannot overwrite each other. A failed save drops the keys it still owns, which rolls the UI
+   * back; a key a later save has taken over stays, so an older failure cannot undo a newer choice.
+   * The mutation's own toast reports the error.
+   */
+  async function saveAppearance(patch: AppearancePatch): Promise<void> {
+    if (!settings) return;
+    const save = ++saveSeqRef.current;
+    const keys = Object.keys(patch) as (keyof AppearancePatch)[];
+    for (const key of keys) pendingOwnerRef.current[key] = save;
+    setPending((current) => ({ ...current, ...patch }));
     try {
-      await saveSettings.mutateAsync(updatedSettings);
+      await saveSettings.mutateAsync({ ...settings, ...patch });
     } catch {
-      setThemeState(theme);
-      applyTheme(theme, systemTheme);
+      const owned = keys.filter((key) => pendingOwnerRef.current[key] === save);
+      setPending((current) => {
+        const next = { ...current };
+        for (const key of owned) delete next[key];
+        return next;
+      });
     }
-  }
-
-  async function handleSetGlobalAccentColor(hue: number | null): Promise<void> {
-    const currentSettings = settingsQuery.data;
-    if (!currentSettings) return;
-
-    setGlobalAccentHueState(hue);
-
-    const updatedSettings: AppSettings = {
-      ...currentSettings,
-      accent_color: hue != null ? String(hue) : null,
-    };
-    await saveSettings.mutateAsync(updatedSettings);
-  }
-
-  /** Paints what a given project hue resolves to: its own colour → global default → OS accent. */
-  async function paintProjectHue(hue: number | null): Promise<void> {
-    const explicit = hue ?? globalAccentHue;
-    applyAccentHue(explicit ?? (await getSystemAccentHue()));
   }
 
   async function handleSetProjectAccentColor(hue: number | null): Promise<void> {
@@ -265,7 +281,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (!project) return;
 
     const previous = projectAccentHue;
-    await paintProjectHue(hue);
+    await paintAccent(hue);
 
     try {
       await setProjectAccentMutation.mutateAsync({
@@ -276,75 +292,39 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       // Error surfaced by the mutation's toast. Repainting has to be explicit: the optimistic
       // paint wrote to the DOM directly, so the refetch returning unchanged data re-renders
       // nothing and would leave a colour on screen that was never stored.
-      await paintProjectHue(previous);
-    }
-  }
-
-  async function handleSetUiScale(scale: string): Promise<void> {
-    const currentSettings = settingsQuery.data;
-    if (!currentSettings) return;
-
-    setUiScaleState(scale);
-    applyUiScale(scale);
-
-    const updatedSettings: AppSettings = {
-      ...currentSettings,
-      ui_scale: scale,
-    };
-    await saveSettings.mutateAsync(updatedSettings);
-  }
-
-  /** Always stores an explicit boolean: choosing either way ends the follow-the-machine default. */
-  async function handleSetReduceMotion(on: boolean): Promise<void> {
-    const currentSettings = settingsQuery.data;
-    if (!currentSettings) return;
-
-    setReduceMotionState(on);
-    applyReduceMotion(on);
-
-    const updatedSettings: AppSettings = {
-      ...currentSettings,
-      reduce_motion: on,
-    };
-    try {
-      await saveSettings.mutateAsync(updatedSettings);
-    } catch {
-      // The class was written to the DOM directly, so a failed save has to be undone here — a
-      // refetch returning the old value re-renders nothing and would leave the class on.
-      setReduceMotionState(!on);
-      applyReduceMotion(!on);
+      await paintAccent(previous);
     }
   }
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    const handleChange = (e: MediaQueryListEvent) => {
-      const newSystemTheme = e.matches ? "dark" : "light";
-      setSystemTheme(newSystemTheme);
-      if (theme === "system") {
-        applyTheme("system", newSystemTheme);
-      }
-    };
+    const handleChange = (e: MediaQueryListEvent) => setSystemTheme(e.matches ? "dark" : "light");
     mediaQuery.addEventListener("change", handleChange);
     return () => mediaQuery.removeEventListener("change", handleChange);
-  }, [theme]);
+  }, []);
 
   const value: ThemeContextValue = {
     theme,
-    setTheme: handleSetTheme,
+    setTheme: (next) => saveAppearance({ theme_preference: next }),
     systemTheme,
     isDark: theme === "dark" || (theme === "system" && systemTheme === "dark"),
     isReady,
-    effectiveAccentHue: projectAccentHue ?? globalAccentHue ?? systemAccentHue,
+    effectiveAccentHue: resolveProjectHue({
+      projectAccent: projectAccentHue,
+      globalAccent: globalAccentHue,
+      systemAccent: systemAccentHue,
+    }),
     projectAccentHue,
     setProjectAccentColor: handleSetProjectAccentColor,
     globalAccentHue,
-    setGlobalAccentColor: handleSetGlobalAccentColor,
+    setGlobalAccentColor: (hue) =>
+      saveAppearance({ accent_color: hue != null ? String(hue) : null }),
     systemAccentHue,
     uiScale,
-    setUiScale: handleSetUiScale,
+    setUiScale: (scale) => saveAppearance({ ui_scale: scale }),
     reduceMotion,
-    setReduceMotion: handleSetReduceMotion,
+    // Always stores an explicit boolean: choosing either way ends the follow-the-machine default.
+    setReduceMotion: (on) => saveAppearance({ reduce_motion: on }),
   };
 
   // The CSS class covers everything animated by a stylesheet; MotionConfig covers the framer-motion

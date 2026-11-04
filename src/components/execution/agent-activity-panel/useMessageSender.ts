@@ -1,7 +1,12 @@
 import React, { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
-import { api } from "@/lib/tauri-utils";
+import {
+  interruptAcpTurn,
+  respondHostTool,
+  sendAcpPrompt,
+  sendAcpPromptStructured,
+} from "@/services/execution.service";
 import { isPlanPermission } from "../activity/PermissionPrompt";
 import type { ActivityAction } from "../activity/useAcpActivity";
 import type { JsonValue } from "@/types/bindings";
@@ -95,12 +100,12 @@ export function useMessageSender({
         const waiting = pendingCanvasAwaitsRef.current;
         if (waiting.length === 0) return;
         try {
-          await api.interruptAcpTurn(sessionId);
+          await interruptAcpTurn(sessionId);
         } catch {
           // Best-effort: answering the waits below still unblocks the agent.
         }
         for (const { requestId } of waiting) {
-          await api.respondHostTool(sessionId, requestId, { timeout: true }).catch(() => {});
+          await respondHostTool(sessionId, requestId, { timeout: true }).catch(() => {});
         }
         await waitForTurnEnd(isTurnActiveRef);
       }
@@ -109,7 +114,7 @@ export function useMessageSender({
       // So cancel first, answer the request `cancelled`, then wait for the turn to actually end.
       if (pendingPermission && isPlanPermission(pendingPermission.payload)) {
         try {
-          await api.interruptAcpTurn(sessionId);
+          await interruptAcpTurn(sessionId);
         } catch {
           // Best-effort: answering the request below still unblocks the agent.
         }
@@ -122,9 +127,9 @@ export function useMessageSender({
       setActivity(sessionId, "thinking");
       try {
         if (contentBlocks) {
-          await api.sendAcpPromptStructured(sessionId, contentBlocks);
+          await sendAcpPromptStructured(sessionId, contentBlocks);
         } else {
-          await api.sendAcpPrompt(sessionId, content);
+          await sendAcpPrompt(sessionId, content);
         }
       } catch {
         pendingSendRef.current = false;
@@ -147,7 +152,7 @@ export function useMessageSender({
 
   const handleCancel = useCallback(async () => {
     try {
-      await api.interruptAcpTurn(sessionId);
+      await interruptAcpTurn(sessionId);
       // A cancel is only answered if the agent honours it, or if maestro-server
       // is new enough to synthesize a TurnEnded when no turn is in flight. The
       // deployed server binary is per project and can lag the app, and a wedged

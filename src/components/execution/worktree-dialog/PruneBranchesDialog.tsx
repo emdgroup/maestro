@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { formatTimeAgoLong } from "@/lib/format-utils";
+import { formatTimeAgoLong, plural } from "@/lib/format-utils";
 import { TriangleAlert } from "lucide-react";
 import {
   AlertDialog,
@@ -98,9 +98,7 @@ export function PruneBranchesDialog({
         {!branch.merged && (
           <span className="flex items-center gap-2 font-mono text-[11px]">
             {branch.commits > 0 && (
-              <span className="text-muted-foreground">
-                {branch.commits} {branch.commits === 1 ? "commit" : "commits"}
-              </span>
+              <span className="text-muted-foreground">{plural(branch.commits, "commit")}</span>
             )}
             {stat && stat.insertions > 0 && (
               <span className="text-success">+{stat.insertions}</span>
@@ -158,10 +156,9 @@ export function PruneBranchesDialog({
           <div className="flex gap-2.5 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs leading-relaxed">
             <TriangleAlert className="size-4 shrink-0 text-warning mt-px" />
             <span>
-              {selectedUnmerged.length} unmerged{" "}
-              {selectedUnmerged.length === 1 ? "branch" : "branches"} will be deleted with{" "}
-              <span className="font-mono">git branch -D</span>. {lostCommits}{" "}
-              {lostCommits === 1 ? "commit exists" : "commits exist"} on no other branch and cannot
+              {plural(selectedUnmerged.length, "unmerged branch", "unmerged branches")} will be
+              deleted with <span className="font-mono">git branch -D</span>.{" "}
+              {plural(lostCommits, "commit exists", "commits exist")} on no other branch and cannot
               be recovered.
             </span>
           </div>
@@ -185,7 +182,7 @@ export function PruneBranchesDialog({
                 Pruning...
               </>
             ) : (
-              `Prune ${selected.size} ${selected.size === 1 ? "branch" : "branches"}`
+              `Prune ${plural(selected.size, "branch", "branches")}`
             )}
           </AlertDialogAction>
         </AlertDialogFooter>

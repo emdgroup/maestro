@@ -5,7 +5,7 @@ import { sendNotification } from "@tauri-apps/plugin-notification";
 import type { ActiveSessionInfo, AppSettings } from "@/types/bindings";
 import { extractTitle } from "@/components/execution/activity/permission-prompt-utils";
 import {
-  agentLabel,
+  agentDisplayName,
   notificationBody,
   signalForElicitation,
   signalForPermission,
@@ -67,7 +67,7 @@ export function useSessionNotifications(
     async function raise(sessionId: string, build: (agent: string) => SessionSignal | null) {
       const session = sessionsRef.current.find((s) => s.session_id === sessionId);
       if (!session) return;
-      const signal = build(agentLabel(session));
+      const signal = build(agentDisplayName(session));
       if (!signal) return;
       if (await window.isFocused()) return;
 

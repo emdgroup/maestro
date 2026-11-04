@@ -1,18 +1,7 @@
-import { useEffect, useRef } from "react";
-import { listen } from "@tauri-apps/api/event";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import { Unicode11Addon } from "@xterm/addon-unicode11";
-import { WebglAddon } from "@xterm/addon-webgl";
-import { getTerminalTheme, getTerminalColorOptions } from "@/lib/terminalTheme";
-import { useSettings } from "@/services/settings.service";
-import { useTheme } from "@/providers/ThemeProvider";
-import {
-  registerTerminal,
-  unregisterTerminal,
-  TERMINAL_CONTAINER_ATTRIBUTE,
-} from "@/components/common/context-menu/editCommands";
-import "@xterm/xterm/css/xterm.css";
+import { useRef } from "react";
+import { useTauriEvent } from "@/services/tauri-events";
+import { TERMINAL_CONTAINER_ATTRIBUTE } from "@/components/common/context-menu/editCommands";
+import { useXterm } from "./useXterm";
 
 interface AcpTerminalViewProps {
   sessionId: string;
@@ -32,91 +21,25 @@ export function AcpTerminalView({
   onInput,
 }: AcpTerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<Terminal | null>(null);
-  const { data: settings } = useSettings();
-  const terminalColorMode = settings?.terminal_color_mode ?? "follow_theme";
-  const { theme, systemTheme, effectiveAccentHue } = useTheme();
-  const effectiveTheme = theme === "system" ? systemTheme : theme;
 
-  useEffect(() => {
-    if (!containerRef.current) return;
+  const xtermRef = useXterm(containerRef, {
+    options: { cursorBlink: false, scrollback: 5000, disableStdin: !onInput },
+    deps: [sessionId, terminalId],
+    onOpen: (terminal) => {
+      if (initialOutput) terminal.write(toTerminalOutput(initialOutput));
+      if (!onInput) return;
+      const subscription = terminal.onData(onInput);
+      return () => subscription.dispose();
+    },
+  });
 
-    const terminal = new Terminal({
-      cursorBlink: false,
-      scrollback: 5000,
-      allowProposedApi: true,
-      disableStdin: !onInput,
-      ...getTerminalTheme(terminalColorMode),
-    });
-
-    const fitAddon = new FitAddon();
-    terminal.loadAddon(fitAddon);
-
-    const unicode11Addon = new Unicode11Addon();
-    terminal.loadAddon(unicode11Addon);
-    terminal.unicode.activeVersion = "11";
-
-    terminal.open(containerRef.current);
-
-    const webglAddon = new WebglAddon();
-    webglAddon.onContextLoss(() => webglAddon.dispose());
-    terminal.loadAddon(webglAddon);
-
-    xtermRef.current = terminal;
-
-    // Lets AppContextMenu reach this instance: xterm owns its own selection, so
-    // the menu must use getSelection()/paste() rather than DOM clipboard commands.
-    const container = containerRef.current;
-    registerTerminal(container, terminal);
-
-    if (initialOutput) {
-      terminal.write(toTerminalOutput(initialOutput));
-    }
-
-    const rafId = requestAnimationFrame(() => {
-      fitAddon.fit();
-    });
-
-    // Hidden tabs report 0x0 (display:none); fitting on that reflows the buffer
-    // to junk. On the way back, cols/rows are unchanged so nothing would repaint
-    // the stale WebGL raster — refresh explicitly.
-    const resizeObserver = new ResizeObserver(([entry]) => {
-      if (entry.contentRect.width === 0 || entry.contentRect.height === 0) return;
-      fitAddon.fit();
-      terminal.refresh(0, terminal.rows - 1);
-    });
-    resizeObserver.observe(containerRef.current);
-
-    let disposeOnData: (() => void) | undefined;
-    if (onInput) {
-      const d = terminal.onData(onInput);
-      disposeOnData = () => d.dispose();
-    }
-
-    const unlisten = listen<{ terminal_id: string; output: string }>(
-      `acp://terminal-output/${sessionId}`,
-      (event) => {
-        if (event.payload.terminal_id !== terminalId) return;
-        terminal.write(toTerminalOutput(event.payload.output));
-      },
-    ).catch(console.error);
-
-    return () => {
-      cancelAnimationFrame(rafId);
-      resizeObserver.disconnect();
-      unregisterTerminal(container);
-      disposeOnData?.();
-      unlisten.then((fn) => fn?.());
-      terminal.dispose();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, terminalId]);
-
-  useEffect(() => {
-    const terminal = xtermRef.current;
-    if (!terminal) return;
-    terminal.options = getTerminalColorOptions(terminalColorMode);
-  }, [terminalColorMode, effectiveTheme, effectiveAccentHue]);
+  useTauriEvent<{ terminal_id: string; output: string }>(
+    `acp://terminal-output/${sessionId}`,
+    (payload) => {
+      if (payload.terminal_id !== terminalId) return;
+      xtermRef.current?.write(toTerminalOutput(payload.output));
+    },
+  );
 
   return (
     <div className="pt-2 pl-2 h-full w-full bg-(--terminal-surface) dark:bg-transparent">

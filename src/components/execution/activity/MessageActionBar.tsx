@@ -4,7 +4,8 @@ import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { formatTimeAgoLong } from "@/lib/format-utils";
-import { CopyStateIcon, useCopyToClipboard } from "./HighlightedCode";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+import { CopyStateIcon } from "@/components/common/CopyStateIcon";
 
 // One timer for the whole stream, not one per message: a long session holds hundreds of
 // these and each would otherwise wake the main thread on its own schedule.

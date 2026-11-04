@@ -1,15 +1,15 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { SegmentThumb } from "@/components/common/SegmentThumb";
+import { Segmented } from "@/components/common/Segmented";
 import { useQueryClient } from "@tanstack/react-query";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { ChevronsUpDown, GitBranch, Plus, RefreshCw, Scissors, SearchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
+
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Spinner } from "@/ui/spinner";
-import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/ui/resizable";
@@ -26,7 +26,7 @@ import {
 } from "@/services/worktree.service";
 import { useActiveSessionsQuery } from "@/services/execution.service";
 import { useNow } from "@/hooks/useNow";
-import { useGitInitProject } from "@/services/project.service";
+import { openProject, useGitInitProject } from "@/services/project.service";
 import { useIsGitRepo, useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { WorktreeCardGrid } from "@/components/execution/worktree-card/WorktreeCardGrid";
 import {
@@ -50,7 +50,6 @@ import { DeleteWorktreeDialog } from "@/components/execution/worktree-dialog/Del
 import { CreateWorktreeDialog } from "@/components/execution/worktree-dialog/CreateWorktreeDialog";
 import { PruneBranchesDialog } from "@/components/execution/worktree-dialog/PruneBranchesDialog";
 import type { ConnectionKey, WorktreeWithStatus } from "@/types/bindings";
-import { api } from "@/lib/tauri-utils";
 import { toast } from "sonner";
 
 export const STATUS_FILTERS = ["All", "Active", "Modified", "Idle"] as const;
@@ -325,7 +324,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
           wslConnectionId: selectedProject?.wsl_connection_id ?? null,
           dockerConnectionId: selectedProject?.docker_connection_id ?? null,
         });
-        const project = await api.openProject(projectId);
+        const project = await openProject(projectId);
         setSelectedProject(project, true);
         toast.success("Git initialized successfully");
       } catch (error) {
@@ -377,20 +376,11 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
               </InputGroupAddon>
             </InputGroup>
           </ShortcutHint>
-          <ToggleGroup spacing={1} size="sm" value={[statusFilter]} className={SEGMENT_GROUP}>
-            <SegmentThumb />
-            {STATUS_FILTERS.map((f) => (
-              <ToggleGroupItem
-                key={f}
-                value={f}
-                pressed={statusFilter === f}
-                onClick={() => setStatusFilter(f)}
-                className={SEGMENT_ITEM}
-              >
-                {f}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+          <Segmented
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={STATUS_FILTERS.map((f) => ({ value: f, label: f }))}
+          />
         </div>
         <div className="flex items-center gap-2">
           <ShortcutHint shortcutId="wt-refresh">

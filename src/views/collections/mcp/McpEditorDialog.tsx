@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 import { Reveal } from "@/components/common/Reveal";
-import { ChevronRight, CircleCheck, CircleX, Copy, Loader2, Plus, X } from "lucide-react";
+import { ChevronRight, CircleCheck, CircleX, Plus, X } from "lucide-react";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+import { CopyStateIcon } from "@/components/common/CopyStateIcon";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { Button } from "@/ui/button";
@@ -17,7 +19,8 @@ import {
   useSaveMcpServerMutation,
   useTestMcpServerMutation,
 } from "@/services/mcp.service";
-import { ALL_AGENTS, Segmented } from "../AgentsDialog";
+import { ALL_AGENTS } from "../AgentsDialog";
+import { Segmented } from "@/components/common/Segmented";
 import { CommandInput } from "./CommandInput";
 import {
   guessName,
@@ -34,6 +37,8 @@ import type {
   McpServerConfig,
   McpTestResult,
 } from "@/types/bindings";
+import { plural } from "@/lib/format-utils";
+import { Spinner } from "@/ui/spinner";
 
 const EMPTY: McpServerConfig = {
   name: "",
@@ -238,8 +243,7 @@ export function McpEditorDialog({
       setToken(bearer ? headers[0].value.replace(/^Bearer\s+/i, "") : "");
     }
     setResult(null);
-    if (skipped)
-      toast.info(`Took “${pasted.name}”; ${skipped} more server${skipped > 1 ? "s" : ""} left out`);
+    if (skipped) toast.info(`Took “${pasted.name}”; ${plural(skipped, "more server")} left out`);
     return true;
   };
 
@@ -481,7 +485,7 @@ export function McpEditorDialog({
               )
             }
           >
-            {test.isPending && <Loader2 className="mr-1 size-3.5 animate-spin" />}
+            {test.isPending && <Spinner className="mr-1 size-3.5" />}
             Test connection
           </Button>
           {unsigned ? (
@@ -526,6 +530,7 @@ function OAuthPanel({
   onSignIn: () => void;
 }) {
   const keyFile = useRef<HTMLInputElement>(null);
+  const redirectCopy = useCopyToClipboard(REDIRECT_URL);
   const set = (patch: Partial<McpOAuthSettings>) => onChange({ ...settings, ...patch });
   const text = (value: string) => (value.trim() === "" ? null : value);
   const method = settings.client_auth || "auto";
@@ -553,7 +558,7 @@ function OAuthPanel({
           disabled={pending || !canSignIn}
           onClick={onSignIn}
         >
-          {pending && <Loader2 className="mr-1 size-3 animate-spin" />}
+          {pending && <Spinner className="mr-1 size-3" />}
           {pending ? "Signing in…" : signedIn || saved ? "Sign in again" : "Sign in"}
         </Button>
       </div>
@@ -618,12 +623,9 @@ function OAuthPanel({
                 size="icon-sm"
                 aria-label="Copy the redirect URL"
                 className="size-5"
-                onClick={() => {
-                  void navigator.clipboard.writeText(REDIRECT_URL);
-                  toast.success("Redirect URL copied");
-                }}
+                onClick={redirectCopy.copy}
               >
-                <Copy className="size-3" />
+                <CopyStateIcon copied={redirectCopy.copied} className="size-3" />
               </Button>
               as the redirect URL in the provider's app settings.
             </p>
@@ -748,9 +750,7 @@ export function TestOutcome({ result }: { result: McpTestResult | null }) {
       >
         <CircleCheck className="size-3.5 shrink-0" />
         <span className="truncate">
-          {result.tools.length
-            ? `Connected: ${result.tools.length} tool${result.tools.length === 1 ? "" : "s"}`
-            : "Connected"}
+          {result.tools.length ? `Connected: ${plural(result.tools.length, "tool")}` : "Connected"}
         </span>
       </TooltipTrigger>
       <TooltipContent>{result.tools.join(", ")}</TooltipContent>

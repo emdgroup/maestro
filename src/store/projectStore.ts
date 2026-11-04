@@ -3,25 +3,7 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/shallow";
 import type { Project } from "@/types/bindings";
-import { api } from "@/lib/tauri-utils";
-import { useNavigationStore, type ViewType } from "@/store/navigationStore";
-
-// A project that stored `settings` before it became a dialog falls through to the default tab.
-const VALID_STARTUP_TABS = new Set<ViewType>(["kanban", "agents", "worktrees", "collections"]);
-
-export async function applyProjectStartupTab(projectId: number): Promise<void> {
-  try {
-    const settings = await api.getProjectSettings(projectId);
-    if (settings.startup_tab) {
-      const tab = settings.startup_tab as ViewType;
-      if (VALID_STARTUP_TABS.has(tab)) {
-        useNavigationStore.getState().setActiveTab(tab);
-      }
-    }
-  } catch {
-    // non-fatal — useEffect in App.tsx acts as fallback
-  }
-}
+import { releaseActiveProjectLock } from "@/services/project.service";
 
 interface ProjectState {
   selectedProject: Project | null;
@@ -40,7 +22,7 @@ const useStore = create<ProjectState>()(
         state.isGitRepo = isGitRepo;
       }),
     clearSelectedProject: () => {
-      void api.releaseActiveProjectLock().catch(console.error);
+      void releaseActiveProjectLock().catch(console.error);
       set((state) => {
         state.selectedProject = null;
         state.isGitRepo = true;

@@ -115,6 +115,13 @@ describe("navigationStore – slideDirection", () => {
     setActiveTab("kanban");
     expect(useNavigationStore.getState().slideDirection).toBe(-1);
   });
+
+  // navigate used to set -1 here while setActiveTab left it, so the next slide could go either way.
+  it("navigate to the tab already showing leaves slideDirection alone too", () => {
+    useNavigationStore.setState({ activeTab: "agents", slideDirection: 1 });
+    useNavigationStore.getState().navigate({ agentId: "a" });
+    expect(useNavigationStore.getState().slideDirection).toBe(1);
+  });
 });
 
 describe("navigationStore – activeTaskId", () => {

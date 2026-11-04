@@ -7,13 +7,12 @@ import { Switch } from "@/ui/switch";
 import { Repeat, Workflow, X } from "lucide-react";
 import { toast } from "sonner";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
-import {
-  useCreateTaskMutation,
-  useAddTaskAttachmentMutation,
-  useListRemoteIssuesQuery,
-} from "@/services/task.service";
+import { useCreateTaskMutation, useAddTaskAttachmentMutation } from "@/services/task.service";
 import { useDefaultBaseBranch } from "@/hooks/useDefaultBaseBranch";
-import { useProjectIssueTrackingConfig } from "@/services/integration.service";
+import {
+  useListRemoteIssuesQuery,
+  useProjectIssueTrackingConfig,
+} from "@/services/integration.service";
 import { useProjectSettings } from "@/services/project.service";
 import { useIsGitRepo } from "@/store/projectStore";
 import { EditableField } from "@/components/kanban/task-detail-modal/EditableField";

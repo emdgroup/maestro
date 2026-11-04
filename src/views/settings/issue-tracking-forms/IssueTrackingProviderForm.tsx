@@ -3,8 +3,7 @@ import { GitHubForm } from "./GitHubForm";
 import { JiraCloudForm } from "./JiraCloudForm";
 import { LinearForm } from "./LinearForm";
 import { GitLabForm } from "./GitLabForm";
-import { ForgejoForm } from "./ForgejoForm";
-import { GiteaForm } from "./GiteaForm";
+import { ForgejoForm, GiteaForm } from "./ForgejoForm";
 import { AzureDevOpsForm } from "./AzureDevOpsForm";
 
 interface Props {

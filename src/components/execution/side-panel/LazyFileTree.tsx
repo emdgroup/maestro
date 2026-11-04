@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import {
-  Loader2,
   ChevronRight,
   Search,
   X,
@@ -21,6 +20,8 @@ import { ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from "@/ui/
 import { useListDirContents, useListWorkspaceFiles } from "@/services/connection.service";
 import { ToolbarButton } from "./ToolbarButton";
 import type { ConnectionKey } from "@/types/bindings";
+import { basename } from "@/lib/path-utils";
+import { Spinner } from "@/ui/spinner";
 
 /** The entry a menu action applies to, resolved to everything the mutation and dialog need. */
 export interface FileTreeTarget {
@@ -281,7 +282,7 @@ function FilterResults({
   return (
     <>
       {matches.map((relativePath) => {
-        const name = relativePath.split("/").pop() ?? relativePath;
+        const name = basename(relativePath);
         const isSelected = relativePath === selectedFile;
         return (
           <Tooltip key={relativePath}>
@@ -351,7 +352,7 @@ function DirContents({
   if (isLoading) {
     return (
       <div className="flex items-center py-1.5" style={{ paddingLeft: indentFor(depth) }}>
-        <Loader2 className="size-3 animate-spin text-muted-foreground" />
+        <Spinner className="size-3 text-muted-foreground" />
       </div>
     );
   }

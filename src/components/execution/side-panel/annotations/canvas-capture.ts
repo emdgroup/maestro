@@ -13,7 +13,7 @@
  * frame` before anything is drawn. See `capture` in `canvas-frame.ts`.
  */
 
-import { api } from "@/lib/tauri-utils";
+import { saveClipboardImage } from "@/services/execution.service";
 import type { CanvasFrameHandle } from "@/components/execution/activity/canvas/CanvasHtml";
 
 export interface CanvasCapture {
@@ -47,7 +47,7 @@ export async function captureRegion(
     // Reuses the clipboard-paste path: it already writes to a temp file, and `send` then hands
     // that path to `prepare_external_attachments`, which downscales it and — for an SSH, WSL or
     // container session — copies it to where the agent can reach it.
-    const path = await api.saveClipboardImage(base64, "image/png");
+    const path = await saveClipboardImage(base64, "image/png");
     return { path, dataUrl };
   } catch {
     return null;

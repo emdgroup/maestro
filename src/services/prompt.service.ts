@@ -5,9 +5,9 @@ import type { PromptInput } from "@/types/bindings";
 
 export const promptQueryKeys = {
   base: ["prompts"] as const,
-  shared: ["prompts", "shared"] as const,
-  projects: ["prompts", "project"] as const,
-  project: (projectId: number) => ["prompts", "project", projectId] as const,
+  shared: () => [...promptQueryKeys.base, "shared"] as const,
+  projects: () => [...promptQueryKeys.base, "project"] as const,
+  project: (projectId: number) => [...promptQueryKeys.projects(), projectId] as const,
 };
 
 /**
@@ -16,7 +16,7 @@ export const promptQueryKeys = {
  */
 export function usePromptsQuery(projectId: number, shared: boolean) {
   return useQuery({
-    queryKey: shared ? promptQueryKeys.shared : promptQueryKeys.project(projectId),
+    queryKey: shared ? promptQueryKeys.shared() : promptQueryKeys.project(projectId),
     queryFn: () => api.listPrompts(projectId, shared),
   });
 }

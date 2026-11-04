@@ -13,7 +13,11 @@ import {
   MessageScrollerItem,
   useMessageScroller,
 } from "@/ui/message-scroller";
-import { OpenFileContext, CommandsContext, ImageProxyContext } from "../activity/MarkdownBlock";
+import {
+  OpenFileContext,
+  CommandsContext,
+  ImageProxyContext,
+} from "@/components/common/markdown/MarkdownBlock";
 import { CreateTaskFromTextContext } from "../activity/task-draft";
 
 /* Keys the scroller itself treats as scroll input. */

@@ -1,19 +1,13 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { Channel } from "@tauri-apps/api/core";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import { Unicode11Addon } from "@xterm/addon-unicode11";
-import { WebglAddon } from "@xterm/addon-webgl";
-import { api } from "@/lib/tauri-utils";
-import { getTerminalTheme, getTerminalColorOptions } from "@/lib/terminalTheme";
-import { useSettings } from "@/services/settings.service";
 import {
-  registerTerminal,
-  unregisterTerminal,
-  TERMINAL_CONTAINER_ATTRIBUTE,
-} from "@/components/common/context-menu/editCommands";
-import { useTheme } from "@/providers/ThemeProvider";
-import "@xterm/xterm/css/xterm.css";
+  attachTerminal,
+  detachTerminal,
+  resizeTerminal,
+  sendTerminalInput,
+} from "@/services/execution.service";
+import { TERMINAL_CONTAINER_ATTRIBUTE } from "@/components/common/context-menu/editCommands";
+import { useXterm } from "./useXterm";
 
 interface TerminalComponentProps {
   sessionId: string;
@@ -21,88 +15,28 @@ interface TerminalComponentProps {
 
 export function TerminalComponent({ sessionId }: TerminalComponentProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<Terminal | null>(null);
-  const channelRef = useRef<Channel<string> | null>(null);
-  const { data: settings } = useSettings();
-  const terminalColorMode = settings?.terminal_color_mode ?? "follow_theme";
-  const { theme, systemTheme, effectiveAccentHue } = useTheme();
-  const effectiveTheme = theme === "system" ? systemTheme : theme;
 
-  useEffect(() => {
-    if (!terminalRef.current) return;
-
-    // Create xterm terminal instance
-    const terminal = new Terminal({
-      cursorBlink: true,
-      scrollback: 1000,
-      allowProposedApi: true,
-      ...getTerminalTheme(terminalColorMode),
-    });
-
-    // Create and load FitAddon for auto-sizing
-    const fitAddon = new FitAddon();
-    terminal.loadAddon(fitAddon);
-
-    // Enable Unicode 11 for correct wide character / symbol rendering
-    const unicode11Addon = new Unicode11Addon();
-    terminal.loadAddon(unicode11Addon);
-    terminal.unicode.activeVersion = "11";
-
-    // Open terminal in container
-    terminal.open(terminalRef.current);
-
-    // WebGL renderer gives consistent per-pixel character grid, fixing
-    // monospace alignment issues in FiraCode's canvas renderer.
-    const webglAddon = new WebglAddon();
-    webglAddon.onContextLoss(() => webglAddon.dispose());
-    terminal.loadAddon(webglAddon);
-
-    xtermRef.current = terminal;
-
-    // Lets AppContextMenu reach this instance: xterm owns its own selection, so
-    // the menu must use getSelection()/paste() rather than DOM clipboard commands.
-    const container = terminalRef.current;
-    registerTerminal(container, terminal);
-
-    // Register resize handler BEFORE fitAddon.fit() so the initial fit
-    // sends the correct dimensions to the backend PTY immediately.
-    terminal.onResize(({ cols, rows }) => {
-      api.resizeTerminal(sessionId, cols, rows).catch((err) => {
-        console.error("Failed to resize terminal:", err);
+  useXterm(terminalRef, {
+    options: { cursorBlink: true, scrollback: 1000 },
+    deps: [sessionId],
+    onOpen: (terminal) => {
+      // Registered before the first fit so it sends the right size to the PTY straight away.
+      terminal.onResize(({ cols, rows }) => {
+        resizeTerminal(sessionId, cols, rows).catch((err) => {
+          console.error("Failed to resize terminal:", err);
+        });
       });
-    });
-
-    // Set up Tauri channel for streaming output
-    const channel = new Channel<string>();
-    channelRef.current = channel;
-
-    channel.onmessage = (output: string) => {
-      terminal.write(output);
-    };
-
-    // Attach to backend PTY using execution service.
-    // Retry once after 500ms — PTY may still be initializing for interactive sessions.
-    const tryAttach = () => {
-      api.attachTerminal(sessionId, channel, null).catch((err) => {
-        console.error("Failed to attach terminal:", err);
-        setTimeout(() => {
-          api.attachTerminal(sessionId, channel, null).catch((err2) => {
-            console.error("Failed to attach terminal (retry):", err2);
-            terminal.write(`\r\nError: Failed to attach terminal: ${err2}\r\n`);
-          });
-        }, 500);
+      terminal.onData((data: string) => {
+        sendTerminalInput(sessionId, data).catch((err) => {
+          console.error("Failed to send terminal input:", err);
+        });
       });
-    };
-
-    // Defer initial fit to next animation frame so xterm's renderer has
-    // computed cell dimensions. Calling fit() synchronously after open()
-    // causes fit() to be a no-op (cell sizes are 0 until first paint),
-    // leaving the terminal at 80×24 until ResizeObserver fires — causing
-    // the visible resize flash on session switch. rAF fires before the
-    // next paint, so the correct size is set before the user sees anything.
-    const rafId = requestAnimationFrame(() => {
-      fitAddon.fit();
-      // fit() triggers onResize -> api.resizeTerminal() -> SIGWINCH -> program repaints.
+      return () => {
+        detachTerminal(sessionId).catch(() => {});
+      };
+    },
+    onFit: (terminal) => {
+      // fit() triggers onResize -> resizeTerminal() -> SIGWINCH -> program repaints.
       // Reset terminal state before attaching:
       //   - Disable mouse tracking modes that a previous TUI (e.g. claude) may have
       //     enabled without disabling on exit. Without this, bash echoes mouse escape
@@ -110,45 +44,23 @@ export function TerminalComponent({ sessionId }: TerminalComponentProps) {
       //   - Clear screen and home cursor so the first visible frame is blank.
       // History replay will re-enable mouse tracking if the remote session set it up.
       terminal.write("\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l\x1b[2J\x1b[H");
-      tryAttach();
-    });
 
-    // Set up terminal to send input to backend
-    terminal.onData((data: string) => {
-      api.sendTerminalInput(sessionId, data).catch((err) => {
-        console.error("Failed to send terminal input:", err);
+      const channel = new Channel<string>();
+      channel.onmessage = (output: string) => {
+        terminal.write(output);
+      };
+      // Retry once after 500ms: the PTY may still be initializing for interactive sessions.
+      attachTerminal(sessionId, channel).catch((err) => {
+        console.error("Failed to attach terminal:", err);
+        setTimeout(() => {
+          attachTerminal(sessionId, channel).catch((err2) => {
+            console.error("Failed to attach terminal (retry):", err2);
+            terminal.write(`\r\nError: Failed to attach terminal: ${err2}\r\n`);
+          });
+        }, 500);
       });
-    });
-
-    // Auto-resize terminal when container changes size.
-    // Tabs are hidden with display:none, which reports 0x0 — fitting on that
-    // reflows the buffer to junk dimensions. Skip it, and force a repaint on
-    // the way back since the WebGL canvas raster is stale but cols/rows are
-    // unchanged, so no resize event would trigger a redraw on its own.
-    const resizeObserver = new ResizeObserver(([entry]) => {
-      if (entry.contentRect.width === 0 || entry.contentRect.height === 0) return;
-      fitAddon.fit();
-      terminal.refresh(0, terminal.rows - 1);
-    });
-    resizeObserver.observe(terminalRef.current);
-
-    // Cleanup on unmount
-    return () => {
-      cancelAnimationFrame(rafId);
-      resizeObserver.disconnect();
-      unregisterTerminal(container);
-      api.detachTerminal(sessionId).catch(() => {});
-      terminal.dispose();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
-
-  // Update theme in-place when color mode or light/dark changes — no PTY detach/reattach needed.
-  useEffect(() => {
-    const terminal = xtermRef.current;
-    if (!terminal) return;
-    terminal.options = getTerminalColorOptions(terminalColorMode);
-  }, [terminalColorMode, effectiveTheme, effectiveAccentHue]);
+    },
+  });
 
   return (
     <div className="py-2 pl-2 h-full w-full bg-(--terminal-surface) dark:bg-transparent">

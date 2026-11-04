@@ -11,25 +11,30 @@ import { ThemeToggle } from "@/components/common/theme-toggle/ThemeToggle";
 import { GlobalAccentColorPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
 import { WindowControls } from "@/components/layout/window-chrome/WindowControls";
 import { SettingsPage } from "@/views/settings/settings-page/SettingsPage";
-import { SshAuthModal } from "@/views/home/ssh-auth-modal/SshAuthModal";
-import type { AuthSubmission } from "@/views/home/ssh-auth-modal/ssh-auth-utils";
-import { connectionQueryKeys, dockerQueryKeys, wslQueryKeys } from "@/services/connection.service";
-import { api } from "@/lib/tauri-utils";
+import { SshAuthModal } from "@/components/home/ssh-auth-modal/SshAuthModal";
+import type { AuthSubmission } from "@/components/home/ssh-auth-modal/ssh-auth-utils";
+import {
+  attach,
+  connect,
+  connectionQueryKeys,
+  signInWith,
+  useConnectionLossEvents,
+  useDeleteConnectionMutation,
+} from "@/services/connection.service";
 import { getErrorMessage } from "@/lib/error-utils";
 import { projectKey, useHomeStore } from "@/store/homeStore";
 import { AddConnectionPanel } from "./AddConnection";
-import { AddProjectDialog } from "./AddProjectDialog";
+import { AddProjectDialog } from "@/components/home/AddProjectDialog";
 import { ConnectionMenu } from "./ConnectionMenu";
 import { ConnectionPanel } from "./ConnectionPanel";
-import type { HomeConnection } from "./ConnectionPanel";
+import type { HomeConnection } from "@/components/home/useHomeConnections";
 import { Hero } from "./Hero";
 import { IntegrationsPanel } from "./IntegrationsPanel";
-import type { ProjectCard } from "./ProjectTile";
+import type { ProjectCard } from "@/components/home/ProjectTile";
 import { VersionBadge } from "./VersionBadge";
-import { attach, connect, signInWith, useConnectionLossEvents } from "./useConnectionActions";
-import { useHomeConnections } from "./useHomeConnections";
-import { useHomeSummaries } from "./useHomeSummaries";
-import { useOpenProject } from "./useOpenProject";
+import { useHomeConnections } from "@/components/home/useHomeConnections";
+import { useHomeSummaries } from "@/components/home/useHomeSummaries";
+import { useOpenProject } from "@/components/home/useOpenProject";
 import { zoomIntoProject } from "@/components/layout/project-transition/projectTransition";
 import { UsageTile } from "@/views/usage/UsageTile";
 import { UsageView } from "@/views/usage/UsageView";
@@ -43,6 +48,7 @@ const VIEW_TRANSITION = { duration: 0.22, ease: [0.22, 1, 0.36, 1] } as const;
  */
 export function HomeView() {
   const queryClient = useQueryClient();
+  const deleteConnection = useDeleteConnectionMutation();
   const connections = useHomeConnections();
   const phases = useHomeStore((s) => s.phases);
   const attachedOrder = useHomeStore((s) => s.attachedOrder);
@@ -144,15 +150,7 @@ export function HomeView() {
     card.projectId !== null ? openProject(card.projectId) : openPath(card.path, connection.key);
 
   const removeConnection = async (connection: HomeConnection) => {
-    if (connection.key.type === "ssh") await api.deleteSshConnection(connection.key.id);
-    if (connection.key.type === "wsl") await api.deleteWslConnection(connection.key.id);
-    if (connection.key.type === "docker") await api.deleteDockerConnection(connection.key.id);
-    useHomeStore.getState().setPhase(connection.id, { kind: "idle" });
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() }),
-      queryClient.invalidateQueries({ queryKey: wslQueryKeys.connections() }),
-      queryClient.invalidateQueries({ queryKey: dockerQueryKeys.connections() }),
-    ]);
+    await deleteConnection.mutateAsync(connection.key);
     toast.success(`${connection.name} removed`);
   };
 

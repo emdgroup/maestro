@@ -1,25 +1,27 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { Check, Container, Loader2, Server, SquareTerminal } from "lucide-react";
+import { Check, Container, Server, SquareTerminal } from "lucide-react";
+import { connectionKeyStr } from "@/lib/connection-utils";
 import type { ConnectionKey, SshAuthMethod } from "@/types/bindings";
-import { api } from "@/lib/tauri-utils";
 import { getErrorMessage } from "@/lib/error-utils";
 import { cn } from "@/lib/utils";
 import {
-  connectionQueryKeys,
-  dockerQueryKeys,
+  addDockerConnection,
+  addSshConnection,
+  addWslConnection,
+  attach,
+  invalidateConnections,
   useDockerConnections,
   useDockerContainers,
   useWslConnections,
   useWslDistros,
-  wslQueryKeys,
 } from "@/services/connection.service";
-import { connectionKeyId, useHomeStore } from "@/store/homeStore";
-import { HomeSheet } from "./HomeSheet";
-import { Segmented } from "./Segmented";
-import { attach } from "./useConnectionActions";
+import { useHomeStore } from "@/store/homeStore";
+import { HomeSheet } from "@/components/home/HomeSheet";
+import { Segmented } from "@/components/common/Segmented";
 import { Button } from "@/ui/button";
+import { Spinner } from "@/ui/spinner";
 
 type Kind = "ssh" | "wsl" | "docker";
 type Auth = "agent" | "key" | "password";
@@ -58,7 +60,7 @@ function Checklist({
             {index < step ? (
               <Check className="size-4 text-emerald-600" />
             ) : index === step && !error ? (
-              <Loader2 className="size-3.5 animate-spin" />
+              <Spinner className="size-3.5" />
             ) : (
               <span className="inline-block size-1.5 rounded-full bg-foreground/20" />
             )}
@@ -91,20 +93,10 @@ function SshForm({
         : { Password: { save_password: remember } };
 
   const submit = () =>
-    onConnect(async () => {
-      const id = await api.createSshConnection(address.trim(), authMethod);
-      try {
-        if (auth === "agent") await api.connectSshWithAgent(id);
-        if (auth === "key") await api.connectSshWithKey(id, keyPath, null, false);
-        if (auth === "password") await api.connectSshWithPassword(id, password, remember);
-      } catch (error) {
-        // Never confirmed, so it is not kept.
-        await api.deleteSshConnection(id).catch(console.error);
-        throw error;
-      }
-      if (name.trim()) await api.renameSshConnection(id, name.trim());
-      return { type: "ssh", id };
-    }, address.trim());
+    onConnect(
+      () => addSshConnection(address.trim(), authMethod, password, name.trim()),
+      address.trim(),
+    );
 
   return (
     <div className="mt-5">
@@ -130,12 +122,13 @@ function SshForm({
       <div className="mt-4 text-[11px] text-muted-foreground">Sign in with</div>
       <div className="mt-1">
         <Segmented
+          size="lg"
           value={auth}
           onChange={setAuth}
           options={[
-            ["agent", "SSH agent"],
-            ["key", "Key file"],
-            ["password", "Password"],
+            { value: "agent", label: "SSH agent" },
+            { value: "key", label: "Key file" },
+            { value: "password", label: "Password" },
           ]}
         />
       </div>
@@ -217,12 +210,7 @@ function WslList({
               key={distro.name}
               type="button"
               disabled={taken}
-              onClick={() =>
-                onConnect(async () => {
-                  const connection = await api.saveWslConnection(distro.name, null);
-                  return { type: "wsl", id: connection.id };
-                }, distro.name)
-              }
+              onClick={() => onConnect(() => addWslConnection(distro.name), distro.name)}
               className={cn(
                 "home-pane flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left",
                 taken ? "cursor-default opacity-50" : "cursor-pointer",
@@ -263,14 +251,10 @@ function ContainerList({
               type="button"
               disabled={!usable}
               onClick={() =>
-                onConnect(async () => {
-                  const connection = await api.saveDockerConnection(
-                    container.name,
-                    container.image,
-                    null,
-                  );
-                  return { type: "docker", id: connection.id };
-                }, container.name)
+                onConnect(
+                  () => addDockerConnection(container.name, container.image),
+                  container.name,
+                )
               }
               className={cn(
                 "home-pane flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left",
@@ -334,12 +318,8 @@ export function AddConnectionPanel() {
     setConnecting({ host, target: null });
     try {
       const key = await add();
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: connectionQueryKeys.list() }),
-        queryClient.invalidateQueries({ queryKey: wslQueryKeys.connections() }),
-        queryClient.invalidateQueries({ queryKey: dockerQueryKeys.connections() }),
-      ]);
-      setConnecting({ host, target: connectionKeyId(key) });
+      await invalidateConnections(queryClient);
+      setConnecting({ host, target: connectionKeyStr(key) });
       await attach(key);
     } catch (failure) {
       setError(getErrorMessage(failure));

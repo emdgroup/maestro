@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import {
-  connectionQueryKeys,
   useCreateFile,
   useCreateDirectory,
   useRenamePath,
   useDeletePath,
   useListDirContents,
+  useInvalidateFileBrowser,
 } from "@/services/connection.service";
 import { isAbsolutePath } from "@/lib/path-utils";
 import { folderLabel } from "./file-edit-utils";
@@ -52,7 +51,7 @@ export function useFileTreeState({
   isActive,
   initialPath,
 }: UseFileTreeStateOptions) {
-  const queryClient = useQueryClient();
+  const invalidateFileBrowser = useInvalidateFileBrowser();
   const [selected, setSelectedPath] = useState<string | null>(initialPath ?? null);
   const [showHidden, setShowHidden] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -96,10 +95,8 @@ export function useFileTreeState({
   // mounted queries (root + expanded dirs) actually refetch.
   useEffect(() => {
     if (!isActive) return;
-    void queryClient.invalidateQueries({
-      queryKey: [...connectionQueryKeys.fileBrowser(), "dir", connection],
-    });
-  }, [isActive, queryClient, connection]);
+    void invalidateFileBrowser(connection);
+  }, [isActive, invalidateFileBrowser, connection]);
 
   useEffect(() => {
     if (!panelOpen || !selected) return;
@@ -118,9 +115,7 @@ export function useFileTreeState({
   }
 
   function handleRefresh() {
-    void queryClient.invalidateQueries({
-      queryKey: [...connectionQueryKeys.fileBrowser(), "dir", connection],
-    });
+    void invalidateFileBrowser(connection);
   }
 
   function handleTreeAction(action: FileTreeAction) {

@@ -21,11 +21,11 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { McpIcon } from "@/components/common/icons/McpIcon";
 import { cn } from "@/lib/utils";
-import { humanizeTokenCount } from "@/lib/format-utils";
+import { formatTokens, plural } from "@/lib/format-utils";
 import { basename } from "@/lib/path-utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { CommandLabel } from "./CommandLabel";
-import { MarkdownBlock, OpenFileContext } from "./MarkdownBlock";
+import { MarkdownBlock, OpenFileContext } from "@/components/common/markdown/MarkdownBlock";
 import { ContentErrorBoundary, ToolCallContentBlock } from "./ToolCallContentBlock";
 import { isGitCommand, isMcpToolName, isTerminalKind, rowLabel } from "./tool-call-labels";
 import type { ToolCallItem } from "./types";
@@ -256,11 +256,7 @@ export function RowMeta({ tc, prefix }: { tc: ToolCallItem; prefix?: string | nu
     const range = readRange(meta);
     if (range) parts.push(<span key="range">{range}</span>);
     else if (meta.matchFileCount != null) {
-      parts.push(
-        <span key="matches">
-          {meta.matchFileCount} {meta.matchFileCount === 1 ? "file" : "files"}
-        </span>,
-      );
+      parts.push(<span key="matches">{plural(meta.matchFileCount, "file")}</span>);
     }
   }
 
@@ -273,11 +269,11 @@ export function RowMeta({ tc, prefix }: { tc: ToolCallItem; prefix?: string | nu
     if (before != null && after != null) {
       parts.push(
         <span key="tokens">
-          {humanizeTokenCount(before)} → {humanizeTokenCount(after)} tokens
+          {formatTokens(before)} → {formatTokens(after)} tokens
         </span>,
       );
     } else if (before != null) {
-      parts.push(<span key="tokens">{humanizeTokenCount(before)} tokens</span>);
+      parts.push(<span key="tokens">{formatTokens(before)} tokens</span>);
     }
   }
 

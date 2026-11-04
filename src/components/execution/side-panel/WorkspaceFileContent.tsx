@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Spinner } from "@/ui/spinner";
-import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
+import { MarkdownBlock } from "@/components/common/markdown/MarkdownBlock";
 import { useSelectedProject } from "@/store/projectStore";
 import { previewKindFor } from "./file-edit-utils";
 

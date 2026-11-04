@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   elapsedShare,
-  formatCountdown,
   limitReachedNotice,
   liveWindows,
   parsePlanLimits,
@@ -67,15 +66,5 @@ describe("planLimits", () => {
     expect(liveWindows(limits, NOW)).toEqual(["fiveHour", "sevenDay"]);
     expect(liveWindows(limits, NOW + 3 * 3600)).toEqual(["sevenDay"]);
     expect(liveWindows(undefined, NOW)).toEqual([]);
-  });
-
-  it("counts down in days, hours, minutes, and seconds only in the last minute", () => {
-    expect(formatCountdown(28 * 3600)).toBe("1d 4h");
-    expect(formatCountdown(5 * 3600)).toBe("5h 00m");
-    expect(formatCountdown(2 * 3600 + 5 * 60 + 30)).toBe("2h 05m");
-    expect(formatCountdown(3599)).toBe("59m");
-    expect(formatCountdown(65)).toBe("1m");
-    expect(formatCountdown(59.9)).toBe("59s");
-    expect(formatCountdown(-3)).toBe("0s");
   });
 });

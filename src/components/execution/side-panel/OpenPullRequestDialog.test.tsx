@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 
-vi.mock("@/services/task.service", () => ({
+vi.mock("@/services/project.service", () => ({
   useProjectBranchesQuery: () => ({ data: [{ local: ["main", "develop"], remote: [] }, "main"] }),
 }));
 

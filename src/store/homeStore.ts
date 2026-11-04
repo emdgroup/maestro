@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
-import type { ConnectionKey, PreflightResult } from "@/types/bindings";
+import type { PreflightResult } from "@/types/bindings";
 
 /**
  * Where one connection stands on Home.
@@ -24,10 +24,6 @@ export type ConnectionPhase =
   | { kind: "stopping" }
   | { kind: "stopped" }
   | { kind: "unreachable" };
-
-export function connectionKeyId(connection: ConnectionKey): string {
-  return connection.type === "local" ? "local" : `${connection.type}:${connection.id}`;
-}
 
 const MINIMIZED_KEY = "home.minimized";
 const HIDDEN_KEY = "home.hidden";

@@ -6,7 +6,7 @@ vi.mock("@/providers/ThemeProvider", () => ({ useTheme: () => ({ theme: "dark" }
 
 import { McpIcon } from "@/components/common/icons/McpIcon";
 import { ActivityToolCallGroup } from "./ActivityToolCallGroup";
-import { OpenFileContext } from "./MarkdownBlock";
+import { OpenFileContext } from "@/components/common/markdown/MarkdownBlock";
 import { rowIcon, splitTitleAroundPath, ToolCallTimeline } from "./ToolCallTimeline";
 import { formatMcpToolName, isGitCommand, rowLabel } from "./tool-call-labels";
 import type { ToolCallItem } from "./types";

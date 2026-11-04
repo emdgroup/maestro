@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import type { ConnectionKey, ToolCheckEntry } from "@/types/bindings";
+import { connectionKeyStr } from "@/lib/connection-utils";
 
 /**
  * Deliberately does not hold the project's default agent.
@@ -13,11 +14,6 @@ import type { ConnectionKey, ToolCheckEntry } from "@/types/bindings";
 export interface ConfigState {
   preflightToolChecks: Record<string, ToolCheckEntry[]>;
   setPreflightToolChecks: (connection: ConnectionKey, toolChecks: ToolCheckEntry[]) => void;
-}
-
-function connectionKeyStr(connection: ConnectionKey): string {
-  if (connection.type === "local") return "local";
-  return `${connection.type}:${connection.id}`;
 }
 
 export const useConfigStore = create<ConfigState>()(

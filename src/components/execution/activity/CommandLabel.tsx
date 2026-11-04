@@ -1,4 +1,4 @@
-import { HighlightedCode } from "./HighlightedCode";
+import { HighlightedCode } from "@/components/common/markdown/HighlightedCode";
 
 /**
  * Which shell grammar to colour a command with.

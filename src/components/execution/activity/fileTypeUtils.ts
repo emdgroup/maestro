@@ -1,3 +1,14 @@
+import {
+  File,
+  FileArchive,
+  FileCode,
+  FileSpreadsheet,
+  FileTerminal,
+  FileText,
+  Image,
+  type LucideIcon,
+} from "lucide-react";
+
 const IMAGE_EXTENSIONS = new Set([
   ".png",
   ".jpg",
@@ -112,6 +123,25 @@ const BINARY_EXT_MIME: Record<string, string> = {
   ".mp4": "video/mp4",
   ".webm": "video/webm",
 };
+
+const ICON_BY_EXTENSION: Record<string, LucideIcon> = {};
+for (const [icon, exts] of [
+  [FileSpreadsheet, "csv tsv xlsx xls ods"],
+  [
+    FileCode,
+    "ts tsx js jsx mjs cjs rs py go rb java c cpp h hpp cs php swift kt json yaml yml toml xml env ini conf cfg html css sql graphql",
+  ],
+  [FileTerminal, "sh bash zsh fish ps1 bat cmd"],
+  [FileArchive, "zip tar gz 7z rar bz2 xz"],
+  [FileText, "txt md mdx pdf doc docx odt rtf pptx ppt"],
+] as const) {
+  for (const ext of exts.split(" ")) ICON_BY_EXTENSION[`.${ext}`] = icon;
+}
+
+/** The icon a file is listed with: by kind of content, an image, or a plain file. */
+export function fileIcon(path: string): LucideIcon {
+  return ICON_BY_EXTENSION[extOf(path)] ?? (isImageExtension(path) ? Image : File);
+}
 
 export function binaryMimeForExtension(path: string): string | undefined {
   return BINARY_EXT_MIME[extOf(path)];

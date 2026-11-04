@@ -18,7 +18,7 @@ import {
   rollupOfCi,
   type CiRollup,
 } from "@/components/execution/worktree-card/pullRequestCi";
-import { relativeAge } from "@/components/execution/worktree-card/worktree-usage";
+import { relativeAge, plural } from "@/lib/format-utils";
 import type { PullRequestEntry } from "./pullRequestFilters";
 
 const CI_ICON: Record<CiRollup, typeof CircleCheck | null> = {
@@ -132,7 +132,7 @@ export function PullRequestRow({ entry, projectId, now, poll, onAct }: PullReque
     detail?.changed_files != null ? (
       <span key="files" className="flex items-center gap-1 tabular-nums text-muted-foreground">
         <FileDiff className="size-3" />
-        {detail.changed_files} {detail.changed_files === 1 ? "file" : "files"}
+        {plural(detail.changed_files, "file")}
       </span>
     ) : null,
     // Only the icon carries the verdict's colour, and the word stays "CI" rather than "passed":

@@ -11,7 +11,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { api } from "@/lib/tauri-utils";
+import { openLocalPath } from "@/services/connection.service";
 import {
   useLogDirectory,
   useLogLevels,
@@ -162,7 +162,7 @@ export function DiagnosticsSection() {
                     aria-label="Open the log folder"
                     disabled={!activeDirectory}
                     onClick={() => {
-                      if (activeDirectory) void api.openPathNative(activeDirectory);
+                      if (activeDirectory) void openLocalPath(activeDirectory);
                     }}
                   />
                 }

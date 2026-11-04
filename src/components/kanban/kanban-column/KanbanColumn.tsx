@@ -26,6 +26,16 @@ export const colors: Record<TaskStatus, string> = {
   Cancelled: "var(--destructive)",
 };
 
+/** A status as the board's column titles and the task's status chip both name it. */
+export const STATUS_LABELS: Record<TaskStatus, string> = {
+  Planning: "Planning",
+  Queue: "Queue",
+  InProgress: "In Progress",
+  Review: "Review",
+  Done: "Done",
+  Cancelled: "Cancelled",
+};
+
 const COLUMN_EMPTY_STATE: Partial<
   Record<TaskStatus, { icon: React.ReactNode; title: string; sub: string }>
 > = {

@@ -20,6 +20,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { blankCheck, type CheckDraft, type LoopDraft } from "./loop-draft";
 import { orderPatterns, pathsInCommand, type CheckOutcome } from "./loop-state";
+import { plural } from "@/lib/format-utils";
 
 export const CHECK_KINDS: Record<LoopCheckKind, { icon: typeof Terminal; name: string }> = {
   Command: { icon: Terminal, name: "Command" },
@@ -324,8 +325,6 @@ export function prefillHidden(
   if (added.length === 0) return null;
   return { ...draft, sealedPaths: orderPatterns([...draft.sealedPaths, ...added]) };
 }
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** One step: its command and reason edited in place, dragged by its handle. */
 function StepRow({

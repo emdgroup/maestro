@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { useTauriEvent } from "@/services/tauri-events";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,7 +10,7 @@ import {
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
 import { Button } from "@/ui/button";
-import { getFolderName } from "@/lib/path-utils";
+import { basename } from "@/lib/path-utils";
 import { useAnswerProjectTakeover } from "@/services/project.service";
 import type { ConnectionKey } from "@/types/bindings";
 
@@ -36,15 +36,10 @@ export function ProjectTakeoverDialog() {
   const [secondsLeft, setSecondsLeft] = useState(ANSWER_SECONDS);
   const { mutate: answer } = useAnswerProjectTakeover();
 
-  useEffect(() => {
-    const unlisten = listen<TakeoverRequest>("project-takeover-requested", ({ payload }) => {
-      setRequest(payload);
-      setSecondsLeft(ANSWER_SECONDS);
-    });
-    return () => {
-      void unlisten.then((stop) => stop());
-    };
-  }, []);
+  useTauriEvent<TakeoverRequest>("project-takeover-requested", (payload) => {
+    setRequest(payload);
+    setSecondsLeft(ANSWER_SECONDS);
+  });
 
   useEffect(() => {
     if (!request) return;
@@ -69,8 +64,8 @@ export function ProjectTakeoverDialog() {
           <AlertDialogTitle>Give up this project?</AlertDialogTitle>
           <AlertDialogDescription>
             Maestro on {request?.requester_label} wants{" "}
-            {request ? getFolderName(request.project_path) : ""}. Its agent sessions keep running.
-            Given up in {secondsLeft}s if you do not answer.
+            {request ? basename(request.project_path) : ""}. Its agent sessions keep running. Given
+            up in {secondsLeft}s if you do not answer.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

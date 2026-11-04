@@ -116,7 +116,7 @@ describe("CheckRollup", () => {
    */
   it("falls back to the verdict when the forge names no checks", () => {
     render(<CheckRollup ci="Pending" checks={[]} />);
-    expect(screen.getByText("checks running")).toBeInTheDocument();
+    expect(screen.getByText("Checks running")).toBeInTheDocument();
     expect(screen.queryByTestId("failing-names")).not.toBeInTheDocument();
   });
 

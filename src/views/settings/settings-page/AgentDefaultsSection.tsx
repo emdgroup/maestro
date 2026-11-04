@@ -1,10 +1,11 @@
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { Label } from "@/ui/label";
 import { Button } from "@/ui/button";
-import { Bot, Check, Loader2, LogOut } from "lucide-react";
+import { Bot, Check, LogOut } from "lucide-react";
 import type { ConnectionKey, DiscoveredAgent, ProjectConfigRequest } from "@/types/bindings";
 import { useAgentAuthInfoQuery, useAcpLogoutMutation } from "@/services/acp-auth.service";
 import { cn } from "@/lib/utils";
+import { Spinner } from "@/ui/spinner";
 
 interface AgentDefaultsSectionProps {
   defaultAgent: string | null;
@@ -82,11 +83,7 @@ function AgentAuthRow({ agent, isDefault, onSetDefault, connection }: AgentAuthR
             logout.mutate({ agentId: agent.id, connection });
           }}
         >
-          {logout.isPending ? (
-            <Loader2 className="w-3 h-3 animate-spin" />
-          ) : (
-            <LogOut className="w-3 h-3" />
-          )}
+          {logout.isPending ? <Spinner className="size-3" /> : <LogOut className="w-3 h-3" />}
           Logout
         </Button>
       )}

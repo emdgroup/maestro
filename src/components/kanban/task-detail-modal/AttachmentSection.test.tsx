@@ -19,11 +19,8 @@ vi.mock("@/lib/tauri-utils", () => ({
     listTaskAttachments: (...a: unknown[]) => listTaskAttachments(...a),
     addTaskAttachment: (...a: unknown[]) => addTaskAttachment(...a),
     deleteTaskAttachment: (...a: unknown[]) => deleteTaskAttachment(...a),
+    proxyImage: (...a: unknown[]) => proxyImage(...a),
   },
-}));
-
-vi.mock("@/lib/file-opener", () => ({
-  openFileWithConnection: (...a: unknown[]) => openFileWithConnection(...a),
 }));
 
 vi.mock("@/store/projectStore", () => ({
@@ -31,11 +28,8 @@ vi.mock("@/store/projectStore", () => ({
 }));
 
 vi.mock("@/services/connection.service", () => ({
+  openFileWithConnection: (...a: unknown[]) => openFileWithConnection(...a),
   useWslConnections: () => ({ data: [] }),
-}));
-
-vi.mock("@/types/bindings", () => ({
-  commands: { proxyImage: (...a: unknown[]) => proxyImage(...a) },
 }));
 
 vi.mock("sonner", () => ({
@@ -98,7 +92,7 @@ describe("AttachmentSection", () => {
 
   it("opens an image attachment in the lightbox, and deleting one does not", async () => {
     listTaskAttachments.mockResolvedValue([SHOT]);
-    proxyImage.mockResolvedValue({ status: "ok", data: "data:image/png;base64,AAA" });
+    proxyImage.mockResolvedValue("data:image/png;base64,AAA");
     deleteTaskAttachment.mockResolvedValue(undefined);
 
     render(
@@ -125,7 +119,7 @@ describe("AttachmentSection", () => {
 
   it("closes only the lightbox on Escape, not the dialog it is nested in", async () => {
     listTaskAttachments.mockResolvedValue([SHOT]);
-    proxyImage.mockResolvedValue({ status: "ok", data: "data:image/png;base64,AAA" });
+    proxyImage.mockResolvedValue("data:image/png;base64,AAA");
 
     function Harness() {
       const [open, setOpen] = useState(true);
@@ -164,7 +158,7 @@ describe("AttachmentSection", () => {
 
   it("offers the file itself when the image cannot be proxied", async () => {
     listTaskAttachments.mockResolvedValue([SHOT]);
-    proxyImage.mockResolvedValue({ status: "error", error: "no such file" });
+    proxyImage.mockRejectedValue(new Error("no such file"));
     openFileWithConnection.mockResolvedValue(undefined);
 
     render(

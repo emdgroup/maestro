@@ -2,17 +2,20 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
 
 export const lookupQueryKeys = {
-  githubOwner: (owner: string) => ["lookup", "github-owner", owner] as const,
-  githubRepos: (owner: string) => ["lookup", "github-repos", owner] as const,
-  jiraProjects: () => ["lookup", "jira-projects"] as const,
-  linearTeams: () => ["lookup", "linear-teams"] as const,
-  gitlabProjects: () => ["lookup", "gitlab-projects"] as const,
-  forgejoRepos: (owner: string) => ["lookup", "forgejo-repos", owner] as const,
-  giteaRepos: (owner: string) => ["lookup", "gitea-repos", owner] as const,
-  azureDevOpsProjects: () => ["lookup", "azuredevops-projects"] as const,
-  azureDevOpsRepos: (project: string) => ["lookup", "azuredevops-repos", project] as const,
-  bitbucketRepos: (workspace: string) => ["lookup", "bitbucket-repos", workspace] as const,
-  bitbucketProjects: () => ["lookup", "bitbucket-projects"] as const,
+  base: ["lookup"] as const,
+  githubOwner: (owner: string) => [...lookupQueryKeys.base, "githubOwner", owner] as const,
+  githubRepos: (owner: string) => [...lookupQueryKeys.base, "githubRepos", owner] as const,
+  jiraProjects: () => [...lookupQueryKeys.base, "jiraProjects"] as const,
+  linearTeams: () => [...lookupQueryKeys.base, "linearTeams"] as const,
+  gitlabProjects: () => [...lookupQueryKeys.base, "gitlabProjects"] as const,
+  forgejoRepos: (owner: string) => [...lookupQueryKeys.base, "forgejoRepos", owner] as const,
+  giteaRepos: (owner: string) => [...lookupQueryKeys.base, "giteaRepos", owner] as const,
+  azureDevOpsProjects: () => [...lookupQueryKeys.base, "azureDevOpsProjects"] as const,
+  azureDevOpsRepos: (project: string) =>
+    [...lookupQueryKeys.base, "azureDevOpsRepos", project] as const,
+  bitbucketRepos: (workspace: string) =>
+    [...lookupQueryKeys.base, "bitbucketRepos", workspace] as const,
+  bitbucketProjects: () => [...lookupQueryKeys.base, "bitbucketProjects"] as const,
 };
 
 export function useCheckGithubOwner(owner: string) {

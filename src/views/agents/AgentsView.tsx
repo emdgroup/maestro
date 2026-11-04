@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { useQueryClient } from "@tanstack/react-query";
+
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { cn } from "@/lib/utils";
 import { AgentMonitor } from "@/components/execution/agent-monitor/AgentMonitor";
@@ -21,8 +21,13 @@ import {
   useSpawnAcpSessionMutation,
   useAgentDiscoveryQuery,
   useCancelActiveSessionMutation,
+  discardFailedSpawn,
+  getAcpSessionMeta,
+  sendAcpPrompt,
+  sendAcpPromptStructured,
 } from "@/services/execution.service";
-import { useWorktreesQuery } from "@/services/worktree.service";
+
+import { cleanupWorktreeIfClean, useWorktreesQuery } from "@/services/worktree.service";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import type { ConnectionKey } from "@/types/bindings";
 import { useBoardStore, useBoardActions } from "@/store/boardStore";
@@ -41,7 +46,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
-import { api } from "@/lib/tauri-utils";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
@@ -53,27 +57,12 @@ import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { ActivityVisibility } from "@/types/bindings";
 
+import { useConnectionAuthEvents } from "@/components/execution/agent-activity-panel/useAgentAuthFlow";
+
 interface AgentsViewProps {
   projectId?: number;
   repoPath?: string;
   connection: ConnectionKey;
-}
-
-function connKeyToId(connection: ConnectionKey): string {
-  switch (connection.type) {
-    case "local":
-      return "local";
-    case "ssh":
-      return `ssh-${connection.id}`;
-    case "wsl":
-      return `wsl-${connection.id}`;
-    case "docker":
-      return `docker-${connection.id}`;
-  }
-}
-
-function connIdMatches(connection: ConnectionKey, connId: string): boolean {
-  return connKeyToId(connection) === connId;
 }
 
 export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, connection }) => {
@@ -151,76 +140,16 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const cancelMutation = useCancelActiveSessionMutation();
 
-  const queryClient = useQueryClient();
-  const authRequiredTasks = useBoardStore((s) => s.authRequiredTasks);
   const pendingSessionRetry = useBoardStore((s) => s.pendingSessionRetry);
-  const {
-    clearAuthRequired,
-    setAuthTerminalIdle,
-    setPendingAuthRetry,
-    setPendingSessionRetry,
-    clearPendingSessionRetry,
-  } = useBoardActions();
-  // Mirrored from an effect rather than assigned during render — both are read
-  // only inside the Tauri event callbacks below, which run after commit.
-  const authRequiredTasksRef = useRef(authRequiredTasks);
+  const { clearPendingSessionRetry } = useBoardActions();
+  // Mirrored from an effect rather than assigned during render: read only inside the retry
+  // below, after commit.
   const sessionsRef = useRef(sessions);
   useEffect(() => {
-    authRequiredTasksRef.current = authRequiredTasks;
     sessionsRef.current = sessions;
   });
   const spawnAcpMutation = useSpawnAcpSessionMutation();
-
-  useEffect(() => {
-    const connId = connKeyToId(connection);
-    const unlisten = listen<{ exit_code: number | null }>(
-      `acp://auth-pty-exit/${connId}`,
-      (event) => {
-        const tasks = authRequiredTasksRef.current;
-        const found = Object.entries(tasks).find(
-          ([, e]) => e.terminalState === "running" && connIdMatches(e.connection, connId),
-        );
-        if (!found) return;
-        // A task's entry is keyed by its task id, a manual session's by its session id.
-        const authKey = found[0];
-        if (event.payload.exit_code === 0) {
-          const lastPrompt = authRequiredTasksRef.current[authKey]?.lastPrompt;
-          clearAuthRequired(authKey);
-          const isManualSession = sessionsRef.current.some(
-            (s) => s.session_id === authKey && !s.task_id,
-          );
-          if (isManualSession) {
-            setPendingSessionRetry({ sessionId: authKey, lastPrompt: lastPrompt ?? null });
-          } else {
-            setPendingAuthRetry(Number(authKey));
-          }
-        } else {
-          setAuthTerminalIdle(authKey);
-        }
-      },
-    ).catch(console.error);
-    return () => {
-      unlisten.then((fn) => fn?.());
-    };
-  }, [
-    connection,
-    clearAuthRequired,
-    setAuthTerminalIdle,
-    setPendingAuthRetry,
-    setPendingSessionRetry,
-  ]);
-
-  useEffect(() => {
-    const connId = connKeyToId(connection);
-    const unlisten = listen<{ agentId: string }>(`acp://auth-state-changed/${connId}`, (event) => {
-      void queryClient.invalidateQueries({
-        queryKey: ["agentAuthInfo", event.payload.agentId, connection],
-      });
-    }).catch(console.error);
-    return () => {
-      unlisten.then((fn) => fn?.());
-    };
-  }, [connection, queryClient]);
+  useConnectionAuthEvents(connection, sessions);
 
   useEffect(() => {
     if (!pendingSessionRetry || !projectId) return;
@@ -229,9 +158,9 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
     void (async () => {
       const session = sessionsRef.current.find((s) => s.session_id === sessionId);
       if (!session) return;
-      const meta = await api.getAcpSessionMeta(sessionId).catch(() => null);
+      const meta = await getAcpSessionMeta(sessionId).catch(() => null);
       if (!meta) return;
-      await api.discardFailedSpawn(sessionId).catch(() => {});
+      await discardFailedSpawn(sessionId).catch(() => {});
       const result = await spawnAcpMutation.mutateAsync({
         agentId: session.agent_id ?? "",
         cwd: meta.cwd,
@@ -248,9 +177,9 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
             unlisten();
             try {
               if (Array.isArray(lastPrompt)) {
-                await api.sendAcpPromptStructured(sessionId, lastPrompt);
+                await sendAcpPromptStructured(sessionId, lastPrompt);
               } else {
-                await api.sendAcpPrompt(sessionId, lastPrompt as string);
+                await sendAcpPrompt(sessionId, lastPrompt as string);
               }
             } catch (e) {
               console.error("[auth-retry] sendAcpPrompt failed:", e);
@@ -357,8 +286,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
             );
           } else if (projectId != null) {
             autoWorktrees.current.delete(session.session_id);
-            void api
-              .cleanupWorktreeIfClean(projectId, auto.path, auto.branchName, auto.id)
+            void cleanupWorktreeIfClean(projectId, auto.path, auto.branchName, auto.id)
               .then((keptBecause) => {
                 if (keptBecause === null) {
                   toast.success(`Removed empty worktree ${auto.branchName}`);

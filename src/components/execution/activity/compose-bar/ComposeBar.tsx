@@ -9,12 +9,15 @@ import React, {
 import { flushSync } from "react-dom";
 import { Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { api } from "@/lib/tauri-utils";
+import {
+  prepareExternalAttachments,
+  readSessionFile,
+  useAcpSessionMeta,
+} from "@/services/execution.service";
 import type { JsonValue } from "@/types/bindings";
 import type { AcpPromptCapabilities } from "../useAcpSessionLifecycle";
 import type { AvailableCommand, UsageState, ConfigOption } from "../types";
 import { useSettings } from "@/services/settings.service";
-import { useAcpSessionMeta } from "@/services/execution.service";
 import { LiquidContextIndicator } from "../LiquidContextIndicator";
 import { ConfigSelector } from "../config-selectors/ConfigSelector";
 import { mimeForExtension } from "../fileTypeUtils";
@@ -28,6 +31,7 @@ import { AttachmentShelf } from "./AttachmentShelf";
 import { MentionSuggestionsPanel } from "./MentionSuggestionsPanel";
 import { CommandSuggestionsPanel } from "./CommandSuggestionsPanel";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { basename } from "@/lib/path-utils";
 
 /** Share of its bounds the input may grow to before it scrolls internally. */
 const MAX_HEIGHT_RATIO = 0.75;
@@ -193,8 +197,7 @@ export function ComposeBar({
 
   const selectMention = useCallback(
     (filePath: string) => {
-      const basename = filePath.split("/").pop() ?? filePath;
-      const newMention = { id: crypto.randomUUID(), displayName: basename, filePath };
+      const newMention = { id: crypto.randomUUID(), displayName: basename(filePath), filePath };
       const before = value.slice(0, mentionAC.mentionTriggerOffset);
       const after = value.slice(textareaRef.current?.selectionStart ?? value.length);
       const insertion = `@${basename} `;
@@ -260,7 +263,7 @@ export function ComposeBar({
     try {
       const attachmentBlocks: JsonValue[] = [];
       if (attachments.length > 0) {
-        const prepared = await api.prepareExternalAttachments(
+        const prepared = await prepareExternalAttachments(
           sessionId,
           attachments.map((a) => ({ path: a.localAbsPath, is_image: a.isImage })),
           embeddedContext,
@@ -274,7 +277,7 @@ export function ComposeBar({
       if (mentions.length > 0 && embeddedContext) {
         const results = await Promise.allSettled(
           mentions.map(async (m) => {
-            const text = await api.readSessionFile(sessionId, m.filePath);
+            const text = await readSessionFile(sessionId, m.filePath);
             return { path: m.filePath, text, mime: mimeForExtension(m.filePath) };
           }),
         );

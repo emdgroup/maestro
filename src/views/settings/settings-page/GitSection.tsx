@@ -3,7 +3,7 @@ import { GitBranch } from "lucide-react";
 import { BranchPicker } from "@/components/kanban/shared/BranchPicker";
 import { WorkspaceModeSelect } from "@/components/common/workspace-mode/WorkspaceModeSelect";
 import type { ProjectConfigRequest, WorkspaceMode } from "@/types/bindings";
-import { useProjectBranchesQuery } from "@/services/task.service";
+import { useProjectBranchesQuery } from "@/services/project.service";
 
 interface GitSectionProps {
   defaultWorkspaceMode: WorkspaceMode;

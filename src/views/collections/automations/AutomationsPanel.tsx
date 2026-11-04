@@ -28,7 +28,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
-import { api } from "@/lib/tauri-utils";
 import { cn } from "@/lib/utils";
 import {
   useAutomationRunEvents,
@@ -41,7 +40,10 @@ import {
   useSetRunRetentionMutation,
   useWebhookDeliveriesQuery,
 } from "@/services/automation.service";
-import { useAgentDiscoveryQuery } from "@/services/execution.service";
+import {
+  useAgentDiscoveryQuery,
+  useCancelActiveSessionMutation,
+} from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useNavigate } from "@/store/navigationStore";
 import { AutomationEditorDialog } from "./AutomationEditorDialog";
@@ -56,6 +58,7 @@ import { useOpenRun, useRunEntries } from "./runs/useRunEntries";
 import { describeNextRun, describeSchedule, localTimezone } from "./schedule";
 import { keptCount, runDuration, waitDuration, type RunEntry } from "./runs/runs";
 import type { Automation, AutomationRun, ConnectionKey } from "@/types/bindings";
+import { plural } from "@/lib/format-utils";
 
 export type AutomationsTab = "dashboard" | "templates";
 
@@ -109,6 +112,7 @@ function AutomationRow({
   onToggleEnabled: (enabled: boolean) => void;
 }) {
   const navigate = useNavigate();
+  const stopSession = useCancelActiveSessionMutation();
 
   const agentName = agents.find((a) => a.id === automation.agent_id)?.name ?? automation.agent_id;
   const sessionId = running?.session_id ?? null;
@@ -273,7 +277,7 @@ function AutomationRow({
               variant="outline"
               size="sm"
               disabled={sessionId === null}
-              onClick={() => sessionId && void api.cancelAcpSession(sessionId)}
+              onClick={() => sessionId && stopSession.mutate({ sessionId, executionMode: "acp" })}
               className="text-xs"
             >
               <Square className="size-3" />
@@ -315,7 +319,7 @@ function AutomationRow({
               type="button"
               onClick={onToggleExpanded}
               aria-expanded={expanded}
-              aria-label={`${expanded ? "Hide" : "Show"} ${runs.length} run${runs.length === 1 ? "" : "s"} of ${automation.name}`}
+              aria-label={`${expanded ? "Hide" : "Show"} ${plural(runs.length, "run")} of ${automation.name}`}
               className="flex h-6 cursor-pointer items-center gap-0.5 rounded text-[11px] tabular-nums text-muted-foreground hover:text-foreground"
             >
               {runs.length > 0 && runs.length}

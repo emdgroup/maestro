@@ -1,28 +1,12 @@
-import { useState, useEffect, useReducer } from "react";
 import { RefreshCw, CircleCheck, CircleX, ArrowDownToLine, ExternalLink } from "lucide-react";
-import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Progress, ProgressTrack, ProgressIndicator } from "@/ui/progress";
-import { useUpdater } from "@/hooks/useUpdater";
-import { useSettings, useSaveSettings } from "@/services/settings.service";
 import { cn } from "@/lib/utils";
+import { useUpdatePanel } from "./useUpdatePanel";
 import appIconUrl from "../../../src-tauri/icons/32x32.png?url";
-
-/** Shared with `UpdateStrip`, which shows the same relative time in its tooltip and popover. */
-export function formatLastChecked(date: Date | null): string {
-  if (!date) return "Never";
-  const diffMs = Date.now() - date.getTime();
-  const mins = Math.floor(diffMs / 60_000);
-  if (mins < 1) return "Just now";
-  if (mins === 1) return "1 min ago";
-  if (mins < 60) return `${mins} min ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours === 1) return "1 hour ago";
-  return `${hours} hours ago`;
-}
 
 /**
  * A version number that opens its GitHub release, whose body release-please fills with that
@@ -67,43 +51,18 @@ export function VersionLink({
 }
 
 export function UpdateCard() {
-  const { status, lastChecked, isPackageInstall, checkForUpdates, install, downloadPackage } =
-    useUpdater();
-  const { data: appSettings } = useSettings();
-  const saveAppSettings = useSaveSettings({ successToast: false });
-  const [appVersion, setAppVersion] = useState<string>("…");
-
-  const autoUpdate = appSettings?.auto_update ?? false;
-
-  useEffect(() => {
-    getVersion()
-      .then(setAppVersion)
-      .catch(() => {});
-  }, []);
-
-  // The label is relative to the wall clock, so what goes stale is the current time, not
-  // `lastChecked`. The timer re-renders every 30s and the label is derived below — mirroring
-  // it into state only duplicated a value that `formatLastChecked` already computes.
-  const [, relabel] = useReducer((n: number) => n + 1, 0);
-  useEffect(() => {
-    const id = setInterval(relabel, 30_000);
-    return () => clearInterval(id);
-  }, []);
-  const lastCheckedLabel = formatLastChecked(lastChecked);
-
-  function handleAutoUpdateToggle(checked: boolean) {
-    if (!appSettings) return;
-    saveAppSettings.mutate({
-      ...appSettings,
-      auto_update: checked,
-    });
-  }
-
-  function handleReloadClick() {
-    checkForUpdates(autoUpdate);
-  }
-
-  const isChecking = status.phase === "checking";
+  const {
+    status,
+    isPackageInstall,
+    checkForUpdates,
+    install,
+    downloadPackage,
+    appVersion,
+    autoUpdate,
+    setAutoUpdate,
+    lastCheckedLabel,
+    isChecking,
+  } = useUpdatePanel();
 
   return (
     // Shaped like a Home tile but opaque and still, so it reads apart from the glass around it.
@@ -198,7 +157,7 @@ export function UpdateCard() {
               <TooltipTrigger
                 render={
                   <button
-                    onClick={handleReloadClick}
+                    onClick={() => checkForUpdates(autoUpdate)}
                     disabled={isChecking}
                     aria-label="Check for updates"
                     className="w-8 h-8 rounded-lg border border-border/60 bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-foreground/7 transition-colors disabled:opacity-50"
@@ -230,7 +189,7 @@ export function UpdateCard() {
         ) : (
           <Switch
             checked={autoUpdate}
-            onCheckedChange={handleAutoUpdateToggle}
+            onCheckedChange={setAutoUpdate}
             className="data-unchecked:bg-muted data-unchecked:border-border/50"
           />
         )}

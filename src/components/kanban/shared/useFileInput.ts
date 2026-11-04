@@ -1,11 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { open as openFilePicker } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { api } from "@/lib/tauri-utils";
-
-export function extractFilename(filePath: string): string {
-  return filePath.split(/[/\\]/).pop() ?? filePath;
-}
+import { saveClipboardImage } from "@/services/execution.service";
+import { basename } from "@/lib/path-utils";
 
 interface UseFileInputOpts {
   onDrop?: () => void;
@@ -58,7 +55,7 @@ export function useFileInput(
             binary += String.fromCharCode(...(bytes.subarray(i, i + CHUNK) as unknown as number[]));
           }
           const base64Data = btoa(binary);
-          const tempPath = await api.saveClipboardImage(base64Data, mimeType);
+          const tempPath = await saveClipboardImage(base64Data, mimeType);
           const ext = mimeType.split("/")[1]?.replace("jpeg", "jpg") ?? "png";
           const filename = count === 0 ? `Pasted image.${ext}` : `Pasted image (${count}).${ext}`;
           count++;
@@ -79,7 +76,7 @@ export function useFileInput(
         optsRef.current?.onOver?.();
       } else if (event.payload.type === "drop") {
         for (const filePath of event.payload.paths) {
-          onFileRef.current(extractFilename(filePath), filePath);
+          onFileRef.current(basename(filePath), filePath);
         }
         optsRef.current?.onDrop?.();
       } else if (event.payload.type === "leave") {
@@ -96,7 +93,7 @@ export function useFileInput(
     if (!selected) return;
     const paths = Array.isArray(selected) ? selected : [selected];
     for (const filePath of paths) {
-      onFileRef.current(extractFilename(filePath), filePath);
+      onFileRef.current(basename(filePath), filePath);
     }
   }
 

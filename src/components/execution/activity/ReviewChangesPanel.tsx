@@ -7,6 +7,7 @@ import { useViewedFiles } from "@/components/execution/diff/useViewedFiles";
 import { displayItemPath } from "@/types/review";
 import type { Annotation } from "@/store/annotationStore";
 import type { DiffScope } from "@/components/execution/diff/scope";
+import { basename } from "@/lib/path-utils";
 
 interface ReviewChangesPanelProps {
   sessionId: string;
@@ -83,7 +84,7 @@ export function ReviewChangesPanel({
   const focusedItem =
     selectedFileIndex === null ? null : (allDisplayItems[selectedFileIndex] ?? null);
   const focusedKey = focusedItem ? displayItemPath(focusedItem) : null;
-  const focusedBasename = focusedKey ? (focusedKey.split("/").pop() ?? focusedKey) : null;
+  const focusedBasename = focusedKey ? basename(focusedKey) : null;
 
   if (compact) {
     return (

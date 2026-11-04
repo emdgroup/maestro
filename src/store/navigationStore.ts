@@ -23,6 +23,16 @@ function targetViewToTab(view: string): ViewType {
   return view as ViewType;
 }
 
+/**
+ * Switches to `tab`, sliding right to a page further along and left to one before it. Switching to
+ * the tab already showing leaves the direction alone, since nothing slides.
+ */
+function slideTo(state: Pick<NavigationState, "activeTab" | "slideDirection">, tab: ViewType) {
+  if (tab === state.activeTab) return;
+  state.slideDirection = PAGE_ORDER[tab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
+  state.activeTab = tab;
+}
+
 interface NavigationState {
   activeTab: ViewType;
   slideDirection: number;
@@ -73,24 +83,16 @@ export const useNavigationStore = create<NavigationState>()(
     navigate: (target: NavigationTarget) =>
       set((state) => {
         if ("taskId" in target) {
-          const newTab: ViewType = "kanban";
-          state.slideDirection = PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
-          state.activeTab = newTab;
+          slideTo(state, "kanban");
           state.activeTaskId = target.taskId;
         } else if ("agentId" in target) {
-          const newTab: ViewType = "agents";
-          state.slideDirection = PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
-          state.activeTab = newTab;
+          slideTo(state, "agents");
           state.pendingAgentId = target.agentId;
         } else if ("sessionId" in target) {
-          const newTab: ViewType = "agents";
-          state.slideDirection = PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
-          state.activeTab = newTab;
+          slideTo(state, "agents");
           state.pendingSessionId = target.sessionId;
         } else if ("worktreeId" in target) {
-          const newTab: ViewType = "worktrees";
-          state.slideDirection = PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
-          state.activeTab = newTab;
+          slideTo(state, "worktrees");
           state.pendingWorktreeId = target.worktreeId;
         } else if ("view" in target) {
           // Settings no longer has a tab to slide to, so it opens over whatever is showing.
@@ -98,9 +100,7 @@ export const useNavigationStore = create<NavigationState>()(
             state.settingsOpen = true;
             return;
           }
-          const newTab = targetViewToTab(target.view);
-          state.slideDirection = PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
-          state.activeTab = newTab;
+          slideTo(state, targetViewToTab(target.view));
           if (target.view === "tasks") {
             state.activeTaskId = null;
           }
@@ -109,10 +109,7 @@ export const useNavigationStore = create<NavigationState>()(
 
     setActiveTab: (tab: ViewType) =>
       set((state) => {
-        if (tab !== state.activeTab) {
-          state.slideDirection = PAGE_ORDER[tab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
-          state.activeTab = tab;
-        }
+        slideTo(state, tab);
       }),
 
     setActiveTaskId: (id: number | null) =>

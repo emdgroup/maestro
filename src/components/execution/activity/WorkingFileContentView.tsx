@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { MarkdownBlock, SvgBlock, MermaidBlock, HighlightedCode } from "./MarkdownBlock";
+import {
+  MarkdownBlock,
+  SvgBlock,
+  MermaidBlock,
+  HighlightedCode,
+} from "@/components/common/markdown/MarkdownBlock";
 import { imageMimeForExtension, langForExtension } from "./fileTypeUtils";
 import { type FileViewType, getFileViewType, injectScrollbarCSS } from "./fileViewUtils";
 import { useAcpSessionMeta, useSessionFileQuery } from "@/services/execution.service";
 import { useConnectionFileQuery } from "@/services/connection.service";
 import { useSelectedProject } from "@/store/projectStore";
 import type { ConnectionKey } from "@/types/bindings";
+import { basename } from "@/lib/path-utils";
 
 function FileContentInner({
   content,
@@ -46,7 +52,7 @@ function FileContentInner({
           src={blobUrl ?? undefined}
           sandbox="allow-scripts"
           className="w-full h-full border-0 bg-background"
-          title={path.split("/").pop()}
+          title={basename(path)}
         />
       );
     case "plain":
@@ -66,7 +72,7 @@ function FileContentInner({
       return (
         <img
           src={`data:${mime};base64,${content}`}
-          alt={path.split("/").pop() ?? ""}
+          alt={basename(path)}
           className="max-w-full rounded-md"
         />
       );
@@ -185,7 +191,7 @@ export function WorkingFileContentView({
     connection,
     isAbsoluteOutsideCwd && !awaitingCwd ? absolutePath : null,
     isBinary,
-    isActive ? POLL_MS : undefined,
+    { refetchInterval: isActive ? POLL_MS : false },
   );
 
   const fileQuery = isAbsoluteOutsideCwd ? connectionFileQuery : sessionFileQuery;

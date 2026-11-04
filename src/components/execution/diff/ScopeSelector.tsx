@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, Check, GitCompareArrows, FilePenLine, GitCommitVertical } from "lucide-react";
-import { formatTimeAgoLong } from "@/lib/format-utils";
+import { formatTimeAgoLong, plural } from "@/lib/format-utils";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Checkbox } from "@/ui/checkbox";
 import { cn } from "@/lib/utils";
@@ -234,7 +234,7 @@ export function ScopeSelector({
         {draftSpan && (
           <div className="flex items-center gap-2 mt-1 px-2 py-2 border-t border-border">
             <span className="flex-1 min-w-0 text-[11px] text-muted-foreground truncate">
-              {draft.size} commit{draft.size === 1 ? "" : "s"} ·{" "}
+              {plural(draft.size, "commit")} ·{" "}
               <span className="font-mono">
                 {shortSha(draftSpan.oldest)}…{shortSha(draftSpan.newest)}
               </span>

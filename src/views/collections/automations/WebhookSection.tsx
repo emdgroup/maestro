@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from "react";
-import { Check, Copy, Eye, EyeOff, RefreshCw, TriangleAlert } from "lucide-react";
+import { Eye, EyeOff, RefreshCw, TriangleAlert } from "lucide-react";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+import { CopyStateIcon } from "@/components/common/CopyStateIcon";
 import { Button } from "@/ui/button";
 import {
   Dialog,
@@ -35,7 +37,7 @@ const OVERLAP: Record<WebhookOverlap, { label: string; description: string }> = 
 };
 
 function CopyButton({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard(value);
   return (
     <Tooltip>
       <TooltipTrigger
@@ -45,16 +47,11 @@ function CopyButton({ value, label }: { value: string; label: string }) {
             size="icon"
             aria-label={label}
             className="size-6 shrink-0 text-muted-foreground"
-            onClick={() => {
-              void navigator.clipboard.writeText(value).then(() => {
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1_500);
-              });
-            }}
+            onClick={copy}
           />
         }
       >
-        {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+        <CopyStateIcon copied={copied} className="size-3" />
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>

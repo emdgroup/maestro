@@ -24,9 +24,6 @@ vi.mock("@/services/project.service", () => ({
   useProjectSettings: () => ({
     data: { default_workspace_mode: "NewWorktree", default_agent: "claude-acp" },
   }),
-}));
-
-vi.mock("@/services/task.service", () => ({
   useProjectBranchesQuery: () => ({
     data: [{ local: ["main"], remote: ["origin/main", "origin/maestro/great-lynx-58"] }, "main"],
     isFetching: false,

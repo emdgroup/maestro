@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { SegmentThumb } from "@/components/common/SegmentThumb";
-import { SEGMENT_GROUP, SEGMENT_ITEM } from "@/lib/segmented";
+import { Segmented } from "@/components/common/Segmented";
 import { Ban, CalendarClock, ChevronDown, Webhook, type LucideIcon } from "lucide-react";
 import {
   Dialog,
@@ -23,7 +22,7 @@ import { useProjectSettings } from "@/services/project.service";
 import { useBackgroundServerQuery } from "@/services/automation.service";
 import { useDefaultBaseBranch } from "@/hooks/useDefaultBaseBranch";
 import { useIsGitRepo } from "@/store/projectStore";
-import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+
 import { CronEditor } from "./cron/CronEditor";
 import { WebhookSection } from "./WebhookSection";
 import { describeExpression } from "./cron/describe";
@@ -190,27 +189,21 @@ function TriggerSection({
   return (
     <div className="space-y-2">
       <span className="field-label">Trigger</span>
-      <ToggleGroup
-        value={[trigger]}
-        onValueChange={(values) => {
-          const next = values.find((value) => value !== trigger) as Trigger | undefined;
-          if (next) choose(next);
-        }}
-        spacing={1}
-        className={`w-full ${SEGMENT_GROUP}`}
-      >
-        <SegmentThumb />
-        {TRIGGERS.map((option) => (
-          <ToggleGroupItem
-            key={option.value}
-            value={option.value}
-            className={`flex-1 gap-1.5 ${SEGMENT_ITEM}`}
-          >
-            <option.icon className="size-3.5" />
-            {option.label}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+      <Segmented
+        value={trigger}
+        onChange={choose}
+        className="w-full"
+        itemClassName="flex-1 gap-1.5"
+        options={TRIGGERS.map((option) => ({
+          value: option.value,
+          label: (
+            <>
+              <option.icon className="size-3.5" />
+              {option.label}
+            </>
+          ),
+        }))}
+      />
       <p className="text-[11px] text-muted-foreground/70">
         {TRIGGERS.find((option) => option.value === trigger)?.hint}
       </p>

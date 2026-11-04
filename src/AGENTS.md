@@ -22,9 +22,38 @@ Notes for working in this directory. The repository-wide rules are in the root `
 | `homeStore`            | Each connection's phase on Home (idle, signing in, connecting, up, failed, stopped, unreachable), attach order, minimized panels                              |
 | `fileSessionStore`     | Files sessions, which have no process behind them and so are not in the backend's session list; `AgentsView` merges them into the rows it shows               |
 
+## Layers
+
+`src/views/` may import from `src/components/`, never the reverse: `.oxlintrc.json` rejects
+`@/views/*` under `src/components/`. What a view and a component both need lives in
+`src/components/` (the pieces Home shares with the header's project path are in
+`components/home/`), in `src/services/` or in `src/utils/`. A test that renders a whole view sits
+beside that view.
+
+## Services, query keys and events
+
+Components and views never call IPC. `.oxlintrc.json` rejects `@/lib/tauri-utils` and the
+`commands` export of `@/types/bindings` under `src/components/` and `src/views/`; type imports from
+the bindings are fine. A query or mutation is a hook in `src/services/*.service.ts`. A call that is
+imperative and has nothing to cache (terminal input, a prompt, an answer to a permission) is a plain
+function exported from the same service. Services use `api.*`, the unwrapping proxy, never raw
+`commands.*`.
+
+Each service has one key factory with a camelCase `base`, and every key, invalidation included,
+comes from it. A query without its id yet keeps the `null` in the key and is gated by `enabled`;
+no `-1`, `0` or `""` stand-ins. A factory that needs a wider prefix (`activeSessionsAll`,
+`attachmentsAll`, `dirContentsOn`) says so in its name, so prefix matching stays visible.
+
+Backend change events go through `useServerEventSync` in `services/tauri-events.ts`, mounted once
+from `App`: it holds one native listener per event and turns each into invalidations. A component
+that needs one event of its own uses `useTauriEvent(name, handler)`, which is cancel-safe and
+always calls the newest handler. A connection is `connectionKeyStr` (`ssh:3`) in keys and stores,
+and `connectionChannelId` (`ssh-3`) in the backend's event channel names.
+
 ## Contexts
 
 - `KanbanContext` — provides `projectId`, `projectPath`, `onTaskClick` to the kanban component subtree (avoids prop-drilling through `BoardView → KanbanColumn → TaskCard`)
+- `SessionPanelContext` (`components/execution/side-panel/`) carries what a session's side-panel tabs show and do, from `AgentActivityPanel` to `SidePanelContent`; `ExecutionSidePanel` between them only lays out the tabs. A session's sign-in flow is `useAgentAuthFlow`, and `AgentAuthModal` reads its terminal's state from `boardStore` itself.
 
 ## base-ui Component Pitfall
 

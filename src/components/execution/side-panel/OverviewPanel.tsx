@@ -11,8 +11,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { openFileWithConnection } from "@/lib/file-opener";
-import { formatBytes, formatTimeAgoCompact } from "@/lib/format-utils";
+import { openFileWithConnection } from "@/services/connection.service";
+import { formatBytes, formatTimeAgoCompact, plural } from "@/lib/format-utils";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState } from "react";
 import type { TabKind } from "./useSidePanelTabs";
@@ -206,8 +206,8 @@ export function OverviewPanel({
     : changedFilesCount === 0
       ? "No changes"
       : scope === "session"
-        ? `${changedFilesCount} file${changedFilesCount !== 1 ? "s" : ""} since session start`
-        : `${changedFilesCount} uncommitted file${changedFilesCount !== 1 ? "s" : ""}`;
+        ? `${plural(changedFilesCount, "file")} since session start`
+        : plural(changedFilesCount, "uncommitted file");
 
   const agentFiles = workingFiles ?? [];
   const userFiles = attachments ?? [];
@@ -233,7 +233,7 @@ export function OverviewPanel({
           sub={
             totalPlanSteps === 0
               ? (planTitle ?? "Approved")
-              : `${donePlanSteps} of ${totalPlanSteps} step${totalPlanSteps !== 1 ? "s" : ""} complete`
+              : `${donePlanSteps} of ${plural(totalPlanSteps, "step")} complete`
           }
           badge={
             planReviewState === "waiting"
@@ -350,11 +350,7 @@ export function OverviewPanel({
           icon={<SquarePlay className="w-3.5 h-3.5 text-[--purple]" />}
           iconBg="bg-[--purple]/15"
           label="Canvas"
-          sub={
-            canvasCount === 0
-              ? "Import a canvas"
-              : `${canvasCount} surface${canvasCount !== 1 ? "s" : ""}`
-          }
+          sub={canvasCount === 0 ? "Import a canvas" : plural(canvasCount, "surface")}
           badge={canvasCount > 0 ? String(canvasCount) : undefined}
           badgeClass="bg-[--purple]/15 text-[--purple]"
         />
@@ -366,11 +362,7 @@ export function OverviewPanel({
           icon={<Paperclip className="w-3.5 h-3.5 text-muted-foreground" />}
           iconBg="bg-muted"
           label="Artifacts"
-          sub={
-            totalArtifacts === 0
-              ? "None"
-              : `${totalArtifacts} file${totalArtifacts !== 1 ? "s" : ""}`
-          }
+          sub={totalArtifacts === 0 ? "None" : plural(totalArtifacts, "file")}
           badge={totalArtifacts > 0 ? String(totalArtifacts) : undefined}
           badgeClass="bg-muted text-muted-foreground"
         >

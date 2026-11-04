@@ -1,7 +1,8 @@
-import { Loader2, WifiOff, AlertTriangle, LogOut } from "lucide-react";
+import { WifiOff, AlertTriangle, LogOut } from "lucide-react";
 import { Button } from "@/ui/button";
 import type { ConnectionHealthState } from "@/hooks/useConnectionHealth";
 import type { ConnectionKey } from "@/types/bindings";
+import { Spinner } from "@/ui/spinner";
 
 interface DisconnectBackdropProps {
   state: Exclude<ConnectionHealthState, "connected" | "quiet">;
@@ -65,7 +66,7 @@ export function DisconnectBackdrop({
       ) : state === "lost" ? (
         <WifiOff className="h-8 w-8 text-muted-foreground animate-pulse" />
       ) : (
-        <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
+        <Spinner className="size-8 text-muted-foreground" />
       )}
       <p className="text-sm font-medium text-foreground">
         {state === "reconnecting" ? `Reconnecting\u2026 (${attempt}/${maxAttempts})` : title}

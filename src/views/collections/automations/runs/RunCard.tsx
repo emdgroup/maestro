@@ -11,7 +11,7 @@ import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { relativeAge } from "@/components/execution/worktree-card/worktree-usage";
+import { relativeAge } from "@/lib/format-utils";
 import { TRIGGER_LABEL, keptWorkspace, runDuration, waitDuration, type RunEntry } from "./runs";
 import type { RunTrigger, WebhookDelivery } from "@/types/bindings";
 import { OUTCOME } from "./deliveries";

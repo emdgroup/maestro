@@ -19,17 +19,14 @@ import type { PullRequestCheckInfo } from "@/types/bindings";
 import type { SessionShipState, SessionPullRequest } from "./useSessionShipState";
 import { fixChecksPrompt } from "./shipActions";
 import { Card, CardAction } from "./OverviewCard";
+import { CI_LABEL, CI_TONE } from "@/components/execution/worktree-card/pullRequestCi";
+import type { CiRollup } from "@/components/execution/worktree-card/pullRequestCi";
 
-const CI_LABELS: Record<NonNullable<SessionPullRequest["ci"]>, string> = {
-  Passing: "checks passed",
-  Failing: "CI failing",
-  Pending: "checks running",
-};
-
-const CI_TONES: Record<NonNullable<SessionPullRequest["ci"]>, string> = {
-  Passing: "text-success",
-  Failing: "text-destructive",
-  Pending: "text-muted-foreground",
+/** The session's verdict in the worktree card's vocabulary, so both say and colour it alike. */
+const CI_ROLLUP: Record<NonNullable<SessionPullRequest["ci"]>, CiRollup> = {
+  Passing: "passing",
+  Failing: "failing",
+  Pending: "running",
 };
 
 const STATE_BADGES: Record<SessionPullRequest["state"], { label: string; tone: string }> = {
@@ -79,9 +76,7 @@ export function PullRequestFacts({ pullRequest }: { pullRequest: SessionPullRequ
       // number and leave it sitting off the baseline of the word beside it.
       <span key="files" className="flex items-center gap-1 text-muted-foreground">
         <FileDiff className="size-3" />
-        <span className="tabular-nums">
-          {changed_files} {changed_files === 1 ? "file" : "files"}
-        </span>
+        <span className="tabular-nums">{plural(changed_files, "file")}</span>
       </span>,
     );
   }
@@ -229,7 +224,8 @@ export function CheckRollup({
   const [expanded, setExpanded] = useState(failedCount > 0);
 
   if (checks.length === 0) {
-    return <span className={cn("text-[10.5px]", CI_TONES[ci])}>{CI_LABELS[ci]}</span>;
+    const rollup = CI_ROLLUP[ci];
+    return <span className={cn("text-[10.5px]", CI_TONE[rollup])}>{CI_LABEL[rollup]}</span>;
   }
 
   const passed = checks.filter((check) => check.status === "Passed").length;
@@ -242,7 +238,7 @@ export function CheckRollup({
 
   const headline =
     running === 0 && failed === 0
-      ? `All ${total} check${total === 1 ? "" : "s"} passed`
+      ? `All ${plural(total, "check")} passed`
       : `${done} of ${total} checks done`;
 
   const counts = [

@@ -9,22 +9,27 @@ import type { LoopCheckEntry, LoopCheckSpec } from "@/types/bindings";
  * `useServerEventSync` turns into an invalidation of these kinds, so the queries need no listener.
  */
 export const loopQueryKeys = {
-  checks: (projectId: number, taskId: number) =>
-    [...taskQueryKeys.base, "loopChecks", projectId, taskId] as const,
-  iterations: (projectId: number, taskId: number) =>
-    [...taskQueryKeys.base, "loopIterations", projectId, taskId] as const,
-  notes: (projectId: number, taskId: number) =>
-    [...taskQueryKeys.base, "loopNotes", projectId, taskId] as const,
+  /** Under the task keys, so whatever refreshes a whole task's state refreshes its loop too. */
+  base: [...taskQueryKeys.base, "loop"] as const,
+  /** All three of a task's loop rows; `[...base, projectId]` is every loop in a project. */
+  task: (projectId: number | null, taskId: number | null) =>
+    [...loopQueryKeys.base, projectId, taskId] as const,
+  checks: (projectId: number | null, taskId: number | null) =>
+    [...loopQueryKeys.task(projectId, taskId), "checks"] as const,
+  iterations: (projectId: number | null, taskId: number | null) =>
+    [...loopQueryKeys.task(projectId, taskId), "iterations"] as const,
+  notes: (projectId: number | null, taskId: number | null) =>
+    [...loopQueryKeys.task(projectId, taskId), "notes"] as const,
+  /** Outside `base`: a loop row changing says nothing about what is committed on a branch. */
+  branchFiles: (projectId: number, branch: string) =>
+    [...taskQueryKeys.base, "loopBranchFiles", projectId, branch] as const,
 };
-
-/** The query kinds `tasks-changed` refetches for the open loop. */
-export const LOOP_QUERY_KINDS = ["loopChecks", "loopIterations", "loopNotes"];
 
 type TaskKey = { projectId: number; taskId: number };
 
 export function useLoopChecksQuery(projectId: number | null, taskId: number | null) {
   return useQuery({
-    queryKey: loopQueryKeys.checks(projectId ?? -1, taskId ?? -1),
+    queryKey: loopQueryKeys.checks(projectId, taskId),
     queryFn: () => api.listLoopChecks(projectId!, taskId!),
     enabled: projectId !== null && taskId !== null,
   });
@@ -32,7 +37,7 @@ export function useLoopChecksQuery(projectId: number | null, taskId: number | nu
 
 export function useLoopIterationsQuery(projectId: number | null, taskId: number | null) {
   return useQuery({
-    queryKey: loopQueryKeys.iterations(projectId ?? -1, taskId ?? -1),
+    queryKey: loopQueryKeys.iterations(projectId, taskId),
     queryFn: () => api.listLoopIterations(projectId!, taskId!),
     enabled: projectId !== null && taskId !== null,
   });
@@ -41,7 +46,7 @@ export function useLoopIterationsQuery(projectId: number | null, taskId: number 
 /** `.maestro/loop/PROGRESS.md` in the loop's worktree; `null` while there is none. */
 export function useLoopNotesQuery(projectId: number | null, taskId: number | null) {
   return useQuery({
-    queryKey: loopQueryKeys.notes(projectId ?? -1, taskId ?? -1),
+    queryKey: loopQueryKeys.notes(projectId, taskId),
     queryFn: () => api.readLoopNotes(projectId!, taskId!),
     enabled: projectId !== null && taskId !== null,
   });
@@ -54,11 +59,7 @@ function useLoopMutation<V extends TaskKey, R>(run: (vars: V) => Promise<R>, fai
     mutationFn: run,
     onSuccess: (_data, { projectId, taskId }) => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
-      for (const kind of LOOP_QUERY_KINDS) {
-        void queryClient.invalidateQueries({
-          queryKey: [...taskQueryKeys.base, kind, projectId, taskId],
-        });
-      }
+      void queryClient.invalidateQueries({ queryKey: loopQueryKeys.task(projectId, taskId) });
     },
     onError: createErrorToastHandler(failure),
   });
@@ -153,7 +154,7 @@ export function useOpenAgentGateMutation() {
 /** Every file committed on `branch`, the project's HEAD when blank: what the agent's copy holds. */
 export function useLoopBranchFilesQuery(projectId: number, branch: string) {
   return useQuery({
-    queryKey: [...taskQueryKeys.base, "loopBranchFiles", projectId, branch] as const,
+    queryKey: loopQueryKeys.branchFiles(projectId, branch),
     queryFn: () => api.loopBranchFiles(projectId, branch || null),
   });
 }

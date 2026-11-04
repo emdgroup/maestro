@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { connectionKeyStr } from "@/lib/connection-utils";
 import { Rolling } from "@/components/common/Rolling";
 import { SegmentThumb } from "@/components/common/SegmentThumb";
 import { endOfMonth, format as formatDate, min } from "date-fns";
@@ -6,11 +7,10 @@ import { X } from "lucide-react";
 import type { ConnectionKey, UsageProjectRef, UsageSplit } from "@/types/bindings";
 import { useUsageReport, useUsageSync } from "@/services/usage.service";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
-import { connectionKeyId } from "@/store/homeStore";
 import { SEGMENT_GROUP } from "@/lib/segmented";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { folderName, formatCost, formatMetric, formatTokens, type Metric } from "./format";
+import { formatMetric, type Metric } from "./format";
 import {
   bucketKeys,
   describeDates,
@@ -24,6 +24,8 @@ import { RangePicker } from "./RangePicker";
 import { UsageBreakdown, type BreakdownRow } from "./UsageBreakdown";
 import { UsageChart, type ChartSeries } from "./UsageChart";
 import { UsageCalendar, UsageHeatmap } from "./UsageHeatmap";
+import { basename } from "@/lib/path-utils";
+import { formatCost, formatTokens } from "@/lib/format-utils";
 
 /** How many hues each split has; the series past them fold into Other. */
 const HUES: Record<UsageSplit, number> = { connection: 4, agent: 4, model: 4, token_type: 5 };
@@ -96,7 +98,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
 
   const format = formatMetric(metric);
   const coverage = report?.coverage ?? [];
-  const attachedIds = attached.map(connectionKeyId);
+  const attachedIds = attached.map(connectionKeyStr);
   const connectionName = (key: string) => {
     const line = coverage.find((c) => c.connection_key === key);
     if (!line) return key;
@@ -169,7 +171,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
   const projectRows: BreakdownRow[] = (report?.projects ?? [])
     .map((p) => ({
       id: projectId(p),
-      name: folderName(p.project_path),
+      name: basename(p.project_path),
       qualifier: connectionName(p.connection_key),
       value: metric === "cost" ? p.cost : p.tokens,
       byType: p.by_type,
@@ -193,7 +195,7 @@ export function UsageView({ attached, onBack, onConnect }: UsageViewProps) {
   );
   const chips = [
     ...projects.map((p) => ({
-      label: `${folderName(p.project_path)} · ${connectionName(p.connection_key)}`,
+      label: `${basename(p.project_path)} · ${connectionName(p.connection_key)}`,
       remove: () => setProjects((all) => all.filter((x) => x !== p)),
     })),
     ...models.map((m) => ({

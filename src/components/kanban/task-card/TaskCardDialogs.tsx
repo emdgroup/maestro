@@ -32,7 +32,6 @@ export interface DialogActions {
   onForceReview: () => void;
   onSendToReview: () => void;
   onAuthSuccess: () => void;
-  onAuthRetry: () => void;
 }
 
 interface TaskCardDialogsProps {
@@ -67,10 +66,8 @@ export function TaskCardDialogs({
           open={dialog === "auth"}
           authKey={String(task.id)}
           sessionId={sessionId}
-          terminalState={authRequired.terminalState}
           onAuthSuccess={actions.onAuthSuccess}
           onClose={onClose}
-          onRetry={actions.onAuthRetry}
         />
       )}
 

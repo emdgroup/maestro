@@ -26,7 +26,7 @@ export function sessionLabel(session: ActiveSessionInfo): string {
 }
 
 /** `claude-code` reads as "Claude Code" in a toast; the raw id does not. */
-export function agentLabel(session: ActiveSessionInfo): string {
+export function agentDisplayName(session: ActiveSessionInfo): string {
   if (!session.agent_id) return "The agent";
   return session.agent_id
     .split(/[-_]/)

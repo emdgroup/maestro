@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "@/lib/tauri-utils";
-import { useWriteFile } from "@/services/connection.service";
+import { readFile, useWriteFile } from "@/services/connection.service";
 import { decideSave } from "./file-edit-utils";
 import type { ConnectionKey } from "@/types/bindings";
 
@@ -112,7 +111,7 @@ export function useFileDraft({ connection, fullPath, onDirtyChange }: UseFileDra
     setSaving(true);
     setSaveError(null);
     try {
-      const onDisk = await api.readFile(connection, fullPath);
+      const onDisk = await readFile(connection, fullPath);
       const decision = decideSave({ baseline, draft, onDisk });
       if (decision.kind === "unchanged") {
         setBaseline(draft);

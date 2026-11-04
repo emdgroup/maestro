@@ -53,6 +53,22 @@ export function useExportCanvasSurfaceMutation() {
   });
 }
 
+/**
+ * Park a frame failure for the agent, which never sees its rendered surface; it comes back on the
+ * agent's next canvas call. Fire-and-forget, like the frame error it carries.
+ */
+export function reportCanvasError(sessionId: string, surfaceId: string, message: string) {
+  void api.canvasReportError(sessionId, surfaceId, message).catch(() => {});
+}
+
+/** A surface's `maestro.fetch`, made from the host against an origin the surface declared. */
+export const canvasFetch = (
+  url: string,
+  method: string | null,
+  headers: Partial<Record<string, string>> | null,
+  body: string | null,
+) => api.canvasFetch(url, method, headers, body);
+
 export async function loadSavedCanvases(sessionId: string): Promise<CanvasSurface[]> {
   const files = await api.loadSavedCanvases(sessionId);
   return files.map(surfaceFromHtml).filter((s): s is CanvasSurface => s !== null);

@@ -32,12 +32,12 @@ import {
 import {
   useRecoverTaskSessionMutation,
   useCancelActiveSessionMutation,
+  discardFailedSpawn,
+  sendAcpPromptStructured,
 } from "@/services/execution.service";
 import { useDeleteWorktreeMutation } from "@/services/worktree.service";
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
 import { useBoardStore, useBoardActions, useAuthRequiredTask } from "@/store/boardStore";
-import { api } from "@/lib/tauri-utils";
-import { commands } from "@/types/bindings";
 import { Flame, ArrowUp, Minus, ArrowDown, GitBranch, ExternalLink } from "lucide-react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { zoomCardToDialog } from "@/components/kanban/taskZoom";
@@ -46,11 +46,8 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { useSessionActivity, type SessionActivityInfo } from "@/store/sessionActivityStore";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
-import {
-  ACTIVITY_DOT,
-  ACTIVITY_TEXT,
-  ElapsedTime,
-} from "@/components/execution/shared/activityStatus";
+import { ACTIVITY_DOT, ACTIVITY_TEXT } from "@/components/execution/shared/activityStatus";
+import { ElapsedTime } from "@/components/execution/shared/ElapsedTime";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { shortBranchName } from "@/lib/generateSessionName";
 import { Repeat } from "lucide-react";
@@ -407,8 +404,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
   const { projectId } = useKanban();
   const { setActiveTaskId } = useNavigationActions();
   const navigate = useNavigate();
-  const { openReview, clearAuthRequired, setAuthTerminalIdle, clearPendingAuthRetry } =
-    useBoardActions();
+  const { openReview, clearAuthRequired, clearPendingAuthRetry } = useBoardActions();
   const pendingAuthRetry = useBoardStore((s) => s.pendingAuthRetry);
   const authRequired = useAuthRequiredTask(String(task.id));
   // One value rather than four booleans: only one confirmation can be up, and independent flags
@@ -470,7 +466,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
     if (pendingAuthRetry !== task.id) return;
     clearPendingAuthRetry();
     if (activeSession) {
-      void api.discardFailedSpawn(activeSession.session_id);
+      void discardFailedSpawn(activeSession.session_id);
     }
     void handleExecute(task, { canPickAgent: true });
   }, [pendingAuthRetry, task.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -705,7 +701,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
             // The prompt the agent never got to answer, replayed on the session that is still
             // there. With no session there is nothing to replay it on, so the task starts again.
             if (authRequired?.lastPrompt && activeSession) {
-              void api.sendAcpPromptStructured(
+              void sendAcpPromptStructured(
                 activeSession.session_id,
                 authRequired.lastPrompt as JsonValue,
               );
@@ -713,12 +709,6 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
             } else {
               void handleExecute(task, { canPickAgent: true });
             }
-          },
-          onAuthRetry: () => {
-            if (authRequired?.terminalId) {
-              void commands.acpAbortAuthTerminal(authRequired.connection);
-            }
-            setAuthTerminalIdle(String(task.id));
           },
         }}
       />

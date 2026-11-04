@@ -1,32 +1,34 @@
 import { useState, type ReactNode } from "react";
 import { Menu } from "@base-ui/react/menu";
 import { toast } from "sonner";
-import { Check, ChevronDown, ChevronRight, House, Loader2, Plus } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, House, Plus } from "lucide-react";
 import type { Project } from "@/types/bindings";
 import { cn } from "@/lib/utils";
-import { connectionKeyFromProject } from "@/lib/connection-utils";
+import { connectionKeyFromProject, connectionKeyStr } from "@/lib/connection-utils";
 import { getErrorMessage } from "@/lib/error-utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { useSelectedProjectActions } from "@/store/projectStore";
-import { connectionKeyId, projectKey, useHomeStore } from "@/store/homeStore";
+import { projectKey, useHomeStore } from "@/store/homeStore";
 import type { ConnectionPhase } from "@/store/homeStore";
-import { AddProjectDialog } from "@/views/home/AddProjectDialog";
-import { CONNECTION_ICONS } from "@/views/home/ConnectionPanel";
-import type { HomeConnection } from "@/views/home/ConnectionPanel";
-import { displayPath, HeldLock, projectStatus } from "@/views/home/ProjectTile";
-import type { ProjectCard } from "@/views/home/ProjectTile";
-import { SshAuthModal } from "@/views/home/ssh-auth-modal/SshAuthModal";
-import type { AuthSubmission } from "@/views/home/ssh-auth-modal/ssh-auth-utils";
-import { attach, connect, signInWith } from "@/views/home/useConnectionActions";
-import { useHomeConnections } from "@/views/home/useHomeConnections";
-import { useHomeSummaries } from "@/views/home/useHomeSummaries";
-import { useOpenProject } from "@/views/home/useOpenProject";
+import { AddProjectDialog } from "@/components/home/AddProjectDialog";
+import { CONNECTION_ICONS, type HomeConnection } from "@/components/home/useHomeConnections";
+import { displayPath, HeldLock, projectStatus } from "@/components/home/ProjectTile";
+import type { ProjectCard } from "@/components/home/ProjectTile";
+import { SshAuthModal } from "@/components/home/ssh-auth-modal/SshAuthModal";
+import type { AuthSubmission } from "@/components/home/ssh-auth-modal/ssh-auth-utils";
+import { attach, connect, signInWith } from "@/services/connection.service";
+import { useHomeConnections } from "@/components/home/useHomeConnections";
+import { useHomeSummaries } from "@/components/home/useHomeSummaries";
+import { useOpenProject } from "@/components/home/useOpenProject";
 import {
   slideBack,
   slideOut,
   whenSlidOut,
   zoomToHome,
 } from "@/components/layout/project-transition/projectTransition";
+import { plural } from "@/lib/format-utils";
+import { Spinner } from "@/ui/spinner";
+import { Count } from "@/components/home/Count";
 
 const segment =
   "flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-xs outline-none transition-colors hover:bg-foreground/[0.08] focus-visible:bg-foreground/[0.08] data-popup-open:bg-foreground/[0.08]";
@@ -95,24 +97,11 @@ function StatusWord({
   opening: boolean;
   current: boolean;
 }) {
-  if (opening) return <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />;
+  if (opening) return <Spinner className="size-3.5 shrink-0 text-muted-foreground" />;
   if (current) return <Check className="size-3.5 shrink-0 text-accent" strokeWidth={2.4} />;
   const status = projectStatus(card);
   return (
     <span className={cn("shrink-0 text-[11px] font-medium", status.className)}>{status.label}</span>
-  );
-}
-
-function Count({ value, label, className }: { value: number; label: string; className?: string }) {
-  return (
-    <span>
-      <b
-        className={cn("font-semibold tabular-nums", value ? className : "text-muted-foreground/50")}
-      >
-        {value}
-      </b>{" "}
-      <span className="text-muted-foreground">{label}</span>
-    </span>
   );
 }
 
@@ -163,7 +152,7 @@ function ProjectList({ children }: { children: ReactNode }) {
 function phaseLine(phase: ConnectionPhase, cards: ProjectCard[] | null) {
   switch (phase.kind) {
     case "up":
-      return cards ? `${cards.length} ${cards.length === 1 ? "project" : "projects"}` : "Connected";
+      return cards ? plural(cards.length, "project") : "Connected";
     case "connecting":
       return phase.starting ? "Starting…" : "Connecting…";
     case "stopping":
@@ -202,7 +191,7 @@ function ConnectionEntry({
   onHome,
 }: ConnectionEntryProps) {
   const Icon = CONNECTION_ICONS[connection.key.type];
-  const isHere = connectionKeyId(connectionKeyFromProject(current)) === connection.id;
+  const isHere = connectionKeyStr(connectionKeyFromProject(current)) === connection.id;
   const needsYou = cards?.some((card) => card.needsYou && card.projectId !== current.id);
   const line = phaseLine(phase, cards);
   return (
@@ -258,7 +247,7 @@ function ConnectionEntry({
           </>
         ) : phase.kind === "connecting" || phase.kind === "stopping" ? (
           <div className="flex items-center justify-center gap-2 py-5 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" />
+            <Spinner className="size-3.5" />
             {line}
           </div>
         ) : (
@@ -312,7 +301,7 @@ export function ProjectPath({ project }: { project: Project }) {
   const [signInFor, setSignInFor] = useState<HomeConnection | null>(null);
   const [signingIn, setSigningIn] = useState(false);
 
-  const hereId = connectionKeyId(connectionKeyFromProject(project));
+  const hereId = connectionKeyStr(connectionKeyFromProject(project));
   const here = connections.find((connection) => connection.id === hereId) ?? connections[0];
   const HereIcon = CONNECTION_ICONS[here.key.type];
   const up = connections.filter((connection) => phases[connection.id]?.kind === "up");

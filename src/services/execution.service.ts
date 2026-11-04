@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
@@ -7,25 +8,51 @@ import { taskQueryKeys } from "@/services/task.service";
 import { findEffortOption } from "@/lib/effort-option";
 import { useAnnotationStore } from "@/store/annotationStore";
 import type { ConfigOption } from "@/components/execution/activity/types";
-import type { ConnectionKey, SessionRole } from "@/types/bindings";
-import { commands } from "@/types/bindings";
+import type { ConnectionKey, ExternalFileRequest, JsonValue, SessionRole } from "@/types/bindings";
 
 export const executionQueryKeys = {
-  activeSessions: (projectId: number) => ["activeSessions", projectId] as const,
-  sessionList: (agentId: string, cwd: string, connection: ConnectionKey) =>
-    ["sessionList", agentId, cwd, connection] as const,
-  agentDiscovery: (connection: ConnectionKey) => ["agentDiscovery", connection] as const,
-  sessionMeta: (sessionId: string | null) => ["acpSessionMeta", sessionId] as const,
+  base: ["execution"] as const,
+  /** Every project's session list, for a change that cannot say which project it touched. */
+  activeSessionsAll: () => [...executionQueryKeys.base, "activeSessions"] as const,
+  activeSessions: (projectId: number | null) =>
+    [...executionQueryKeys.activeSessionsAll(), projectId] as const,
+  /** One agent's history in every directory and on every connection. */
+  sessionListsOf: (agentId: string) =>
+    [...executionQueryKeys.base, "sessionList", agentId] as const,
+  sessionList: (agentId: string | null, cwd: string | null, connection: ConnectionKey) =>
+    [...executionQueryKeys.base, "sessionList", agentId, cwd, connection] as const,
+  agentDiscovery: (connection: ConnectionKey) =>
+    [...executionQueryKeys.base, "agentDiscovery", connection] as const,
+  sessionMeta: (sessionId: string | null) =>
+    [...executionQueryKeys.base, "sessionMeta", sessionId] as const,
   sessionUsage: (connection: ConnectionKey, agentId: string | null, acpSessionId: string | null) =>
-    ["sessionUsage", connection, agentId, acpSessionId] as const,
-  sessionFile: (sessionId: string, relativePath: string, binary: boolean) =>
-    ["sessionFile", sessionId, relativePath, binary] as const,
+    [...executionQueryKeys.base, "sessionUsage", connection, agentId, acpSessionId] as const,
+  sessionFile: (sessionId: string, relativePath: string | null, binary: boolean) =>
+    [...executionQueryKeys.base, "sessionFile", sessionId, relativePath, binary] as const,
   // `modelId` is part of the key because the effort list is a property of the model, not the
   // agent: the same harness offers different reasoning budgets per model, so a probe answered
   // against the agent's default model is the wrong answer for a profile naming another one.
-  agentConfig: (agentId: string, cwd: string, connection: ConnectionKey, modelId: string) =>
-    ["agentConfig", agentId, cwd, connection, modelId] as const,
+  agentConfig: (
+    agentId: string | null,
+    cwd: string | null,
+    connection: ConnectionKey,
+    modelId: string | null,
+  ) => [...executionQueryKeys.base, "agentConfig", agentId, cwd, connection, modelId] as const,
+  queueCapacity: (projectId: number | null) =>
+    [...executionQueryKeys.base, "queueCapacity", projectId] as const,
 };
+
+/**
+ * How many agent slots the project's host has, and how many are taken. Invalidated by the events
+ * that start or end a session, through the app-wide sync.
+ */
+export function useQueueCapacityQuery(projectId: number | null) {
+  return useQuery({
+    queryKey: executionQueryKeys.queueCapacity(projectId),
+    queryFn: () => api.getQueueCapacity(projectId!),
+    enabled: projectId !== null,
+  });
+}
 
 /**
  * What a conversation's recorded turns used, oldest first. Read again as each turn ends: the server
@@ -268,7 +295,7 @@ export function useAgentConfigQuery(
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: executionQueryKeys.agentConfig(agentId ?? "", cwd ?? "", connection, modelId ?? ""),
+    queryKey: executionQueryKeys.agentConfig(agentId, cwd, connection, modelId),
     queryFn: () => probeAgentConfig(agentId!, cwd!, projectId!, connection, modelId),
     enabled: enabled && !!agentId && !!cwd && projectId != null,
     staleTime: Infinity,
@@ -287,10 +314,7 @@ export function useAgentConfigQuery(
  */
 export function useActiveSessionsQuery(projectId: number | undefined) {
   return useQuery({
-    queryKey:
-      projectId !== undefined
-        ? executionQueryKeys.activeSessions(projectId)
-        : ["activeSessions-disabled"],
+    queryKey: executionQueryKeys.activeSessions(projectId ?? null),
     queryFn: () => api.getActiveSessions(projectId!),
     enabled: projectId !== undefined,
     refetchInterval: 10000,
@@ -310,7 +334,7 @@ export function useSessionListQuery(
   enabled: boolean = true,
 ) {
   return useQuery({
-    queryKey: executionQueryKeys.sessionList(agentId ?? "", cwd ?? "", connection),
+    queryKey: executionQueryKeys.sessionList(agentId, cwd, connection),
     queryFn: () => api.listAcpSessions(projectId!, agentId!, cwd!, connection, null),
     enabled: enabled && agentId != null && cwd != null && projectId != null,
     staleTime: 30_000,
@@ -382,7 +406,9 @@ export function useLoadAcpSessionMutation() {
     onSuccess: (_data, { projectId }) => {
       void queryClient.invalidateQueries({
         queryKey:
-          projectId != null ? executionQueryKeys.activeSessions(projectId) : ["activeSessions"],
+          projectId != null
+            ? executionQueryKeys.activeSessions(projectId)
+            : executionQueryKeys.activeSessionsAll(),
       });
     },
     onError: createErrorToastHandler("Failed to load session"),
@@ -521,7 +547,7 @@ export function useRenameAcpSessionMutation() {
         queryKey: executionQueryKeys.activeSessions(projectId),
       });
       void queryClient.invalidateQueries({
-        predicate: (query) => query.queryKey[0] === "sessionList" && query.queryKey[1] === agentId,
+        queryKey: executionQueryKeys.sessionListsOf(agentId),
       });
     },
     onError: createErrorToastHandler("Failed to rename session"),
@@ -565,7 +591,7 @@ export function useSessionFileQuery(
   refetchIntervalMs?: number,
 ) {
   return useQuery({
-    queryKey: executionQueryKeys.sessionFile(sessionId, relativePath ?? "", binary),
+    queryKey: executionQueryKeys.sessionFile(sessionId, relativePath, binary),
     queryFn: () =>
       binary
         ? api.readSessionFileBinary(sessionId, relativePath!)
@@ -574,6 +600,55 @@ export function useSessionFileQuery(
     refetchInterval: refetchIntervalMs ?? false,
   });
 }
+
+/**
+ * What a component fires at a live session: prompts, interrupts, answers to what the agent asked,
+ * and the files a prompt carries. Imperative and uncached, so plain functions rather than hooks.
+ */
+export const sendAcpPrompt = (sessionId: string, content: string) =>
+  api.sendAcpPrompt(sessionId, content);
+export const sendAcpPromptStructured = (sessionId: string, blocks: JsonValue) =>
+  api.sendAcpPromptStructured(sessionId, blocks);
+export const interruptAcpTurn = (sessionId: string) => api.interruptAcpTurn(sessionId);
+export const respondAcpPermission = (
+  sessionId: string,
+  requestId: string,
+  optionId: string | null,
+) => api.respondAcpPermission(sessionId, requestId, optionId);
+export const respondAcpElicitation = (sessionId: string, requestId: string, response: JsonValue) =>
+  api.respondAcpElicitation(sessionId, requestId, response);
+export const respondHostTool = (sessionId: string, requestId: string, result: JsonValue) =>
+  api.respondHostTool(sessionId, requestId, result);
+export const setAcpConfigOption = (sessionId: string, optionId: string, value: string) =>
+  api.setAcpConfigOption(sessionId, optionId, value);
+export const discardFailedSpawn = (sessionId: string) => api.discardFailedSpawn(sessionId);
+export const getAcpSessionMeta = (sessionId: string) => api.getAcpSessionMeta(sessionId);
+export const searchSessionFiles = (sessionId: string, query: string, limit: number) =>
+  api.searchSessionFiles(sessionId, query, limit);
+export const readSessionFile = (sessionId: string, relativePath: string) =>
+  api.readSessionFile(sessionId, relativePath);
+export const prepareExternalAttachments = (
+  sessionId: string,
+  files: ExternalFileRequest[],
+  embeddedContext: boolean,
+) => api.prepareExternalAttachments(sessionId, files, embeddedContext);
+export const validateAttachment = (path: string, isImage: boolean) =>
+  api.validateAttachment(path, isImage);
+/** Writes pasted or captured image bytes to a temp file and answers with its path. */
+export const saveClipboardImage = (base64Data: string, mimeType: string) =>
+  api.saveClipboardImage(base64Data, mimeType);
+
+/**
+ * Terminal I/O for an attached PTY. Imperative and uncached, driven from xterm's own callbacks, so
+ * these are plain functions rather than query hooks.
+ */
+export const attachTerminal = (sessionId: string, channel: Channel<string>) =>
+  api.attachTerminal(sessionId, channel, null);
+export const detachTerminal = (sessionId: string) => api.detachTerminal(sessionId);
+export const sendTerminalInput = (sessionId: string, data: string) =>
+  api.sendTerminalInput(sessionId, data);
+export const resizeTerminal = (sessionId: string, cols: number, rows: number) =>
+  api.resizeTerminal(sessionId, cols, rows);
 
 /**
  * Flush buffered replay events for a loaded session.
@@ -605,7 +680,7 @@ export function useCancelActiveSessionMutation() {
     onSuccess: (_result, { sessionId }) => {
       useAnnotationStore.getState().clearSession(sessionId);
       // projectId not available here; prefix match intentionally invalidates all projects.
-      void queryClient.invalidateQueries({ queryKey: ["activeSessions"] });
+      void queryClient.invalidateQueries({ queryKey: executionQueryKeys.activeSessionsAll() });
     },
     onError: createErrorToastHandler("Failed to close session"),
   });
@@ -615,11 +690,8 @@ export function useCancelActiveSessionMutation() {
 export function useReloadAcpSessionMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ sessionId }: { sessionId: string; projectId: number }) => {
-      const result = await commands.reloadAcpSession(sessionId);
-      if (result.status === "error") throw new Error(result.error);
-      return result.data;
-    },
+    mutationFn: ({ sessionId }: { sessionId: string; projectId: number }) =>
+      api.reloadAcpSession(sessionId),
     onSuccess: (reloaded, { sessionId, projectId }) => {
       // A reload that comes back under a new id leaves the old one with nothing to send to.
       if (reloaded !== sessionId) useAnnotationStore.getState().clearSession(sessionId);
@@ -634,11 +706,8 @@ export function useReloadAcpSessionMutation() {
 export function useRecoverTaskSessionMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ taskId, projectId }: { taskId: number; projectId: number }) => {
-      const result = await commands.recoverTaskSession(taskId, projectId);
-      if (result.status === "error") throw new Error(result.error);
-      return result.data;
-    },
+    mutationFn: ({ taskId, projectId }: { taskId: number; projectId: number }) =>
+      api.recoverTaskSession(taskId, projectId),
     onSuccess: (_sessionId, { projectId }) => {
       void queryClient.invalidateQueries({
         queryKey: executionQueryKeys.activeSessions(projectId),

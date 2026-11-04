@@ -32,7 +32,8 @@ vi.mock("@/lib/tauri-utils", () => ({
   },
 }));
 
-vi.mock("@/lib/file-opener", () => ({
+vi.mock("@/services/connection.service", async (importOriginal) => ({
+  ...(await importOriginal()),
   openFileWithConnection: vi.fn(),
   downloadFileToFolder: vi.fn(),
   opensViaHostCopy: () => false,

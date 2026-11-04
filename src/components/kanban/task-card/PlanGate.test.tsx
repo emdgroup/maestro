@@ -18,7 +18,7 @@ vi.mock("@/store/projectStore", () => ({
 }));
 
 /** The plan body renders through the full markdown stack, which this test has no interest in. */
-vi.mock("@/components/execution/activity/MarkdownBlock", () => ({
+vi.mock("@/components/common/markdown/MarkdownBlock", () => ({
   MarkdownBlock: ({ text }: { text: string }) => <pre>{text}</pre>,
 }));
 

@@ -1,49 +1,21 @@
 import { useRef, useState, type ReactNode } from "react";
-import {
-  Check,
-  Container,
-  Loader2,
-  Monitor,
-  Pencil,
-  Server,
-  ServerOff,
-  SquareTerminal,
-} from "lucide-react";
-import type {
-  ConnectionKey,
-  DockerConnection,
-  SshConnection,
-  WslConnection,
-} from "@/types/bindings";
+import { Check, Pencil, ServerOff } from "lucide-react";
+import { CONNECTION_ICONS, type HomeConnection } from "@/components/home/useHomeConnections";
 import { useSshReachable, useUpdateSshConnection } from "@/services/connection.service";
 import { useHomeStore } from "@/store/homeStore";
 import type { ConnectionPhase } from "@/store/homeStore";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { AddProjectTile, ProjectChip, ProjectTile, projectStatus } from "./ProjectTile";
-import type { ProjectCard } from "./ProjectTile";
-import { attach, connect, signIn } from "./useConnectionActions";
+import {
+  AddProjectTile,
+  ProjectChip,
+  ProjectTile,
+  projectStatus,
+} from "@/components/home/ProjectTile";
+import type { ProjectCard } from "@/components/home/ProjectTile";
+import { attach, connect, signIn } from "@/services/connection.service";
 import { Button } from "@/ui/button";
-
-/** A connection as Home lists it. */
-export interface HomeConnection {
-  key: ConnectionKey;
-  /** `connectionKeyId(key)`, the id phases and minimized state are kept under. */
-  id: string;
-  name: string;
-  /** The host under the name: the machine, `user@host`, `WSL`, or the container's image. */
-  detail: string;
-  ssh?: SshConnection;
-  wsl?: WslConnection;
-  docker?: DockerConnection;
-}
-
-export const CONNECTION_ICONS = {
-  local: Monitor,
-  ssh: Server,
-  wsl: SquareTerminal,
-  docker: Container,
-};
+import { Spinner } from "@/ui/spinner";
 
 const SERVER_BUSY = "server_busy: ";
 
@@ -63,10 +35,6 @@ export interface ConnectionPanelProps {
   onRemoveProject: (project: ProjectCard) => void;
   onAddProject: () => void;
   menu: ReactNode;
-}
-
-function Spinner() {
-  return <Loader2 className="size-3.5 animate-spin" />;
 }
 
 /** The three steps of attaching, inline under the header. */
@@ -94,7 +62,7 @@ function ConnectingSteps({
           {index < step ? (
             <Check className="size-3.5 text-emerald-600" />
           ) : index === step ? (
-            <Spinner />
+            <Spinner className="size-3.5" />
           ) : (
             <span className="inline-block size-1.5 rounded-full bg-foreground/20" />
           )}
@@ -385,7 +353,7 @@ export function ConnectionPanel({
   } else if (phase.kind === "stopping") {
     body = (
       <div className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Spinner />
+        <Spinner className="size-3.5" />
         Stopping the Maestro server. Its agent sessions and automation runs end with it.
       </div>
     );
@@ -470,7 +438,7 @@ export function ConnectionPanel({
               disabled={checking}
               className="home-pill flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 text-foreground hover:bg-foreground/10"
             >
-              {checking && <Spinner />}
+              {checking && <Spinner className="size-3.5" />}
               {checking ? "Checking…" : "Refresh"}
             </button>
           ) : phase.kind === "idle" ? (

@@ -1,14 +1,20 @@
-import React, { useState, useEffect, Fragment } from "react";
-import { listen } from "@tauri-apps/api/event";
+import React, { useState, Fragment } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/ui/dialog";
 import { Button } from "@/ui/button";
-import { Loader2, TerminalSquare } from "lucide-react";
+import { TerminalSquare } from "lucide-react";
 import type { ConnectionKey } from "@/types/bindings";
-import { commands } from "@/types/bindings";
-import { useAgentAuthInfoQuery, useAcpAuthenticateMutation } from "@/services/acp-auth.service";
+import {
+  abortAuthTerminal,
+  startAuthTerminal,
+  useAgentAuthInfoQuery,
+  useAcpAuthenticateMutation,
+} from "@/services/acp-auth.service";
+import { useTauriEvent } from "@/services/tauri-events";
+import { connectionChannelId } from "@/lib/connection-utils";
 import { useNavigate } from "@/store/navigationStore";
-import { useBoardActions } from "@/store/boardStore";
+import { useAuthRequiredTask, useBoardActions } from "@/store/boardStore";
+import { Spinner } from "@/ui/spinner";
 
 interface AgentAuthModalProps {
   agentId: string;
@@ -16,21 +22,15 @@ interface AgentAuthModalProps {
   open: boolean;
   onAuthSuccess: () => void;
   onClose: () => void;
-  // Optional: when provided, terminal-type auth methods open a side-panel tab instead of using the mutation.
+  /**
+   * Optional: when provided, terminal-type auth methods open a side-panel tab instead of using
+   * the mutation, and the modal follows that terminal through the board store's entry.
+   */
   authKey?: string;
   sessionId?: string | null;
-  terminalState?: "idle" | "running" | "interrupted";
-  onRetry?: () => void;
 }
 
 const URL_RE = /https?:\/\/\S+/g;
-
-function connectionKeyId(key: ConnectionKey): string {
-  if (key.type === "local") return "local";
-  if (key.type === "ssh") return `ssh-${key.id}`;
-  if (key.type === "wsl") return `wsl-${key.id}`;
-  return `docker-${key.id}`;
-}
 
 function linkifyLine(line: string): React.ReactNode {
   const parts: React.ReactNode[] = [];
@@ -65,13 +65,20 @@ export function AgentAuthModal({
   onClose,
   authKey,
   sessionId,
-  terminalState,
-  onRetry,
 }: AgentAuthModalProps) {
   const { data: authInfo } = useAgentAuthInfoQuery(agentId, connection);
   const authenticate = useAcpAuthenticateMutation();
   const navigate = useNavigate();
-  const { setAuthTerminalRunning } = useBoardActions();
+  const { setAuthTerminalRunning, setAuthTerminalIdle } = useBoardActions();
+  const entry = useAuthRequiredTask(authKey ?? "");
+  const terminalState = entry?.terminalState ?? "idle";
+
+  /** Drops the interrupted terminal, if it is still there, so the methods can be offered again. */
+  function retry() {
+    if (authKey == null) return;
+    if (entry?.terminalId) abortAuthTerminal(entry.connection);
+    setAuthTerminalIdle(authKey);
+  }
   const [authError, setAuthError] = useState<string | null>(null);
   const [outputLines, setOutputLines] = useState<string[]>([]);
   const [isStartingTerminal, setIsStartingTerminal] = useState(false);
@@ -84,19 +91,11 @@ export function AgentAuthModal({
     if (authenticate.isPending) setOutputLines([]);
   }
 
-  useEffect(() => {
-    if (!authenticate.isPending) return;
-    const connId = connectionKeyId(connection);
-    let unlisten: (() => void) | undefined;
-    listen<{ level: string; message: string }>(`acp://auth-output/${connId}`, (e) => {
-      setOutputLines((prev) => [...prev, e.payload.message]);
-    }).then((fn) => {
-      unlisten = fn;
-    });
-    return () => {
-      unlisten?.();
-    };
-  }, [authenticate.isPending, connection]);
+  // Only while a sign-in runs. Cancel-safe, so closing mid-sign-in cannot leak the listener.
+  useTauriEvent<{ level: string; message: string }>(
+    authenticate.isPending ? `acp://auth-output/${connectionChannelId(connection)}` : null,
+    (payload) => setOutputLines((prev) => [...prev, payload.message]),
+  );
 
   const authMethods = authInfo?.authMethods ?? [];
 
@@ -107,14 +106,7 @@ export function AgentAuthModal({
     if (methodType === "terminal" && authKey != null && sessionId != null) {
       setIsStartingTerminal(true);
       try {
-        const result = await commands.acpStartAuthTerminal(
-          agentId,
-          methodId,
-          connection,
-          sessionId,
-        );
-        if (result.status === "error") throw new Error(result.error);
-        const terminalId = result.data;
+        const terminalId = await startAuthTerminal(agentId, methodId, connection, sessionId);
         navigate({ agentId: authKey });
         setAuthTerminalRunning(authKey, terminalId);
         onClose();
@@ -182,12 +174,7 @@ export function AgentAuthModal({
             <span>Authentication was interrupted. Retry to open a new terminal tab.</span>
           </div>
           <DialogFooter className="flex gap-2">
-            <Button
-              variant="ghost"
-              onClick={() => {
-                onRetry?.();
-              }}
-            >
+            <Button variant="ghost" onClick={retry}>
               Retry
             </Button>
             <Button variant="ghost" onClick={onClose}>
@@ -213,7 +200,7 @@ export function AgentAuthModal({
 
         {isInProgress ? (
           <div className="flex flex-col items-center gap-3 py-6 text-sm text-muted-foreground">
-            <Loader2 className="w-6 h-6 animate-spin" />
+            <Spinner className="size-6" />
             <span>Authentication in progress. Follow any prompts in your browser or terminal.</span>
             {outputLines.length > 0 && (
               <pre className="w-full max-h-40 overflow-y-auto rounded-md bg-muted px-3 py-2 text-xs font-mono text-foreground text-left whitespace-pre-wrap break-all">
