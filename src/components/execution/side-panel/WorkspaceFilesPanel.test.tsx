@@ -158,6 +158,14 @@ function resizeEditArea(width: number) {
   });
 }
 
+function resizeFilesGrid(width: number) {
+  act(() => {
+    for (const { element, notify } of observed) {
+      if (element.getAttribute("data-slot") === "files-grid") notify(width);
+    }
+  });
+}
+
 import { WorkspaceFilesPanel } from "./WorkspaceFilesPanel";
 
 const CONNECTION = { type: "local" } as unknown as ConnectionKey;
@@ -1072,6 +1080,44 @@ describe("WorkspaceFilesPanel tabs", () => {
       expect(screen.getByTestId("editor")).toHaveValue("edited");
     },
   );
+
+  async function splitNotes() {
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: /notes\.md/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Move to the side" }));
+    return screen.findByRole("separator", { name: "Resize the sides" });
+  }
+
+  it("keeps each side at least 240px wide, even when the panel narrows after a drag", async () => {
+    renderPanel();
+    const divider = await splitNotes();
+    resizeFilesGrid(1200);
+    for (let i = 0; i < 12; i++) fireEvent.keyDown(divider, { key: "ArrowRight" });
+    expect(divider).toHaveAttribute("aria-valuenow", "80");
+    expect(divider).toHaveAttribute("aria-valuemax", "80");
+
+    resizeFilesGrid(600);
+
+    expect(divider).toHaveAttribute("aria-valuenow", "60");
+    expect(divider).toHaveAttribute("aria-valuemin", "40");
+    expect(divider).toHaveAttribute("aria-valuemax", "60");
+  });
+
+  it("opens a new split evenly, whatever the last one was dragged to", async () => {
+    renderPanel();
+    fireEvent.keyDown(await splitNotes(), { key: "ArrowRight" });
+    await userEvent.click(screen.getByRole("button", { name: "Close notes.md" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("separator", { name: "Resize the sides" })).toBeNull(),
+    );
+
+    expect(await splitNotes()).toHaveAttribute("aria-valuenow", "50");
+  });
+
+  it("selects no text while the line between the sides is dragged", async () => {
+    renderPanel();
+    expect(fireEvent.pointerDown(await splitNotes(), { pointerId: 1 })).toBe(false);
+  });
 
   it("offers no split where the panel has no room for one", async () => {
     renderPanel({ splitAllowed: false });

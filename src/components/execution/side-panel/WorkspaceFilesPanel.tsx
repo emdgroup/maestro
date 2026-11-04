@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DragDropProvider, PointerSensor } from "@dnd-kit/react";
 import { PointerActivationConstraints } from "@dnd-kit/dom";
 import { PanelLeft, FilePlus, FolderPlus, Eye, EyeOff, FileText, Columns2 } from "lucide-react";
@@ -226,16 +226,33 @@ export function WorkspaceFilesPanel({
   }
 
   const [drop, setDrop] = useState<DropTarget | null>(null);
-  const gridRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
 
-  // The first side's share of the width. Not kept across restarts, as the tabs themselves are not.
-  const [splitRatio, setSplitRatio] = useState(0.5);
-  /** Keeps either side from being dragged narrower than a readable column. */
-  function resizeTo(ratio: number) {
-    const width = gridRef.current?.clientWidth ?? 0;
-    const min = width > 0 ? Math.min(0.5, MIN_SIDE_PX / width) : 0.2;
-    setSplitRatio(Math.min(1 - min, Math.max(min, ratio)));
-  }
+  // The narrowest share of the width either side may have, in whole percent so a window being
+  // resized re-renders the panel every few dozen pixels rather than on every one.
+  const [minShare, setMinShare] = useState(0.2);
+  // A callback ref, so the observer follows the grid element if a layout change replaces it.
+  const attachGrid = useCallback((grid: HTMLDivElement | null) => {
+    gridRef.current = grid;
+    if (!grid) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry.contentRect.width;
+      if (width > 0) setMinShare(Math.min(0.5, Math.ceil((MIN_SIDE_PX / width) * 100) / 100));
+    });
+    observer.observe(grid);
+    return () => {
+      observer.disconnect();
+      gridRef.current = null;
+    };
+  }, []);
+  const clampShare = (share: number) => Math.min(1 - minShare, Math.max(minShare, share));
+  // The first side's share of the width, as dragged; what is shown is kept within the minimum, so
+  // a panel narrowed after a drag still has room for both sides. A split that closes forgets it,
+  // and the next one opens even. Not kept across restarts, as the tabs themselves are not.
+  const [dragShare, setDragShare] = useState(0.5);
+  if (tabs.groups.length < 2 && dragShare !== 0.5) setDragShare(0.5);
+  const splitRatio = clampShare(dragShare);
+  const resizeTo = (share: number) => setDragShare(clampShare(share));
 
   /** The rows and files on screen, measured for `dropTargetAt` while a tab is dragged. */
   function measureDropLayout(): DropLayout {
@@ -377,7 +394,8 @@ export function WorkspaceFilesPanel({
           }}
         >
           <div
-            ref={gridRef}
+            ref={attachGrid}
+            data-slot="files-grid"
             className="relative grid flex-1 min-h-0"
             style={{
               gridTemplateColumns: split
@@ -474,16 +492,20 @@ export function WorkspaceFilesPanel({
                 aria-orientation="vertical"
                 aria-label="Resize the sides"
                 aria-valuenow={Math.round(splitRatio * 100)}
-                aria-valuemin={0}
-                aria-valuemax={100}
+                aria-valuemin={Math.round(minShare * 100)}
+                aria-valuemax={Math.round((1 - minShare) * 100)}
                 tabIndex={0}
-                onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
+                onPointerDown={(e) => {
+                  // Or the drag selects the text of the files it passes over.
+                  e.preventDefault();
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                }}
                 onPointerMove={(e) => {
                   if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
                   const box = gridRef.current!.getBoundingClientRect();
                   resizeTo((e.clientX - box.left) / box.width);
                 }}
-                onDoubleClick={() => setSplitRatio(0.5)}
+                onDoubleClick={() => setDragShare(0.5)}
                 onKeyDown={(e) => {
                   const step = e.key === "ArrowLeft" ? -0.05 : e.key === "ArrowRight" ? 0.05 : 0;
                   if (step === 0) return;
