@@ -254,6 +254,11 @@ export function WorkspaceFilesPanel({
     };
   }
 
+  function focusSideOf(e: React.SyntheticEvent) {
+    const at = (e.target as HTMLElement).closest<HTMLElement>("[data-side]");
+    if (at) setTabs((s) => focusSide(s, Number(at.dataset.side)));
+  }
+
   const togglePanel = (
     <ToolbarButton
       label={panel.panelOpen ? "Hide file list" : "Show file list"}
@@ -340,13 +345,18 @@ export function WorkspaceFilesPanel({
     <div
       className="absolute inset-0 flex flex-col"
       onKeyDown={(e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "w" && selected) {
-          // Kept from the Agents view's own Ctrl+W, which closes the whole session: with focus in
-          // here it closes the file in front, and only with no file open does it reach the session.
-          e.preventDefault();
-          e.stopPropagation();
-          requestClose(tabs.focus, selected);
-        }
+        if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "w") return;
+        // A dialog over the panel is portalled out of it, but React still bubbles its keys here.
+        if (!e.currentTarget.contains(e.target as Node)) return;
+        // The tab the key is pressed on, else the file in front of the focused side.
+        const onTab = (e.target as HTMLElement).closest<HTMLElement>("[data-file-tab]");
+        const path = onTab?.dataset.fileTab ?? selected;
+        if (!path) return;
+        // Kept from the Agents view's own Ctrl+W, which closes the whole session: with focus in
+        // here it closes a file, and only with no file open does it reach the session.
+        e.preventDefault();
+        e.stopPropagation();
+        requestClose(sideOf(tabs, path), path);
       }}
     >
       <ReviewLayout panel={panel} renderPanel={renderTree} plain>
@@ -375,11 +385,10 @@ export function WorkspaceFilesPanel({
                 : "minmax(0, 1fr)",
               gridTemplateRows: "auto minmax(0, 1fr)",
             }}
-            // Whatever is pressed in a side — a tab, the file — makes it the one the tree opens on.
-            onPointerDownCapture={(e) => {
-              const at = (e.target as HTMLElement).closest<HTMLElement>("[data-side]");
-              if (at) setTabs((s) => focusSide(s, Number(at.dataset.side)));
-            }}
+            // Whatever is pressed or tabbed into in a side, a tab or the file, makes it the one the
+            // tree opens on.
+            onPointerDownCapture={focusSideOf}
+            onFocusCapture={focusSideOf}
           >
             {tabs.groups.map((group, side) => (
               <div

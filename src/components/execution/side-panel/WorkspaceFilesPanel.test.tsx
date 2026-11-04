@@ -917,6 +917,66 @@ describe("WorkspaceFilesPanel tabs", () => {
     expect(onWindow).not.toHaveBeenCalled();
   });
 
+  it("closes the tab Ctrl+W is pressed on, not the one in front", async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    await screen.findByRole("tab", { name: /notes\.md/ });
+
+    fireEvent.keyDown(screen.getByRole("tab", { name: /main\.ts/ }), { key: "w", ctrlKey: true });
+
+    await waitFor(() => expect(tabNames()).toEqual(["notes.md"]));
+  });
+
+  /** React hands a dialog's keys to the panel behind it, through the portal. */
+  it("leaves the tabs alone on Ctrl+W typed in a dialog over the panel", async () => {
+    renderPanel();
+    fireEvent.contextMenu(await screen.findByRole("button", { name: /notes\.md/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Rename" }));
+
+    fireEvent.keyDown(await screen.findByRole("textbox"), { key: "w", ctrlKey: true });
+
+    // The modal hides the panel from role queries, so the tab is looked up directly.
+    expect(document.querySelector('[data-file-tab="src/main.ts"]')).not.toBeNull();
+  });
+
+  it("lets Ctrl+W through to the session when no file is open", async () => {
+    const onWindow = vi.fn();
+    window.addEventListener("keydown", onWindow);
+    renderPanel({ openRequest: undefined });
+    fireEvent.keyDown(await screen.findByRole("button", { name: /notes\.md/ }), {
+      key: "w",
+      ctrlKey: true,
+    });
+    window.removeEventListener("keydown", onWindow);
+
+    expect(onWindow).toHaveBeenCalled();
+  });
+
+  /** The tree opens on the focused side, and the keyboard moves that focus as a click does. */
+  it("opens from the tree on the side the keyboard last went into", async () => {
+    listContents.mockResolvedValue([
+      { name: "a.ts", is_dir: false },
+      { name: "notes.md", is_dir: false },
+    ]);
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: /notes\.md/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Move to the side" }));
+    await waitFor(() => expect(document.querySelectorAll("[data-tab-row]")).toHaveLength(2));
+
+    act(() => screen.getByRole("tab", { name: /main\.ts/ }).focus());
+    fireEvent.contextMenu(screen.getByRole("button", { name: /a\.ts/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Open" }));
+
+    await waitFor(() =>
+      expect(
+        [...document.querySelectorAll("[data-tab-row]")].map((r) =>
+          [...r.querySelectorAll("[role=tab]")].map((t) => t.textContent),
+        ),
+      ).toEqual([["main.ts", "a.ts"], ["notes.md"]]),
+    );
+  });
+
   it("moves a tab to a second side from its menu, and the split closes with it", async () => {
     renderPanel();
     await userEvent.click(await screen.findByRole("button", { name: /notes\.md/ }));
