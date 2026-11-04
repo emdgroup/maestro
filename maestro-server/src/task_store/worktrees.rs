@@ -10,9 +10,7 @@
 //! verbatim from several apps' databases cannot collide.
 
 use chrono::Utc;
-use maestro_protocol::{
-    ClaimWorktreeForTaskRequest, InsertWorktreeRequest, UpdateWorktreeRequest, Worktree,
-};
+use maestro_protocol::{InsertWorktreeRequest, UpdateWorktreeRequest, Worktree};
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::{commit, transaction};
@@ -260,13 +258,10 @@ pub fn delete(conn: &mut Connection, project_path: &str, ids: &[i32]) -> Result<
 /// per-task assumption every "where does task N work" query makes still holds.
 pub fn claim_for_task(
     conn: &mut Connection,
-    request: &ClaimWorktreeForTaskRequest,
+    project_path: &str,
+    task_id: i32,
+    worktree_id: i32,
 ) -> Result<Worktree, String> {
-    let ClaimWorktreeForTaskRequest {
-        project_path,
-        task_id,
-        worktree_id,
-    } = request;
     let tx = transaction(conn)?;
     tx.execute(
         "UPDATE worktrees SET task_id = NULL WHERE project_path = ?1 AND task_id = ?2 AND id != ?3",
@@ -284,7 +279,7 @@ pub fn claim_for_task(
             "The workspace this task was pinned to no longer exists. Pick another one.".to_string(),
         );
     }
-    let worktree = get(&tx, project_path, *worktree_id)?
+    let worktree = get(&tx, project_path, worktree_id)?
         .ok_or_else(|| format!("Worktree {worktree_id} not found"))?;
     commit(tx)?;
     Ok(worktree)
@@ -356,15 +351,7 @@ pub(super) mod tests {
         let old = worktree(&conn, PROJECT, Some(task_id), "old");
         let pinned = worktree(&conn, PROJECT, None, "pinned");
 
-        let claimed = claim_for_task(
-            &mut conn,
-            &ClaimWorktreeForTaskRequest {
-                project_path: PROJECT.to_string(),
-                task_id,
-                worktree_id: pinned.id,
-            },
-        )
-        .expect("claim");
+        let claimed = claim_for_task(&mut conn, PROJECT, task_id, pinned.id).expect("claim");
         assert_eq!(claimed.task_id, Some(task_id));
         assert_eq!(
             get(&conn, PROJECT, old.id).expect("get").unwrap().task_id,
@@ -375,14 +362,7 @@ pub(super) mod tests {
             vec![claimed]
         );
 
-        let gone = claim_for_task(
-            &mut conn,
-            &ClaimWorktreeForTaskRequest {
-                project_path: PROJECT.to_string(),
-                task_id,
-                worktree_id: 999,
-            },
-        );
+        let gone = claim_for_task(&mut conn, PROJECT, task_id, 999);
         assert!(gone.is_err(), "claiming a worktree that is gone fails");
         assert_eq!(
             list(&conn, PROJECT, Some(task_id)).expect("list").len(),

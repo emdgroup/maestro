@@ -10,7 +10,6 @@ import type { DiffScope } from "@/components/execution/diff/scope";
 
 interface ReviewChangesPanelProps {
   sessionId: string;
-  onClose: () => void;
   initialFile?: string;
   compact?: boolean;
   isActive?: boolean;

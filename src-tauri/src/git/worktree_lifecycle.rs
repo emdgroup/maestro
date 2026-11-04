@@ -417,7 +417,10 @@ fn branch_has_no_own_commits(containing: &str, branch_name: &str) -> bool {
     containing
         .lines()
         .map(str::trim)
-        .any(|other| !other.is_empty() && other != branch_name)
+        .filter(|other| !other.is_empty())
+        // A detached worktree prints this instead of a name, and it is not another ref.
+        .filter(|other| !other.starts_with("(HEAD detached"))
+        .any(|other| other != branch_name)
 }
 
 /// True when `cwd` is the worktree root or a directory inside it. A session's working directory
@@ -1245,6 +1248,18 @@ mod tests {
         // Only the branch itself contains the tip — it holds work.
         assert!(!branch_has_no_own_commits("maestro/foo\n", "maestro/foo"));
         assert!(!branch_has_no_own_commits("", "maestro/foo"));
+        // A detached HEAD is listed as a pseudo-ref, which is not somewhere else the commits live.
+        assert!(!branch_has_no_own_commits(
+            "(HEAD detached at 1a2b3c4)
+",
+            "maestro/foo"
+        ));
+        assert!(branch_has_no_own_commits(
+            "(HEAD detached at 1a2b3c4)
+main
+",
+            "maestro/foo"
+        ));
     }
 
     /// Every reason a Maestro branch must not be offered for deletion, against the real shape of

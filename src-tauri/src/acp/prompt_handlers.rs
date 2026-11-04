@@ -1,5 +1,3 @@
-use serde::{Deserialize, Serialize};
-use specta::Type;
 use std::sync::Arc;
 use tauri::State;
 
@@ -8,14 +6,6 @@ use crate::acp::transport::{
     SetModeRequest, SetModelRequest,
 };
 use crate::core::AppState;
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct AcpPromptCapabilities {
-    pub embedded_context: bool,
-    pub image: bool,
-    pub audio: bool,
-}
 
 async fn send_prompt_impl(
     app_state: &Arc<AppState>,
@@ -151,40 +141,6 @@ pub async fn respond_host_tool(
         let _ = sender.send(result);
     }
     Ok(())
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn set_acp_model(
-    app_state: State<'_, Arc<AppState>>,
-    session_id: &str,
-    model_id: String,
-) -> Result<(), String> {
-    let msg = ServerRequest::SetModel(SetModelRequest {
-        session_id: session_id.to_string(),
-        model_id,
-    });
-    crate::acp::write_to_acp_session(&app_state, session_id, &msg).await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn set_acp_mode(
-    app_state: State<'_, Arc<AppState>>,
-    session_id: &str,
-    mode_id: String,
-) -> Result<(), String> {
-    // At `info` because which mode a role ended up in is not otherwise knowable: the request itself
-    // is only traced, and the fallback list in `useExecuteTask` is a guess about names that differ
-    // per harness. Tuning it needs evidence, and a mode nobody can observe is a mode nobody can
-    // correct — during the live pass this was the reason a blocked reviewer could not be explained.
-    log::info!("[acp] session-{session_id} permission mode set to {mode_id}");
-
-    let msg = ServerRequest::SetMode(SetModeRequest {
-        session_id: session_id.to_string(),
-        mode_id,
-    });
-    crate::acp::write_to_acp_session(&app_state, session_id, &msg).await
 }
 
 #[tauri::command]

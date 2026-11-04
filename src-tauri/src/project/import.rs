@@ -190,14 +190,21 @@ async fn import(
         }
     }
 
+    // Auto mode is per project in the daemon now. The app's old global switch survives only as
+    // this settings row, read once here to seed the first project imported.
     let auto_mode = {
         let conn = app_state
             .db
             .lock()
             .map_err(|e| format!("Lock failed: {e}"))?;
-        crate::core::settings::load_settings(&conn)
-            .map_err(|e| format!("Failed to load settings: {e}"))?
-            .auto_mode
+        conn.query_row(
+            "SELECT value FROM settings WHERE key = 'auto_mode'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| format!("Failed to read auto mode: {e}"))?
+        .is_some_and(|value| value == "true")
     };
     if first_in && auto_mode {
         query_via_server(

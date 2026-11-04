@@ -63,7 +63,6 @@ export function TaskCardDialogs({
       {authRequired && (
         <AgentAuthModal
           agentId={authRequired.agentId}
-          agentName={authRequired.agentId}
           connection={authRequired.connection}
           open={dialog === "auth"}
           authKey={String(task.id)}

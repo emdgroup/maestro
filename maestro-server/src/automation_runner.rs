@@ -555,7 +555,7 @@ pub async fn finish_for_session(
     let crate::helpers::TurnEnd {
         session_id,
         stop_reason,
-        final_message,
+        facts,
         ..
     } = ended;
     let run = {
@@ -575,7 +575,7 @@ pub async fn finish_for_session(
     };
     let finished = {
         let conn = store.lock().await;
-        automations::finish_run(&conn, &run.id, status, error, final_message)
+        automations::finish_run(&conn, &run.id, status, error, facts.closing_message)
     };
     match finished {
         Ok(Some(run)) => announce(stdout, &run).await,

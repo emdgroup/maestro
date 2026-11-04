@@ -43,7 +43,9 @@ fn write_msg(writer: &mut impl Write, msg: &ServerRequest) {
 }
 
 fn read_frame(reader: &mut impl Read) -> ServerResponse {
-    maestro_protocol::read_message_sync(reader).expect("read frame")
+    maestro_protocol::read_message_with_id_sync(reader)
+        .expect("read frame")
+        .1
 }
 
 // Skip Diagnostic and Ping frames — both arrive asynchronously and are not

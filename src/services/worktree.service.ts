@@ -417,18 +417,6 @@ export function useCreateWorktreeMutation() {
 }
 
 /**
- * One-shot query for checking if a worktree has dirty (uncommitted) changes.
- * Set `enabled: false` so it only runs via `refetch()`.
- */
-export function useCheckWorktreeDirty(projectId: number | null, worktreePath: string | null) {
-  return useQuery({
-    queryKey: [...worktreeQueryKeys.base, "dirty", worktreePath] as const,
-    queryFn: () => api.checkWorktreeDirty(projectId!, worktreePath!),
-    enabled: false,
-  });
-}
-
-/**
  * Query hook for fetching commits in a worktree relative to a base branch.
  * Returns CommitInfo[] wrapped in a Result type.
  */

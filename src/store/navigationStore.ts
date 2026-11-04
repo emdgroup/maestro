@@ -51,7 +51,6 @@ interface NavigationState {
   navigate: (target: NavigationTarget) => void;
   setActiveTab: (tab: ViewType) => void;
   setActiveTaskId: (id: number | null) => void;
-  setPendingSettingsPage: (pageId: string) => void;
   openSettings: (pageId?: string) => void;
   setSettingsOpen: (open: boolean) => void;
   clearPendingAgent: () => void;
@@ -121,11 +120,6 @@ export const useNavigationStore = create<NavigationState>()(
         state.activeTaskId = id;
       }),
 
-    setPendingSettingsPage: (pageId: string) =>
-      set((state) => {
-        state.pendingSettingsPage = pageId;
-      }),
-
     openSettings: (pageId?: string) =>
       set((state) => {
         state.settingsOpen = true;
@@ -174,7 +168,6 @@ export const useNavigationActions = () =>
     useShallow((s) => ({
       setActiveTab: s.setActiveTab,
       setActiveTaskId: s.setActiveTaskId,
-      setPendingSettingsPage: s.setPendingSettingsPage,
       openSettings: s.openSettings,
       setSettingsOpen: s.setSettingsOpen,
       clearPendingAgent: s.clearPendingAgent,

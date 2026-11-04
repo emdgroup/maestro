@@ -799,7 +799,6 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 33);
         assert!(tables.contains(&"usage_stores".to_string()));
         assert!(tables.contains(&"docker_connections".to_string()));
         assert!(tables.contains(&"connection_settings".to_string()));

@@ -1,12 +1,6 @@
 use crate::command_ext::NoConsoleWindow;
-use crate::integration::token_manager::StoredToken;
 use crate::models::issue_tracking::RemoteIssue;
 use tokio::process::Command as TokioCommand;
-
-#[derive(serde::Deserialize)]
-struct GitHubUserResponse {
-    login: String,
-}
 
 #[derive(serde::Deserialize)]
 struct GitHubIssueType {
@@ -73,67 +67,6 @@ pub async fn try_gh_cli_token() -> Option<String> {
     } else {
         Some(token)
     }
-}
-
-/// Validate a GitHub PAT (or auto-detect via gh CLI if token is None), save the
-/// IssueTrackingConfig to the project, and store the token in the token manager.
-/// Returns the authenticated GitHub username on success.
-pub async fn validate_and_store(
-    project_id: i32,
-    _owner: &str,
-    _repo: &str,
-    token: Option<String>,
-    _project_path: &str,
-    app_state: &crate::core::AppState,
-) -> Result<String, String> {
-    let resolved_token = match token {
-        Some(t) => t,
-        None => try_gh_cli_token().await.ok_or_else(|| {
-            "GitHub: gh CLI not available or not authenticated. Provide a PAT.".to_string()
-        })?,
-    };
-
-    let client = super::http_client()?;
-
-    let response = client
-        .get("https://api.github.com/user")
-        .header("Authorization", format!("Bearer {}", resolved_token))
-        .header("User-Agent", "maestro/1.0")
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        if status.as_u16() == 401 {
-            return Err("GitHub: bad credentials".to_string());
-        }
-        return Err(format!(
-            "GitHub API error {}: {}",
-            status.as_u16(),
-            status.canonical_reason().unwrap_or("Unknown")
-        ));
-    }
-
-    let user: GitHubUserResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse GitHub response: {}", e))?;
-
-    let stored_token = StoredToken {
-        access_token: resolved_token,
-        refresh_token: None,
-        expires_at: None,
-        provider: "github".to_string(),
-    };
-    app_state.token_manager.store_token(
-        project_id,
-        stored_token,
-        &app_state.app_data_dir,
-        &app_state.app_handle,
-    )?;
-
-    Ok(user.login)
 }
 
 /// Fetch open issues (excluding PRs) from a GitHub repository.
@@ -207,12 +140,6 @@ mod tests {
         let issue: GitHubIssueResponse = serde_json::from_str(json).unwrap();
         assert!(issue.pull_request.is_none());
         assert_eq!(issue.number, 42);
-    }
-
-    #[test]
-    fn test_github_external_id_format() {
-        let number: u64 = 42;
-        assert_eq!(format!("github:{}", number), "github:42");
     }
 
     #[test]

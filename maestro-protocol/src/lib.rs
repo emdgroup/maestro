@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 17;
+pub const PROTOCOL_VERSION: u32 = 18;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 ///
@@ -85,9 +85,7 @@ impl ServerResponse {
             Self::TurnStarted(r) => &r.session_id,
             Self::TurnEnded(r) => &r.session_id,
             Self::HostToolCall(r) => &r.session_id,
-            Self::SetModelOk(r) => &r.session_id,
             Self::SetModeOk(r) => &r.session_id,
-            Self::SetConfigOptionOk(r) => &r.session_id,
             Self::ConfigOptionUpdated(r) => &r.session_id,
             Self::SessionLoadOk(r) => &r.session_id,
             Self::Error(err) => return err.session_id.as_deref(),
@@ -193,8 +191,6 @@ pub enum ServerRequest {
     Authenticate(AuthenticateRequest),
     Logout(LogoutRequest),
     CheckTools(CheckToolsRequest),
-    SetToolPath(SetToolPathRequest),
-    TestToolPath(TestToolPathRequest),
     InstallSkills(InstallSkillsRequest),
     /// The MCP servers the user manages for this machine, secrets blanked, and the ones a
     /// project's own `.mcp.json` declares.
@@ -214,7 +210,6 @@ pub enum ServerRequest {
     /// Remove a skill from every agent, and from the library.
     DeleteSkill(DeleteSkillRequest),
     DetectInstalledAgents(DetectInstalledAgentsRequest),
-    DetectProjectAgents(DetectProjectAgentsRequest),
     SpawnAuthTerminal(SpawnAuthTerminalRequest),
     KillAuthTerminal(KillAuthTerminalRequest),
     AuthTerminalInput(AuthTerminalInputRequest),
@@ -225,8 +220,6 @@ pub enum ServerRequest {
     AcquireProjectLock(AcquireProjectLockRequest),
     /// Let go of whatever project this client holds.
     ReleaseProjectLock,
-    /// Who holds each of these projects, for the picker.
-    ListProjectLocks(ListProjectLocksRequest),
     /// This server's status and what each of its projects is doing, for Home.
     HomeSummary(HomeSummaryRequest),
     /// Ask the holder of a project to hand it over. Answered with `TakeoverResultOk` once the
@@ -249,10 +242,8 @@ pub enum ServerRequest {
     CloseRefinement(CloseRefinementRequest),
     RequestTaskExecution(RequestTaskExecutionRequest),
     /// Queued tasks with no phase, deferred first, then by priority and age.
-    ListQueueCandidates(ListQueueCandidatesRequest),
     /// Unarchived tasks at `AwaitingMerge` with a pull request number, for the forge sweep.
     ListTasksAwaitingMerge(ProjectRef),
-    ImportTasks(ImportTasksRequest),
     /// A task's thread, oldest first.
     ListTaskComments(TaskRef),
     /// A `proposal` or `plan` replaces the task's previous one of that kind.
@@ -260,18 +251,11 @@ pub enum ServerRequest {
     ListTaskAttachments(TaskRef),
     AddTaskAttachment(AddTaskAttachmentRequest),
     DeleteTaskAttachment(DeleteTaskAttachmentRequest),
-    ListTaskRelationships(TaskRef),
-    AddTaskRelationship(AddTaskRelationshipRequest),
-    DeleteTaskRelationship(DeleteTaskRelationshipRequest),
-    ListTaskInstructions(TaskRef),
-    AddTaskInstruction(AddTaskInstructionRequest),
     ListWorktrees(ListWorktreesRequest),
     GetWorktree(WorktreeRef),
     InsertWorktree(InsertWorktreeRequest),
     UpdateWorktree(UpdateWorktreeRequest),
     DeleteWorktrees(DeleteWorktreesRequest),
-    ClaimWorktreeForTask(ClaimWorktreeForTaskRequest),
-    GetTaskReview(TaskRef),
     SaveTaskReview(SaveTaskReviewRequest),
     ClearTaskReview(TaskRef),
     /// A loop task's checks in list order, pending proposals included.
@@ -583,19 +567,6 @@ pub struct CheckToolsRequest {
     pub tools: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct SetToolPathRequest {
-    pub tool: String,
-    /// `None` removes the override and restores automatic detection.
-    pub path: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct TestToolPathRequest {
-    pub tool: String,
-    pub path: String,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolPathSource {
@@ -796,11 +767,6 @@ pub struct DeleteSkillRequest {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct DetectInstalledAgentsRequest {}
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct DetectProjectAgentsRequest {
-    pub cwd: String,
-}
-
 /// Info about an ACP agent whose underlying tool was detected on the host.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DetectedAgentInfo {
@@ -821,17 +787,6 @@ pub struct DetectInstalledAgentsResponse {
     /// All agent IDs that the detection table has an entry for (found OR not found).
     /// Tauri uses this to distinguish "not installed" from "not in detection table".
     pub all_checked_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ProjectAgentMarker {
-    pub agent_id: String,
-    pub markers_found: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct DetectProjectAgentsResponse {
-    pub agents: Vec<ProjectAgentMarker>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -1155,17 +1110,6 @@ pub struct AcquireProjectLockResponse {
     /// Who holds it, when `acquired` is false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub holder_label: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct ListProjectLocksRequest {
-    pub project_paths: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct ListProjectLocksResponse {
-    /// Only the projects somebody holds.
-    pub locks: Vec<ProjectLockInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2180,43 +2124,8 @@ pub struct PipelineSettingsChanged {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct ListQueueCandidatesRequest {
-    pub project_path: String,
-    /// Auto mode. Without it only deferred tasks are candidates.
-    #[serde(default)]
-    pub include_undeferred: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct TaskIdList {
-    pub task_ids: Vec<i32>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct TaskList {
     pub tasks: Vec<Task>,
-}
-
-/// Create a task per issue not already imported into the project.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct ImportTasksRequest {
-    pub project_path: String,
-    pub base_branch: String,
-    pub issues: Vec<ImportedIssue>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ImportedIssue {
-    pub external_id: String,
-    pub title: String,
-    #[serde(default)]
-    pub body: Option<String>,
-    pub url: String,
-    #[serde(default)]
-    pub labels: Vec<String>,
-    #[serde(default)]
-    pub updated_at: Option<String>,
-    pub priority: TaskPriority,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -2264,39 +2173,6 @@ pub struct DeleteTaskAttachmentRequest {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct TaskAttachmentList {
     pub attachments: Vec<TaskAttachment>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct AddTaskRelationshipRequest {
-    pub project_path: String,
-    pub from_task_id: i32,
-    pub to_task_id: i32,
-    pub relationship_type: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct DeleteTaskRelationshipRequest {
-    pub project_path: String,
-    pub relationship_id: i32,
-}
-
-/// Every relationship the task is on either end of.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct TaskRelationshipList {
-    pub relationships: Vec<TaskRelationship>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct AddTaskInstructionRequest {
-    pub project_path: String,
-    pub task_id: i32,
-    pub content: String,
-    pub source: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct TaskInstructionList {
-    pub instructions: Vec<TaskInstruction>,
 }
 
 /// One check of the user's list. `id` names a check it keeps, which goes back to `Pending` when
@@ -2466,21 +2342,6 @@ pub struct UpdateWorktreeRequest {
 pub struct DeleteWorktreesRequest {
     pub project_path: String,
     pub worktree_ids: Vec<i32>,
-}
-
-/// Hand a worktree to a task, releasing any other the task owned. An error when the worktree is
-/// gone.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct ClaimWorktreeForTaskRequest {
-    pub project_path: String,
-    pub task_id: i32,
-    pub worktree_id: i32,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct OptionalTaskReview {
-    #[serde(default)]
-    pub review: Option<TaskReview>,
 }
 
 /// Write a task's review.
@@ -2699,9 +2560,7 @@ pub enum ServerResponse {
     /// A run started or finished. Pushed unasked to whoever is attached, because the client that
     /// cares did not ask for it: the clock did.
     AutomationRunChanged(AutomationRun),
-    SetModelOk(SetModelOkResponse),
     SetModeOk(SetModeOkResponse),
-    SetConfigOptionOk(SetConfigOptionOkResponse),
     ConfigOptionUpdated(ConfigOptionUpdatedResponse),
     FileSearchOk(FileSearchResponse),
     FileReadOk(FileReadResponse),
@@ -2715,10 +2574,7 @@ pub enum ServerResponse {
     AuthenticateOk,
     LogoutOk,
     AuthTerminalExit(AuthTerminalExitResponse),
-    AgentConnectionLost(AgentConnectionLost),
     CheckToolsOk(CheckToolsResponse),
-    SetToolPathOk(ToolCheckResult),
-    TestToolPathOk(ToolCheckResult),
     InstallSkillsOk(InstallSkillsResponse),
     ListMcpServersOk(McpServerList),
     SaveMcpServersOk,
@@ -2728,12 +2584,10 @@ pub enum ServerResponse {
     ApplySkillOk,
     DeleteSkillOk,
     DetectInstalledAgentsOk(DetectInstalledAgentsResponse),
-    DetectProjectAgentsOk(DetectProjectAgentsResponse),
     /// An agent called a Maestro MCP tool the host has to answer. Tauri replies with
     /// `ServerRequest::HostToolResult` carrying the same `request_id`.
     HostToolCall(HostToolCall),
     AcquireProjectLockOk(AcquireProjectLockResponse),
-    ProjectLocksOk(ListProjectLocksResponse),
     HomeSummaryOk(HomeSummaryResponse),
     /// The answer to `RequestTakeover`, sent once the holder has been dealt with.
     TakeoverResultOk(TakeoverResult),
@@ -2756,27 +2610,17 @@ pub enum ServerResponse {
     EndTaskTurnOk(OptionalTask),
     CloseRefinementOk(Task),
     RequestTaskExecutionOk(RequestTaskExecutionResponse),
-    ListQueueCandidatesOk(TaskIdList),
     ListTasksAwaitingMergeOk(TaskList),
-    /// The tasks created, not the issues skipped.
-    ImportTasksOk(TaskList),
     ListTaskCommentsOk(TaskCommentList),
     AddTaskCommentOk(TaskComment),
     ListTaskAttachmentsOk(TaskAttachmentList),
     AddTaskAttachmentOk(TaskAttachment),
     DeleteTaskAttachmentOk,
-    ListTaskRelationshipsOk(TaskRelationshipList),
-    AddTaskRelationshipOk(TaskRelationship),
-    DeleteTaskRelationshipOk,
-    ListTaskInstructionsOk(TaskInstructionList),
-    AddTaskInstructionOk(TaskInstruction),
     ListWorktreesOk(WorktreeList),
     GetWorktreeOk(OptionalWorktree),
     InsertWorktreeOk(Worktree),
     UpdateWorktreeOk(Worktree),
     DeleteWorktreesOk,
-    ClaimWorktreeForTaskOk(Worktree),
-    GetTaskReviewOk(OptionalTaskReview),
     SaveTaskReviewOk(SaveTaskReviewResponse),
     ClearTaskReviewOk,
     ListLoopChecksOk(LoopCheckList),
@@ -2844,7 +2688,6 @@ impl ServerResponse {
             | Self::TurnStarted(_)
             | Self::TurnEnded(_)
             | Self::AuthTerminalExit(_)
-            | Self::AgentConnectionLost(_)
             | Self::HostToolCall(_)
             | Self::ProjectLocksChanged
             | Self::TakeoverRequested(_)
@@ -2878,9 +2721,7 @@ impl ServerResponse {
             | Self::UsageHoursOk(_)
             | Self::ServerStatusOk(_)
             | Self::PreviewScheduleOk(_)
-            | Self::SetModelOk(_)
             | Self::SetModeOk(_)
-            | Self::SetConfigOptionOk(_)
             | Self::FileSearchOk(_)
             | Self::FileReadOk(_)
             | Self::SessionListOk(_)
@@ -2891,8 +2732,6 @@ impl ServerResponse {
             | Self::AuthenticateOk
             | Self::LogoutOk
             | Self::CheckToolsOk(_)
-            | Self::SetToolPathOk(_)
-            | Self::TestToolPathOk(_)
             | Self::InstallSkillsOk(_)
             | Self::ListMcpServersOk(_)
             | Self::SaveMcpServersOk
@@ -2902,9 +2741,7 @@ impl ServerResponse {
             | Self::ApplySkillOk
             | Self::DeleteSkillOk
             | Self::DetectInstalledAgentsOk(_)
-            | Self::DetectProjectAgentsOk(_)
             | Self::AcquireProjectLockOk(_)
-            | Self::ProjectLocksOk(_)
             | Self::HomeSummaryOk(_)
             | Self::TakeoverResultOk(_)
             | Self::ListTasksOk(_)
@@ -2918,26 +2755,17 @@ impl ServerResponse {
             | Self::EndTaskTurnOk(_)
             | Self::CloseRefinementOk(_)
             | Self::RequestTaskExecutionOk(_)
-            | Self::ListQueueCandidatesOk(_)
             | Self::ListTasksAwaitingMergeOk(_)
-            | Self::ImportTasksOk(_)
             | Self::ListTaskCommentsOk(_)
             | Self::AddTaskCommentOk(_)
             | Self::ListTaskAttachmentsOk(_)
             | Self::AddTaskAttachmentOk(_)
             | Self::DeleteTaskAttachmentOk
-            | Self::ListTaskRelationshipsOk(_)
-            | Self::AddTaskRelationshipOk(_)
-            | Self::DeleteTaskRelationshipOk
-            | Self::ListTaskInstructionsOk(_)
-            | Self::AddTaskInstructionOk(_)
             | Self::ListWorktreesOk(_)
             | Self::GetWorktreeOk(_)
             | Self::InsertWorktreeOk(_)
             | Self::UpdateWorktreeOk(_)
             | Self::DeleteWorktreesOk
-            | Self::ClaimWorktreeForTaskOk(_)
-            | Self::GetTaskReviewOk(_)
             | Self::SaveTaskReviewOk(_)
             | Self::ClearTaskReviewOk
             | Self::ListLoopChecksOk(_)
@@ -3028,12 +2856,6 @@ pub struct SetModelRequest {
     pub model_id: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct SetModelOkResponse {
-    pub session_id: String,
-    pub model_id: String,
-}
-
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct ModeInfo {
     pub mode_id: String,
@@ -3062,13 +2884,6 @@ pub struct SetModeOkResponse {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SetConfigOptionRequest {
-    pub session_id: String,
-    pub config_id: String,
-    pub value: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct SetConfigOptionOkResponse {
     pub session_id: String,
     pub config_id: String,
     pub value: String,
@@ -3241,13 +3056,6 @@ pub struct AuthTerminalExitResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct AgentConnectionLost {
-    pub agent_id: String,
-    pub reason: String,
-    pub affected_session_ids: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct DiagnosticPayload {
     /// "info" | "warn" | "error"
     pub level: String,
@@ -3387,20 +3195,6 @@ pub async fn read_message<M: Message, R: AsyncRead + Unpin>(
     Ok(read_message_with_id(stream).await?.1)
 }
 
-/// Synchronous version of [`read_message`] for use in `spawn_blocking` reader threads.
-///
-/// On Windows, anonymous pipes don't support overlapped I/O (IOCP), so the async
-/// version uses `spawn_blocking` internally. If the future is dropped while a read
-/// is in flight (e.g. when a `tokio::select!` picks another arm), the blocking thread
-/// continues and the 4-byte length prefix gets silently discarded — causing framing
-/// desync. This function is meant to run in a dedicated blocking thread that is never
-/// dropped, writing results to an mpsc channel instead.
-pub fn read_message_sync<M: Message, R: std::io::Read>(
-    stream: &mut R,
-) -> Result<M, Box<dyn std::error::Error + Send + Sync>> {
-    Ok(read_message_with_id_sync(stream)?.1)
-}
-
 /// Pairs a reply with the request it answers. Rides as the frame's `rpc_id` key beside its
 /// `request` or `response`, and is absent on anything unprompted.
 pub type RequestId = u64;
@@ -3507,7 +3301,14 @@ pub async fn read_message_with_id<M: Message, R: AsyncRead + Unpin>(
     Ok(M::decode(&read_body(stream).await?)?)
 }
 
-/// [`read_message_sync`], keeping the request id the frame carried.
+/// Synchronous version of [`read_message_with_id`] for use in `spawn_blocking` reader threads.
+///
+/// On Windows, anonymous pipes don't support overlapped I/O (IOCP), so the async
+/// version uses `spawn_blocking` internally. If the future is dropped while a read
+/// is in flight (e.g. when a `tokio::select!` picks another arm), the blocking thread
+/// continues and the 4-byte length prefix gets silently discarded, causing framing
+/// desync. This function is meant to run in a dedicated blocking thread that is never
+/// dropped, writing results to an mpsc channel instead.
 pub fn read_message_with_id_sync<M: Message, R: std::io::Read>(
     stream: &mut R,
 ) -> Result<(Option<RequestId>, M), Box<dyn std::error::Error + Send + Sync>> {
@@ -3660,11 +3461,203 @@ mod tests {
                 requester_label: "laptop".to_string(),
             })),
         ];
+        samples.extend(session_messages());
         samples.extend(task_messages());
         samples.extend(pipeline_messages());
         samples.extend(prompt_messages());
         samples.extend(import_messages());
         samples
+    }
+
+    /// A session's traffic and the agent queries around it, one of each variant.
+    fn session_messages() -> Vec<AnyMessage> {
+        vec![
+            AnyMessage::Request(ServerRequest::Handshake(HandshakeRequest {
+                protocol_version: PROTOCOL_VERSION,
+            })),
+            AnyMessage::Response(ServerResponse::HandshakeOk(HandshakeResponse {
+                protocol_version: PROTOCOL_VERSION,
+            })),
+            AnyMessage::Request(ServerRequest::Prompt(PromptRequest {
+                session_id: "session".to_string(),
+                content: serde_json::Value::String("fix the bug in auth.rs".to_string()),
+            })),
+            AnyMessage::Request(ServerRequest::Cancel(CancelRequest {
+                session_id: "session".to_string(),
+            })),
+            AnyMessage::Request(ServerRequest::InterruptTurn(InterruptTurnRequest {
+                session_id: "session".to_string(),
+            })),
+            AnyMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
+                session_id: "session".to_string(),
+                acp_session_id: Some("native-uuid-123".to_string()),
+                prompt_capabilities: Some(PromptCapabilitiesInfo {
+                    embedded_context: true,
+                    image: false,
+                    audio: false,
+                }),
+                modes: Some(SessionModeState {
+                    current_mode_id: "default".to_string(),
+                    available_modes: vec![ModeInfo {
+                        mode_id: "acceptEdits".to_string(),
+                        name: "Edit automatically".to_string(),
+                        description: Some("File ops auto-approved".to_string()),
+                    }],
+                }),
+                models: Some(SessionModelState {
+                    current_model_id: "claude-sonnet-4-6".to_string(),
+                    available_models: vec![ModelInfo {
+                        model_id: "claude-opus-4-7".to_string(),
+                        name: "Opus 4.7".to_string(),
+                        description: None,
+                    }],
+                }),
+                supports_session_list: false,
+                supports_session_load: true,
+                supports_session_close: false,
+                supports_session_delete: false,
+                config_options: None,
+            })),
+            AnyMessage::Request(ServerRequest::SetModel(SetModelRequest {
+                session_id: "session".to_string(),
+                model_id: "claude-opus-4-7".to_string(),
+            })),
+            AnyMessage::Request(ServerRequest::SetMode(SetModeRequest {
+                session_id: "session".to_string(),
+                mode_id: "plan".to_string(),
+            })),
+            AnyMessage::Response(ServerResponse::SetModeOk(SetModeOkResponse {
+                session_id: "session".to_string(),
+                mode_id: "plan".to_string(),
+            })),
+            AnyMessage::Response(ServerResponse::PermissionRequest(PermissionRequest {
+                session_id: "session".to_string(),
+                request_id: "perm-42".to_string(),
+                payload: serde_json::json!({"tool": "write_file", "path": "/tmp/foo.txt"}),
+            })),
+            AnyMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
+                session_id: "session".to_string(),
+                request_id: "perm-42".to_string(),
+                option_id: Some("default".into()),
+            })),
+            AnyMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
+                session_id: "session".to_string(),
+                request_id: "perm-43".to_string(),
+                option_id: None,
+            })),
+            AnyMessage::Request(ServerRequest::FileSearch(FileSearchRequest {
+                cwd: "/home/user/project".to_string(),
+                query: "main".to_string(),
+                limit: Some(20),
+            })),
+            AnyMessage::Response(ServerResponse::FileSearchOk(FileSearchResponse {
+                files: vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
+            })),
+            AnyMessage::Request(ServerRequest::FileRead(FileReadRequest {
+                cwd: "/home/user/project".to_string(),
+                relative_path: "src/main.rs".to_string(),
+            })),
+            AnyMessage::Response(ServerResponse::FileReadOk(FileReadResponse {
+                content: "fn main() {}".to_string(),
+            })),
+            AnyMessage::Response(ServerResponse::TurnStarted(TurnStarted {
+                session_id: "session".to_string(),
+            })),
+            AnyMessage::Response(ServerResponse::TurnEnded(TurnEnded {
+                session_id: "session".to_string(),
+                stop_reason: "end_turn".to_string(),
+                usage: Some(TurnUsage {
+                    total_tokens: 30,
+                    input_tokens: 10,
+                    output_tokens: 20,
+                    thought_tokens: None,
+                    cached_read_tokens: Some(5),
+                    cached_write_tokens: None,
+                }),
+                model_usage: Some(serde_json::json!([{ "model": "m", "token_count": { "x": 1 } }])),
+            })),
+            AnyMessage::Response(ServerResponse::UsageTurnsOk(UsageTurnsResponse {
+                store_id: "s".to_string(),
+                merged_through_id: 3,
+                turns: vec![UsageTurnRow {
+                    id: 4,
+                    agent_id: "claude-acp".to_string(),
+                    acp_session_id: "a".to_string(),
+                    project_path: "/p".to_string(),
+                    model_id: Some("opus".to_string()),
+                    started_at: "2026-10-12T10:00:00Z".to_string(),
+                    ended_at: "2026-10-12T10:00:30Z".to_string(),
+                    tokens: UsageTokens {
+                        total_tokens: Some(30),
+                        input_tokens: Some(10),
+                        ..Default::default()
+                    },
+                    cost_amount: Some(0.5),
+                    cost_currency: Some("USD".to_string()),
+                }],
+                models: vec![UsageTurnModelRow {
+                    turn_id: 4,
+                    model: "claude-opus".to_string(),
+                    tokens: UsageTokens {
+                        input_tokens: Some(10),
+                        ..Default::default()
+                    },
+                }],
+                more: false,
+            })),
+            AnyMessage::Request(ServerRequest::PreInitialize(PreInitializeRequest {
+                agent_id: "claude-acp".to_string(),
+                cwd: "/home/user/project".to_string(),
+            })),
+            AnyMessage::Response(ServerResponse::PreInitializeOk(PreInitializeResponse {
+                agent_id: "claude-acp".to_string(),
+                prompt_capabilities: None,
+                supports_session_list: true,
+                supports_session_load: true,
+                supports_session_close: false,
+                supports_session_delete: false,
+                auth_methods: vec![],
+                supports_auth_logout: false,
+            })),
+            AnyMessage::Request(ServerRequest::DetectInstalledAgents(
+                DetectInstalledAgentsRequest {},
+            )),
+            AnyMessage::Response(ServerResponse::DetectInstalledAgentsOk(
+                DetectInstalledAgentsResponse {
+                    agents: vec![DetectedAgentInfo {
+                        agent_id: "claude-acp".to_string(),
+                        tool_name: "Claude Code".to_string(),
+                        binary_found: true,
+                        binary_path: Some("/usr/local/bin/claude".to_string()),
+                        config_dir_found: true,
+                    }],
+                    all_checked_ids: vec!["claude-acp".to_string(), "codex-acp".to_string()],
+                },
+            )),
+            AnyMessage::Request(ServerRequest::Pong { seq: 42 }),
+            AnyMessage::Response(ServerResponse::HostToolCall(HostToolCall {
+                session_id: "session".to_string(),
+                request_id: "host-1".to_string(),
+                name: "create_task".to_string(),
+                arguments: serde_json::json!({"title": "Add retries to SFTP reads"}),
+            })),
+            AnyMessage::Request(ServerRequest::HostToolResult(HostToolResult {
+                session_id: "session".to_string(),
+                request_id: "host-1".to_string(),
+                result: serde_json::json!({"id": 12, "status": "Planning"}),
+                error: None,
+            })),
+            AnyMessage::Request(ServerRequest::HostToolResult(HostToolResult {
+                session_id: "session".to_string(),
+                request_id: "host-2".to_string(),
+                result: serde_json::Value::Null,
+                error: Some("unknown tool".to_string()),
+            })),
+            AnyMessage::Response(ServerResponse::Diagnostic(DiagnosticPayload {
+                level: "error".to_string(),
+                message: "[spawn] FAILED cmd=\"claude\": No such file".to_string(),
+            })),
+        ]
     }
 
     fn import_messages() -> Vec<AnyMessage> {
@@ -4222,10 +4215,6 @@ mod tests {
         // The id-unaware readers must keep working against a peer that sends ids.
         let plain: M = read_message(&mut frame.as_slice()).await.unwrap();
         assert_eq!(plain, read);
-        assert_eq!(
-            read_message_sync::<M, _>(&mut frame.as_slice()).unwrap(),
-            read
-        );
         assert_eq!(decode_message(body).unwrap(), (id, message));
     }
 
@@ -4457,224 +4446,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn roundtrip_handshake() {
-        let req = AnyMessage::Request(ServerRequest::Handshake(HandshakeRequest {
-            protocol_version: PROTOCOL_VERSION,
-        }));
-        let json = serde_json::to_string(&req).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(req, back);
-
-        let resp = AnyMessage::Response(ServerResponse::HandshakeOk(HandshakeResponse {
-            protocol_version: PROTOCOL_VERSION,
-        }));
-        let json = serde_json::to_string(&resp).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(resp, back);
-    }
-
-    #[test]
-    fn roundtrip_spawn_request() {
-        let msg = AnyMessage::Request(ServerRequest::Spawn(SpawnRequest {
-            agent_id: "claude-acp".to_string(),
-            session_id: "sess-1".to_string(),
-            cwd: "/home/user/project".to_string(),
-            additional_directories: Vec::new(),
-            project_path: None,
-            meta: SessionMeta::default(),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_prompt_request() {
-        let msg = AnyMessage::Request(ServerRequest::Prompt(PromptRequest {
-            session_id: "sess-1".to_string(),
-            content: serde_json::Value::String("fix the bug in auth.rs".to_string()),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_cancel_request() {
-        let msg = AnyMessage::Request(ServerRequest::Cancel(CancelRequest {
-            session_id: "sess-1".to_string(),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_interrupt_turn_request() {
-        let msg = AnyMessage::Request(ServerRequest::InterruptTurn(InterruptTurnRequest {
-            session_id: "sess-1".to_string(),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_spawn_ok_response() {
-        let msg = AnyMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
-            session_id: "sess-1".to_string(),
-            acp_session_id: None,
-            models: None,
-            modes: None,
-            prompt_capabilities: None,
-            supports_session_list: false,
-            supports_session_load: false,
-            supports_session_close: false,
-            supports_session_delete: false,
-            config_options: None,
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_spawn_ok_with_models() {
-        let msg = AnyMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
-            session_id: "sess-1".to_string(),
-            acp_session_id: Some("native-uuid-123".to_string()),
-            prompt_capabilities: Some(PromptCapabilitiesInfo {
-                embedded_context: true,
-                image: false,
-                audio: false,
-            }),
-            modes: None,
-            models: Some(SessionModelState {
-                current_model_id: "claude-sonnet-4-6".to_string(),
-                available_models: vec![
-                    ModelInfo {
-                        model_id: "claude-opus-4-7".to_string(),
-                        name: "Opus 4.7".to_string(),
-                        description: None,
-                    },
-                    ModelInfo {
-                        model_id: "claude-sonnet-4-6".to_string(),
-                        name: "Sonnet 4.6".to_string(),
-                        description: Some("Fast and capable".to_string()),
-                    },
-                ],
-            }),
-            supports_session_list: false,
-            supports_session_load: false,
-            supports_session_close: false,
-            supports_session_delete: false,
-            config_options: None,
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_set_model_request() {
-        let msg = AnyMessage::Request(ServerRequest::SetModel(SetModelRequest {
-            session_id: "sess-1".to_string(),
-            model_id: "claude-opus-4-7".to_string(),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_set_model_ok_response() {
-        let msg = AnyMessage::Response(ServerResponse::SetModelOk(SetModelOkResponse {
-            session_id: "sess-1".to_string(),
-            model_id: "claude-opus-4-7".to_string(),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_error_response() {
-        let msg = AnyMessage::Response(ServerResponse::Error(ErrorResponse {
-            message: "agent not found".to_string(),
-            session_id: None,
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_session_update() {
-        let msg = AnyMessage::Response(ServerResponse::SessionUpdate(SessionUpdate {
-            session_id: "sess-1".to_string(),
-            payload: serde_json::json!({"type": "agent_message_chunk", "text": "hello"}),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_permission_request() {
-        let msg = AnyMessage::Response(ServerResponse::PermissionRequest(PermissionRequest {
-            session_id: "sess-1".to_string(),
-            request_id: "perm-42".to_string(),
-            payload: serde_json::json!({"tool": "write_file", "path": "/tmp/foo.txt"}),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_terminal_output() {
-        let msg = AnyMessage::Response(ServerResponse::TerminalOutput(TerminalOutput {
-            session_id: "sess-1".to_string(),
-            terminal_id: "term-1".to_string(),
-            bytes: vec![0x1b, 0x5b, 0x32, 0x4a], // ESC[2J
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_permission_response() {
-        let resp = PermissionResponse {
-            session_id: "sess-1".to_string(),
-            request_id: "perm-42".to_string(),
-            option_id: Some("default".into()),
-        };
-        let json = serde_json::to_string(&resp).unwrap();
-        let back: PermissionResponse = serde_json::from_str(&json).unwrap();
-        assert_eq!(resp, back);
-    }
-
-    #[tokio::test]
-    async fn framing_write_then_read_roundtrip() {
-        let msg = ServerRequest::Spawn(SpawnRequest {
-            agent_id: "gemini".to_string(),
-            session_id: "sess-99".to_string(),
-            cwd: "/tmp".to_string(),
-            additional_directories: Vec::new(),
-            project_path: None,
-            meta: SessionMeta::default(),
-        });
-
-        let mut buf: Vec<u8> = Vec::new();
-        write_message(&mut buf, &msg).await.unwrap();
-
-        let mut cursor = std::io::Cursor::new(buf);
-        let back: ServerRequest = read_message(&mut cursor).await.unwrap();
-        assert_eq!(msg, back);
-    }
-
     #[tokio::test]
     async fn read_message_rejects_oversized() {
         // Craft a length prefix claiming 32 MB
@@ -4693,202 +4464,12 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip_permit_response_request() {
-        let msg = AnyMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
-            session_id: "sess-1".to_string(),
-            request_id: "perm-42".to_string(),
-            option_id: Some("default".into()),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[tokio::test]
-    async fn framing_permit_response_roundtrip() {
-        let msg = ServerRequest::PermitResponse(PermissionResponse {
-            session_id: "sess-1".to_string(),
-            request_id: "perm-42".to_string(),
-            option_id: None,
-        });
-        let mut buf: Vec<u8> = Vec::new();
-        write_message(&mut buf, &msg).await.unwrap();
-        let mut cursor = std::io::Cursor::new(buf);
-        let back: ServerRequest = read_message(&mut cursor).await.unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_file_search_request() {
-        let msg = AnyMessage::Request(ServerRequest::FileSearch(FileSearchRequest {
-            cwd: "/home/user/project".to_string(),
-            query: "main".to_string(),
-            limit: Some(20),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_file_search_ok() {
-        let msg = AnyMessage::Response(ServerResponse::FileSearchOk(FileSearchResponse {
-            files: vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_file_read_request() {
-        let msg = AnyMessage::Request(ServerRequest::FileRead(FileReadRequest {
-            cwd: "/home/user/project".to_string(),
-            relative_path: "src/main.rs".to_string(),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_file_read_ok() {
-        let msg = AnyMessage::Response(ServerResponse::FileReadOk(FileReadResponse {
-            content: "fn main() {}".to_string(),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_turn_started() {
-        let msg = AnyMessage::Response(ServerResponse::TurnStarted(TurnStarted {
-            session_id: "sess-1".to_string(),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_turn_ended() {
-        let msg = AnyMessage::Response(ServerResponse::TurnEnded(TurnEnded {
-            session_id: "sess-1".to_string(),
-            stop_reason: "end_turn".to_string(),
-            usage: Some(TurnUsage {
-                total_tokens: 30,
-                input_tokens: 10,
-                output_tokens: 20,
-                thought_tokens: None,
-                cached_read_tokens: Some(5),
-                cached_write_tokens: None,
-            }),
-            model_usage: Some(serde_json::json!([{ "model": "m", "token_count": { "x": 1 } }])),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_usage_turns() {
-        let msg = AnyMessage::Response(ServerResponse::UsageTurnsOk(UsageTurnsResponse {
-            store_id: "s".to_string(),
-            merged_through_id: 3,
-            turns: vec![UsageTurnRow {
-                id: 4,
-                agent_id: "claude-acp".to_string(),
-                acp_session_id: "a".to_string(),
-                project_path: "/p".to_string(),
-                model_id: Some("opus".to_string()),
-                started_at: "2026-10-12T10:00:00Z".to_string(),
-                ended_at: "2026-10-12T10:00:30Z".to_string(),
-                tokens: UsageTokens {
-                    total_tokens: Some(30),
-                    input_tokens: Some(10),
-                    ..Default::default()
-                },
-                cost_amount: Some(0.5),
-                cost_currency: Some("USD".to_string()),
-            }],
-            models: vec![UsageTurnModelRow {
-                turn_id: 4,
-                model: "claude-opus".to_string(),
-                tokens: UsageTokens {
-                    input_tokens: Some(10),
-                    ..Default::default()
-                },
-            }],
-            more: false,
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
     fn turn_ended_without_usage_still_decodes() {
         // What a daemon from before token usage sends.
         let ended: TurnEnded =
             serde_json::from_str(r#"{"session_id":"sess-1","stop_reason":"end_turn"}"#).unwrap();
         assert_eq!(ended.usage, None);
         assert_eq!(ended.model_usage, None);
-    }
-
-    #[test]
-    fn roundtrip_set_mode_request() {
-        let msg = AnyMessage::Request(ServerRequest::SetMode(SetModeRequest {
-            session_id: "sess-1".to_string(),
-            mode_id: "plan".to_string(),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_set_mode_ok_response() {
-        let msg = AnyMessage::Response(ServerResponse::SetModeOk(SetModeOkResponse {
-            session_id: "sess-1".to_string(),
-            mode_id: "plan".to_string(),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_spawn_ok_with_modes() {
-        let msg = AnyMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
-            session_id: "sess-1".to_string(),
-            acp_session_id: None,
-            models: None,
-            modes: Some(SessionModeState {
-                current_mode_id: "default".to_string(),
-                available_modes: vec![
-                    ModeInfo {
-                        mode_id: "default".to_string(),
-                        name: "Ask before edits".to_string(),
-                        description: None,
-                    },
-                    ModeInfo {
-                        mode_id: "acceptEdits".to_string(),
-                        name: "Edit automatically".to_string(),
-                        description: Some("File ops auto-approved".to_string()),
-                    },
-                ],
-            }),
-            prompt_capabilities: None,
-            supports_session_list: false,
-            supports_session_load: false,
-            supports_session_close: false,
-            supports_session_delete: false,
-            config_options: None,
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
     }
 
     #[test]
@@ -4926,156 +4507,6 @@ mod tests {
         assert!(matches!(resp_back, AnyMessage::Response(_)));
     }
 
-    #[test]
-    fn roundtrip_pre_initialize_request() {
-        let msg = AnyMessage::Request(ServerRequest::PreInitialize(PreInitializeRequest {
-            agent_id: "claude-acp".to_string(),
-            cwd: "/home/user/project".to_string(),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_pre_initialize_ok() {
-        let msg = AnyMessage::Response(ServerResponse::PreInitializeOk(PreInitializeResponse {
-            agent_id: "claude-acp".to_string(),
-            prompt_capabilities: Some(PromptCapabilitiesInfo {
-                embedded_context: true,
-                image: false,
-                audio: false,
-            }),
-            supports_session_list: true,
-            supports_session_load: true,
-            supports_session_close: false,
-            supports_session_delete: false,
-            auth_methods: vec![],
-            supports_auth_logout: false,
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_agent_connection_lost() {
-        let msg = AnyMessage::Response(ServerResponse::AgentConnectionLost(AgentConnectionLost {
-            agent_id: "claude-acp".to_string(),
-            reason: "agent process exited unexpectedly".to_string(),
-            affected_session_ids: vec!["session-1".to_string(), "session-2".to_string()],
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_detect_installed_agents_request() {
-        let msg = AnyMessage::Request(ServerRequest::DetectInstalledAgents(
-            DetectInstalledAgentsRequest {},
-        ));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_detect_installed_agents_ok() {
-        let msg = AnyMessage::Response(ServerResponse::DetectInstalledAgentsOk(
-            DetectInstalledAgentsResponse {
-                agents: vec![
-                    DetectedAgentInfo {
-                        agent_id: "claude-acp".to_string(),
-                        tool_name: "Claude Code".to_string(),
-                        binary_found: true,
-                        binary_path: Some("/usr/local/bin/claude".to_string()),
-                        config_dir_found: true,
-                    },
-                    DetectedAgentInfo {
-                        agent_id: "github-copilot-cli".to_string(),
-                        tool_name: "GitHub Copilot".to_string(),
-                        binary_found: false,
-                        binary_path: None,
-                        config_dir_found: true,
-                    },
-                ],
-                all_checked_ids: vec![
-                    "claude-acp".to_string(),
-                    "github-copilot-cli".to_string(),
-                    "codex-acp".to_string(),
-                ],
-            },
-        ));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_detect_project_agents_request() {
-        let msg = AnyMessage::Request(ServerRequest::DetectProjectAgents(
-            DetectProjectAgentsRequest {
-                cwd: "/home/user/project".to_string(),
-            },
-        ));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_ping_response() {
-        let msg = AnyMessage::Response(ServerResponse::Ping { seq: 42 });
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_pong_request() {
-        let msg = AnyMessage::Request(ServerRequest::Pong { seq: 42 });
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_host_tool_call() {
-        let msg = AnyMessage::Response(ServerResponse::HostToolCall(HostToolCall {
-            session_id: "session-7".to_string(),
-            request_id: "host-1".to_string(),
-            name: "create_task".to_string(),
-            arguments: serde_json::json!({"title": "Add retries to SFTP reads"}),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_host_tool_result() {
-        let msg = AnyMessage::Request(ServerRequest::HostToolResult(HostToolResult {
-            session_id: "session-7".to_string(),
-            request_id: "host-1".to_string(),
-            result: serde_json::json!({"id": 12, "status": "Planning"}),
-            error: None,
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-
-        let failed = AnyMessage::Request(ServerRequest::HostToolResult(HostToolResult {
-            session_id: "session-7".to_string(),
-            request_id: "host-2".to_string(),
-            result: serde_json::Value::Null,
-            error: Some("unknown tool".to_string()),
-        }));
-        let json = serde_json::to_string(&failed).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(failed, back);
-    }
-
     #[tokio::test]
     async fn framing_gateway_request_roundtrip() {
         let req = GatewayRequest {
@@ -5092,32 +4523,6 @@ mod tests {
         let mut cursor = std::io::Cursor::new(buf);
         let back: GatewayRequest = read_frame(&mut cursor).await.unwrap();
         assert_eq!(req, back);
-    }
-
-    #[test]
-    fn roundtrip_diagnostic() {
-        let msg = AnyMessage::Response(ServerResponse::Diagnostic(DiagnosticPayload {
-            level: "error".to_string(),
-            message: "[spawn] FAILED cmd=\"claude\": No such file".to_string(),
-        }));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn roundtrip_detect_project_agents_ok() {
-        let msg = AnyMessage::Response(ServerResponse::DetectProjectAgentsOk(
-            DetectProjectAgentsResponse {
-                agents: vec![ProjectAgentMarker {
-                    agent_id: "claude-acp".to_string(),
-                    markers_found: vec!["CLAUDE.md".to_string(), ".claude/".to_string()],
-                }],
-            },
-        ));
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: AnyMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
     }
 }
 

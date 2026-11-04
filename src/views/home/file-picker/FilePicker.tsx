@@ -55,9 +55,11 @@ export function FilePicker({
   const { data: wslHome } = useWslHome(wslConnection?.distro_name ?? "");
   const { data: dockerHome } = useDockerHome(dockerConnection?.container_name ?? "");
   const navigation = usePathNavigation(isLocal, initialization.drives);
+  // WSL and Docker list through their own hooks below, so this one only runs for SSH and local.
   const { data: sshDirectories = [], isLoading: sshLoading } = useListDirectories(
     connection?.id,
     navigation.currentPath,
+    !wslConnection && !dockerConnection,
   );
   const { data: wslDirectories = [], isLoading: wslLoading } = useWslDirectories(
     wslConnection?.distro_name ?? "",

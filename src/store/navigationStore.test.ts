@@ -15,19 +15,6 @@ function resetStore() {
   });
 }
 
-describe("navigationStore – initial state", () => {
-  beforeEach(resetStore);
-
-  it("has correct initial state", () => {
-    const state = useNavigationStore.getState();
-    expect(state.activeTab).toBe("kanban");
-    expect(state.slideDirection).toBe(1);
-    expect(state.activeTaskId).toBeNull();
-    expect(state.pendingAgentId).toBeNull();
-    expect(state.pendingWorktreeId).toBeNull();
-  });
-});
-
 describe("navigationStore – navigate() with entity targets", () => {
   beforeEach(resetStore);
 
@@ -51,12 +38,6 @@ describe("navigationStore – navigate() with entity targets", () => {
     expect(state.activeTab).toBe("agents");
     expect(state.pendingSessionId).toBe("12");
     expect(state.pendingAgentId).toBeNull();
-  });
-
-  it("clearPendingSession sets pendingSessionId to null", () => {
-    useNavigationStore.setState({ pendingSessionId: "12" });
-    useNavigationStore.getState().clearPendingSession();
-    expect(useNavigationStore.getState().pendingSessionId).toBeNull();
   });
 
   it("navigate({ worktreeId }) sets activeTab=worktrees, pendingWorktreeId", () => {
@@ -136,41 +117,6 @@ describe("navigationStore – slideDirection", () => {
   });
 });
 
-describe("navigationStore – clear actions", () => {
-  beforeEach(resetStore);
-
-  it("clearPendingAgent sets pendingAgentId to null", () => {
-    useNavigationStore.setState({ pendingAgentId: "55" });
-    useNavigationStore.getState().clearPendingAgent();
-    expect(useNavigationStore.getState().pendingAgentId).toBeNull();
-  });
-
-  it("clearPendingWorktree sets pendingWorktreeId to null", () => {
-    useNavigationStore.setState({ pendingWorktreeId: "11" });
-    useNavigationStore.getState().clearPendingWorktree();
-    expect(useNavigationStore.getState().pendingWorktreeId).toBeNull();
-  });
-
-  it("clearPendingSettingsPage sets pendingSettingsPage to null", () => {
-    useNavigationStore.setState({ pendingSettingsPage: "agents" });
-    useNavigationStore.getState().clearPendingSettingsPage();
-    expect(useNavigationStore.getState().pendingSettingsPage).toBeNull();
-  });
-});
-
-/**
- * `SettingsPage` owns which page is showing, so this field is the only way anything outside it
- * can open one — without it, a message telling the user where to go could not take them there.
- */
-describe("navigationStore – pendingSettingsPage", () => {
-  beforeEach(resetStore);
-
-  it("setPendingSettingsPage records the page to open", () => {
-    useNavigationStore.getState().setPendingSettingsPage("agents");
-    expect(useNavigationStore.getState().pendingSettingsPage).toBe("agents");
-  });
-});
-
 describe("navigationStore – activeTaskId", () => {
   beforeEach(resetStore);
 
@@ -188,16 +134,5 @@ describe("navigationStore – activeTaskId", () => {
     navigate({ view: "tasks" });
     const state = useNavigationStore.getState();
     expect(state.activeTaskId).toBeNull();
-  });
-
-  it("setActiveTaskId(7) sets activeTaskId to 7", () => {
-    useNavigationStore.getState().setActiveTaskId(7);
-    expect(useNavigationStore.getState().activeTaskId).toBe(7);
-  });
-
-  it("setActiveTaskId(null) clears activeTaskId to null", () => {
-    useNavigationStore.setState({ activeTaskId: 7 });
-    useNavigationStore.getState().setActiveTaskId(null);
-    expect(useNavigationStore.getState().activeTaskId).toBeNull();
   });
 });

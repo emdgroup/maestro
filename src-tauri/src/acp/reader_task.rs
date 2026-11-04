@@ -376,20 +376,6 @@ fn handle_server_message(
                 log::warn!("[acp] emit spawn-ok/{session_id} failed: {e}");
             }
         }
-        ServerResponse::SetModelOk(ok) => {
-            log::debug!(
-                "[acp] set-model-ok session_id={session_id} model={}",
-                ok.model_id
-            );
-            if let Ok(mut m) = current_model_id.lock() {
-                *m = Some(ok.model_id.clone());
-            }
-            if let Err(e) =
-                app_handle.emit(&format!("acp://model-changed/{}", session_id), &ok.model_id)
-            {
-                log::warn!("[acp] emit model-changed/{session_id} failed: {e}");
-            }
-        }
         ServerResponse::SetModeOk(ok) => {
             log::debug!(
                 "[acp] set-mode-ok session_id={session_id} mode={}",
@@ -402,19 +388,6 @@ fn handle_server_message(
                 app_handle.emit(&format!("acp://mode-changed/{}", session_id), &ok.mode_id)
             {
                 log::warn!("[acp] emit mode-changed/{session_id} failed: {e}");
-            }
-        }
-        ServerResponse::SetConfigOptionOk(ok) => {
-            log::debug!(
-                "[acp] set-config-ok session_id={session_id} config={} value={}",
-                ok.config_id,
-                ok.value
-            );
-            if let Err(e) = app_handle.emit(
-                &format!("acp://config-changed/{}", session_id),
-                &serde_json::json!({ "config_id": ok.config_id, "value": ok.value }),
-            ) {
-                log::warn!("[acp] emit config-changed/{session_id} failed: {e}");
             }
         }
         ServerResponse::ConfigOptionUpdated(ok) => {
@@ -1036,26 +1009,6 @@ pub(crate) async fn handle_shared_server_message(
                     )
                     .ok();
             }
-        }
-        ServerResponse::AgentConnectionLost(lost) => {
-            for session_id_str in &lost.affected_session_ids {
-                {
-                    let session_id = session_id_str.clone();
-                    app_state.acp.sessions.lock().await.remove(&session_id);
-                    if let Err(e) =
-                        app_handle.emit(&format!("acp://session-ended/{}", session_id), ())
-                    {
-                        log::warn!("[acp] emit session-ended/{session_id} failed: {e}");
-                    }
-                }
-            }
-            log::warn!(
-                "[acp] agent-connection-lost agent={} reason={} sessions={:?}",
-                lost.agent_id,
-                lost.reason,
-                lost.affected_session_ids
-            );
-            app_state.app_handle.emit("sessions-changed", ()).ok();
         }
         ServerResponse::Diagnostic(diag) => {
             log_server_diagnostic(&diag.level, &diag.message);

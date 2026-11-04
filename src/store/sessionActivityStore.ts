@@ -74,7 +74,6 @@ export const useSessionActivityStore = create<SessionActivityState>()(
   })),
 );
 
-export const useActivitySessions = () => useSessionActivityStore((s) => s.sessions);
 export const useSessionActivity = (key: string | undefined) =>
   useSessionActivityStore((s) => (key != null ? s.sessions[key] : undefined));
 export const useSessionActivityActions = () =>

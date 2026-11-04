@@ -32,12 +32,13 @@ export function useShortcuts(scope: ShortcutScope, handlers: ShortcutHandlers): 
         const keyMatch =
           def.key === "Escape" ? e.key === "Escape" : e.key.toLowerCase() === def.key.toLowerCase();
         const shiftMatch = def.shift ? e.shiftKey : !e.shiftKey;
-        if (keyMatch && def.ctrl === e.ctrlKey && shiftMatch) {
-          e.preventDefault();
-          const handler = handlersRef.current[def.id];
-          if (handler) handler();
-          return;
-        }
+        if (!keyMatch || def.ctrl !== e.ctrlKey || !shiftMatch) continue;
+        // A shortcut this view does not handle leaves the key to the browser and the webview.
+        const handler = handlersRef.current[def.id];
+        if (!handler) continue;
+        e.preventDefault();
+        handler();
+        return;
       }
     }
 

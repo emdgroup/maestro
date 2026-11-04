@@ -1,12 +1,6 @@
 use crate::command_ext::NoConsoleWindow;
-use crate::integration::token_manager::StoredToken;
 use crate::models::issue_tracking::RemoteIssue;
 use tokio::process::Command as TokioCommand;
-
-#[derive(serde::Deserialize)]
-struct GitLabUserResponse {
-    username: String,
-}
 
 #[derive(serde::Deserialize)]
 struct GitLabProjectResponse {
@@ -178,60 +172,6 @@ pub async fn resolve_project_id(
     Ok(project.id)
 }
 
-/// Validate a GitLab PAT, resolve the numeric project ID from the project path,
-/// save the IssueTrackingConfig, and store the token.
-/// Returns the authenticated GitLab username on success.
-pub async fn validate_and_store(
-    project_id: i32,
-    instance_url: &str,
-    project_path: &str,
-    token: &str,
-    _project_root: &str,
-    app_state: &crate::core::AppState,
-) -> Result<String, String> {
-    let base = normalize_instance_url(instance_url);
-
-    let client = super::http_client()?;
-
-    let user_response = client
-        .get(format!("{}/api/v4/user", base))
-        .header("PRIVATE-TOKEN", token)
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if !user_response.status().is_success() {
-        let status = user_response.status();
-        return Err(format!(
-            "GitLab API error {}: {}",
-            status.as_u16(),
-            status.canonical_reason().unwrap_or("Unknown")
-        ));
-    }
-
-    let user: GitLabUserResponse = user_response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse GitLab user response: {}", e))?;
-
-    let _resolved_project_id = resolve_project_id(instance_url, project_path, token).await?;
-
-    let stored_token = StoredToken {
-        access_token: token.to_string(),
-        refresh_token: None,
-        expires_at: None,
-        provider: "gitlab".to_string(),
-    };
-    app_state.token_manager.store_token(
-        project_id,
-        stored_token,
-        &app_state.app_data_dir,
-        &app_state.app_handle,
-    )?;
-
-    Ok(user.username)
-}
-
 /// Fetch open issues from a GitLab project using its numeric project ID.
 pub async fn fetch_issues(
     instance_url: &str,
@@ -311,50 +251,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_normalize_instance_url_strips_trailing_slash() {
-        assert_eq!(
-            normalize_instance_url("https://gitlab.com/"),
-            "https://gitlab.com"
-        );
-    }
-
-    #[test]
-    fn test_normalize_instance_url_adds_https_when_scheme_absent() {
-        assert_eq!(
-            normalize_instance_url("gitlab.myco.com"),
-            "https://gitlab.myco.com"
-        );
-    }
-
-    #[test]
-    fn test_normalize_instance_url_preserves_existing_https() {
-        assert_eq!(
-            normalize_instance_url("https://self-hosted.example.com"),
-            "https://self-hosted.example.com"
-        );
-    }
-
-    #[test]
-    fn test_normalize_instance_url_preserves_explicit_http() {
-        assert_eq!(
-            normalize_instance_url("http://internal.corp.com"),
-            "http://internal.corp.com"
-        );
-    }
-
-    #[test]
     fn test_gitlab_response_uses_iid_not_id() {
         let json = r#"{"iid":7,"id":99999,"title":"Bug","description":null,"web_url":"https://gitlab.com/a/b/-/issues/7","labels":[],"updated_at":null}"#;
         let issue: GitLabIssueResponse = serde_json::from_str(json).unwrap();
         assert_eq!(issue.iid, 7);
         assert_eq!(issue._id, 99999);
-    }
-
-    #[test]
-    fn test_gitlab_external_id_format() {
-        let project_id: i64 = 12345;
-        let iid: u64 = 7;
-        assert_eq!(format!("gitlab:{}/{}", project_id, iid), "gitlab:12345/7");
     }
 
     #[test]

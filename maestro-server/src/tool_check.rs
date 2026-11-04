@@ -66,38 +66,6 @@ pub(crate) async fn check_tools(tools: Vec<String>) -> Vec<ToolCheckResult> {
     futures::future::join_all(tools.into_iter().map(check_tool)).await
 }
 
-pub(crate) async fn test_tool_path(tool: String, path: String) -> ToolCheckResult {
-    let candidate = PathBuf::from(&path);
-    if !candidate.is_absolute() {
-        return failed(
-            tool,
-            Some(path),
-            ToolPathSource::Override,
-            "The configured path must be absolute".to_string(),
-        );
-    }
-    if !is_executable(&candidate) {
-        return failed(
-            tool,
-            Some(path),
-            ToolPathSource::Override,
-            "The path does not exist or is not executable".to_string(),
-        );
-    }
-    match probe(&candidate).await {
-        Ok(version) => ToolCheckResult {
-            tool,
-            available: true,
-            version,
-            configured_path: Some(path.clone()),
-            resolved_path: Some(path),
-            source: ToolPathSource::Override,
-            error: None,
-        },
-        Err(error) => failed(tool, Some(path), ToolPathSource::Override, error),
-    }
-}
-
 pub(crate) async fn resolve_tool_path(tool: &str) -> Result<PathBuf, String> {
     if let Some(path) = crate::tool_config::get(tool)? {
         let path = PathBuf::from(path);

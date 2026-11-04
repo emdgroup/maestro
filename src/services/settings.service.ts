@@ -21,7 +21,6 @@ import type { AppSettings, ConnectionCapacitySettings, ConnectionKey } from "@/t
 const settingsQueryKeys = {
   base: ["settings"] as const,
   lists: () => [...settingsQueryKeys.base, "list"] as const,
-  accentColor: () => [...settingsQueryKeys.base, "accentColor"] as const,
   logLevels: () => [...settingsQueryKeys.base, "logLevels"] as const,
   logDirectory: () => [...settingsQueryKeys.base, "logDirectory"] as const,
   connectionCapacity: (connection: ConnectionKey) =>
@@ -160,19 +159,6 @@ export function useSetAutoMode() {
     mutationFn: ({ projectId, enabled }: { projectId: number; enabled: boolean }) =>
       api.setAutoMode(projectId, enabled),
     onError: createErrorToastHandler("Failed to switch auto mode"),
-  });
-}
-
-/**
- * Query hook for fetching system accent color
- * OS accent color rarely changes (persists until restart), so staleTime is very high
- */
-export function useSystemAccentColorQuery() {
-  return useQuery({
-    queryKey: settingsQueryKeys.accentColor(),
-    queryFn: () => api.getSystemAccentColor(),
-    staleTime: Infinity, // OS color doesn't change until app restart
-    refetchOnWindowFocus: true, // But refetch if user switches windows (may have changed appearance)
   });
 }
 

@@ -5,14 +5,11 @@
 //! so a crashed window never leaves a project stuck. This side only asks, and remembers in
 //! `AppState::active_project_lock` which project it holds and on which connection.
 
-use serde::{Deserialize, Serialize};
-use specta::Type;
 use std::sync::{Arc, OnceLock};
 use tauri::State;
 
 use crate::acp::connection_server::{
-    query_acquire_project_lock_via_server, query_project_locks_via_server,
-    query_takeover_via_server, send_via_server,
+    query_acquire_project_lock_via_server, query_takeover_via_server, send_via_server,
 };
 use crate::acp::discovery_handlers::ensure_connection_server;
 use crate::acp::transport::ServerRequest;
@@ -160,48 +157,6 @@ pub async fn reacquire(app_state: Arc<AppState>, key: ConnectionKey) {
             }
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-pub struct ProjectLockEntry {
-    pub project_id: i32,
-    pub holder_label: String,
-    /// Held by this window.
-    pub yours: bool,
-}
-
-/// Which of these projects some window holds, for the picker's lock badges.
-#[tauri::command]
-#[specta::specta]
-pub async fn list_project_locks(
-    app_state: State<'_, Arc<AppState>>,
-    connection: ConnectionKey,
-    project_ids: Vec<i32>,
-) -> Result<Vec<ProjectLockEntry>, String> {
-    let projects: Vec<(i32, String)> = project_ids
-        .into_iter()
-        .filter_map(|id| load_project(&app_state, id).ok())
-        .map(|project| (project.id, project.path))
-        .collect();
-    ensure_connection_server(&app_state, connection).await?;
-    let resp = query_project_locks_via_server(
-        connection,
-        projects.iter().map(|(_, path)| path.clone()).collect(),
-        &app_state,
-    )
-    .await?;
-    Ok(resp
-        .locks
-        .into_iter()
-        .filter_map(|lock| {
-            let (project_id, _) = projects.iter().find(|(_, p)| *p == lock.project_path)?;
-            Some(ProjectLockEntry {
-                project_id: *project_id,
-                holder_label: lock.holder_label,
-                yours: lock.yours,
-            })
-        })
-        .collect())
 }
 
 /// Ask whoever holds a project to give it up. `true` once it is this window's; the caller opens

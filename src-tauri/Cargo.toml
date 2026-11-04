@@ -29,14 +29,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
-octocrab = { version = "0.54", default-features = false, features = [
-  "default-client",
-  "rustls",
-  "rustls-ring",
-  "jwt-rust-crypto",
-] }
-# Already in the tree through octocrab with these features; signs the private_key_jwt and
-# client_secret_jwt assertions of MCP OAuth clients.
+# Signs the private_key_jwt and client_secret_jwt assertions of MCP OAuth clients.
 jsonwebtoken = { version = "11", features = ["rust_crypto"] }
 graphql_client = { version = "0.16", default-features = false }
 jc-adf = "0.2"
@@ -60,7 +53,7 @@ keyring = { version = "3.6.3", features = [
   "linux-native-sync-persistent",
 ] }
 sha2 = "0.11"
-zeroize = { version = "1.8", features = ["derive"] }
+zeroize = "1.8"
 specta = { version = "2.0.0-rc.20", features = ["serde_json"] }
 specta-typescript = "0.0.9"
 tauri-specta = { version = "2.0.0-rc.20", features = ["derive", "typescript"] }

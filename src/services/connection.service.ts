@@ -92,11 +92,16 @@ export function useUpdateSshConnection() {
  */
 const LOCAL: ConnectionKey = { type: "local" };
 
-export function useListDirectories(connectionId: number | null | undefined, path: string) {
+export function useListDirectories(
+  connectionId: number | null | undefined,
+  path: string,
+  enabled = true,
+) {
   const connection: ConnectionKey = connectionId ? { type: "ssh", id: connectionId } : LOCAL;
   return useQuery({
     queryKey: connectionQueryKeys.dirs(connectionId, path),
     queryFn: () => api.listDirectories(connection, path),
+    enabled,
   });
 }
 
@@ -110,14 +115,6 @@ export function useListDirContents(
     queryFn: () => api.listContents(connection ?? LOCAL, path, includeHidden),
     enabled: !!path,
     staleTime: 10_000,
-  });
-}
-
-export function useListContents(connection: ConnectionKey | null | undefined, path: string) {
-  return useQuery({
-    queryKey: [...connectionQueryKeys.fileBrowser(), connection, path],
-    queryFn: () => api.listContents(connection ?? LOCAL, path, false),
-    enabled: !!path,
   });
 }
 

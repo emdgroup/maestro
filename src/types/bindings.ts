@@ -17,33 +17,11 @@ async getProjects() : Promise<Result<Project[], string>> {
 }
 },
 /**
- * Get list of all projects per connection
- */
-async getConnectionProjects(connectionKey: ConnectionKey) : Promise<Result<Project[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_connection_projects", { connectionKey }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Create a new project
  */
 async createProject(path: string, connection: ConnectionKey) : Promise<Result<Project, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("create_project", { path, connection }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Get project by id
- */
-async getProject(projectId: number) : Promise<Result<Project, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_project", { projectId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -74,17 +52,6 @@ async openProject(projectId: number) : Promise<Result<Project, string>> {
 async releaseActiveProjectLock() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("release_active_project_lock") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Which of these projects some window holds, for the picker's lock badges.
- */
-async listProjectLocks(connection: ConnectionKey, projectIds: number[]) : Promise<Result<ProjectLockEntry[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("list_project_locks", { connection, projectIds }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -155,17 +122,6 @@ async requestProjectTakeover(projectId: number) : Promise<Result<boolean, string
 async answerProjectTakeover(connection: ConnectionKey, requestId: string, accept: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("answer_project_takeover", { connection, requestId, accept }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * remove project by id
- */
-async deleteProject(projectId: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_project", { projectId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -263,61 +219,6 @@ async archiveTask(projectId: number, taskId: number) : Promise<Result<Task, stri
 async deleteTask(projectId: number, taskId: number) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_task", { projectId, taskId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Get every relationship the task is on either end of
- */
-async listTaskRelationships(projectId: number, taskId: number) : Promise<Result<TaskRelationship[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("list_task_relationships", { projectId, taskId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Add a relationship between two tasks of one project
- */
-async addTaskRelationship(projectId: number, fromTaskId: number, toTaskId: number, relationshipType: string) : Promise<Result<TaskRelationship, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("add_task_relationship", { projectId, fromTaskId, toTaskId, relationshipType }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Remove a task relationship
- */
-async deleteTaskRelationship(projectId: number, relationshipId: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_task_relationship", { projectId, relationshipId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Get instructions log for a task
- */
-async listTaskInstructions(projectId: number, taskId: number) : Promise<Result<TaskInstruction[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("list_task_instructions", { projectId, taskId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Add an instruction entry to a task's log
- */
-async addTaskInstruction(projectId: number, taskId: number, content: string, source: string) : Promise<Result<TaskInstruction, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("add_task_instruction", { projectId, taskId, content, source }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1651,22 +1552,10 @@ async stopResidentServers() : Promise<Result<number, string>> {
 }
 },
 /**
- * Update task-level configuration overrides. Every field is written, so an absent one clears its
- * column.
- */
-async updateTaskSettings(projectId: number, taskId: number, settings: TaskConfigRequest) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("update_task_settings", { projectId, taskId, settings }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Choose which agent profile this task uses for each role.
  * 
- * Its own command rather than a field on `TaskConfigRequest`, for the reason
- * `set_project_accent_color` is separate from the project settings form: that request rewrites
+ * Its own command rather than a field of a wider settings request, for the reason
+ * `set_project_accent_color` is separate from the project settings form: such a request rewrites
  * every column it names, so a caller that only wanted to change one has to resend the rest
  * correctly or silently clear them. The override dialog knows about roles and nothing else.
  * 
@@ -1692,17 +1581,6 @@ async setTaskProfileOverrides(projectId: number, taskId: number, overrides: Part
 async listSshConnections() : Promise<Result<SshConnection[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_ssh_connections") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Get a specific SSH connection
- */
-async getSshConnection(connectionId: number) : Promise<Result<SshConnection, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_ssh_connection", { connectionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1863,17 +1741,6 @@ async deleteFile(connection: ConnectionKey, path: string, recursive: boolean) : 
 }
 },
 /**
- * Read a local file's text content. Rejects binary files and files over [`TEXT_LIMIT`].
- */
-async readLocalFile(path: string) : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("read_local_file", { path }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Read a local file's raw content as a base64-encoded string. Rejects files over [`BINARY_LIMIT`].
  */
 async readLocalFileBinary(path: string) : Promise<Result<string, string>> {
@@ -1926,31 +1793,12 @@ async openPathNative(path: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async getFileSize(path: string) : Promise<Result<number, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_file_size", { path }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 /**
  * Delete an SSH connection from the database
  */
 async deleteSshConnection(connectionId: number) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_ssh_connection", { connectionId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Remove saved password from OS Keyring
- */
-async forgetSavedPassword(connectionId: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("forget_saved_password", { connectionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2203,57 +2051,9 @@ async preflightConnection(connection: ConnectionKey, replace: boolean) : Promise
     else return { status: "error", error: e  as any };
 }
 },
-async checkRequiredTools(connection: ConnectionKey) : Promise<Result<ToolCheckEntry[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("check_required_tools", { connection }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async setToolPath(connection: ConnectionKey, tool: string, path: string | null) : Promise<Result<ToolCheckEntry, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("set_tool_path", { connection, tool, path }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async testToolPath(connection: ConnectionKey, tool: string, path: string) : Promise<Result<ToolCheckEntry, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("test_tool_path", { connection, tool, path }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async detectProjectAgents(connection: ConnectionKey, cwd: string) : Promise<Result<ProjectAgentMatch[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("detect_project_agents", { connection, cwd }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async discoverAgents(connection: ConnectionKey) : Promise<Result<AgentDiscoveryResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("discover_agents", { connection }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async setAcpModel(sessionId: string, modelId: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("set_acp_model", { sessionId, modelId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async setAcpMode(sessionId: string, modeId: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("set_acp_mode", { sessionId, modeId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2358,17 +2158,6 @@ async validateAttachment(path: string, isImage: boolean) : Promise<Result<Attach
 async saveClipboardImage(base64Data: string, mimeType: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("save_clipboard_image", { base64Data, mimeType }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Close an ACP session stored on the agent server (not a live Tauri session).
- */
-async closeAcpSession(agentId: string, sessionId: string, cwd: string, connection: ConnectionKey) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("close_acp_session", { agentId, sessionId, cwd, connection }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2481,19 +2270,6 @@ async canvasReportError(sessionId: string, surfaceId: string, message: string) :
 async canvasFetch(url: string, method: string | null, headers: Partial<{ [key in string]: string }> | null, body: string | null) : Promise<Result<CanvasFetchResponse, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("canvas_fetch", { url, method, headers, body }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Upload a local file to the remote host via SFTP.
- * 
- * Progress events emitted on `sftp://transfer-progress/{transfer_id}` during transfer.
- */
-async sftpUpload(connectionId: number, localPath: string, remotePath: string, transferId: string) : Promise<Result<FileTransferResult, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("sftp_upload", { connectionId, localPath, remotePath, transferId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2726,18 +2502,6 @@ async deleteIntegration(provider: string, id: string) : Promise<Result<null, str
 }
 },
 /**
- * Validate credentials against the provider API without storing them.
- * Returns the display name from the provider on success.
- */
-async testIntegration(provider: string, token: string, instanceUrl: string | null, email: string | null) : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("test_integration", { provider, token, instanceUrl, email }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Read the ticketing field from .maestro/settings.json for the given project.
  */
 async getProjectIssueTrackingConfig(projectId: number) : Promise<Result<ProjectIssueTrackingConfig | null, string>> {
@@ -2789,28 +2553,6 @@ async listRemoteIssues(projectId: number) : Promise<Result<RemoteIssue[], string
 }
 },
 /**
- * Read the code-hosting field from `.maestro/settings.json`.
- */
-async getProjectCodeHostingConfig(projectId: number) : Promise<Result<ProjectCodeHostingConfig | null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_project_code_hosting_config", { projectId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Write the code-hosting field into `.maestro/settings.json`.
- */
-async saveProjectCodeHostingConfig(projectId: number, codeHosting: ProjectCodeHostingConfig | null) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("save_project_code_hosting_config", { projectId, codeHosting }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Choose how approved work leaves Review for this project.
  */
 async saveProjectLandingMode(projectId: number, landingMode: LandingMode) : Promise<Result<null, string>> {
@@ -2836,42 +2578,6 @@ async saveProjectLandingMode(projectId: number, landingMode: LandingMode) : Prom
 async getProjectCodeHostingStatus(projectId: number) : Promise<Result<CodeHostingStatus, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_project_code_hosting_status", { projectId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Batch-import remote issues as Backlog tasks for a project, skipping any that have already
- * been imported (by external_id within the project). Returns the list of newly-created tasks.
- */
-async importTasks(projectId: number, issues: RemoteIssue[], baseBranch: string) : Promise<Result<Task[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("import_tasks", { projectId, issues, baseBranch }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Update a task's title, description, labels, and external_updated_at from a remote issue.
- * This is the "Update task" action in the Changed tab — performs a non-destructive content overwrite.
- */
-async updateTaskFromRemote(projectId: number, taskId: number, issue: RemoteIssue) : Promise<Result<Task, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("update_task_from_remote", { projectId, taskId, issue }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Advance a task's external_updated_at to the remote value, clearing the "changed" flag
- * without modifying title, description, or labels.
- */
-async dismissTaskChange(projectId: number, taskId: number, remoteUpdatedAt: string) : Promise<Result<Task, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("dismiss_task_change", { projectId, taskId, remoteUpdatedAt }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -3381,7 +3087,7 @@ export type AgentStreamWidth = "full" | "compact"
  * which `DeleteWorktreeDialog` reads as "this branch exists only locally".
  */
 export type AheadBehind = { ahead: number; behind: number }
-export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; 
+export type AppSettings = { theme_preference: string | null; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; 
 /**
  * Global default accent hue in degrees, as a string. Projects without their own
  * `accent_color` follow this; `None` follows the OS accent colour.
@@ -4244,10 +3950,6 @@ export type ProfilesDocument = { profiles?: AgentProfile[];
 defaults?: Partial<{ [key in string]: string }> }
 export type Project = { id: number; name: string; path: string; created_at: string; updated_at: string; last_opened: string | null; connection_id: number | null; wsl_connection_id: number | null; docker_connection_id: number | null }
 /**
- * Project-level agent detection: which agent tools have config markers in the project dir.
- */
-export type ProjectAgentMatch = { agent_id: string; markers_found: string[] }
-/**
  * Where this project's remote is hosted, and enough of the remote's path to address it
  * through the forge's API.
  * 
@@ -4314,11 +4016,6 @@ remote_name: string | null;
  */
 base_branch: string | null }
 export type ProjectIssueTrackingConfig = { provider: string; integration_id?: string | null; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }
-export type ProjectLockEntry = { project_id: number; holder_label: string; 
-/**
- * Held by this window.
- */
-yours: boolean }
 /**
  * One open pull request, as the Worktrees view's panel reads it.
  * 
@@ -4678,12 +4375,10 @@ phase?: string | null; created_at: string }
  * approved but never merged, and the worktree is still alive holding them.
  */
 export type TaskCompletion = "Merged" | "MergedViaPR" | "LocalOnly" | "NoChanges"
-export type TaskConfigRequest = { model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; permission_mode_override?: string | null }
 /**
  * The automation run whose agent created a task.
  */
 export type TaskDraft = { automation: string; run?: number | null }
-export type TaskInstruction = { id: number; task_id: number; content: string; source: string; created_at: string }
 /**
  * What the pipeline is doing to a task right now, independent of which column it sits in.
  * 
@@ -4708,7 +4403,6 @@ export type TaskPhase = "Spawning" | "Refining" | "Drafting" | "PlanReview" | "I
  */
 "Judging"
 export type TaskPriority = "Urgent" | "High" | "Medium" | "Low" | "None"
-export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
 export type TaskStatus = "Planning" | "Queue" | "InProgress" | "Review" | "Done" | "Cancelled"
 export type Template = { id: number; name: string; 
 /**

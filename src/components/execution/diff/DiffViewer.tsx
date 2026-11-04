@@ -42,7 +42,6 @@ interface DiffViewerProps {
   // Review mode (inline comment gutters)
   reviewMode?: boolean;
   comments?: PendingComment[];
-  activeCommentLine?: { lineNumber: number; side: "old" | "new" } | null;
   /** `fromLineNumber` is the first line of a drag-selected range, or `lineNumber` for one line. */
   onAddComment?: (lineNumber: number, fromLineNumber: number, side: "old" | "new") => void;
   onRemoveComment?: (commentId: string) => void;

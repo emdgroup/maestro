@@ -8,8 +8,6 @@ import { CreateTaskFromTextContext } from "./task-draft";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 
-export { getCompleteBlocksText } from "./MarkdownBlock";
-
 interface ActivityMessageItemProps {
   message: MessageItem;
   /**

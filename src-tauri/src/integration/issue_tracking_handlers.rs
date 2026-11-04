@@ -14,7 +14,6 @@ use crate::models::project::{ProjectConfig, ProjectIssueTrackingConfig};
 use crate::project::settings::{mutate_project_config, SETTINGS_FILE};
 
 pub use super::image_proxy::*;
-pub use super::issue_sync::*;
 
 /// Read the ticketing field from .maestro/settings.json for the given project.
 #[tauri::command]

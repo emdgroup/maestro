@@ -10,7 +10,7 @@ use crate::agent;
 use crate::auth::{self, AuthTerminals};
 use crate::file_ops::{handle_file_read, handle_file_search};
 use crate::helpers::{
-    ensure_and_get_connection, error_response, evict_if_same_connection, forward_to_session,
+    ensure_and_get_connection, error_response, evict_if_same_connection, forward_to_session, reply,
     resolve_agent_spawn_params, send_diag, send_response,
 };
 use crate::session::{self, create_session_on_connection};
@@ -35,18 +35,6 @@ fn server_status(
         running_runs,
         autostart_supported: crate::autostart::supported(),
         autostart,
-    }
-}
-
-fn tool_config_error(tool: String, error: String) -> maestro_protocol::ToolCheckResult {
-    maestro_protocol::ToolCheckResult {
-        tool,
-        available: false,
-        version: None,
-        configured_path: None,
-        resolved_path: None,
-        source: maestro_protocol::ToolPathSource::NotFound,
-        error: Some(error),
     }
 }
 
@@ -401,9 +389,7 @@ pub(crate) async fn settle(
             (stdout, response)
         }
     };
-    if let Err(e) = send_response(&stdout, &response).await {
-        send_diag("warn", format!("[server] could not answer a request: {e}"));
-    }
+    reply(&stdout, &response).await;
 }
 
 /// Answer `response` from a task of its own. For work that is slow and touches nothing the loop
@@ -415,16 +401,14 @@ fn answer_off_loop(
     let stdout = Arc::clone(stdout);
     tokio::spawn(async move {
         let response = response.await;
-        if let Err(e) = send_response(&stdout, &response).await {
-            send_diag("warn", format!("[server] could not answer a request: {e}"));
-        }
+        reply(&stdout, &response).await;
     });
 }
 
 /// Handle one message from stdin.
 ///
-/// Returns `true`  → the main loop should continue.
-/// Returns `false` → stdout is broken; the main loop should break.
+/// Returns `false` only for `Shutdown`, which ends the main loop. Nothing a reply does can: one
+/// that cannot be encoded is answered with an `Error` instead, and a write never fails.
 // Each argument is a distinct piece of the main loop's mutable state, borrowed separately
 // because the loop's other arms hold some of them at the same time.
 #[allow(clippy::too_many_arguments)]
@@ -441,15 +425,6 @@ pub(crate) async fn dispatch_message(
     automation_store: Option<&crate::automation_runner::Store>,
     project_store: Option<&crate::project_store::Store>,
 ) -> bool {
-    // If stdout is broken we return false so the main loop breaks.
-    macro_rules! send_or_return {
-        ($e:expr) => {
-            if ($e).is_err() {
-                return false;
-            }
-        };
-    }
-
     match msg {
         ServerRequest::ListAgents(_req) => {
             agent::registry::apply_custom_agents(agents_with_spawn);
@@ -462,13 +437,11 @@ pub(crate) async fn dispatch_message(
                     spawn_deps: a.spawn_deps.clone(),
                 })
                 .collect();
-            send_or_return!(
-                send_response(
-                    stdout,
-                    &ServerResponse::ListAgentsOk(ListAgentsResponse { agents },),
-                )
-                .await
-            );
+            reply(
+                stdout,
+                &ServerResponse::ListAgentsOk(ListAgentsResponse { agents }),
+            )
+            .await;
         }
 
         ServerRequest::ListProjectSessions(req) => {
@@ -483,7 +456,7 @@ pub(crate) async fn dispatch_message(
             let rows = match listed {
                 Ok(rows) => rows,
                 Err(e) => {
-                    send_or_return!(send_response(stdout, &error_response(e)).await);
+                    reply(stdout, &error_response(e)).await;
                     return true;
                 }
             };
@@ -504,26 +477,22 @@ pub(crate) async fn dispatch_message(
                 }
                 listed.push(row);
             }
-            send_or_return!(
-                send_response(
-                    stdout,
-                    &ServerResponse::ListProjectSessionsOk(
-                        maestro_protocol::ListProjectSessionsResponse { sessions: listed },
-                    ),
-                )
-                .await
-            );
+            reply(
+                stdout,
+                &ServerResponse::ListProjectSessionsOk(
+                    maestro_protocol::ListProjectSessionsResponse { sessions: listed },
+                ),
+            )
+            .await;
         }
 
         ServerRequest::RenameSession(req) => {
             let Some(store) = project_store else {
-                send_or_return!(
-                    send_response(
-                        stdout,
-                        &error_response(crate::project_store::UNAVAILABLE.to_string())
-                    )
-                    .await
-                );
+                reply(
+                    stdout,
+                    &error_response(crate::project_store::UNAVAILABLE.to_string()),
+                )
+                .await;
                 return true;
             };
             let project_path = crate::automations::canonical_project_path(&req.project_path);
@@ -532,22 +501,18 @@ pub(crate) async fn dispatch_message(
                 crate::project_store::rename(&conn, &req, &project_path, chrono::Utc::now())
             };
             match renamed {
-                Ok(()) => {
-                    send_or_return!(send_response(stdout, &ServerResponse::RenameSessionOk,).await)
-                }
-                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+                Ok(()) => reply(stdout, &ServerResponse::RenameSessionOk).await,
+                Err(e) => reply(stdout, &error_response(e)).await,
             }
         }
 
         ServerRequest::CloseProjectSession(req) => {
             let Some(store) = project_store else {
-                send_or_return!(
-                    send_response(
-                        stdout,
-                        &error_response(crate::project_store::UNAVAILABLE.to_string())
-                    )
-                    .await
-                );
+                reply(
+                    stdout,
+                    &error_response(crate::project_store::UNAVAILABLE.to_string()),
+                )
+                .await;
                 return true;
             };
             // A session running under this key was loaded by somebody after the failure that
@@ -564,10 +529,8 @@ pub(crate) async fn dispatch_message(
                 )
             };
             match closed {
-                Ok(()) => send_or_return!(
-                    send_response(stdout, &ServerResponse::CloseProjectSessionOk,).await
-                ),
-                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+                Ok(()) => reply(stdout, &ServerResponse::CloseProjectSessionOk).await,
+                Err(e) => reply(stdout, &error_response(e)).await,
             }
         }
 
@@ -578,9 +541,7 @@ pub(crate) async fn dispatch_message(
 
         ServerRequest::ListAutomations(req) => {
             let Some(store) = automation_store else {
-                send_or_return!(
-                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
-                );
+                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
                 return true;
             };
             let project_path = crate::automations::canonical_project_path(&req.project_path);
@@ -594,8 +555,8 @@ pub(crate) async fn dispatch_message(
                 })
             };
             match listed {
-                Ok((automations, retention)) => send_or_return!(
-                    send_response(
+                Ok((automations, retention)) => {
+                    reply(
                         stdout,
                         &ServerResponse::ListAutomationsOk(
                             maestro_protocol::ListAutomationsResponse {
@@ -606,16 +567,14 @@ pub(crate) async fn dispatch_message(
                         ),
                     )
                     .await
-                ),
-                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+                }
+                Err(e) => reply(stdout, &error_response(e)).await,
             }
         }
 
         ServerRequest::SaveAutomation(req) => {
             let Some(store) = automation_store else {
-                send_or_return!(
-                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
-                );
+                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
                 return true;
             };
             // Canonicalized here rather than trusted from the client: this is the process on the
@@ -628,18 +587,14 @@ pub(crate) async fn dispatch_message(
                 crate::automations::save(&conn, &project_path, &automation)
             };
             match saved {
-                Ok(saved) => send_or_return!(
-                    send_response(stdout, &ServerResponse::SaveAutomationOk(saved),).await
-                ),
-                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+                Ok(saved) => reply(stdout, &ServerResponse::SaveAutomationOk(saved)).await,
+                Err(e) => reply(stdout, &error_response(e)).await,
             }
         }
 
         ServerRequest::DeleteAutomation(req) => {
             let Some(store) = automation_store else {
-                send_or_return!(
-                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
-                );
+                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
                 return true;
             };
             let deleted = {
@@ -647,18 +602,14 @@ pub(crate) async fn dispatch_message(
                 crate::automations::delete(&conn, &req.automation_id)
             };
             match deleted {
-                Ok(()) => send_or_return!(
-                    send_response(stdout, &ServerResponse::DeleteAutomationOk,).await
-                ),
-                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+                Ok(()) => reply(stdout, &ServerResponse::DeleteAutomationOk).await,
+                Err(e) => reply(stdout, &error_response(e)).await,
             }
         }
 
         ServerRequest::RunAutomation(req) => {
             let Some(store) = automation_store else {
-                send_or_return!(
-                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
-                );
+                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
                 return true;
             };
             // The run is announced by the runner, whether it starts or fails, so there is nothing
@@ -677,15 +628,13 @@ pub(crate) async fn dispatch_message(
             )
             .await
             {
-                send_or_return!(send_response(stdout, &error_response(e)).await);
+                reply(stdout, &error_response(e)).await;
             }
         }
 
         ServerRequest::ListAutomationRuns(req) => {
             let Some(store) = automation_store else {
-                send_or_return!(
-                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
-                );
+                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
                 return true;
             };
             let project_path = crate::automations::canonical_project_path(&req.project_path);
@@ -694,24 +643,22 @@ pub(crate) async fn dispatch_message(
                 crate::automations::list_runs(&conn, &project_path, req.limit)
             };
             match listed {
-                Ok(runs) => send_or_return!(
-                    send_response(
+                Ok(runs) => {
+                    reply(
                         stdout,
                         &ServerResponse::ListAutomationRunsOk(
                             maestro_protocol::ListAutomationRunsResponse { runs },
                         ),
                     )
                     .await
-                ),
-                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+                }
+                Err(e) => reply(stdout, &error_response(e)).await,
             }
         }
 
         ServerRequest::DeleteAutomationRun(req) => {
             let Some(store) = automation_store else {
-                send_or_return!(
-                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
-                );
+                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
                 return true;
             };
             let run = {
@@ -749,30 +696,21 @@ pub(crate) async fn dispatch_message(
                                 Ok(()) => ServerResponse::DeleteAutomationRunOk,
                                 Err(e) => error_response(e),
                             };
-                        if let Err(e) = send_response(&stdout, &response).await {
-                            send_diag(
-                                "warn",
-                                format!("[automation] could not answer a run deletion: {e}"),
-                            );
-                        }
+                        reply(&stdout, &response).await;
                     });
                     return true;
                 }
                 Err(e) => Err(e),
             };
             match deleted {
-                Ok(()) => send_or_return!(
-                    send_response(stdout, &ServerResponse::DeleteAutomationRunOk,).await
-                ),
-                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+                Ok(()) => reply(stdout, &ServerResponse::DeleteAutomationRunOk).await,
+                Err(e) => reply(stdout, &error_response(e)).await,
             }
         }
 
         ServerRequest::SetRunRetention(req) => {
             let Some(store) = automation_store else {
-                send_or_return!(
-                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
-                );
+                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
                 return true;
             };
             let project_path = crate::automations::canonical_project_path(&req.project_path);
@@ -789,15 +727,10 @@ pub(crate) async fn dispatch_message(
                     tokio::spawn(async move {
                         crate::automation_runner::apply_retention(&store, &project_path).await;
                         let response = ServerResponse::SetRunRetentionOk;
-                        if let Err(e) = send_response(&stdout, &response).await {
-                            send_diag(
-                                "warn",
-                                format!("[automation] could not answer a retention change: {e}"),
-                            );
-                        }
+                        reply(&stdout, &response).await;
                     });
                 }
-                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+                Err(e) => reply(stdout, &error_response(e)).await,
             }
         }
 
@@ -807,7 +740,7 @@ pub(crate) async fn dispatch_message(
                 None => 0,
             };
             let status = server_status(sessions.len(), running_runs, crate::autostart::current());
-            send_or_return!(send_response(stdout, &ServerResponse::ServerStatusOk(status),).await);
+            reply(stdout, &ServerResponse::ServerStatusOk(status)).await;
         }
 
         ServerRequest::SetAutostart(req) => {
@@ -831,33 +764,25 @@ pub(crate) async fn dispatch_message(
                     )),
                     Err(e) => error_response(e),
                 };
-                if let Err(e) = send_response(&stdout, &response).await {
-                    send_diag("warn", format!("[autostart] could not answer: {e}"));
-                }
+                reply(&stdout, &response).await;
             });
         }
 
         ServerRequest::GetWebhookSettings => {
             let Some(store) = automation_store else {
-                send_or_return!(
-                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
-                );
+                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
                 return true;
             };
             let status = {
                 let conn = store.lock().await;
                 crate::webhook::status(&conn)
             };
-            send_or_return!(
-                send_response(stdout, &ServerResponse::WebhookSettingsOk(status),).await
-            );
+            reply(stdout, &ServerResponse::WebhookSettingsOk(status)).await;
         }
 
         ServerRequest::SetWebhookSettings(settings) => {
             let Some(store) = automation_store else {
-                send_or_return!(
-                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
-                );
+                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
                 return true;
             };
             let saved = {
@@ -865,7 +790,7 @@ pub(crate) async fn dispatch_message(
                 crate::webhook::save_settings(&conn, &settings)
             };
             if let Err(e) = saved {
-                send_or_return!(send_response(stdout, &error_response(e)).await);
+                reply(stdout, &error_response(e)).await;
                 return true;
             }
             // Rebound straight away, so the answer already says whether the new address works.
@@ -874,16 +799,12 @@ pub(crate) async fn dispatch_message(
                 let conn = store.lock().await;
                 crate::webhook::status(&conn)
             };
-            send_or_return!(
-                send_response(stdout, &ServerResponse::WebhookSettingsOk(status),).await
-            );
+            reply(stdout, &ServerResponse::WebhookSettingsOk(status)).await;
         }
 
         ServerRequest::RollWebhookSecret(req) => {
             let Some(store) = automation_store else {
-                send_or_return!(
-                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
-                );
+                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
                 return true;
             };
             let rolled = {
@@ -891,18 +812,16 @@ pub(crate) async fn dispatch_message(
                 crate::automations::roll_webhook_secret(&conn, &req.automation_id)
             };
             match rolled {
-                Ok(automation) => send_or_return!(
-                    send_response(stdout, &ServerResponse::RollWebhookSecretOk(automation),).await
-                ),
-                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+                Ok(automation) => {
+                    reply(stdout, &ServerResponse::RollWebhookSecretOk(automation)).await
+                }
+                Err(e) => reply(stdout, &error_response(e)).await,
             }
         }
 
         ServerRequest::ListWebhookDeliveries(req) => {
             let Some(store) = automation_store else {
-                send_or_return!(
-                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
-                );
+                reply(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await;
                 return true;
             };
             let listed = {
@@ -910,16 +829,16 @@ pub(crate) async fn dispatch_message(
                 crate::webhook::list_deliveries(&conn, &req.automation_id)
             };
             match listed {
-                Ok(deliveries) => send_or_return!(
-                    send_response(
+                Ok(deliveries) => {
+                    reply(
                         stdout,
                         &ServerResponse::ListWebhookDeliveriesOk(
                             maestro_protocol::ListWebhookDeliveriesResponse { deliveries },
                         ),
                     )
                     .await
-                ),
-                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+                }
+                Err(e) => reply(stdout, &error_response(e)).await,
             }
         }
 
@@ -939,7 +858,7 @@ pub(crate) async fn dispatch_message(
                 }
                 Err(e) => error_response(e),
             };
-            send_or_return!(send_response(stdout, &response).await);
+            reply(stdout, &response).await;
         }
 
         ServerRequest::UsageTurns(req) => {
@@ -953,7 +872,7 @@ pub(crate) async fn dispatch_message(
                 Ok(page) => ServerResponse::UsageTurnsOk(page),
                 Err(e) => error_response(e),
             };
-            send_or_return!(send_response(stdout, &response).await);
+            reply(stdout, &response).await;
         }
 
         ServerRequest::UsageHours(req) => {
@@ -967,7 +886,7 @@ pub(crate) async fn dispatch_message(
                 Ok(page) => ServerResponse::UsageHoursOk(page),
                 Err(e) => error_response(e),
             };
-            send_or_return!(send_response(stdout, &response).await);
+            reply(stdout, &response).await;
         }
 
         // No store and no project: an expression being typed belongs to nothing yet. This is here
@@ -979,17 +898,15 @@ pub(crate) async fn dispatch_message(
                     let next =
                         crate::automations::next_due(&req.cron, &req.timezone, chrono::Utc::now())
                             .map(|due| due.to_rfc3339());
-                    send_or_return!(
-                        send_response(
-                            stdout,
-                            &ServerResponse::PreviewScheduleOk(
-                                maestro_protocol::PreviewScheduleResponse { next },
-                            ),
-                        )
-                        .await
-                    );
+                    reply(
+                        stdout,
+                        &ServerResponse::PreviewScheduleOk(
+                            maestro_protocol::PreviewScheduleResponse { next },
+                        ),
+                    )
+                    .await;
                 }
-                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+                Err(e) => reply(stdout, &error_response(e)).await,
             }
         }
 
@@ -1101,28 +1018,18 @@ pub(crate) async fn dispatch_message(
                     crate::task_turn::window_acted(store, stdout, task, false);
                 }
                 if session.cmd_tx.send(cmd).await.is_err() {
-                    send_or_return!(
-                        send_response(
-                            stdout,
-                            &ServerResponse::Error(ErrorResponse {
-                                message: format!("session {} connection closed", req.session_id),
-                                session_id: None,
-                            }),
-                        )
-                        .await
-                    );
+                    reply(
+                        stdout,
+                        &error_response(format!("session {} connection closed", req.session_id)),
+                    )
+                    .await;
                 }
             } else {
-                send_or_return!(
-                    send_response(
-                        stdout,
-                        &ServerResponse::Error(ErrorResponse {
-                            message: format!("unknown session: {}", req.session_id),
-                            session_id: None,
-                        }),
-                    )
-                    .await
-                );
+                reply(
+                    stdout,
+                    &error_response(format!("unknown session: {}", req.session_id)),
+                )
+                .await;
             }
         }
 
@@ -1134,9 +1041,9 @@ pub(crate) async fn dispatch_message(
         | ServerRequest::PauseLoop(_)
         | ServerRequest::StopLoop(_)
         | ServerRequest::RestartTask(_)) => {
-            let (reply, pushes) =
+            let (response, pushes) =
                 Box::pin(crate::loop_engine::answer(request, project_store, stdout)).await;
-            send_or_return!(send_response(stdout, &reply).await);
+            reply(stdout, &response).await;
             for push in pushes {
                 crate::helpers::broadcast(stdout, push).await;
             }
@@ -1204,42 +1111,36 @@ pub(crate) async fn dispatch_message(
         }
 
         ServerRequest::SetModel(set_model_req) => {
-            send_or_return!(
-                forward_to_session(
-                    sessions,
-                    &set_model_req.session_id,
-                    SessionCommand::SetModel(set_model_req.model_id),
-                    stdout,
-                )
-                .await
-            );
+            forward_to_session(
+                sessions,
+                &set_model_req.session_id,
+                SessionCommand::SetModel(set_model_req.model_id),
+                stdout,
+            )
+            .await;
         }
 
         ServerRequest::SetMode(set_mode_req) => {
-            send_or_return!(
-                forward_to_session(
-                    sessions,
-                    &set_mode_req.session_id,
-                    SessionCommand::SetMode(set_mode_req.mode_id),
-                    stdout,
-                )
-                .await
-            );
+            forward_to_session(
+                sessions,
+                &set_mode_req.session_id,
+                SessionCommand::SetMode(set_mode_req.mode_id),
+                stdout,
+            )
+            .await;
         }
 
         ServerRequest::SetConfigOption(req) => {
-            send_or_return!(
-                forward_to_session(
-                    sessions,
-                    &req.session_id,
-                    SessionCommand::SetConfigOption {
-                        config_id: req.config_id,
-                        value: req.value,
-                    },
-                    stdout,
-                )
-                .await
-            );
+            forward_to_session(
+                sessions,
+                &req.session_id,
+                SessionCommand::SetConfigOption {
+                    config_id: req.config_id,
+                    value: req.value,
+                },
+                stdout,
+            )
+            .await;
         }
 
         ServerRequest::FileSearch(req) => {
@@ -1318,16 +1219,11 @@ pub(crate) async fn dispatch_message(
         }
 
         ServerRequest::Handshake(_) => {
-            send_or_return!(
-                send_response(
-                    stdout,
-                    &ServerResponse::Error(ErrorResponse {
-                        message: "unexpected Handshake after initialization".to_string(),
-                        session_id: None,
-                    }),
-                )
-                .await
-            );
+            reply(
+                stdout,
+                &error_response("unexpected Handshake after initialization".to_string()),
+            )
+            .await;
         }
 
         ServerRequest::PreInitialize(req) => {
@@ -1368,7 +1264,7 @@ pub(crate) async fn dispatch_message(
                     auth_methods: handle.capabilities.auth_methods.clone(),
                     supports_auth_logout: handle.capabilities.supports_auth_logout,
                 };
-                let _ = send_response(&stdout, &ServerResponse::PreInitializeOk(response)).await;
+                reply(&stdout, &ServerResponse::PreInitializeOk(response)).await;
             });
         }
 
@@ -1433,7 +1329,7 @@ pub(crate) async fn dispatch_message(
                 }),
                 Err(e) => error_response(e),
             };
-            send_or_return!(send_response(stdout, &response).await);
+            reply(stdout, &response).await;
         }
 
         ServerRequest::SaveMcpServers(req) => {
@@ -1441,12 +1337,12 @@ pub(crate) async fn dispatch_message(
                 Ok(()) => ServerResponse::SaveMcpServersOk,
                 Err(e) => error_response(e),
             };
-            send_or_return!(send_response(stdout, &response).await);
+            reply(stdout, &response).await;
         }
 
         ServerRequest::SetMcpSecrets(req) => {
             crate::mcp_store::set_secrets(req.secrets);
-            send_or_return!(send_response(stdout, &ServerResponse::SetMcpSecretsOk).await);
+            reply(stdout, &ServerResponse::SetMcpSecretsOk).await;
         }
 
         ServerRequest::ListSkills(req) => {
@@ -1454,7 +1350,7 @@ pub(crate) async fn dispatch_message(
                 Ok(list) => ServerResponse::ListSkillsOk(list),
                 Err(e) => error_response(e),
             };
-            send_or_return!(send_response(stdout, &response).await);
+            reply(stdout, &response).await;
         }
 
         // Offloaded, like a spawn: starting a server or running the skills CLI takes seconds, and
@@ -1463,7 +1359,7 @@ pub(crate) async fn dispatch_message(
             let stdout = Arc::clone(stdout);
             tokio::spawn(async move {
                 let result = crate::mcp_store::test(req.server).await;
-                let _ = send_response(&stdout, &ServerResponse::TestMcpServerOk(result)).await;
+                reply(&stdout, &ServerResponse::TestMcpServerOk(result)).await;
             });
         }
 
@@ -1474,7 +1370,7 @@ pub(crate) async fn dispatch_message(
                     Ok(()) => ServerResponse::ApplySkillOk,
                     Err(e) => error_response(e),
                 };
-                let _ = send_response(&stdout, &response).await;
+                reply(&stdout, &response).await;
             });
         }
 
@@ -1485,38 +1381,7 @@ pub(crate) async fn dispatch_message(
                     Ok(()) => ServerResponse::DeleteSkillOk,
                     Err(e) => error_response(e),
                 };
-                let _ = send_response(&stdout, &response).await;
-            });
-        }
-
-        // `tools.json` is written under a file lock, so two of these at once cannot lose a write.
-        ServerRequest::SetToolPath(req) => {
-            answer_off_loop(stdout, async move {
-                let result = if let Some(path) = req.path {
-                    let tested =
-                        crate::tool_check::test_tool_path(req.tool.clone(), path.clone()).await;
-                    if tested.available {
-                        match crate::tool_config::set(&req.tool, Some(path)) {
-                            Ok(()) => crate::tool_check::check_tool(req.tool).await,
-                            Err(error) => tool_config_error(req.tool, error),
-                        }
-                    } else {
-                        tested
-                    }
-                } else {
-                    match crate::tool_config::set(&req.tool, None) {
-                        Ok(()) => crate::tool_check::check_tool(req.tool).await,
-                        Err(error) => tool_config_error(req.tool, error),
-                    }
-                };
-                ServerResponse::SetToolPathOk(result)
-            });
-        }
-
-        ServerRequest::TestToolPath(req) => {
-            answer_off_loop(stdout, async move {
-                let result = crate::tool_check::test_tool_path(req.tool, req.path).await;
-                ServerResponse::TestToolPathOk(result)
+                reply(&stdout, &response).await;
             });
         }
 
@@ -1531,44 +1396,14 @@ pub(crate) async fn dispatch_message(
             });
         }
 
-        ServerRequest::DetectProjectAgents(req) => {
-            answer_off_loop(stdout, async move {
-                let response = agent::detection::detect_project_agents(&req.cwd).await;
-                ServerResponse::DetectProjectAgentsOk(response)
-            });
-        }
-
         ServerRequest::AcquireProjectLock(req) => {
             let path = crate::automations::canonical_project_path(&req.project_path);
             let resp = stdout.lock().await.acquire_project(path, req.label).await;
-            send_or_return!(
-                send_response(stdout, &ServerResponse::AcquireProjectLockOk(resp),).await
-            );
+            reply(stdout, &ServerResponse::AcquireProjectLockOk(resp)).await;
         }
 
         ServerRequest::ReleaseProjectLock => {
             stdout.lock().await.release_project().await;
-        }
-
-        ServerRequest::ListProjectLocks(req) => {
-            let paths = req
-                .project_paths
-                .into_iter()
-                .map(|sent| {
-                    let canonical = crate::automations::canonical_project_path(&sent);
-                    (sent, canonical)
-                })
-                .collect();
-            let locks = stdout.lock().await.list_projects(paths).await;
-            send_or_return!(
-                send_response(
-                    stdout,
-                    &ServerResponse::ProjectLocksOk(maestro_protocol::ListProjectLocksResponse {
-                        locks
-                    },),
-                )
-                .await
-            );
         }
 
         ServerRequest::HomeSummary(req) => {
@@ -1612,9 +1447,7 @@ pub(crate) async fn dispatch_message(
                     }
                     Err(e) => error_response(e),
                 };
-                if let Err(e) = send_response(&stdout, &response).await {
-                    send_diag("warn", format!("[home] could not answer: {e}"));
-                }
+                reply(&stdout, &response).await;
             });
         }
 
@@ -1650,26 +1483,17 @@ pub(crate) async fn dispatch_message(
         | ServerRequest::EndTaskTurn(_)
         | ServerRequest::CloseRefinement(_)
         | ServerRequest::RequestTaskExecution(_)
-        | ServerRequest::ListQueueCandidates(_)
         | ServerRequest::ListTasksAwaitingMerge(_)
-        | ServerRequest::ImportTasks(_)
         | ServerRequest::ListTaskComments(_)
         | ServerRequest::AddTaskComment(_)
         | ServerRequest::ListTaskAttachments(_)
         | ServerRequest::AddTaskAttachment(_)
         | ServerRequest::DeleteTaskAttachment(_)
-        | ServerRequest::ListTaskRelationships(_)
-        | ServerRequest::AddTaskRelationship(_)
-        | ServerRequest::DeleteTaskRelationship(_)
-        | ServerRequest::ListTaskInstructions(_)
-        | ServerRequest::AddTaskInstruction(_)
         | ServerRequest::ListWorktrees(_)
         | ServerRequest::GetWorktree(_)
         | ServerRequest::InsertWorktree(_)
         | ServerRequest::UpdateWorktree(_)
         | ServerRequest::DeleteWorktrees(_)
-        | ServerRequest::ClaimWorktreeForTask(_)
-        | ServerRequest::GetTaskReview(_)
         | ServerRequest::SaveTaskReview(_)
         | ServerRequest::ClearTaskReview(_)
         | ServerRequest::ListLoopChecks(_)
@@ -1686,13 +1510,11 @@ pub(crate) async fn dispatch_message(
         | ServerRequest::ImportChunk(_)
         | ServerRequest::CommitImport(_)) => {
             let Some(store) = project_store else {
-                send_or_return!(
-                    send_response(
-                        stdout,
-                        &error_response(crate::project_store::UNAVAILABLE.to_string())
-                    )
-                    .await
-                );
+                reply(
+                    stdout,
+                    &error_response(crate::project_store::UNAVAILABLE.to_string()),
+                )
+                .await;
                 return true;
             };
             let answered = match request {
@@ -1738,13 +1560,13 @@ pub(crate) async fn dispatch_message(
                 request => crate::task_store::requests::answer(&mut *store.lock().await, request),
             };
             match answered {
-                Ok((reply, pushes)) => {
-                    send_or_return!(send_response(stdout, &reply).await);
+                Ok((response, pushes)) => {
+                    reply(stdout, &response).await;
                     for push in pushes {
                         crate::helpers::broadcast(stdout, push).await;
                     }
                 }
-                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+                Err(e) => reply(stdout, &error_response(e)).await,
             }
         }
 
@@ -1759,37 +1581,35 @@ pub(crate) async fn dispatch_message(
                 None => Err(crate::project_store::UNAVAILABLE.to_string()),
             };
             match answered {
-                Ok((mut reply, pushes)) => {
-                    if let ServerResponse::GetCapacityOk(status) = &mut reply {
+                Ok((mut response, pushes)) => {
+                    if let ServerResponse::GetCapacityOk(status) = &mut response {
                         status.used = crate::pipeline_settings::taken_slots(sessions) as u32;
                     }
-                    send_or_return!(send_response(stdout, &reply).await);
+                    reply(stdout, &response).await;
                     for push in pushes {
                         crate::helpers::broadcast(stdout, push).await;
                     }
                 }
-                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+                Err(e) => reply(stdout, &error_response(e)).await,
             }
         }
 
         request @ (ServerRequest::HoldTask(_) | ServerRequest::ReleaseTaskHold(_)) => {
             crate::scheduler::hold_changed(&request);
-            let reply = match crate::pipeline_settings::answer_hold(request) {
-                Ok(reply) => reply,
+            let response = match crate::pipeline_settings::answer_hold(request) {
+                Ok(response) => response,
                 Err(e) => error_response(e),
             };
-            send_or_return!(send_response(stdout, &reply).await);
+            reply(stdout, &response).await;
         }
 
         ServerRequest::StartTask(req) => {
             let Some(store) = project_store else {
-                send_or_return!(
-                    send_response(
-                        stdout,
-                        &error_response(crate::project_store::UNAVAILABLE.to_string())
-                    )
-                    .await
-                );
+                reply(
+                    stdout,
+                    &error_response(crate::project_store::UNAVAILABLE.to_string()),
+                )
+                .await;
                 return true;
             };
             // A custom agent added since startup is merged before it is looked for, as `ListAgents`
@@ -1808,16 +1628,14 @@ pub(crate) async fn dispatch_message(
             }
             match begun {
                 Ok(crate::task_runner::Begun::Deferred | crate::task_runner::Begun::Gated) => {
-                    send_or_return!(
-                        send_response(
-                            stdout,
-                            &ServerResponse::StartTaskOk(maestro_protocol::StartTaskResponse {
-                                session_id: None,
-                                skipped_attachments: vec![],
-                            },),
-                        )
-                        .await
+                    reply(
+                        stdout,
+                        &ServerResponse::StartTaskOk(maestro_protocol::StartTaskResponse {
+                            session_id: None,
+                            skipped_attachments: vec![],
+                        }),
                     )
+                    .await
                 }
                 // Answered once the session is in the map, or once the start has failed.
                 Ok(crate::task_runner::Begun::Claimed(claimed)) => {
@@ -1831,9 +1649,7 @@ pub(crate) async fn dispatch_message(
                         claimed,
                     )));
                 }
-                Err(e) => {
-                    send_or_return!(send_response(stdout, &error_response(e.to_string())).await)
-                }
+                Err(e) => reply(stdout, &error_response(e.to_string())).await,
             }
         }
     }

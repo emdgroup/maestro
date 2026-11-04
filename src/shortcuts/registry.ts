@@ -44,9 +44,6 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "agents-new", key: "n", ctrl: true, label: "Ctrl+N", scope: "agents" },
   { id: "agents-close", key: "w", ctrl: true, label: "Ctrl+W", scope: "agents" },
   { id: "agents-history", key: "h", ctrl: true, label: "Ctrl+H", scope: "agents" },
-  { id: "agents-working", key: "e", ctrl: true, label: "Ctrl+E", scope: "agents" },
-  { id: "agents-review", key: "r", ctrl: true, label: "Ctrl+R", scope: "agents" },
-  { id: "agents-close-panel", key: "Escape", ctrl: false, label: "Esc", scope: "agents" },
 
   // Worktrees
   { id: "wt-new", key: "n", ctrl: true, label: "Ctrl+N", scope: "worktrees" },

@@ -1,5 +1,4 @@
 use super::normalize_instance_url;
-use crate::integration::token_manager::StoredToken;
 use crate::models::issue_tracking::RemoteIssue;
 use base64::Engine as _;
 
@@ -39,20 +38,6 @@ pub(crate) fn make_azdo_auth(token: &str) -> String {
         "Basic {}",
         base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes())
     )
-}
-
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AzdoConnectionDataResponse {
-    authenticated_user: AzdoAuthUser,
-}
-
-#[derive(serde::Deserialize)]
-struct AzdoAuthUser {
-    #[serde(rename = "providerDisplayName")]
-    provider_display_name: Option<String>,
-    #[serde(rename = "subjectDescriptor")]
-    subject_descriptor: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -113,77 +98,6 @@ const WIQL_FIELDS: &[&str] = &[
     "System.Tags",
     "Microsoft.VSTS.Common.Priority",
 ];
-
-/// Validate an Azure DevOps PAT against the connectionData endpoint, save the
-/// IssueTrackingConfig to the project, and store the token in the token manager.
-/// Returns the authenticated user's display name on success.
-pub async fn validate_and_store(
-    project_id: i32,
-    org_url: &str,
-    _project: &str,
-    token: &str,
-    _project_path: &str,
-    app_state: &crate::core::AppState,
-) -> Result<String, String> {
-    let base = normalize_azdo_org_url(org_url);
-    let auth = make_azdo_auth(token);
-
-    let client = super::http_client()?;
-
-    let response = client
-        .get(format!(
-            "{}/_apis/connectionData?api-version={}",
-            base, AZDO_API_VERSION
-        ))
-        .header("Authorization", auth)
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        let body_hint = if body.is_empty() {
-            String::new()
-        } else {
-            format!(" — {}", &body[..body.len().min(500)])
-        };
-        if status.as_u16() == 401 {
-            return Err("Azure DevOps: invalid or expired credentials".to_string());
-        }
-        return Err(format!(
-            "Azure DevOps: HTTP {}{}",
-            status.as_u16(),
-            body_hint
-        ));
-    }
-
-    let conn_data: AzdoConnectionDataResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Azure DevOps response: {}", e))?;
-
-    let display_name = conn_data
-        .authenticated_user
-        .provider_display_name
-        .or(conn_data.authenticated_user.subject_descriptor)
-        .unwrap_or_else(|| "unknown".to_string());
-
-    let stored_token = StoredToken {
-        access_token: token.to_string(),
-        refresh_token: None,
-        expires_at: None,
-        provider: "azure_devops".to_string(),
-    };
-    app_state.token_manager.store_token(
-        project_id,
-        stored_token,
-        &app_state.app_data_dir,
-        &app_state.app_handle,
-    )?;
-
-    Ok(display_name)
-}
 
 /// Fetch open work items from an Azure DevOps project.
 ///
@@ -337,12 +251,6 @@ mod tests {
         assert_eq!(resp.value.len(), 1);
         assert_eq!(resp.value[0].fields.title, "Fix bug");
         assert_eq!(resp.value[0].fields.description, None);
-    }
-
-    #[test]
-    fn test_azdo_external_id_format() {
-        let id: i32 = 42;
-        assert_eq!(format!("azuredevops:{}", id), "azuredevops:42");
     }
 
     #[test]

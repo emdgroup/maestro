@@ -11,9 +11,8 @@ pub use crate::execution::{
 pub use crate::git::diff_models as diff;
 pub use crate::git::review_models as review;
 pub use crate::git::{
-    BinaryFileInfo, CommitInfo, DiffTarget, DirtyStatus, MergeResult, ReviewComment,
-    ReviewDecision, ReviewFeedback, ReviewResult, SaveReviewRequest, WorktreeDiffResult,
-    WorktreeDiffStats,
+    BinaryFileInfo, CommitInfo, DiffTarget, DirtyStatus, MergeResult, ReviewResult,
+    WorktreeDiffResult, WorktreeDiffStats,
 };
 pub use crate::integration::integration_models as integration;
 pub use crate::integration::issue_tracking_models as issue_tracking;
@@ -27,9 +26,9 @@ pub use crate::project::{
 pub use crate::settings::models as settings;
 pub use crate::task::models as task;
 pub use crate::task::{
-    BranchMode, CreateTaskRequest, PhaseStatus, ProjectConfigRequest, ProjectConfigResponse,
-    PullRequestCi, Task, TaskAttachment, TaskBall, TaskComment, TaskCompletion, TaskConfigRequest,
-    TaskInstruction, TaskPhase, TaskPriority, TaskRelationship, TaskStatus, WorkspaceMode,
+    BranchMode, PhaseStatus, ProjectConfigRequest, ProjectConfigResponse, PullRequestCi, Task,
+    TaskAttachment, TaskBall, TaskComment, TaskCompletion, TaskPhase, TaskPriority, TaskStatus,
+    WorkspaceMode,
 };
 pub use settings::{
     ActivityVisibility, AgentStreamWidth, AppSettings, ConnectionCapacitySettings,

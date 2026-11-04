@@ -1,8 +1,7 @@
-// Zustand store for terminal drawer and active task state in BoardView.
+// Zustand store for the board's review panel and agent sign-in state.
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/shallow";
-import { api } from "@/lib/tauri-utils";
 import type { ConnectionKey } from "@/types/bindings";
 
 export interface AuthRequiredEntry {
@@ -16,14 +15,10 @@ export interface AuthRequiredEntry {
 }
 
 export interface BoardState {
-  activeTerminalTaskId: number | null;
-  isTerminalOpen: boolean;
   reviewPanelTaskId: number | null;
   authRequiredTasks: Record<string, AuthRequiredEntry>;
   pendingAuthRetry: number | null;
   pendingSessionRetry: { sessionId: string; lastPrompt: unknown } | null;
-  openTerminal: (taskId: number) => void;
-  closeTerminal: () => Promise<void>;
   openReview: (taskId: number) => void;
   closeReview: () => void;
   setAuthRequired: (
@@ -43,36 +38,12 @@ export interface BoardState {
 }
 
 export const useBoardStore = create<BoardState>()(
-  immer((set, get) => ({
-    activeTerminalTaskId: null,
-    isTerminalOpen: false,
+  immer((set) => ({
     reviewPanelTaskId: null,
     authRequiredTasks: {} as Record<string, AuthRequiredEntry>,
     pendingAuthRetry: null,
     pendingSessionRetry: null,
 
-    openTerminal: (taskId: number) => {
-      set((state) => {
-        state.activeTerminalTaskId = taskId;
-        state.isTerminalOpen = true;
-      });
-    },
-
-    closeTerminal: async () => {
-      const state = get();
-      if (state.activeTerminalTaskId !== null) {
-        try {
-          await api.detachTerminal(String(state.activeTerminalTaskId));
-        } catch (err) {
-          console.error("Error detaching terminal:", err);
-        }
-      }
-
-      set((state) => {
-        state.isTerminalOpen = false;
-        state.activeTerminalTaskId = null;
-      });
-    },
     openReview: (taskId: number) =>
       set((state) => {
         state.reviewPanelTaskId = taskId;
@@ -147,8 +118,6 @@ export const useBoardStore = create<BoardState>()(
   })),
 );
 
-export const useActiveTerminalTaskId = () => useBoardStore((s) => s.activeTerminalTaskId);
-export const useIsTerminalOpen = () => useBoardStore((s) => s.isTerminalOpen);
 export const useReviewPanelTaskId = () => useBoardStore((s) => s.reviewPanelTaskId);
 export const useAuthRequiredTask = (authKey: string) =>
   useBoardStore((s) => s.authRequiredTasks[authKey]);
@@ -156,8 +125,6 @@ export const useAuthRequiredTask = (authKey: string) =>
 export const useBoardActions = () =>
   useBoardStore(
     useShallow((s) => ({
-      openTerminal: s.openTerminal,
-      closeTerminal: s.closeTerminal,
       openReview: s.openReview,
       closeReview: s.closeReview,
       setAuthRequired: s.setAuthRequired,

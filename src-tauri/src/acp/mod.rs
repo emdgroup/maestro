@@ -14,7 +14,6 @@ pub mod prompt_handlers;
 pub mod reader_task;
 pub mod registry;
 pub mod replay;
-pub mod resolve;
 pub mod server_control;
 pub mod session_handlers;
 pub mod session_ops;
@@ -54,16 +53,6 @@ pub enum ConnectionKey {
 }
 
 impl ConnectionKey {
-    pub fn from_ids(ssh_id: Option<i32>, wsl_id: Option<i32>) -> Self {
-        if let Some(id) = wsl_id {
-            ConnectionKey::Wsl { id }
-        } else if let Some(id) = ssh_id {
-            ConnectionKey::Ssh { id }
-        } else {
-            ConnectionKey::Local
-        }
-    }
-
     pub fn from_all_ids(ssh_id: Option<i32>, wsl_id: Option<i32>, docker_id: Option<i32>) -> Self {
         if let Some(id) = docker_id {
             ConnectionKey::Docker { id }
@@ -123,8 +112,7 @@ pub use connection_server::{
     pre_initialize_via_connection_server, query_check_tools_via_server,
     query_install_skills_via_server, query_list_agents_via_connection_server,
     query_session_close_via_server, query_session_delete_via_server, query_session_list_via_server,
-    set_tool_path_via_server, spawn_connection_server, stop_resident_servers,
-    test_tool_path_via_server,
+    spawn_connection_server, stop_resident_servers,
 };
 pub use registry::{AgentDiscoveryCacheEntry, AgentDiscoveryResult, DiscoveredAgent};
 pub use session_ops::{

@@ -12,7 +12,6 @@ import { useBoardActions } from "@/store/boardStore";
 
 interface AgentAuthModalProps {
   agentId: string;
-  agentName: string;
   connection: ConnectionKey;
   open: boolean;
   onAuthSuccess: () => void;
@@ -60,7 +59,6 @@ function linkifyLine(line: string): React.ReactNode {
 
 export function AgentAuthModal({
   agentId,
-  agentName,
   connection,
   open,
   onAuthSuccess,
@@ -149,7 +147,7 @@ export function AgentAuthModal({
       >
         <DialogContent showCloseButton>
           <DialogHeader>
-            <DialogTitle>Sign in to {agentName}</DialogTitle>
+            <DialogTitle>Sign in to {agentId}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col items-center gap-3 py-6 text-sm text-muted-foreground">
             <TerminalSquare className="w-6 h-6" />
@@ -178,7 +176,7 @@ export function AgentAuthModal({
       >
         <DialogContent showCloseButton>
           <DialogHeader>
-            <DialogTitle>Sign in to {agentName}</DialogTitle>
+            <DialogTitle>Sign in to {agentId}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col items-center gap-3 py-6 text-sm text-muted-foreground">
             <span>Authentication was interrupted. Retry to open a new terminal tab.</span>
@@ -210,7 +208,7 @@ export function AgentAuthModal({
     >
       <DialogContent showCloseButton={!isInProgress}>
         <DialogHeader>
-          <DialogTitle>Sign in to {agentName}</DialogTitle>
+          <DialogTitle>Sign in to {agentId}</DialogTitle>
         </DialogHeader>
 
         {isInProgress ? (

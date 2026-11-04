@@ -14,8 +14,6 @@ This file provides guidance to harness such as Claude Code (claude.ai/code) when
 
 **Maestro** - Tauri desktop app orchestrating autonomous AI coding agents. Users manage tasks on Kanban board, agents execute in isolated git worktrees with real-time monitoring. React + TypeScript frontend, Rust backend.
 
-See `.planning/PROJECT.md` for project goals, milestone progress, requirements.
-
 `docs/automations-plan.md` is the working plan for the Automations feature and the resident
 `maestro-server` it runs on. It is phased, and each phase records the decisions already locked, so
 read it before touching the daemon, session lifetime, or automation storage.
@@ -114,8 +112,7 @@ The same failure takes out `bun run tauri:gen`, which goes through
 **Frontend (`src/`):**
 
 - `views/` — top-level route views (KanbanView, AgentsView, WorktreesView, SettingsView, HomeView)
-- `components/` — reusable UI components organized by domain (kanban/, execution/, task/, common/, ui/, views/)
-  - `components/views/` — sub-view components rendered inside route views (BoardView, ArchiveView); distinct from top-level `src/views/`
+- `components/` — reusable UI components organized by domain (kanban/, execution/, common/, layout/, settings/, ui/)
 - `services/` — IPC service layer with co-located TanStack Query hooks (task.service, worktree.service, execution.service, project.service, connection.service, settings.service, integration.service, integration-lookup.service, acp-auth.service, canvas.service)
 - `store/` — Zustand stores (boardStore, configStore, navigationStore, projectStore, reviewStore, sessionActivityStore, shortcutStore)
 - `contexts/` — React contexts (KanbanContext)
@@ -130,14 +127,13 @@ and logic, so a feature touches one directory rather than three.
 
 - `core/` — cross-cutting foundations: `schema.rs` (SQLite schema + migration), `settings.rs`, `connection.rs` (incl. `get_project_with_git_conn()`), `project_storage.rs`, `AppState`
 - `project/` — project CRUD, handlers, models, `git_ops.rs`, `lock.rs` (asks the connection's daemon for the project lock, and for takeovers), `session_state.rs`, `prime.rs`
-- `task/` — task commands, each one round trip to the daemon that stores the task (see "Tasks live in the daemon" in `maestro-server/AGENTS.md`), the app's models converted from the protocol rows, `relationships.rs`, `instructions.rs`, `attachments.rs`, `ops.rs`
+- `task/` — task commands, each one round trip to the daemon that stores the task (see "Tasks live in the daemon" in `maestro-server/AGENTS.md`), the app's models converted from the protocol rows, `attachments.rs`, `ops.rs`
 - `git/` — worktree lifecycle/query/staging, `merge.rs`, `review.rs`, diff + review models and handlers, `remote.rs`. The git work runs here; the worktree and review rows are the daemon's
 - `acp/` — ACP session management: `manager.rs`, `registry.rs`, `transport*.rs`, `reader_task.rs`, `deploy.rs`, `replay.rs`, `host_tools.rs`, and session/prompt/discovery/file/meta/auth handlers
-- `execution/` — PTY/process spawning (local + remote), `queue.rs` and `capacity.rs` (the app's view of the daemon's capacity), `streaming.rs`, handlers, models
+- `execution/` — PTY spawning (local + remote), `queue.rs` and `capacity.rs` (the app's view of the daemon's capacity), handlers, models
 - `connectivity/` — SSH (`ssh/`), WSL, Docker, SFTP, filesystem handlers, connection models
-- `integration/` — issue-tracking providers (`providers/`), `lookup/`, `issue_sync.rs`, `keychain.rs`, `token_manager.rs`
+- `integration/` — issue-tracking providers (`providers/`), `lookup/`, `keychain.rs`
 - `settings/` — app settings handlers and models
-- `error.rs` — shared `MaestroError` type
 - `ipc/mod.rs`, `models/mod.rs` — thin re-export shims only (no code), kept so `lib.rs`'s `collect_commands![]` and older `crate::models::*` paths keep resolving. New code should import from the owning domain module directly.
 
 **maestro-server (`maestro-server/src/`):**
@@ -190,7 +186,7 @@ Service functions in `src/services/` wrap `invoke()` and export TanStack Query h
 
 ### Error Handling
 
-- Rust functions return `Result<T, String>` for IPC commands
+- Rust functions return `Result<T, String>` for IPC commands (there is no shared error type)
 - DB errors mapped to strings for Tauri serialization
 - Frontend shows errors in console (consider user-facing error UI)
 
@@ -249,7 +245,7 @@ genuinely changed — a diff there means a model changed and should be committed
 
 - SQLite DB location managed by Tauri app data directory, overridable with `MAESTRO_DATA_DIR` (see `src-tauri/AGENTS.md`)
 - Schema version: 33 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
-- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 17.
+- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 18.
   Bumping it redeploys `maestro-server` on every connection at first use, because `deploy.rs`
   compares `--app-version`, which embeds it
 - Two-phase startup: settings load → project selection → main UI

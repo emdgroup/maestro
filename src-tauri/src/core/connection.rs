@@ -161,9 +161,6 @@ pub struct AppState {
     /// The project this window holds, and the connection whose server holds it for us. See
     /// `project::lock`.
     pub active_project_lock: Mutex<Option<(i32, crate::acp::ConnectionKey)>>,
-    /// Mutex-guarded token storage for ticketing provider tokens.
-    /// Per-project locks prevent concurrent refresh races (AUTH-06).
-    pub token_manager: crate::integration::TokenManager,
     /// Resolved git remote name per project — see `git::remote::project_remote`, which owns both
     /// the resolution and the invalidation. Cached because the worktree list refetches every ten
     /// seconds and resolving reads settings and runs `git remote -v`, both of which cross the
@@ -204,7 +201,6 @@ impl AppState {
             },
             app_data_dir,
             active_project_lock: Mutex::new(None),
-            token_manager: crate::integration::TokenManager::new(),
             project_remotes: Mutex::new(HashMap::new()),
             last_remote_fetch: Mutex::new(HashMap::new()),
         }
@@ -343,37 +339,5 @@ pub fn check_and_store_host_key(
             Ok(true)
         }
         Err(e) => Err(format!("Database error checking host key: {}", e)),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    #[test]
-    fn test_init_db() {
-        let test_db_path = PathBuf::from("/tmp/test-maestro.db");
-
-        // Clean up if exists
-        let _ = fs::remove_file(&test_db_path);
-
-        // Initialize database
-        let result = init_db(test_db_path.clone());
-        assert!(result.is_ok());
-
-        // Verify file was created
-        assert!(test_db_path.exists());
-
-        if let Ok(conn) = result {
-            // Verify foreign keys are enabled
-            let fk_enabled: u32 = conn
-                .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
-                .unwrap_or(0);
-            assert_eq!(fk_enabled, 1);
-        }
-
-        // Clean up
-        let _ = fs::remove_file(&test_db_path);
     }
 }

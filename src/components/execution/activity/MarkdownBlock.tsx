@@ -33,12 +33,10 @@ import { MermaidBlock } from "./MermaidBlock";
 import { SvgBlock } from "./SvgBlock";
 import { SmilesBlock } from "./SmilesBlock";
 
-export { sanitizeSvg, extractText } from "./markdown-sanitize";
 export { getCompleteBlocksText } from "./markdown-stream-utils";
-export { useCopyToClipboard, HighlightedCode, CodeBlockWrapper } from "./HighlightedCode";
+export { HighlightedCode } from "./HighlightedCode";
 export { MermaidBlock } from "./MermaidBlock";
 export { SvgBlock } from "./SvgBlock";
-export { SmilesBlock } from "./SmilesBlock";
 
 // react-markdown v9+ no longer passes an `inline` flag to the code renderer.
 // Fenced and indented code always arrives wrapped in <pre>, inline code never

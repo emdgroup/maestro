@@ -998,6 +998,21 @@ mod tests {
         run_as(conn, request, "app-a")
     }
 
+    /// What each relationship the task is on either end of points at.
+    fn links(conn: &Connection, task_id: i32) -> Vec<i32> {
+        let mut statement = conn
+            .prepare(
+                "SELECT to_task_id FROM task_relationships
+                 WHERE project_path = ?1 AND (from_task_id = ?2 OR to_task_id = ?2)",
+            )
+            .expect("prepare");
+        statement
+            .query_map(params![PROJECT, task_id], |row| row.get(0))
+            .expect("query")
+            .collect::<Result<_, _>>()
+            .expect("links")
+    }
+
     fn count(conn: &Connection, table: &str) -> i64 {
         conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
             row.get(0)
@@ -1029,9 +1044,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["first", "second"]
         );
-        let relationships = super::super::list_relationships(&conn, PROJECT, 3).expect("links");
-        assert_eq!(relationships.len(), 1);
-        assert_eq!(relationships[0].to_task_id, 7);
+        assert_eq!(links(&conn, 3), [7]);
         let review = super::super::reviews::get_review(&conn, PROJECT, 7)
             .expect("review")
             .expect("a review");
@@ -1489,9 +1502,7 @@ mod tests {
                 .len()
         };
         assert_eq!((thread(7), thread(14)), (2, 2));
-        let links = super::super::list_relationships(&conn, PROJECT, 10).expect("links");
-        assert_eq!(links.len(), 1);
-        assert_eq!(links[0].to_task_id, 14);
+        assert_eq!(links(&conn, 10), [14]);
         let review = super::super::reviews::get_review(&conn, PROJECT, 14)
             .expect("review")
             .expect("the second review");

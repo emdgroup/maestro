@@ -69,9 +69,7 @@ use maestro_protocol::{
 use agent_restart::handle_agent_restart;
 use auth::AuthTerminalState;
 use dispatch::dispatch_message;
-use sessions::{
-    ActiveSession, AgentConnectionMap, SessionCommand, SessionMap, SharedAgentConnections,
-};
+use sessions::{ActiveSession, AgentConnectionMap, SessionMap, SharedAgentConnections};
 
 // Re-export so that `crate::send_response` and `crate::send_diag` still resolve
 // for the submodules that import them via `use crate::send_response` /
@@ -329,6 +327,7 @@ const AUTOMATION_TICK: std::time::Duration = std::time::Duration::from_secs(60);
 /// the accepted cost of not keeping an unbounded number of agent processes alive.
 async fn reap_idle_sessions(
     sessions: &mut SessionMap,
+    agent_connections: &SharedAgentConnections,
     stdout: &crate::ClientOut,
     automation_store: Option<&automation_runner::Store>,
     project_store: Option<&project_store::Store>,
@@ -354,19 +353,21 @@ async fn reap_idle_sessions(
         let Some(session) = sessions.remove(&session_id) else {
             continue;
         };
-        // The command loop drains what is queued before it sees the closed channel, so removing
-        // the session from the map does not race the close it was just asked for.
-        if session
-            .cmd_tx
-            .send(SessionCommand::CloseSession)
-            .await
-            .is_err()
-        {
-            session.task.abort();
-        }
-        if let Some(cleanup) = &session.cleanup {
-            cleanup.router.unregister(&cleanup.acp_session_id).await;
-        }
+        let key = session
+            .cleanup
+            .as_ref()
+            .map(|cleanup| (session.agent_id.clone(), cleanup.acp_session_id.clone()));
+        // The way `Cancel` closes one: through its command loop, then the pooled connection let go
+        // once nothing else runs on it, then a run's worktree settled only after the agent has
+        // released its files. That last part runs on its own task, so nothing here waits for it.
+        Box::pin(dispatch::close_session(
+            &session_id,
+            session,
+            agent_connections,
+            automation_store,
+            stdout,
+        ))
+        .await;
         send_diag(
             "info",
             format!("[reap] closed idle session={session_id} with no client attached"),
@@ -377,19 +378,16 @@ async fn reap_idle_sessions(
                 &session_id,
                 chrono::Utc::now(),
             ));
-            if let (Some(automation_store), Some(cleanup)) = (automation_store, &session.cleanup) {
+            if let (Some(automation_store), Some((agent_id, acp_session_id))) =
+                (automation_store, &key)
+            {
                 automation_runner::close_finished_run_rows(
                     automation_store,
                     store,
-                    Some((&session.agent_id, &cleanup.acp_session_id)),
+                    Some((agent_id, acp_session_id)),
                 )
                 .await;
             }
-        }
-        // Only now: the agent held files open under its workspace for as long as the session
-        // lived, and on Windows a removal while it does simply fails.
-        if let Some(store) = automation_store {
-            automation_runner::settle_worktree_for_session(store, stdout, &session_id).await;
         }
     }
 }
@@ -795,6 +793,7 @@ async fn run_server(
             _ = reap_interval.tick() => {
                 Box::pin(reap_idle_sessions(
                     &mut sessions,
+                    &agent_connections,
                     &stdout,
                     automation_store.as_ref(),
                     project_store.as_ref(),

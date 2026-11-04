@@ -8,7 +8,7 @@
 use std::path::Path;
 
 use chrono::Utc;
-use maestro_protocol::{TaskAttachment, TaskComment, TaskInstruction, TaskRelationship};
+use maestro_protocol::{TaskAttachment, TaskComment};
 use rusqlite::{params, Connection, OptionalExtension};
 
 /// Whether a kind is the task's current answer rather than one of a series.
@@ -344,118 +344,6 @@ fn is_task_copy(file_path: &str) -> bool {
             .all(|c| matches!(c, std::path::Component::Normal(_)))
 }
 
-/// Every relationship the task is on either end of.
-pub fn list_relationships(
-    conn: &Connection,
-    project_path: &str,
-    task_id: i32,
-) -> Result<Vec<TaskRelationship>, String> {
-    collect(
-        conn,
-        "SELECT id, from_task_id, to_task_id, relationship_type, created_at
-         FROM task_relationships
-         WHERE project_path = ?1 AND (from_task_id = ?2 OR to_task_id = ?2)",
-        params![project_path, task_id],
-        |row| {
-            Ok(TaskRelationship {
-                id: row.get(0)?,
-                from_task_id: row.get(1)?,
-                to_task_id: row.get(2)?,
-                relationship_type: row.get(3)?,
-                created_at: row.get(4)?,
-            })
-        },
-    )
-}
-
-pub fn add_relationship(
-    conn: &Connection,
-    project_path: &str,
-    from_task_id: i32,
-    to_task_id: i32,
-    relationship_type: &str,
-) -> Result<TaskRelationship, String> {
-    let now = Utc::now().to_rfc3339();
-    conn.execute(
-        "INSERT INTO task_relationships (project_path, from_task_id, to_task_id,
-                                         relationship_type, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![
-            project_path,
-            from_task_id,
-            to_task_id,
-            relationship_type,
-            now
-        ],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(TaskRelationship {
-        id: conn.last_insert_rowid() as i32,
-        from_task_id,
-        to_task_id,
-        relationship_type: relationship_type.to_string(),
-        created_at: now,
-    })
-}
-
-pub fn delete_relationship(
-    conn: &Connection,
-    project_path: &str,
-    relationship_id: i32,
-) -> Result<(), String> {
-    conn.execute(
-        "DELETE FROM task_relationships WHERE project_path = ?1 AND id = ?2",
-        params![project_path, relationship_id],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-pub fn list_instructions(
-    conn: &Connection,
-    project_path: &str,
-    task_id: i32,
-) -> Result<Vec<TaskInstruction>, String> {
-    collect(
-        conn,
-        "SELECT id, task_id, content, source, created_at FROM task_instructions
-         WHERE project_path = ?1 AND task_id = ?2 ORDER BY created_at ASC",
-        params![project_path, task_id],
-        |row| {
-            Ok(TaskInstruction {
-                id: row.get(0)?,
-                task_id: row.get(1)?,
-                content: row.get(2)?,
-                source: row.get(3)?,
-                created_at: row.get(4)?,
-            })
-        },
-    )
-}
-
-pub fn add_instruction(
-    conn: &Connection,
-    project_path: &str,
-    task_id: i32,
-    content: &str,
-    source: &str,
-) -> Result<TaskInstruction, String> {
-    let now = Utc::now().to_rfc3339();
-    conn.execute(
-        "INSERT INTO task_instructions (project_path, task_id, content, source, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![project_path, task_id, content, source, now],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(TaskInstruction {
-        id: conn.last_insert_rowid() as i32,
-        task_id,
-        content: content.to_string(),
-        source: source.to_string(),
-        created_at: now,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::tests::{db_with_task, PROJECT};
@@ -665,40 +553,5 @@ mod tests {
 
         assert!(!directory.path().join(copy).exists());
         assert!(own.exists());
-    }
-
-    #[test]
-    fn a_relationship_is_listed_from_either_end() {
-        let (mut conn, task_id) = db_with_task();
-        let other = super::super::tests::new_task(&mut conn, PROJECT, "other task");
-        let relationship =
-            add_relationship(&conn, PROJECT, task_id, other.id, "blocks").expect("relate");
-        assert_eq!(
-            list_relationships(&conn, PROJECT, other.id).expect("list"),
-            std::slice::from_ref(&relationship)
-        );
-        assert_eq!(
-            list_relationships(&conn, PROJECT, task_id).expect("list"),
-            std::slice::from_ref(&relationship)
-        );
-        assert!(add_relationship(&conn, PROJECT, task_id, 99, "blocks").is_err());
-
-        delete_relationship(&conn, PROJECT, relationship.id).expect("delete");
-        assert!(list_relationships(&conn, PROJECT, task_id)
-            .expect("list")
-            .is_empty());
-    }
-
-    #[test]
-    fn instructions_are_logged_in_order() {
-        let (conn, task_id) = db_with_task();
-        add_instruction(&conn, PROJECT, task_id, "first", "user").expect("add");
-        add_instruction(&conn, PROJECT, task_id, "second", "agent").expect("add");
-        let log: Vec<String> = list_instructions(&conn, PROJECT, task_id)
-            .expect("list")
-            .into_iter()
-            .map(|instruction| instruction.content)
-            .collect();
-        assert_eq!(log, ["first", "second"]);
     }
 }

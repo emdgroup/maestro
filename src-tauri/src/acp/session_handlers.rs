@@ -796,30 +796,6 @@ pub async fn reload_acp_session(
         })
 }
 
-/// Close an ACP session stored on the agent server (not a live Tauri session).
-#[tauri::command]
-#[specta::specta]
-pub async fn close_acp_session(
-    app_state: State<'_, Arc<AppState>>,
-    agent_id: String,
-    session_id: String,
-    cwd: String,
-    connection: crate::acp::ConnectionKey,
-) -> Result<(), String> {
-    use crate::acp::transport::SessionCloseRequest;
-
-    crate::acp::query_session_close_via_server(
-        connection,
-        SessionCloseRequest {
-            agent_id,
-            session_id,
-            cwd,
-        },
-        &app_state,
-    )
-    .await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

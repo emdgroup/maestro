@@ -29,23 +29,6 @@ pub struct WslConnection {
     pub created_at: String,
 }
 
-/// Check whether `wsl.exe` is available on this system.
-/// Returns false on non-Windows platforms or when wsl.exe is not found.
-pub fn is_wsl_available() -> bool {
-    #[cfg(windows)]
-    {
-        use crate::command_ext::NoConsoleWindow;
-        std::process::Command::new("wsl.exe")
-            .arg("--version")
-            .no_console_window()
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-    }
-    #[cfg(not(windows))]
-    false
-}
-
 /// List installed WSL distros using `wsl.exe --list --verbose`.
 ///
 /// Returns an empty vec when WSL is unavailable or no distros are installed.
@@ -279,12 +262,7 @@ pub async fn to_wsl_path(distro: &str, path: &str) -> Result<String, String> {
 
 /// Decode wsl.exe output, handling both UTF-16LE (with/without BOM) and UTF-8.
 #[cfg(windows)]
-pub fn decode_wsl_output_pub(bytes: &[u8]) -> Result<String, String> {
-    decode_wsl_output(bytes)
-}
-
-#[cfg(windows)]
-fn decode_wsl_output(bytes: &[u8]) -> Result<String, String> {
+pub(crate) fn decode_wsl_output(bytes: &[u8]) -> Result<String, String> {
     // UTF-16LE BOM: 0xFF 0xFE
     if bytes.starts_with(&[0xFF, 0xFE]) {
         let utf16: Vec<u16> = bytes[2..]

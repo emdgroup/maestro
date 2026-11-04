@@ -60,3 +60,28 @@ pub(crate) fn normalize_instance_url(url: &str) -> String {
         format!("https://{}", trimmed)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_instance_url;
+
+    #[test]
+    fn instance_urls_lose_trailing_slashes_and_default_to_https() {
+        assert_eq!(
+            normalize_instance_url("https://gitlab.com/"),
+            "https://gitlab.com"
+        );
+        assert_eq!(
+            normalize_instance_url("gitea.myco.com"),
+            "https://gitea.myco.com"
+        );
+        assert_eq!(
+            normalize_instance_url("https://codeberg.org"),
+            "https://codeberg.org"
+        );
+        assert_eq!(
+            normalize_instance_url("http://internal.corp.com"),
+            "http://internal.corp.com"
+        );
+    }
+}

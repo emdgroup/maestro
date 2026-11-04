@@ -102,42 +102,6 @@ pub struct CodeHostingStatus {
     pub applied: bool,
 }
 
-/// Read the code-hosting field from `.maestro/settings.json`.
-#[tauri::command]
-#[specta::specta]
-pub async fn get_project_code_hosting_config(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-) -> Result<Option<ProjectCodeHostingConfig>, String> {
-    let (_project, conn) = get_project_with_git_conn(&app_state, project_id).await?;
-    let config: ProjectConfig = read_maestro_json(&conn, SETTINGS_FILE).await;
-    Ok(config.code_hosting)
-}
-
-/// Write the code-hosting field into `.maestro/settings.json`.
-#[tauri::command]
-#[specta::specta]
-pub async fn save_project_code_hosting_config(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    code_hosting: Option<ProjectCodeHostingConfig>,
-) -> Result<(), String> {
-    let (_project, conn) = get_project_with_git_conn(&app_state, project_id).await?;
-    mutate_project_config(&conn, |config| {
-        // Clearing is an explicit "not here", so it also opts out of detection — otherwise the
-        // next status call would put it straight back.
-        config.code_hosting_auto_detect = if code_hosting.is_none() {
-            Some(false)
-        } else {
-            None
-        };
-        config.code_hosting = code_hosting;
-        true
-    })
-    .await?;
-    Ok(())
-}
-
 /// Choose how approved work leaves Review for this project.
 #[tauri::command]
 #[specta::specta]

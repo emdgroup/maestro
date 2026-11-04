@@ -1,4 +1,3 @@
-use crate::integration::token_manager::StoredToken;
 use crate::models::issue_tracking::RemoteIssue;
 
 // ── Response structs ────────────────────────────────────────────────────────
@@ -7,16 +6,6 @@ use crate::models::issue_tracking::RemoteIssue;
 struct GraphqlRequest<'a> {
     query: &'a str,
     variables: serde_json::Value,
-}
-
-#[derive(serde::Deserialize)]
-struct ViewerResponseData {
-    viewer: ViewerUser,
-}
-
-#[derive(serde::Deserialize)]
-struct ViewerUser {
-    name: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -72,7 +61,6 @@ pub struct LinearTeam {
 
 // ── Query constants ──────────────────────────────────────────────────────────
 
-const VIEWER_QUERY: &str = "{ viewer { name } }";
 const TEAMS_QUERY: &str = "{ teams { nodes { id name key } } }";
 const ISSUES_QUERY_ALL: &str = r#"{ issues(first: 100) { nodes { identifier title description url updatedAt priority labels { nodes { name } } } } }"#;
 const ISSUES_QUERY_TEAM: &str = r#"query IssuesByTeam($teamId: ID!) { issues(filter: { team: { id: { eq: $teamId } } }, first: 100) { nodes { identifier title description url updatedAt priority labels { nodes { name } } } } }"#;
@@ -97,64 +85,6 @@ async fn post_graphql_query(
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
-
-/// Validate a Linear API key via the viewer query, save the IssueTrackingConfig to the
-/// project, and store the token. Returns the authenticated user's display name.
-pub async fn validate_and_store(
-    project_id: i32,
-    api_key: &str,
-    _project_path: &str,
-    app_state: &crate::core::AppState,
-) -> Result<String, String> {
-    let client = super::http_client()?;
-
-    let response =
-        post_graphql_query(&client, api_key, VIEWER_QUERY, serde_json::Value::Null).await?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        if status.as_u16() == 401 {
-            return Err("Linear: bad credentials".to_string());
-        }
-        return Err(format!(
-            "Linear API error {}: {}",
-            status.as_u16(),
-            status.canonical_reason().unwrap_or("Unknown")
-        ));
-    }
-
-    let gql: graphql_client::Response<ViewerResponseData> = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Linear response: {}", e))?;
-
-    if let Some(errors) = &gql.errors {
-        if !errors.is_empty() {
-            return Err(format!("Linear: {}", errors[0].message));
-        }
-    }
-
-    let display_name = gql
-        .data
-        .ok_or_else(|| "Linear: empty response".to_string())?
-        .viewer
-        .name;
-
-    let stored_token = StoredToken {
-        access_token: api_key.to_string(),
-        refresh_token: None,
-        expires_at: None,
-        provider: "linear".to_string(),
-    };
-    app_state.token_manager.store_token(
-        project_id,
-        stored_token,
-        &app_state.app_data_dir,
-        &app_state.app_handle,
-    )?;
-
-    Ok(display_name)
-}
 
 /// Fetch all teams in the Linear workspace for the given API key.
 pub async fn list_teams(token: &str) -> Result<Vec<LinearTeam>, String> {
@@ -266,14 +196,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_viewer_response_deserialization() {
-        let json = r#"{"data":{"viewer":{"id":"abc","name":"Jane Doe"}}}"#;
-        let resp: graphql_client::Response<ViewerResponseData> =
-            serde_json::from_str(json).unwrap();
-        assert_eq!(resp.data.unwrap().viewer.name, "Jane Doe");
-    }
-
-    #[test]
     fn test_issues_response_deserialization() {
         let json = r#"{
             "data": {
@@ -297,11 +219,6 @@ mod tests {
         assert_eq!(nodes.len(), 1);
         let external_id = format!("linear:{}", nodes[0].identifier);
         assert_eq!(external_id, "linear:ENG-42");
-    }
-
-    #[test]
-    fn test_linear_external_id_format() {
-        assert_eq!(format!("linear:{}", "ENG-42"), "linear:ENG-42");
     }
 
     #[test]

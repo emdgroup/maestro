@@ -896,7 +896,6 @@ export function AgentActivityPanel({
         {agentId && (
           <AgentAuthModal
             agentId={agentId}
-            agentName={agentId}
             connection={connection}
             authKey={effectiveAuthKey}
             sessionId={sessionId}

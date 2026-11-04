@@ -1,9 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use maestro_protocol::{
-    DetectInstalledAgentsResponse, DetectProjectAgentsResponse, DetectedAgentInfo,
-    ProjectAgentMarker,
-};
+use maestro_protocol::{DetectInstalledAgentsResponse, DetectedAgentInfo};
 
 struct AgentDetectionEntry {
     agent_id: &'static str,
@@ -11,7 +8,6 @@ struct AgentDetectionEntry {
     binary: Option<&'static str>,
     /// Relative to $HOME / %USERPROFILE%.
     config_dir: Option<&'static str>,
-    project_markers: &'static [&'static str],
 }
 
 static DETECTION_TABLE: &[AgentDetectionEntry] = &[
@@ -20,175 +16,150 @@ static DETECTION_TABLE: &[AgentDetectionEntry] = &[
         tool_name: "Claude Code",
         binary: Some("claude"),
         config_dir: Some(".claude"),
-        project_markers: &[".claude", "CLAUDE.md"],
     },
     AgentDetectionEntry {
         agent_id: "codex-acp",
         tool_name: "Codex",
         binary: Some("codex"),
         config_dir: Some(".codex"),
-        project_markers: &[".codex", "AGENTS.md"],
     },
     AgentDetectionEntry {
         agent_id: "opencode",
         tool_name: "OpenCode",
         binary: Some("opencode"),
         config_dir: None,
-        project_markers: &[".opencode", "opencode.json"],
     },
     AgentDetectionEntry {
         agent_id: "cursor",
         tool_name: "Cursor",
         binary: Some("cursor-agent"),
         config_dir: Some(".cursor"),
-        project_markers: &[".cursor", ".cursorrules"],
     },
     AgentDetectionEntry {
         agent_id: "gemini",
         tool_name: "Gemini CLI",
         binary: Some("gemini"),
         config_dir: Some(".gemini"),
-        project_markers: &[".gemini", "GEMINI.md"],
     },
     AgentDetectionEntry {
         agent_id: "goose",
         tool_name: "Goose",
         binary: Some("goose"),
         config_dir: None,
-        project_markers: &[".goosehints"],
     },
     AgentDetectionEntry {
         agent_id: "github-copilot-cli",
         tool_name: "GitHub Copilot",
         binary: None,
         config_dir: Some(".config/github-copilot"),
-        project_markers: &[".github/copilot-instructions.md"],
     },
     AgentDetectionEntry {
         agent_id: "cline",
         tool_name: "Cline",
         binary: Some("cline"),
         config_dir: None,
-        project_markers: &[".clinerules", ".cline"],
     },
     AgentDetectionEntry {
         agent_id: "auggie",
         tool_name: "Augment Code",
         binary: Some("auggie"),
         config_dir: None,
-        project_markers: &["augment-guidelines.md"],
     },
     AgentDetectionEntry {
         agent_id: "junie",
         tool_name: "Junie",
         binary: Some("junie"),
         config_dir: None,
-        project_markers: &[],
     },
     AgentDetectionEntry {
         agent_id: "kilo",
         tool_name: "Kilo",
         binary: Some("kilo"),
         config_dir: None,
-        project_markers: &[],
     },
     AgentDetectionEntry {
         agent_id: "kimi",
         tool_name: "Kimi",
         binary: Some("kimi"),
         config_dir: None,
-        project_markers: &[],
     },
     AgentDetectionEntry {
         agent_id: "amp-acp",
         tool_name: "Amp",
         binary: Some("amp"),
         config_dir: Some(".amp"),
-        project_markers: &[],
     },
     AgentDetectionEntry {
         agent_id: "mistral-vibe",
         tool_name: "Mistral Vibe",
         binary: Some("vibe"),
         config_dir: None,
-        project_markers: &[],
     },
     AgentDetectionEntry {
         agent_id: "qwen-code",
         tool_name: "Qwen Code",
         binary: Some("qwen-code"),
         config_dir: None,
-        project_markers: &[],
     },
     AgentDetectionEntry {
         agent_id: "crow-cli",
         tool_name: "Crow",
         binary: Some("crow-cli"),
         config_dir: None,
-        project_markers: &[],
     },
     AgentDetectionEntry {
         agent_id: "stakpak",
         tool_name: "Stakpak",
         binary: Some("stakpak"),
         config_dir: None,
-        project_markers: &[],
     },
     AgentDetectionEntry {
         agent_id: "corust-agent",
         tool_name: "Corust Agent",
         binary: Some("corust-agent-acp"),
         config_dir: None,
-        project_markers: &[],
     },
     AgentDetectionEntry {
         agent_id: "autohand",
         tool_name: "Autohand Code",
         binary: Some("autohand"),
         config_dir: None,
-        project_markers: &[],
     },
     AgentDetectionEntry {
         agent_id: "deepagents",
         tool_name: "DeepAgents",
         binary: Some("deepagents"),
         config_dir: None,
-        project_markers: &[],
     },
     AgentDetectionEntry {
         agent_id: "factory-droid",
         tool_name: "Factory Droid",
         binary: Some("droid"),
         config_dir: None,
-        project_markers: &[],
     },
     AgentDetectionEntry {
         agent_id: "fast-agent",
         tool_name: "fast-agent",
         binary: Some("fast-agent-mcp"),
         config_dir: None,
-        project_markers: &[],
     },
     AgentDetectionEntry {
         agent_id: "nova",
         tool_name: "Nova",
         binary: Some("nova"),
         config_dir: None,
-        project_markers: &[],
     },
     AgentDetectionEntry {
         agent_id: "pi-acp",
         tool_name: "pi",
         binary: Some("pi"),
         config_dir: None,
-        project_markers: &[],
     },
     AgentDetectionEntry {
         agent_id: "qoder",
         tool_name: "Qoder CLI",
         binary: Some("qodercli"),
         config_dir: None,
-        project_markers: &[],
     },
 ];
 
@@ -259,33 +230,6 @@ pub async fn detect_installed_agents() -> DetectInstalledAgentsResponse {
         agents,
         all_checked_ids,
     }
-}
-
-/// Returns agent IDs with project-level markers found in `cwd`.
-pub async fn detect_project_agents(cwd: &str) -> DetectProjectAgentsResponse {
-    let cwd_path = PathBuf::from(cwd);
-    let mut agents = Vec::new();
-
-    for entry in DETECTION_TABLE {
-        if entry.project_markers.is_empty() {
-            continue;
-        }
-        let mut markers_found = Vec::new();
-        for marker in entry.project_markers {
-            let path = cwd_path.join(marker);
-            if tokio::fs::metadata(&path).await.is_ok() {
-                markers_found.push(marker.to_string());
-            }
-        }
-        if !markers_found.is_empty() {
-            agents.push(ProjectAgentMarker {
-                agent_id: entry.agent_id.to_string(),
-                markers_found,
-            });
-        }
-    }
-
-    DetectProjectAgentsResponse { agents }
 }
 
 /// Resolve each binary to its absolute path.

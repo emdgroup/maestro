@@ -20,9 +20,9 @@ pub use threads::*;
 
 use chrono::Utc;
 use maestro_protocol::{
-    BranchMode, CloseRefinementRequest, CreateTaskRequest, EndTaskTurnRequest, ImportTasksRequest,
-    ListQueueCandidatesRequest, LoopConfig, RequestTaskExecutionRequest, RunMode, Task, TaskPhase,
-    TaskStatus, TaskTransition, TaskUpdate, TransitionGuard, TurnEnding, WorkspaceMode,
+    BranchMode, CloseRefinementRequest, CreateTaskRequest, EndTaskTurnRequest, LoopConfig,
+    RequestTaskExecutionRequest, RunMode, Task, TaskPhase, TaskStatus, TaskTransition, TaskUpdate,
+    TransitionGuard, TurnEnding, WorkspaceMode,
 };
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{de::DeserializeOwned, Serialize};
@@ -695,7 +695,8 @@ pub fn request_execution(
 /// mode may start. `phase IS NULL` keeps a task already being spawned, or failed at it, out.
 pub fn queue_candidates(
     conn: &Connection,
-    request: &ListQueueCandidatesRequest,
+    project_path: &str,
+    include_undeferred: bool,
 ) -> Result<Vec<i32>, String> {
     let mut statement = conn
         .prepare(
@@ -716,10 +717,7 @@ pub fn queue_candidates(
         )
         .map_err(|e| format!("Failed to prepare query: {e}"))?;
     let ids = statement
-        .query_map(
-            params![request.project_path, request.include_undeferred],
-            |row| row.get(0),
-        )
+        .query_map(params![project_path, include_undeferred], |row| row.get(0))
         .map_err(|e| format!("Failed to query ready tasks: {e}"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Failed to read ready tasks: {e}"))?;
@@ -736,58 +734,6 @@ pub fn awaiting_merge(conn: &Connection, project_path: &str) -> Result<Vec<Task>
         ),
         params![project_path],
     )
-}
-
-/// Create a Planning task per issue the project has not imported yet, returning the new ones.
-pub fn import(conn: &mut Connection, request: &ImportTasksRequest) -> Result<Vec<Task>, String> {
-    let project_path = request.project_path.as_str();
-    let now = Utc::now().to_rfc3339();
-    let tx = transaction(conn)?;
-    let mut created = Vec::new();
-    for issue in &request.issues {
-        let imported: bool = tx
-            .query_row(
-                "SELECT EXISTS (SELECT 1 FROM tasks WHERE project_path = ?1 AND external_id = ?2)",
-                params![project_path, issue.external_id],
-                |row| row.get(0),
-            )
-            .map_err(|e| e.to_string())?;
-        if imported {
-            continue;
-        }
-        if issue.title.len() > 1000 || issue.external_id.len() > 200 {
-            return Err(format!(
-                "Issue fields exceed maximum allowed length: {}",
-                issue.external_id
-            ));
-        }
-        let import_source = issue.external_id.split(':').next().unwrap_or("");
-        let id = mint_id(&tx, project_path)?;
-        tx.execute(
-            "INSERT INTO tasks (project_path, id, title, description, status, priority, base_branch,
-                                is_imported, import_source, external_id, external_url,
-                                external_updated_at, labels, skills, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, 'Planning', ?5, ?6, 1, ?7, ?8, ?9, ?10, ?11, '[]', ?12, ?12)",
-            params![
-                project_path,
-                id,
-                issue.title,
-                issue.body,
-                text(issue.priority),
-                request.base_branch,
-                import_source,
-                issue.external_id,
-                issue.url,
-                issue.updated_at,
-                json(&issue.labels)?,
-                now,
-            ],
-        )
-        .map_err(|e| e.to_string())?;
-        created.push(read(&tx, project_path, id)?);
-    }
-    commit(tx)?;
-    Ok(created)
 }
 
 /// The turn end, under one lock: read the phase, turn a reviewer's reply into its verdict, apply
@@ -910,7 +856,7 @@ fn review_verdict_event(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use maestro_protocol::{ImportedIssue, PhaseStatus, TaskBall, TaskPriority};
+    use maestro_protocol::{PhaseStatus, TaskBall, TaskPriority};
 
     pub(super) const PROJECT: &str = "/srv/shop";
 
@@ -1003,10 +949,20 @@ mod tests {
                 "/nowhere/a.txt",
             )
             .expect("attachment");
-            add_instruction(&conn, &task.project_path, task.id, "do it", "user")
-                .expect("instruction");
+            conn.execute(
+                "INSERT INTO task_instructions (project_path, task_id, content, source, created_at)
+                 VALUES (?1, ?2, 'do it', 'user', '')",
+                params![task.project_path, task.id],
+            )
+            .expect("instruction");
         }
-        add_relationship(&conn, PROJECT, doomed.id, kept.id, "blocks").expect("relationship");
+        conn.execute(
+            "INSERT INTO task_relationships (project_path, from_task_id, to_task_id,
+                                             relationship_type, created_at)
+             VALUES (?1, ?2, ?3, 'blocks', '')",
+            params![PROJECT, doomed.id, kept.id],
+        )
+        .expect("relationship");
 
         delete(&conn, PROJECT, doomed.id).expect("delete");
 
@@ -1370,14 +1326,7 @@ mod tests {
     }
 
     fn candidates(conn: &Connection, project_path: &str, include_undeferred: bool) -> Vec<i32> {
-        queue_candidates(
-            conn,
-            &ListQueueCandidatesRequest {
-                project_path: project_path.to_string(),
-                include_undeferred,
-            },
-        )
-        .expect("candidates")
+        queue_candidates(conn, project_path, include_undeferred).expect("candidates")
     }
 
     #[test]
@@ -1456,50 +1405,6 @@ mod tests {
 
         archive(&conn, PROJECT, task_id).expect("archive");
         assert!(awaiting_merge(&conn, PROJECT).expect("awaiting").is_empty());
-    }
-
-    fn issue(external_id: &str) -> ImportedIssue {
-        ImportedIssue {
-            external_id: external_id.to_string(),
-            title: format!("Issue {external_id}"),
-            body: Some("body".to_string()),
-            url: "https://example.com/1".to_string(),
-            labels: vec!["bug".to_string()],
-            updated_at: Some("2026-01-01T00:00:00Z".to_string()),
-            priority: TaskPriority::Low,
-        }
-    }
-
-    #[test]
-    fn import_skips_what_the_project_already_has() {
-        let mut conn = crate::project_store::open_in_memory();
-        let request = |project_path: &str, issues: Vec<ImportedIssue>| ImportTasksRequest {
-            project_path: project_path.to_string(),
-            base_branch: "main".to_string(),
-            issues,
-        };
-        let created =
-            import(&mut conn, &request(PROJECT, vec![issue("jira:A-1")])).expect("import");
-        assert_eq!(created.len(), 1);
-        let task = &created[0];
-        assert_eq!(task.import_source.as_deref(), Some("jira"));
-        assert_eq!(task.is_imported, Some(true));
-        assert_eq!(task.priority, TaskPriority::Low);
-        assert_eq!(task.labels, ["bug"]);
-
-        let again = import(
-            &mut conn,
-            &request(PROJECT, vec![issue("jira:A-1"), issue("jira:A-2")]),
-        )
-        .expect("import");
-        assert_eq!(again.iter().map(|t| t.id).collect::<Vec<_>>(), [2]);
-        assert_eq!(
-            import(&mut conn, &request("/other", vec![issue("jira:A-1")]))
-                .expect("import")
-                .len(),
-            1,
-            "another project imports it on its own"
-        );
     }
 
     fn end(

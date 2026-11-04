@@ -1,16 +1,6 @@
 import type { CSSProperties } from "react";
-import { Toaster, toast } from "sonner";
+import { Toaster } from "sonner";
 import { useTheme } from "@/providers/ThemeProvider";
-
-export { Toaster as ErrorToaster };
-
-export function showErrorToast(message: string): void {
-  toast.error(message);
-}
-
-export function showSuccessToast(message: string): void {
-  toast.success(message);
-}
 
 /** Sonner reads its colours from these, on the tooltip's glass since a toast can land on anything. */
 const GLASS = {
