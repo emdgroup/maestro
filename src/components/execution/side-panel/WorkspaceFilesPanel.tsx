@@ -19,8 +19,7 @@ import { openFileWithConnection } from "@/services/connection.service";
 import { LazyFileTree } from "./LazyFileTree";
 import type { ConnectionKey } from "@/types/bindings";
 import { FileNameDialog } from "./FileNameDialog";
-import { folderLabel } from "./file-edit-utils";
-import { useFileTreeState } from "./useFileTreeState";
+import { nameDialogCopy, useFileTreeState } from "./useFileTreeState";
 import { ToolbarButton } from "./ToolbarButton";
 import { ReviewLayout } from "@/components/execution/diff/ReviewLayout";
 import { useReviewPanelLayout } from "@/components/execution/diff/useReviewPanelLayout";
@@ -286,6 +285,16 @@ export function WorkspaceFilesPanel({
     </ToolbarButton>
   );
 
+  /** Opens a file picked in the tree, and gets an overlaid tree out of the way of it. */
+  function openFromTree(
+    open: (state: FileTabsState, path: string) => FileTabsState,
+    path: string,
+    onDismiss?: () => void,
+  ) {
+    setTabs((s) => open(s, path));
+    onDismiss?.();
+  }
+
   /**
    * The tree, wherever `ReviewLayout` decides to draw it, under the tools that act on it.
    * `onDismiss` is given only in the overlay layout, where the panel covers what it is navigating
@@ -319,17 +328,9 @@ export function WorkspaceFilesPanel({
         root={workspacePath}
         connection={connection}
         selectedFile={selected}
-        onSelectFile={(path) => {
-          setTabs((s) => openTab(s, path));
-          onDismiss?.();
-        }}
+        onSelectFile={(path) => openFromTree(openTab, path, onDismiss)}
         onOpenFileToSide={
-          splitAllowed
-            ? (path) => {
-                setTabs((s) => openToSide(s, path));
-                onDismiss?.();
-              }
-            : undefined
+          splitAllowed ? (path) => openFromTree(openToSide, path, onDismiss) : undefined
         }
         dirtyFiles={dirty}
         expandedFolders={expandedFolders}
@@ -556,29 +557,7 @@ export function WorkspaceFilesPanel({
 
       <FileNameDialog
         open={nameDialog !== null}
-        title={
-          nameDialog?.kind === "rename"
-            ? "Rename"
-            : nameDialog?.kind === "new-folder"
-              ? "New folder"
-              : "New file"
-        }
-        description={
-          nameDialog?.kind === "rename"
-            ? `Rename “${nameDialog.target.name}”.`
-            : // Naming the destination is the whole point: the header's buttons act on the
-              // highlighted folder, and "somewhere" is not something a user can verify.
-              `Created in ${folderLabel(nameDialog?.parentAbsolutePath ?? workspacePath, workspacePath)}.`
-        }
-        confirmLabel={nameDialog?.kind === "rename" ? "Rename" : "Create"}
-        initialName={nameDialog?.kind === "rename" ? nameDialog.target.name : ""}
-        siblings={
-          nameDialog?.kind === "rename"
-            ? // Its own name is not a collision: typing a change and undoing it must not leave the
-              // dialog stuck reporting that the file already exists.
-              nameDialog.target.siblings.filter((s) => s !== nameDialog.target.name)
-            : (nameDialog?.siblings ?? [])
-        }
+        {...nameDialogCopy(nameDialog, workspacePath)}
         pending={namePending}
         onConfirm={(name) => void handleNameConfirm(name)}
         onClose={() => setNameDialog(null)}

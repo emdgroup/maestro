@@ -123,6 +123,12 @@ export function LazyFileTree({
       }
     : undefined;
 
+  /** A menu item that opens the file the menu is on, here or to the side. */
+  const openMenuFile = (open: (relativePath: string) => void) => () => {
+    if (menu) open(relativeTo(root, menu.target.absolutePath));
+    setMenu(null);
+  };
+
   return (
     <div className={cn("flex flex-col min-h-0", className)}>
       {/* One row, following the review's file panel: a filter field sitting on the panel rather
@@ -240,22 +246,12 @@ export function LazyFileTree({
             )}
             {menu && !menu.target.isDir && (
               <>
-                <ContextMenuItem
-                  onClick={() => {
-                    onSelectFile(relativeTo(root, menu.target.absolutePath));
-                    setMenu(null);
-                  }}
-                >
+                <ContextMenuItem onClick={openMenuFile(onSelectFile)}>
                   <File className="w-3.5 h-3.5" />
                   Open
                 </ContextMenuItem>
                 {onOpenFileToSide && (
-                  <ContextMenuItem
-                    onClick={() => {
-                      onOpenFileToSide(relativeTo(root, menu.target.absolutePath));
-                      setMenu(null);
-                    }}
-                  >
+                  <ContextMenuItem onClick={openMenuFile(onOpenFileToSide)}>
                     <Columns2 className="w-3.5 h-3.5" />
                     Open to the side
                     <ContextMenuShortcut>Ctrl+Enter</ContextMenuShortcut>

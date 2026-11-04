@@ -191,56 +191,16 @@ export function FileTabPane({
 
   const body = showsEditorSurface ? (
     <div ref={editAreaRef} data-slot="markdown-edit-area" className="flex-1 flex flex-col min-h-0">
-      {/* Save sits among the floating actions, out of sight until the pointer is over the file, so
-          this line is what says the buffer is being edited and whether it holds unsaved work. */}
       {mode === "edit" && (
-        <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-muted-foreground border-b border-accent/10 shrink-0">
-          {isDirty ? "Editing · unsaved changes" : "Editing"}
-        </div>
+        <EditNotices isDirty={isDirty} isProcessing={isProcessing} saveError={saveError} />
       )}
-      {mode === "edit" && isProcessing && (
-        <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-muted-foreground border-b border-accent/10 shrink-0">
-          <TriangleAlert className="w-3 h-3 shrink-0" />
-          The agent is running and may write to this file. Your save will check first.
-        </div>
-      )}
-      {mode === "edit" && saveError && (
-        <div className="flex items-center px-3 py-1.5 text-[11px] text-destructive bg-destructive/10 border-b border-accent/10 shrink-0">
-          {saveError}
-        </div>
-      )}
-      {effectiveLayout === "preview" ? (
-        draftPreview
-      ) : effectiveLayout === "split" ? (
-        // The two panes scroll independently. Aligning them needs source-line anchors on the
-        // rendered blocks, which is a change to the shared markdown renderer — deliberately not
-        // part of this.
-        <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0 overflow-hidden">
-          <ResizablePanel defaultSize="50%" minSize="6rem" className="flex flex-col min-h-0">
-            {editor}
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel minSize="6rem" className="flex flex-col min-h-0">
-            {draftPreview}
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      ) : (
-        editor
-      )}
+      <EditSurface layout={effectiveLayout} editor={editor} preview={draftPreview} />
     </div>
   ) : (
     <WorkspaceFileContent
       content={binaryMime ? (binaryContent ?? null) : (content ?? null)}
       isLoading={binaryMime ? binaryLoading : contentLoading}
-      error={
-        binaryMime
-          ? binaryError
-            ? String(binaryError)
-            : null
-          : contentError
-            ? String(contentError)
-            : null
-      }
+      error={loadErrorText(binaryMime ? binaryError : contentError)}
       fileName={path}
       mimeType={binaryMime}
       fileDir={fileDir}
@@ -254,10 +214,6 @@ export function FileTabPane({
   // cannot read without `allow-same-origin` — which is the one thing the sandbox is there for.
   const showSyncToggle = inEdit && effectiveLayout === "split" && previewKind === "markdown";
   const syncLabel = scrollSync ? "Turn off synced scrolling" : "Turn on synced scrolling";
-  // The stored preference survives an unavailable split; only this rendering of it is withheld, so
-  // widening the panel brings split back without asking again.
-  const layoutUnavailable = (value: MarkdownEditLayout) => value === "split" && !splitFits;
-  const splitTooltip = "The panel is too narrow for a split view — widen or maximize it";
 
   return (
     <div
@@ -290,36 +246,11 @@ export function FileTabPane({
               </ToolbarButton>
             )}
             {showLayoutGroup && (
-              // 24px items in a 3px-padded, bordered container come to 32, so the group lines up
-              // with every other control rather than sitting short of them.
-              <div className={cn(SEGMENT_GROUP, "flex items-center gap-0.5 shrink-0 mr-1")}>
-                <SegmentThumb />
-                {MARKDOWN_LAYOUTS.map(({ value, Icon, label }) => {
-                  const unavailable = layoutUnavailable(value);
-                  return (
-                    <Tooltip key={value}>
-                      <TooltipTrigger render={<span className="inline-flex" />}>
-                        <button
-                          type="button"
-                          onClick={() => chooseLayout(value)}
-                          disabled={unavailable}
-                          aria-label={label}
-                          aria-pressed={effectiveLayout === value}
-                          className={cn(
-                            "relative inline-flex items-center justify-center size-6 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none",
-                            effectiveLayout === value
-                              ? "text-foreground"
-                              : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          <Icon className="size-3.5" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>{unavailable ? splitTooltip : label}</TooltipContent>
-                    </Tooltip>
-                  );
-                })}
-              </div>
+              <LayoutToggle
+                layout={effectiveLayout}
+                onChoose={chooseLayout}
+                splitFits={splitFits}
+              />
             )}
             <Tooltip>
               <TooltipTrigger
@@ -375,84 +306,198 @@ export function FileTabPane({
         )}
       </div>
 
-      <AlertDialog
+      <PaneDialog
         open={conflict !== null}
-        onOpenChange={(open) => {
-          if (!open) setConflict(null);
-        }}
+        onDismiss={() => setConflict(null)}
+        title="This file changed while you were editing"
+        description={`${fileName} was written by something else — most likely the agent — since you started editing. Overwriting replaces those changes with yours; reloading discards yours.`}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>This file changed while you were editing</AlertDialogTitle>
-            <AlertDialogDescription>
-              {fileName} was written by something else — most likely the agent — since you started
-              editing. Overwriting replaces those changes with yours; reloading discards yours.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => conflict && handleReloadFromDisk(conflict.onDisk)}
-            >
-              Reload, discarding mine
-            </AlertDialogAction>
-            <AlertDialogAction variant="destructive" onClick={() => void handleOverwrite()}>
-              Overwrite
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        <AlertDialogCancel>Cancel</AlertDialogCancel>
+        <AlertDialogAction
+          variant="destructive"
+          onClick={() => conflict && handleReloadFromDisk(conflict.onDisk)}
+        >
+          Reload, discarding mine
+        </AlertDialogAction>
+        <AlertDialogAction variant="destructive" onClick={() => void handleOverwrite()}>
+          Overwrite
+        </AlertDialogAction>
+      </PaneDialog>
 
-      <AlertDialog
+      <PaneDialog
         open={discardPrompt}
-        onOpenChange={(open) => {
-          if (!open) setDiscardPrompt(false);
-        }}
+        onDismiss={() => setDiscardPrompt(false)}
+        title="Discard unsaved changes?"
+        description={`${fileName} has edits that have not been written to disk. They will be lost.`}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {fileName} has edits that have not been written to disk. They will be lost.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep editing</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={discardDraft}>
-              Discard
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        <AlertDialogCancel>Keep editing</AlertDialogCancel>
+        <AlertDialogAction variant="destructive" onClick={discardDraft}>
+          Discard
+        </AlertDialogAction>
+      </PaneDialog>
 
-      <AlertDialog
+      <PaneDialog
         open={confirmClose}
-        onOpenChange={(open) => {
-          if (!open) onCloseResolved(false);
-        }}
+        onDismiss={() => onCloseResolved(false)}
+        title={`Save changes to ${fileName}?`}
+        description="Closing the tab loses the edits that have not been written to disk."
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Save changes to {fileName}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Closing the tab loses the edits that have not been written to disk.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => onCloseResolved(true)}>
-              Discard
-            </AlertDialogAction>
-            <AlertDialogAction
-              // A conflict or a failed write keeps the tab open, with the reason on screen.
-              onClick={() => void handleSave().then((saved) => onCloseResolved(saved))}
-            >
-              Save
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        <AlertDialogCancel>Cancel</AlertDialogCancel>
+        <AlertDialogAction variant="destructive" onClick={() => onCloseResolved(true)}>
+          Discard
+        </AlertDialogAction>
+        <AlertDialogAction
+          // A conflict or a failed write keeps the tab open, with the reason on screen.
+          onClick={() => void handleSave().then((saved) => onCloseResolved(saved))}
+        >
+          Save
+        </AlertDialogAction>
+      </PaneDialog>
     </div>
+  );
+}
+
+function loadErrorText(error: unknown): string | null {
+  return error ? String(error) : null;
+}
+
+const NOTICE =
+  "flex items-center gap-1.5 px-3 py-1.5 text-[11px] border-b border-accent/10 shrink-0";
+
+/**
+ * The lines over a file being edited. Save sits among the floating actions, out of sight until the
+ * pointer is over the file, so the first line is what says the buffer is being edited and whether
+ * it holds unsaved work.
+ */
+function EditNotices({
+  isDirty,
+  isProcessing,
+  saveError,
+}: {
+  isDirty: boolean;
+  isProcessing: boolean;
+  saveError: string | null;
+}) {
+  return (
+    <>
+      <div className={cn(NOTICE, "text-muted-foreground")}>
+        {isDirty ? "Editing · unsaved changes" : "Editing"}
+      </div>
+      {isProcessing && (
+        <div className={cn(NOTICE, "text-muted-foreground")}>
+          <TriangleAlert className="w-3 h-3 shrink-0" />
+          The agent is running and may write to this file. Your save will check first.
+        </div>
+      )}
+      {saveError && (
+        <div className={cn(NOTICE, "text-destructive bg-destructive/10")}>{saveError}</div>
+      )}
+    </>
+  );
+}
+
+/** The editor, the draft's preview, or both side by side. */
+function EditSurface({
+  layout,
+  editor,
+  preview,
+}: {
+  layout: MarkdownEditLayout;
+  editor: React.ReactNode;
+  preview: React.ReactNode;
+}) {
+  if (layout === "preview") return preview;
+  if (layout !== "split") return editor;
+  // The two panes scroll independently. Aligning them needs source-line anchors on the rendered
+  // blocks, which is a change to the shared markdown renderer — deliberately not part of this.
+  return (
+    <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0 overflow-hidden">
+      <ResizablePanel defaultSize="50%" minSize="6rem" className="flex flex-col min-h-0">
+        {editor}
+      </ResizablePanel>
+      <ResizableHandle withHandle />
+      <ResizablePanel minSize="6rem" className="flex flex-col min-h-0">
+        {preview}
+      </ResizablePanel>
+    </ResizablePanelGroup>
+  );
+}
+
+const SPLIT_TOO_NARROW = "The panel is too narrow for a split view — widen or maximize it";
+
+/** The three markdown arrangements as one segmented group among the floating actions. */
+function LayoutToggle({
+  layout,
+  onChoose,
+  splitFits,
+}: {
+  layout: MarkdownEditLayout;
+  onChoose: (layout: MarkdownEditLayout) => void;
+  splitFits: boolean;
+}) {
+  return (
+    // 24px items in a 3px-padded, bordered container come to 32, so the group lines up with every
+    // other control rather than sitting short of them.
+    <div className={cn(SEGMENT_GROUP, "flex items-center gap-0.5 shrink-0 mr-1")}>
+      <SegmentThumb />
+      {MARKDOWN_LAYOUTS.map(({ value, Icon, label }) => {
+        // The stored preference survives an unavailable split; only this rendering of it is
+        // withheld, so widening the panel brings split back without asking again.
+        const unavailable = value === "split" && !splitFits;
+        const chosen = layout === value;
+        return (
+          <Tooltip key={value}>
+            <TooltipTrigger render={<span className="inline-flex" />}>
+              <button
+                type="button"
+                onClick={() => onChoose(value)}
+                disabled={unavailable}
+                aria-label={label}
+                aria-pressed={chosen}
+                className={cn(
+                  "relative inline-flex items-center justify-center size-6 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none",
+                  chosen ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Icon className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{unavailable ? SPLIT_TOO_NARROW : label}</TooltipContent>
+          </Tooltip>
+        );
+      })}
+    </div>
+  );
+}
+
+/** A question about the file's draft, with the answers the caller passes as children. */
+function PaneDialog({
+  open,
+  onDismiss,
+  title,
+  description,
+  children,
+}: {
+  open: boolean;
+  onDismiss: () => void;
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onDismiss();
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>{children}</AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

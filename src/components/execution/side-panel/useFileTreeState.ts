@@ -17,6 +17,31 @@ export type NameDialogState =
   | { kind: "new-file" | "new-folder"; parentAbsolutePath: string; siblings: string[] }
   | { kind: "rename"; target: FileTreeTarget };
 
+/** What the name dialog says for `dialog`, and the names a new one may not take. */
+export function nameDialogCopy(dialog: NameDialogState | null, workspacePath: string) {
+  if (dialog?.kind === "rename") {
+    const { name, siblings } = dialog.target;
+    return {
+      title: "Rename",
+      description: `Rename “${name}”.`,
+      confirmLabel: "Rename",
+      initialName: name,
+      // Its own name is not a collision: typing a change and undoing it must not leave the dialog
+      // stuck reporting that the file already exists.
+      siblings: siblings.filter((s) => s !== name),
+    };
+  }
+  return {
+    title: dialog?.kind === "new-folder" ? "New folder" : "New file",
+    // Naming the destination is the whole point: the header's buttons act on the highlighted
+    // folder, and "somewhere" is not something a user can verify.
+    description: `Created in ${folderLabel(dialog?.parentAbsolutePath ?? workspacePath, workspacePath)}.`,
+    confirmLabel: "Create",
+    initialName: "",
+    siblings: dialog?.siblings ?? [],
+  };
+}
+
 /**
  * Absolute path of the folder holding `relativePath`, or `null` for the workspace root — which is
  * also what a selection outside the workspace gets, since no row in the tree represents it.
