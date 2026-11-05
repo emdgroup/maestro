@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef } from "react";
 import { Segmented } from "@/components/common/Segmented";
 import { useShortcuts } from "@/hooks/useShortcuts";
-import { Plus, Archive, Search, BellDot, Repeat } from "lucide-react";
+import { Plus, Archive, Search, BellDot, Repeat, Workflow } from "lucide-react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { BoardView } from "@/views/kanban/board-view/BoardView";
 import { useActiveTab, useActiveTaskId } from "@/store/navigationStore";
@@ -12,7 +12,6 @@ import { useTasksQuery } from "@/services/task.service";
 import { useSelectedProject } from "@/store/projectStore";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { InputGroup, InputGroupInput, InputGroupAddon } from "@/ui/input-group";
-import { Badge } from "@/ui/badge";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { Checkbox } from "@/ui/checkbox";
@@ -149,14 +148,39 @@ export const KanbanView: React.FC = () => {
           </InputGroup>
         </ShortcutHint>
 
+        {/* Needs me, first of the filters: tasks waiting on the user are what the board is for. */}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setNeedsMeOnly((v) => !v)}
+                disabled={needsMeCount === 0 && !needsMeOnly}
+                aria-pressed={needsMeOnly}
+                data-selected={needsMeOnly}
+                data-attention={needsMeCount > 0 && !needsMeOnly}
+                className="home-pane needs-me-filter h-8 gap-2 rounded-xl px-3.5 text-xs font-medium data-[attention=true]:text-amber-600 dark:data-[attention=true]:text-amber-400"
+              />
+            }
+          >
+            <BellDot className="size-4" />
+            Needs me
+            {needsMeCount > 0 && (
+              <span className="text-[13px] font-semibold tabular-nums">{needsMeCount}</span>
+            )}
+          </TooltipTrigger>
+          <TooltipContent>Show only tasks the pipeline is waiting on you for</TooltipContent>
+        </Tooltip>
+
         {/* Priority filter */}
         <Popover>
-          <PopoverTrigger className="home-pane h-8 gap-2 rounded-xl px-3.5 text-xs font-medium flex cursor-pointer items-center">
-            {selectedPriorities.length > 0 ? (
-              <Badge variant="secondary">Priority · {selectedPriorities.length}</Badge>
-            ) : (
-              "Priority"
-            )}
+          <PopoverTrigger
+            data-selected={selectedPriorities.length > 0}
+            className="home-pane h-8 gap-1.5 rounded-xl px-3.5 text-xs font-medium flex cursor-pointer items-center"
+          >
+            Priority
+            <FilterValues values={selectedPriorities} />
           </PopoverTrigger>
           <PopoverContent className="w-48 p-1.5 gap-0" align="start">
             <div className="flex flex-col">
@@ -191,12 +215,12 @@ export const KanbanView: React.FC = () => {
 
         {/* Label filter */}
         <Popover>
-          <PopoverTrigger className="home-pane h-8 gap-2 rounded-xl px-3.5 text-xs font-medium flex cursor-pointer items-center">
-            {selectedLabels.length > 0 ? (
-              <Badge variant="secondary">Label · {selectedLabels.length}</Badge>
-            ) : (
-              "Label"
-            )}
+          <PopoverTrigger
+            data-selected={selectedLabels.length > 0}
+            className="home-pane h-8 gap-1.5 rounded-xl px-3.5 text-xs font-medium flex cursor-pointer items-center"
+          >
+            Label
+            <FilterValues values={selectedLabels} />
           </PopoverTrigger>
           <PopoverContent className="w-48 p-1.5 gap-0" align="start">
             <div className="flex flex-col">
@@ -239,7 +263,15 @@ export const KanbanView: React.FC = () => {
           onChange={(picked) => setRunMode(picked === "All" ? null : picked)}
           options={[
             { value: "All", label: "All" },
-            { value: "Pipeline", label: "Pipeline" },
+            {
+              value: "Pipeline",
+              label: (
+                <>
+                  <Workflow className="size-3" />
+                  Pipeline
+                </>
+              ),
+            },
             {
               value: "Loop",
               label: (
@@ -252,44 +284,32 @@ export const KanbanView: React.FC = () => {
           ]}
         />
 
-        <QueueCapacityBadge projectId={projectId} />
+        {/* What the queue does, apart from the filters: one of these changes the scheduler. */}
+        <div className="ml-auto flex items-center gap-2">
+          <div className="flex h-8 items-center rounded-xl border border-foreground/7 bg-background/35 px-1 [&>*]:my-1">
+            <QueueCapacityBadge projectId={projectId} />
+            <div className="pl-1 not-first:border-l not-first:border-foreground/14">
+              <AutoModeToggle projectId={projectId} />
+            </div>
+          </div>
 
-        <AutoModeToggle projectId={projectId} />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label="Archive"
+                  className="home-pane size-8 rounded-xl"
+                  onClick={() => setIsArchiveModalOpen(true)}
+                />
+              }
+            >
+              <Archive className="size-4" />
+            </TooltipTrigger>
+            <TooltipContent>Archive</TooltipContent>
+          </Tooltip>
 
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setNeedsMeOnly((v) => !v)}
-                disabled={needsMeCount === 0 && !needsMeOnly}
-                data-selected={needsMeOnly}
-                data-attention={needsMeCount > 0 && !needsMeOnly}
-                className="home-pane h-8 gap-2 rounded-xl px-3.5 text-xs font-medium data-[attention=true]:text-amber-600 dark:data-[attention=true]:text-amber-400"
-              />
-            }
-          >
-            <BellDot className="size-4" />
-            Needs me
-            {needsMeCount > 0 && (
-              <span className="text-[13px] font-semibold tabular-nums">{needsMeCount}</span>
-            )}
-          </TooltipTrigger>
-          <TooltipContent>Show only tasks the pipeline is waiting on you for</TooltipContent>
-        </Tooltip>
-
-        <Button
-          size="sm"
-          variant="ghost"
-          className="home-pane h-8 gap-2 rounded-xl px-3.5 text-xs font-medium"
-          onClick={() => setIsArchiveModalOpen(true)}
-        >
-          <Archive className="size-4" />
-          Archive
-        </Button>
-
-        <div className="ml-auto">
           <ShortcutHint shortcutId="board-new">
             <Button
               size="sm"
@@ -323,3 +343,14 @@ export const KanbanView: React.FC = () => {
     </div>
   );
 };
+
+/** A filter's picked values on its trigger: the first by name, the rest as a count. */
+function FilterValues({ values }: { values: string[] }) {
+  if (values.length === 0) return null;
+  return (
+    <span className="font-semibold text-accent">
+      {values[0]}
+      {values.length > 1 && ` +${values.length - 1}`}
+    </span>
+  );
+}
