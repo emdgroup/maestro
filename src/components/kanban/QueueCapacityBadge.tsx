@@ -28,15 +28,17 @@ export function QueueCapacityBadge({ projectId }: { projectId: number | null }) 
         render={
           <Badge
             variant={full ? "outline" : "ghost"}
-            className={cn("h-8 px-2.5", !full && "text-accent hover:bg-transparent")}
+            className={cn("h-6 px-2.5 font-normal", !full && "hover:bg-transparent")}
           />
         }
       >
-        <Cpu />
-        {data.used}/{data.slots}
+        <Cpu className="text-accent" />
+        <span>
+          <span className="font-semibold tabular-nums">{data.used}</span> of {data.slots} slots
+        </span>
       </TooltipTrigger>
       <TooltipContent>
-        {data.reason}
+        Agent slots in use. A task in Review keeps its slot. {data.reason}
         {full && data.slots > 0 && ". The queue waits until one frees"}
       </TooltipContent>
     </Tooltip>
