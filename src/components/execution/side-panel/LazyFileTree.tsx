@@ -471,14 +471,12 @@ function DirContents({
                   })
                 }
                 className={cn(
-                  // The create target is a tint, not a rule down the side: `border-ring` is
-                  // reserved for the file being viewed, and two rows wearing it at once gave no
-                  // way to tell which highlight meant what.
                   "w-full flex items-center gap-1 px-2 py-1 text-xs text-left border-l-2 border-transparent transition-colors file-tree-item",
-                  // The tint alone was too faint to find; the whole row — chevron, icon and name —
-                  // takes the accent colour, which no other row in this tree wears.
+                  // The create target is marked by colour alone: the whole row (chevron, icon and
+                  // name) takes the accent, which no other row in this tree wears. A tint is the
+                  // open file's, and the two tints met edge to edge over a folder's first file.
                   isFolderSelected
-                    ? "text-accent font-medium bg-accent/14"
+                    ? "text-accent font-medium"
                     : "text-muted-foreground hover:text-foreground",
                 )}
                 style={{ paddingLeft: indentFor(depth) }}
