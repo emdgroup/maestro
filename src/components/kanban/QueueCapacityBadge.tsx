@@ -28,13 +28,13 @@ export function QueueCapacityBadge({ projectId }: { projectId: number | null }) 
         render={
           <Badge
             variant={full ? "outline" : "ghost"}
-            className={cn("h-6 px-2.5 font-normal", !full && "hover:bg-transparent")}
+            className={cn("h-6 px-2.5 font-normal [&>svg]:size-4!", !full && "hover:bg-transparent")}
           />
         }
       >
         <Cpu className="text-accent" />
         <span>
-          <span className="font-semibold tabular-nums">{data.used}</span> of {data.slots} slots
+          <span className="font-semibold tabular-nums">{data.used}</span> of {data.slots}
         </span>
       </TooltipTrigger>
       <TooltipContent>

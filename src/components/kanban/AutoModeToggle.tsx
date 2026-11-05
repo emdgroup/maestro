@@ -34,7 +34,7 @@ export function AutoModeToggle({ projectId }: { projectId: number | null }) {
             if (projectId !== null) setAutoMode.mutate({ projectId, enabled });
           }}
           disabled={!isSuccess || setAutoMode.isPending}
-          className="data-checked:bg-green-500 data-unchecked:bg-muted data-unchecked:border-border/50"
+          className="data-unchecked:bg-muted data-unchecked:border-border/50"
         />
       </TooltipTrigger>
       <TooltipContent>

@@ -12,7 +12,6 @@ import { useTasksQuery } from "@/services/task.service";
 import { useSelectedProject } from "@/store/projectStore";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { InputGroup, InputGroupInput, InputGroupAddon } from "@/ui/input-group";
-import { Badge } from "@/ui/badge";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { Checkbox } from "@/ui/checkbox";
@@ -176,12 +175,12 @@ export const KanbanView: React.FC = () => {
 
         {/* Priority filter */}
         <Popover>
-          <PopoverTrigger className="home-pane h-8 gap-2 rounded-xl px-3.5 text-xs font-medium flex cursor-pointer items-center">
-            {selectedPriorities.length > 0 ? (
-              <Badge variant="secondary">Priority · {selectedPriorities.length}</Badge>
-            ) : (
-              "Priority"
-            )}
+          <PopoverTrigger
+            data-selected={selectedPriorities.length > 0}
+            className="home-pane h-8 gap-1.5 rounded-xl px-3.5 text-xs font-medium flex cursor-pointer items-center"
+          >
+            Priority
+            <FilterValues values={selectedPriorities} />
           </PopoverTrigger>
           <PopoverContent className="w-48 p-1.5 gap-0" align="start">
             <div className="flex flex-col">
@@ -216,12 +215,12 @@ export const KanbanView: React.FC = () => {
 
         {/* Label filter */}
         <Popover>
-          <PopoverTrigger className="home-pane h-8 gap-2 rounded-xl px-3.5 text-xs font-medium flex cursor-pointer items-center">
-            {selectedLabels.length > 0 ? (
-              <Badge variant="secondary">Label · {selectedLabels.length}</Badge>
-            ) : (
-              "Label"
-            )}
+          <PopoverTrigger
+            data-selected={selectedLabels.length > 0}
+            className="home-pane h-8 gap-1.5 rounded-xl px-3.5 text-xs font-medium flex cursor-pointer items-center"
+          >
+            Label
+            <FilterValues values={selectedLabels} />
           </PopoverTrigger>
           <PopoverContent className="w-48 p-1.5 gap-0" align="start">
             <div className="flex flex-col">
@@ -344,3 +343,14 @@ export const KanbanView: React.FC = () => {
     </div>
   );
 };
+
+/** A filter's picked values on its trigger: the first by name, the rest as a count. */
+function FilterValues({ values }: { values: string[] }) {
+  if (values.length === 0) return null;
+  return (
+    <span className="font-semibold text-accent">
+      {values[0]}
+      {values.length > 1 && ` +${values.length - 1}`}
+    </span>
+  );
+}
