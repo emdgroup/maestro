@@ -4,6 +4,7 @@
   "categories": {},
   "rules": {
     "vitest/require-mock-type-parameters": "off",
+    "react/immutability": "off",
     "no-restricted-imports": [
       "error",
       {
