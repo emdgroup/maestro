@@ -13,7 +13,13 @@ import {
   projectStatus,
 } from "@/components/home/ProjectTile";
 import type { ProjectCard } from "@/components/home/ProjectTile";
-import { attach, connect, signIn } from "@/services/connection.service";
+import {
+  attach,
+  connect,
+  HOST_KEY_CHANGED,
+  isHostKeyChanged,
+  signIn,
+} from "@/services/connection.service";
 import { Button } from "@/ui/button";
 import { Spinner } from "@/ui/spinner";
 
@@ -131,7 +137,10 @@ function SignInForm({
   );
 }
 
-/** A connect that stopped short: the server is busy with another build, or tools are missing. */
+/**
+ * A connect that stopped short: the server is busy with another build, the SSH host key changed, or
+ * tools are missing.
+ */
 function FailedBody({
   connection,
   phase,
@@ -147,7 +156,11 @@ function FailedBody({
     <div className="mt-4 space-y-2 text-xs text-muted-foreground">
       {phase.error && (
         <p className="text-rose-600 dark:text-rose-400">
-          {busy ? phase.error.slice(SERVER_BUSY.length) : phase.error}
+          {busy
+            ? phase.error.slice(SERVER_BUSY.length)
+            : isHostKeyChanged(phase.error)
+              ? phase.error.slice(HOST_KEY_CHANGED.length)
+              : phase.error}
         </p>
       )}
       {missing.length > 0 && (

@@ -2,6 +2,7 @@ pub mod auth;
 pub mod error;
 pub mod heartbeat;
 pub mod history;
+pub mod host_key;
 pub mod password_manager;
 pub mod pty;
 pub mod session;

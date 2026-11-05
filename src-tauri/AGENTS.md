@@ -34,7 +34,7 @@ described in `maestro-server/AGENTS.md`, beside the daemon half.
 
 ## Database Schema
 
-SQLite with foreign key constraints enabled. Schema V33. Configured with WAL mode and 5s `busy_timeout` for concurrent access.
+SQLite with foreign key constraints enabled. Schema V34. Configured with WAL mode and 5s `busy_timeout` for concurrent access.
 
 `SCHEMA_VERSION` lives in `src-tauri/src/core/schema.rs` — that constant is the source of truth; update this doc when you bump it.
 
@@ -60,7 +60,7 @@ and expect to delete `.maestro/dev-data/` on any machine that ran the intermedia
 
 Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `task_comments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`, `connection_settings`, `templates`, `prompts`, and the usage mirror (`usage_stores`, `usage_turns`, `usage_turn_models`, `usage_hourly`, `usage_hourly_models`, with the views `usage_facts` and `usage_model_facts`; see `usage/mirror.rs` and `docs/usage-view/design.md`)
 
-The app reads and writes `projects`, `settings`, the three connection tables,
+The app reads and writes `projects`, `settings`, the three connection tables, `known_hosts`,
 `templates` and the shared rows of `prompts`. It reads `connection_settings` only to carry a
 connection's agent limit into its daemon once (see "The daemon drives the task pipeline" in
 `maestro-server/AGENTS.md`). The rest are no longer read or written: tasks and everything hanging
@@ -69,6 +69,11 @@ daemon's row for it (see "The resident maestro-server" there). Those tables stay
 holding what earlier builds wrote, until phase 4 of `docs/daemon-store-plan.md` imports their rows
 into the daemon and drops them. Outside `core/schema.rs` no app code touches them, and nothing new
 should.
+
+**SSH host keys are trusted on first use.** `known_hosts` holds one pinned key per `(host, port)`,
+written after the first connect that authenticates. A later handshake presenting another key is
+refused with `SshError::HostKeyError`, never retried, and reaches the frontend with the
+`host_key_changed: ` prefix; "Forget host key" deletes the pin. See `connectivity/ssh/host_key.rs`.
 
 ## The dev data directory (`MAESTRO_DATA_DIR`)
 

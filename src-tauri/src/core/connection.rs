@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection};
+use rusqlite::Connection;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -294,38 +294,4 @@ pub async fn get_project_with_git_conn(
     let project = crate::project::crud::load_project(app_state, project_id)?;
     let git_conn = get_git_connection(&project, app_state).await?;
     Ok((project, git_conn))
-}
-
-/// Check if a host key is known for a project, store if new
-pub fn check_and_store_host_key(
-    conn: &Connection,
-    project_id: i32,
-    host_fingerprint: &str,
-    fingerprint_type: &str,
-) -> Result<bool, String> {
-    // Query known_hosts for this project and fingerprint
-    let existing: Result<String, _> = conn.query_row(
-        "SELECT host_fingerprint FROM known_hosts WHERE project_id = ? AND host_fingerprint = ?",
-        params![project_id, host_fingerprint],
-        |row| row.get(0),
-    );
-
-    match existing {
-        Ok(_) => {
-            // Fingerprint is known, return true
-            Ok(true)
-        }
-        Err(rusqlite::Error::QueryReturnedNoRows) => {
-            // New fingerprint, store it
-            let now = chrono::Utc::now().to_rfc3339();
-            conn.execute(
-                "INSERT INTO known_hosts (project_id, host_fingerprint, fingerprint_type, first_seen_at, created_at)
-                 VALUES (?, ?, ?, ?, ?)",
-                params![project_id, host_fingerprint, fingerprint_type, now, now],
-            )
-            .map_err(|e| format!("Failed to store host key: {}", e))?;
-            Ok(true)
-        }
-        Err(e) => Err(format!("Database error checking host key: {}", e)),
-    }
 }

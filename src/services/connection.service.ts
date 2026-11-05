@@ -483,22 +483,38 @@ export async function attach(connection: ConnectionKey, replace = false) {
   );
 }
 
+/** The prefix of the error an SSH connect returns when the host presents a key other than the pinned one. */
+export const HOST_KEY_CHANGED = "host_key_changed: ";
+
+export const isHostKeyChanged = (error: string | null) =>
+  error?.startsWith(HOST_KEY_CHANGED) ?? false;
+
 /**
  * Connect: sign in to an SSH host with what it already has (agent, key, saved password) and fall
- * back to the inline password form; every other kind of connection attaches straight away.
+ * back to the inline password form; every other kind of connection attaches straight away. A host
+ * key mismatch is a failure, not a reason to ask for a password.
  */
 export async function connect(connection: ConnectionKey) {
   if (connection.type === "ssh") {
     setPhase(connectionKeyStr(connection), { kind: "connecting", step: 0 });
     try {
       await api.connectSshWithoutCredentials(connection.id);
-    } catch {
-      setPhase(connectionKeyStr(connection), { kind: "signin", error: null });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setPhase(
+        connectionKeyStr(connection),
+        isHostKeyChanged(message)
+          ? { kind: "failed", error: message, result: null }
+          : { kind: "signin", error: null },
+      );
       return;
     }
   }
   await attach(connection);
 }
+
+/** Forget the host key pinned for an SSH connection's host, so the next connect pins it again. */
+export const forgetSshHostKey = (connectionId: number) => api.forgetSshHostKey(connectionId);
 
 export async function signIn(
   connection: Extract<ConnectionKey, { type: "ssh" }>,

@@ -1,7 +1,7 @@
 use rusqlite::{Connection, Result as SqlResult};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: u32 = 33;
+pub const SCHEMA_VERSION: u32 = 34;
 
 pub const SCHEMA_V32_FULL: &str = r#"
 -- Enable foreign keys
@@ -449,7 +449,34 @@ fn run_migrations(conn: &Connection, from: u32) -> SqlResult<()> {
     if from < 33 {
         migrate_to_v33(conn)?;
     }
+    if from < 34 {
+        migrate_to_v34(conn)?;
+    }
     Ok(())
+}
+
+/// Host keys are pinned per host and port, not per project (see `connectivity::ssh::host_key`).
+/// Dropping the old table loses nothing: no build ever wrote to it.
+fn migrate_to_v34(conn: &Connection) -> SqlResult<()> {
+    let keyed_by_host: bool = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('known_hosts') WHERE name = 'host'",
+        [],
+        |row| row.get::<_, i32>(0),
+    )? > 0;
+    if keyed_by_host {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "DROP TABLE IF EXISTS known_hosts;
+         CREATE TABLE known_hosts (
+             host TEXT NOT NULL,
+             port INTEGER NOT NULL,
+             key_type TEXT NOT NULL,
+             fingerprint TEXT NOT NULL,
+             first_seen_at TEXT NOT NULL,
+             PRIMARY KEY (host, port)
+         );",
+    )
 }
 
 /// The mirror of every connection's usage, for the Usage view. See `usage::mirror`.
@@ -991,6 +1018,52 @@ mod tests {
             )
             .unwrap();
         assert_eq!(favorites_table, 0);
+    }
+
+    /// v33 -> v34 rekeys `known_hosts` by host and port, and is safe to re-run.
+    #[test]
+    fn test_migration_to_v34_keys_known_hosts_by_host() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO known_hosts (host, port, key_type, fingerprint, first_seen_at)
+                 VALUES ('example.com', 22, 'ssh-ed25519', 'SHA256:a', '2026-01-01');",
+        )
+        .unwrap();
+        conn.execute("PRAGMA user_version = 33", []).unwrap();
+        initialize_schema(&conn).unwrap();
+        let kept: i64 = conn
+            .query_row("SELECT COUNT(*) FROM known_hosts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(kept, 1);
+
+        conn.execute_batch(
+            "DROP TABLE known_hosts;
+             CREATE TABLE known_hosts (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 project_id INTEGER NOT NULL,
+                 host_fingerprint TEXT NOT NULL,
+                 fingerprint_type TEXT NOT NULL,
+                 first_seen_at TEXT NOT NULL,
+                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );",
+        )
+        .unwrap();
+        conn.execute("PRAGMA user_version = 33", []).unwrap();
+        initialize_schema(&conn).unwrap();
+
+        let columns: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('known_hosts') ORDER BY cid")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            columns,
+            ["host", "port", "key_type", "fingerprint", "first_seen_at"]
+        );
+        assert_eq!(read_user_version(&conn), SCHEMA_VERSION);
     }
 
     /// v31 -> v32 adds the import stamp to every project row, and is safe to re-run.

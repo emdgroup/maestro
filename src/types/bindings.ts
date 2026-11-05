@@ -1796,6 +1796,18 @@ async deleteSshConnection(connectionId: number) : Promise<Result<null, string>> 
 }
 },
 /**
+ * Forget the host key pinned for a connection's host, so the next connect pins whatever key the
+ * host presents. The pin belongs to the host and port, so it is gone for every connection to them.
+ */
+async forgetSshHostKey(connectionId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("forget_ssh_host_key", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Rename an SSH connection (set display name)
  */
 async renameSshConnection(connectionId: number, displayName: string) : Promise<Result<null, string>> {

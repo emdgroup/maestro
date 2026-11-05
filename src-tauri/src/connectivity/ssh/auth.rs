@@ -1,4 +1,5 @@
 use crate::connectivity::ssh::error::SshError;
+use crate::connectivity::ssh::host_key::{mismatch_error, HostKey};
 use crate::connectivity::ssh::session::SshClientHandler;
 use russh::client::{self, Handle};
 use russh::keys::agent::client::AgentClient;
@@ -15,11 +16,13 @@ pub(crate) fn expand_tilde(path: &str) -> String {
     path.to_string()
 }
 
-/// Open a russh connection (TCP + SSH handshake) to the configured host
+/// Open a russh connection (TCP + SSH handshake) to the configured host, refusing a host whose key
+/// differs from `pinned`. Returns the handle and the key the host presented.
 pub(crate) async fn open_handle(
     host: &str,
     port: u16,
-) -> Result<Handle<SshClientHandler>, SshError> {
+    pinned: Option<HostKey>,
+) -> Result<(Handle<SshClientHandler>, HostKey), SshError> {
     let config = Arc::new(client::Config {
         inactivity_timeout: Some(Duration::from_secs(300)),
         keepalive_interval: Some(Duration::from_secs(30)),
@@ -27,15 +30,32 @@ pub(crate) async fn open_handle(
         ..Default::default()
     });
     let addr = format!("{}:{}", host, port);
-    tokio::time::timeout(
+    let presented = Arc::new(std::sync::Mutex::new(None));
+    let handler = SshClientHandler {
+        pinned: pinned.clone(),
+        presented: presented.clone(),
+    };
+    let result = tokio::time::timeout(
         Duration::from_secs(10),
-        client::connect(config, addr.as_str(), SshClientHandler),
+        client::connect(config, addr.as_str(), handler),
     )
     .await
-    .map_err(|_| SshError::ConnectionError(format!("Connection to {}:{} timed out", host, port)))?
-    .map_err(|e| {
-        SshError::ConnectionError(format!("Failed to connect to {}:{}: {}", host, port, e))
-    })
+    .map_err(|_| SshError::ConnectionError(format!("Connection to {}:{} timed out", host, port)))?;
+    let presented = presented.lock().ok().and_then(|slot| slot.clone());
+    match (result, pinned, presented) {
+        (Ok(handle), _, Some(presented)) => Ok((handle, presented)),
+        (Err(russh::Error::UnknownKey), Some(pinned), Some(presented)) => {
+            Err(mismatch_error(host, port, &pinned, &presented))
+        }
+        (Ok(_), _, None) => Err(SshError::ConnectionError(format!(
+            "{}:{} completed the handshake without presenting a host key",
+            host, port
+        ))),
+        (Err(e), _, _) => Err(SshError::ConnectionError(format!(
+            "Failed to connect to {}:{}: {}",
+            host, port, e
+        ))),
+    }
 }
 
 /// Authenticate via SSH agent (platform-specific)
