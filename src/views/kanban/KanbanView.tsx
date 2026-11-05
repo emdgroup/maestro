@@ -287,9 +287,9 @@ export const KanbanView: React.FC = () => {
 
         {/* What the queue does, apart from the filters: one of these changes the scheduler. */}
         <div className="ml-auto flex items-center gap-2">
-          <div className="flex h-8 items-center divide-x divide-foreground/14 rounded-xl border border-foreground/7 bg-background/35 px-1 [&>*]:my-1">
+          <div className="flex h-8 items-center rounded-xl border border-foreground/7 bg-background/35 px-1 [&>*]:my-1">
             <QueueCapacityBadge projectId={projectId} />
-            <div className="pl-1">
+            <div className="pl-1 not-first:border-l not-first:border-foreground/14">
               <AutoModeToggle projectId={projectId} />
             </div>
           </div>
