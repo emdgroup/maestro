@@ -28,7 +28,10 @@ export function QueueCapacityBadge({ projectId }: { projectId: number | null }) 
         render={
           <Badge
             variant={full ? "outline" : "ghost"}
-            className={cn("h-6 px-2.5 font-normal [&>svg]:size-4!", !full && "hover:bg-transparent")}
+            className={cn(
+              "h-6 px-2.5 font-normal [&>svg]:size-4!",
+              !full && "hover:bg-transparent",
+            )}
           />
         }
       >
