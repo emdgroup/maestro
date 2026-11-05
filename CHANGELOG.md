@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.2](https://github.com/emdgroup/maestro/compare/v0.45.1...v0.45.2) (2026-11-05)
+
+
+### Bug Fixes
+
+* **deps:** align @tauri-apps/plugin-notification with its 2.8.0 crate ([5c8a7ff](https://github.com/emdgroup/maestro/commit/5c8a7ff5282ca0105a46da8d9f31b12b916b4ae5))
+
 ## [0.45.1](https://github.com/emdgroup/maestro/compare/v0.45.0...v0.45.1) (2026-11-05)
 
 
