@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.45.1](https://github.com/emdgroup/maestro/compare/v0.45.0...v0.45.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **collections:** suggest tags in the app's own popup, not a datalist ([d354d53](https://github.com/emdgroup/maestro/commit/d354d539fca0f32f9b3029816991aabdef576f95))
+* **files:** drop the tint from the folder holding the open file ([d354d53](https://github.com/emdgroup/maestro/commit/d354d539fca0f32f9b3029816991aabdef576f95))
+
 ## [0.45.0](https://github.com/emdgroup/maestro/compare/v0.44.0...v0.45.0) (2026-11-04)
 
 
