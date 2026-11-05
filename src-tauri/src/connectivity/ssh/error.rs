@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// Prefix a command puts on a `HostKeyError` it returns, so the frontend can recognise the case
+/// without reading the message.
+pub const HOST_KEY_CHANGED_ERROR: &str = "host_key_changed";
+
 /// SSH operation errors distinguishing between transient and permanent failures
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SshError {

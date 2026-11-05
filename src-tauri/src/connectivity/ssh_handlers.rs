@@ -2,8 +2,10 @@ use chrono::Utc;
 use std::sync::Arc;
 use tauri::State;
 
+use crate::connectivity::ssh::error::HOST_KEY_CHANGED_ERROR;
+use crate::connectivity::ssh::host_key::{forget_host_key, load_host_key, store_host_key};
 use crate::connectivity::ssh::session::{SshAuthMethod, SshConnection};
-use crate::connectivity::ssh::{spawn_heartbeat_task, PasswordManager, RemoteSshSession};
+use crate::connectivity::ssh::{spawn_heartbeat_task, PasswordManager, RemoteSshSession, SshError};
 use crate::connectivity::ConnectionStatus;
 use crate::core::AppState;
 
@@ -15,10 +17,17 @@ async fn finalize_ssh_connection(
     session: RemoteSshSession,
     auth_method_update: Option<&SshAuthMethod>,
 ) -> Result<(), String> {
+    let host_key = session.host_key().await;
+    let (host, port) = session.address();
+    let host = host.to_string();
     app_state.ssh.set_session(connection_id, session).await;
 
     let conn = app_state.db()?;
     let now = Utc::now().to_rfc3339();
+
+    if let Some(host_key) = host_key {
+        store_host_key(&conn, &host, port, &host_key)?;
+    }
 
     match auth_method_update {
         Some(method) => {
@@ -38,6 +47,25 @@ async fn finalize_ssh_connection(
     drop(conn);
 
     Ok(())
+}
+
+/// A new session for `connection`, verifying the host against the key pinned for it, if any
+fn new_session(
+    app_state: &AppState,
+    connection: SshConnection,
+) -> Result<RemoteSshSession, String> {
+    let host_key = load_host_key(&*app_state.db()?, &connection.host, connection.port)?;
+    Ok(RemoteSshSession::new(connection, host_key))
+}
+
+/// Puts the stable `HOST_KEY_CHANGED_ERROR` prefix on a host key mismatch, which the frontend
+/// shows as a failure rather than asking for credentials again.
+fn connect_error(context: Option<&str>, error: SshError) -> String {
+    match (error, context) {
+        (SshError::HostKeyError(message), _) => format!("{HOST_KEY_CHANGED_ERROR}: {message}"),
+        (error, Some(context)) => format!("{context}: {error}"),
+        (error, None) => error.to_string(),
+    }
 }
 
 /// Get all saved SSH connections
@@ -174,11 +202,11 @@ pub async fn connect_ssh_without_credentials(
         .map_err(|e| format!("Connection not found: {}", e))?;
 
     // Create SSH session and attempt connection
-    let session = RemoteSshSession::new(connection);
+    let session = new_session(&app_state, connection)?;
     session
         .connect(None)
         .await
-        .map_err(|e| format!("SSH connection failed: {}", e))?;
+        .map_err(|e| connect_error(Some("SSH connection failed"), e))?;
 
     finalize_ssh_connection(app_state.inner(), connection_id, session, None).await?;
 
@@ -222,11 +250,11 @@ pub async fn connect_ssh_with_password(
     connection.auth_method = SshAuthMethod::Password { save_password };
 
     // Create SSH session and attempt connection
-    let session = RemoteSshSession::new(connection.clone());
+    let session = new_session(&app_state, connection.clone())?;
     session
         .connect(Some(password))
         .await
-        .map_err(|e| format!("SSH connection failed: {}", e))?;
+        .map_err(|e| connect_error(Some("SSH connection failed"), e))?;
 
     finalize_ssh_connection(
         app_state.inner(),
@@ -260,11 +288,11 @@ pub async fn connect_ssh_with_agent(
 
     connection.auth_method = SshAuthMethod::Agent;
 
-    let session = RemoteSshSession::new(connection.clone());
+    let session = new_session(&app_state, connection.clone())?;
     session
         .connect(None)
         .await
-        .map_err(|e| format!("SSH agent authentication failed: {}", e))?;
+        .map_err(|e| connect_error(Some("SSH agent authentication failed"), e))?;
 
     finalize_ssh_connection(
         app_state.inner(),
@@ -313,11 +341,11 @@ pub async fn connect_ssh_with_key(
         passphrase
     };
 
-    let session = RemoteSshSession::new(connection.clone());
+    let session = new_session(&app_state, connection.clone())?;
     session
         .connect_with_key(Some(key_path.clone()), passphrase.clone())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| connect_error(None, e))?;
 
     // Persist passphrase to OS keyring after successful auth
     if save_passphrase {
@@ -384,6 +412,19 @@ pub fn delete_ssh_connection(
     }
 
     Ok(())
+}
+
+/// Forget the host key pinned for a connection's host, so the next connect pins whatever key the
+/// host presents. The pin belongs to the host and port, so it is gone for every connection to them.
+#[tauri::command]
+#[specta::specta]
+pub fn forget_ssh_host_key(
+    app_state: State<Arc<AppState>>,
+    connection_id: i32,
+) -> Result<(), String> {
+    let SshConnection { host, port, .. } = get_ssh_connection(connection_id, app_state.clone())
+        .map_err(|e| format!("Connection not found: {}", e))?;
+    forget_host_key(&*app_state.db()?, &host, port)
 }
 
 /// Rename an SSH connection (set display name)

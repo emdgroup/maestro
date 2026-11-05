@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::session::{ReconnectingPayload, RemoteSshSession, SshConnectionState};
-use crate::connectivity::ssh::error::is_transient_error;
+use crate::connectivity::ssh::error::{is_transient_error, SshError};
 
 /// Clean up all SSH PTY sessions associated with a given connection_id.
 async fn cleanup_pty_sessions_for_connection(
@@ -116,47 +116,55 @@ pub fn spawn_heartbeat_task(
                             .await
                             .as_ref()
                             .map(|p| p.to_string());
-                        if let Ok(()) = session.connect(password).await {
-                            crate::core::emit_or_log(&app_handle, "ssh-reconnected", connection_id);
-                            reconnected = true;
+                        match session.connect(password).await {
+                            Err(SshError::HostKeyError(message)) => {
+                                log::warn!(
+                                    "Not reconnecting SSH connection {connection_id}: {message}"
+                                );
+                                break;
+                            }
+                            Err(_) => continue,
+                            Ok(()) => {}
+                        }
 
-                            let restore_state = Arc::clone(&app_state);
-                            let restore_handle = app_handle.clone();
-                            tokio::spawn(async move {
-                                if crate::acp::restore_acp_sessions(connection_id, &restore_state)
+                        crate::core::emit_or_log(&app_handle, "ssh-reconnected", connection_id);
+                        reconnected = true;
+
+                        let restore_state = Arc::clone(&app_state);
+                        let restore_handle = app_handle.clone();
+                        tokio::spawn(async move {
+                            if crate::acp::restore_acp_sessions(connection_id, &restore_state)
+                                .await
+                                .is_err()
+                            {
+                                let remaining: Vec<crate::acp::RestorableSession> = restore_state
+                                    .acp
+                                    .restorable_sessions
+                                    .lock()
                                     .await
-                                    .is_err()
-                                {
-                                    let remaining: Vec<crate::acp::RestorableSession> =
-                                        restore_state
-                                            .acp
-                                            .restorable_sessions
-                                            .lock()
-                                            .await
-                                            .remove(&connection_id)
-                                            .unwrap_or_default();
-                                    for s in remaining {
-                                        crate::core::emit_or_log(
-                                            &restore_state.app_handle,
-                                            &format!("acp://session-ended/{}", s.session_id),
-                                            (),
-                                        );
-                                    }
+                                    .remove(&connection_id)
+                                    .unwrap_or_default();
+                                for s in remaining {
                                     crate::core::emit_or_log(
                                         &restore_state.app_handle,
-                                        "sessions-changed",
+                                        &format!("acp://session-ended/{}", s.session_id),
                                         (),
                                     );
                                 }
                                 crate::core::emit_or_log(
-                                    &restore_handle,
-                                    "acp-sessions-restored",
-                                    connection_id,
+                                    &restore_state.app_handle,
+                                    "sessions-changed",
+                                    (),
                                 );
-                            });
+                            }
+                            crate::core::emit_or_log(
+                                &restore_handle,
+                                "acp-sessions-restored",
+                                connection_id,
+                            );
+                        });
 
-                            break;
-                        }
+                        break;
                     }
 
                     if !reconnected {

@@ -1,6 +1,7 @@
 use crate::connectivity::ssh::auth::{authenticate_via_agent, expand_tilde, open_handle};
 use crate::connectivity::ssh::error::SshError;
 pub use crate::connectivity::ssh::history::SshPtyHandle;
+use crate::connectivity::ssh::host_key::{accepts, HostKey};
 pub use crate::connectivity::ssh::pty::SshWriteOp;
 pub use crate::connectivity::ssh::types::{
     ReconnectingPayload, SshAuthMethod, SshConnection, SshConnectionState,
@@ -16,17 +17,26 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use zeroize::Zeroizing;
 
-/// russh client handler — accepts all server keys (same behaviour as previous libssh2 code)
-pub(crate) struct SshClientHandler;
+/// russh client handler. Accepts the server's key when it matches `pinned`, or any key when there
+/// is no pin, and records the key it was shown in `presented` either way (see `host_key`).
+pub(crate) struct SshClientHandler {
+    pub(crate) pinned: Option<HostKey>,
+    pub(crate) presented: Arc<std::sync::Mutex<Option<HostKey>>>,
+}
 
 impl client::Handler for SshClientHandler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::PublicKeyOrCertificate,
+        server_public_key: &russh::keys::PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
-        Ok(true)
+        let presented = HostKey::from_presented(server_public_key);
+        let accepted = accepts(self.pinned.as_ref(), &presented);
+        if let Ok(mut slot) = self.presented.lock() {
+            *slot = Some(presented);
+        }
+        Ok(accepted)
     }
 }
 
@@ -38,6 +48,7 @@ pub struct RemoteSshSession {
     pub(crate) reconnect_attempts: Arc<AtomicUsize>,
     pub(crate) session_password: Arc<Mutex<Option<Zeroizing<String>>>>,
     key_passphrase: Arc<Mutex<Option<String>>>,
+    host_key: Arc<Mutex<Option<HostKey>>>,
 }
 
 impl Clone for RemoteSshSession {
@@ -49,13 +60,15 @@ impl Clone for RemoteSshSession {
             reconnect_attempts: self.reconnect_attempts.clone(),
             session_password: self.session_password.clone(),
             key_passphrase: self.key_passphrase.clone(),
+            host_key: self.host_key.clone(),
         }
     }
 }
 
 impl RemoteSshSession {
-    /// Create a new SSH session with the given configuration
-    pub fn new(ssh_connection: SshConnection) -> Self {
+    /// Create a new SSH session with the given configuration, verifying the host against
+    /// `host_key` when one is pinned
+    pub fn new(ssh_connection: SshConnection, host_key: Option<HostKey>) -> Self {
         Self {
             handle: Arc::new(Mutex::new(None)),
             ssh_connection,
@@ -63,11 +76,21 @@ impl RemoteSshSession {
             reconnect_attempts: Arc::new(AtomicUsize::new(0)),
             session_password: Arc::new(Mutex::new(None)),
             key_passphrase: Arc::new(Mutex::new(None)),
+            host_key: Arc::new(Mutex::new(host_key)),
         }
+    }
+
+    /// The key this session verifies the host against, once a connect has pinned one
+    pub async fn host_key(&self) -> Option<HostKey> {
+        self.host_key.lock().await.clone()
     }
 
     pub fn connection_id(&self) -> i32 {
         self.ssh_connection.id
+    }
+
+    pub fn address(&self) -> (&str, u16) {
+        (&self.ssh_connection.host, self.ssh_connection.port)
     }
 
     /// Establish SSH connection with authentication
@@ -78,7 +101,8 @@ impl RemoteSshSession {
         let port = self.ssh_connection.port;
         let username = self.ssh_connection.username.clone();
 
-        let mut handle = open_handle(host, port).await?;
+        let pinned = self.host_key.lock().await.clone();
+        let (mut handle, presented) = open_handle(host, port, pinned).await?;
 
         let auth_result = match &self.ssh_connection.auth_method {
             SshAuthMethod::Password { save_password } => {
@@ -173,6 +197,7 @@ impl RemoteSshSession {
                     ));
                 }
                 // Return early — already confirmed authenticated
+                *self.host_key.lock().await = Some(presented);
                 *self.handle.lock().await = Some(handle);
                 *self.state.lock().await = SshConnectionState::Connected;
                 self.reconnect_attempts.store(0, Ordering::SeqCst);
@@ -186,6 +211,7 @@ impl RemoteSshSession {
             ));
         }
 
+        *self.host_key.lock().await = Some(presented);
         *self.handle.lock().await = Some(handle);
         *self.state.lock().await = SshConnectionState::Connected;
         self.reconnect_attempts.store(0, Ordering::SeqCst);
@@ -244,7 +270,8 @@ impl RemoteSshSession {
         // Store the passphrase so reconnection can reuse it
         *self.key_passphrase.lock().await = passphrase.clone();
 
-        let mut handle = open_handle(host, port).await?;
+        let pinned = self.host_key.lock().await.clone();
+        let (mut handle, presented) = open_handle(host, port, pinned).await?;
 
         // russh-keys handles all formats natively (OpenSSH ed25519, RSA PEM, ECDSA, …)
         let key = russh::keys::load_secret_key(Path::new(&expanded), passphrase.as_deref())
@@ -280,6 +307,7 @@ impl RemoteSshSession {
             )));
         }
 
+        *self.host_key.lock().await = Some(presented);
         *self.handle.lock().await = Some(handle);
         *self.state.lock().await = SshConnectionState::Connected;
         self.reconnect_attempts.store(0, Ordering::SeqCst);

@@ -164,6 +164,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::settings::handlers::get_system_accent_color,
         crate::connectivity::filesystem_handlers::open_path_native,
         crate::connectivity::ssh_handlers::delete_ssh_connection,
+        crate::connectivity::ssh_handlers::forget_ssh_host_key,
         crate::connectivity::ssh_handlers::rename_ssh_connection,
         crate::git::worktree_query::get_untracked_file_content,
         crate::git::worktree_query::get_file_content_at_base,

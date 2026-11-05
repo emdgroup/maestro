@@ -108,7 +108,7 @@ window opens and not before.
 A surface is an HTML document the agent writes, rendered in
 `<iframe srcdoc sandbox="allow-scripts">` — opaque origin, no `allow-same-origin`, ever. That is
 the whole trust boundary: `withGlobalTauri` puts `invoke` on the app origin with no per-command
-permissions, so agent script on that origin could call all 249 commands.
+permissions, so agent script on that origin could call all 250 commands.
 
 `src/components/execution/activity/canvas/canvas-frame.ts` builds everything Maestro prepends —
 `<base href="about:blank">` (a srcdoc frame inherits the _parent's_ base URL, so without this

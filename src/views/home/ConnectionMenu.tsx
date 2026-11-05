@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ComponentProps } from "react";
 import { Menu } from "@base-ui/react/menu";
-import { KeyRound, Play, RotateCcw, Settings, Square, Trash2 } from "lucide-react";
+import { KeyRound, Play, RotateCcw, Settings, ShieldOff, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   DropdownMenu,
@@ -16,11 +16,11 @@ import type { ConnectionPhase } from "@/store/homeStore";
 import type { HomeConnection } from "@/components/home/useHomeConnections";
 import type { ProjectCard } from "@/components/home/ProjectTile";
 import { HomeSheet } from "@/components/home/HomeSheet";
-import { attach, connect } from "@/services/connection.service";
+import { attach, connect, forgetSshHostKey, isHostKeyChanged } from "@/services/connection.service";
 import { useStopBackgroundServerMutation } from "@/services/automation.service";
 import { formatUptime } from "@/lib/format-utils";
 
-type Confirm = "stop" | "restart" | "remove";
+type Confirm = "stop" | "restart" | "remove" | "forget";
 
 interface ConnectionMenuProps {
   connection: HomeConnection;
@@ -58,7 +58,7 @@ function Item({
 
 /**
  * The `⋯` menu of a connection: its server's state in the header, then what can be done to it.
- * Stop, Restart and Remove confirm first, listing what each would interrupt.
+ * Stop, Restart, Remove and Forget host key confirm first, listing what each would interrupt.
  */
 export function ConnectionMenu({
   connection,
@@ -128,6 +128,11 @@ export function ConnectionMenu({
       note: `Projects and their boards stay on ${connection.detail}. Adding the connection again brings them back.`,
       action: "Remove",
     },
+    forget: {
+      title: `Forget the host key of ${connection.name}?`,
+      note: "The next connect trusts whatever key the host presents. Do this only if you know why the key changed.",
+      action: "Forget and connect",
+    },
   };
 
   // Closed as soon as the action starts: the panel shows the server stopping or starting again,
@@ -147,6 +152,10 @@ export function ConnectionMenu({
         if (stopped) await attach(connection.key);
       }
       if (action === "remove") await onRemove?.();
+      if (action === "forget" && connection.ssh) {
+        await forgetSshHostKey(connection.ssh.id);
+        await connect(connection.key);
+      }
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
@@ -194,6 +203,11 @@ export function ConnectionMenu({
                     ? "Password"
                     : "Key file"}
               </span>
+            </Item>
+          )}
+          {connection.ssh && phase.kind === "failed" && isHostKeyChanged(phase.error) && (
+            <Item danger onClick={() => setConfirm("forget")}>
+              <ShieldOff /> Forget host key
             </Item>
           )}
           {up && (
