@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
+import { Autocomplete } from "@base-ui/react/autocomplete";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +11,7 @@ import {
 } from "@/ui/dialog";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
+import { ComboboxContent, ComboboxInput, ComboboxItem, ComboboxList } from "@/ui/combobox";
 import { useSaveTemplateMutation, useTemplatesQuery } from "@/services/template.service";
 import { BUILTIN_TEMPLATES, describeTrigger, templateOf } from "./templates";
 import type { Automation } from "@/types/bindings";
@@ -26,6 +28,7 @@ export function SaveAsTemplateDialog({
   const save = useSaveTemplateMutation();
   const [name, setName] = useState("");
   const [tag, setTag] = useState("");
+  const [highlighted, setHighlighted] = useState<string | undefined>();
   const { data: stored } = useTemplatesQuery();
   // Offered, not imposed: reusing a tag is what makes it group anything, and a typo would not.
   const knownTags = [
@@ -92,19 +95,31 @@ export function SaveAsTemplateDialog({
             </label>
             <label className="block min-w-0 space-y-1">
               <span className="field-label">Tag</span>
-              <Input
+              {/* An autocomplete, not a select: a new tag is as valid as a known one. Not a
+                  `<datalist>` either, whose popup the OS draws without any of the app's styling. */}
+              <Autocomplete.Root
+                items={knownTags}
                 value={tag}
-                list="template-tags"
-                placeholder="Optional, for example Code quality"
-                onChange={(event) => setTag(event.target.value)}
-                onKeyDown={(event) => event.key === "Enter" && submit()}
-                className="h-8 text-xs"
-              />
-              <datalist id="template-tags">
-                {knownTags.map((known) => (
-                  <option key={known} value={known} />
-                ))}
-              </datalist>
+                onValueChange={setTag}
+                onItemHighlighted={setHighlighted}
+                openOnInputClick
+              >
+                <ComboboxInput
+                  placeholder="Optional, for example Code quality"
+                  // Enter on a highlighted suggestion picks it; only otherwise does it save.
+                  onKeyDown={(event) => event.key === "Enter" && !highlighted && submit()}
+                  className="h-8 w-full [&_input]:text-xs"
+                />
+                <ComboboxContent>
+                  <ComboboxList>
+                    {(known: string) => (
+                      <ComboboxItem key={known} value={known} className="text-xs">
+                        {known}
+                      </ComboboxItem>
+                    )}
+                  </ComboboxList>
+                </ComboboxContent>
+              </Autocomplete.Root>
             </label>
           </div>
           <DialogFooter>
