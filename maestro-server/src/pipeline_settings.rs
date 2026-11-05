@@ -183,7 +183,8 @@ fn available_memory_mb() -> Option<u64> {
     use sysinfo::{MemoryRefreshKind, RefreshKind, System};
     let system = System::new_with_specifics(
         RefreshKind::nothing().with_memory(MemoryRefreshKind::nothing().with_ram()),
-    );
+    )
+    .ok()?;
     (system.total_memory() > 0).then(|| system.available_memory() / (1024 * 1024))
 }
 
