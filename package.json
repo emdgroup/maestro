@@ -32,7 +32,7 @@
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "6.43.15",
     "@dnd-kit/abstract": "^0.5.1",
-    "@dnd-kit/collision": "^0.5.1",
+    "@dnd-kit/collision": "^0.5.3",
     "@dnd-kit/dom": "^0.5.1",
     "@dnd-kit/helpers": "^0.5.1",
     "@dnd-kit/react": "^0.5.1",
