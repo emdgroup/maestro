@@ -77,7 +77,9 @@ Every change the session made, as a diff, unified or split, with a file list you
 
 The workspace as a tree, with an editor. Open any file, edit it, create or rename files and folders, show hidden files, and open a file in its default application. Images, PDFs, audio and video show in place, and Markdown can be edited side by side with its preview. Click the file name in the header to copy its full path. On a remote connection, **Download and open** and **Download to…** fetch a copy to this computer. If the agent writes to a file while you are editing it, Maestro asks before overwriting either version.
 
-<img src="../../docs/assets/side-panel-files.webp" alt="The Files tab maximized over the session, with the file tree and store.ts open in the editor" width="960" />
+Each file opens in its own tab. Drag a tab to the side, or choose **Move to the side** from its menu, to show two files next to each other, and drag the line between them to resize. Drag tabs to reorder them or to move them between sides; a side with no tabs left closes. A file link in an agent's reply opens its file here, and a link to a line, such as `store.ts#L42` or `#L42-L50`, scrolls to that line and briefly highlights it.
+
+<img src="../../docs/assets/side-panel-files.webp" alt="The Files tab maximized over the session, split in two: format.ts and store.ts open as tabs on the left, format.test.ts on the right" width="960" />
 
 ### Terminal
 
