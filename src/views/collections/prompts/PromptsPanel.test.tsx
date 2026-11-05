@@ -222,6 +222,9 @@ describe("PromptsPanel", () => {
     await user.click(within(dialog).getByText("Write the prompt…"));
     await user.paste("Explain how it works");
     await user.type(within(dialog).getByLabelText("Tags"), "Onboarding{Enter}docs,");
+    // The suggestions are still open and hide the rest of the dialog from the accessibility tree.
+    // Escape closes them, and only them.
+    await user.keyboard("{Escape}");
     await user.click(within(dialog).getByRole("button", { name: "Create prompt" }));
 
     await waitFor(() =>
@@ -233,6 +236,26 @@ describe("PromptsPanel", () => {
         shared: true,
         favorite: false,
       }),
+    );
+  });
+
+  it("adds a known tag picked from the suggestions", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText("Local only");
+    await user.click(screen.getByRole("button", { name: "New prompt in shared" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByLabelText("Title"));
+    await user.paste("Explain module");
+    await user.click(within(dialog).getByText("Write the prompt…"));
+    await user.paste("Explain how it works");
+    await user.type(within(dialog).getByLabelText("Tags"), "te");
+    await user.click(await screen.findByRole("option", { name: "tests" }));
+    await user.keyboard("{Escape}");
+    await user.click(within(dialog).getByRole("button", { name: "Create prompt" }));
+
+    await waitFor(() =>
+      expect(api.savePrompt).toHaveBeenCalledWith(7, expect.objectContaining({ tags: ["tests"] })),
     );
   });
 

@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Star, Users, X } from "lucide-react";
+import { Autocomplete } from "@base-ui/react/autocomplete";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { Button } from "@/ui/button";
+import { ComboboxContent, ComboboxItem, ComboboxList } from "@/ui/combobox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { MarkdownEditor } from "@/components/kanban/shared/MarkdownEditor";
@@ -35,6 +37,7 @@ export function PromptEditorDialog({
   const [body, setBody] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [tagDraft, setTagDraft] = useState("");
+  const [highlighted, setHighlighted] = useState<string | undefined>();
   const [shared, setShared] = useState(false);
   const [favorite, setFavorite] = useState(false);
 
@@ -149,33 +152,42 @@ export function PromptEditorDialog({
                 </button>
               </span>
             ))}
-            <input
-              aria-label="Tags"
+            {/* Not a `<datalist>`, whose popup the OS draws without any of the app's styling. */}
+            <Autocomplete.Root
+              items={knownTags.filter((known) => !tags.includes(known))}
               value={tagDraft}
-              list="prompt-tags"
-              placeholder="+ Add tag"
-              onChange={(event) => {
-                const value = event.target.value;
-                if (value.endsWith(",")) addTag(value.slice(0, -1));
-                else setTagDraft(value);
+              onValueChange={(value, details) => {
+                if (details.reason === "item-press" || value.endsWith(",")) {
+                  addTag(value.replace(/,$/, ""));
+                } else setTagDraft(value);
               }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  addTag(tagDraft);
-                } else if (event.key === "Backspace" && !tagDraft && tags.length) {
-                  setTags(tags.slice(0, -1));
-                }
-              }}
-              className="h-6 w-28 rounded-lg border border-dashed border-foreground/15 bg-transparent px-2 text-[11px] outline-none placeholder:text-muted-foreground focus:border-solid focus:border-ring"
-            />
-            <datalist id="prompt-tags">
-              {knownTags
-                .filter((known) => !tags.includes(known))
-                .map((known) => (
-                  <option key={known} value={known} />
-                ))}
-            </datalist>
+              onItemHighlighted={setHighlighted}
+              openOnInputClick
+            >
+              <Autocomplete.Input
+                aria-label="Tags"
+                placeholder="+ Add tag"
+                onKeyDown={(event) => {
+                  // Enter on a highlighted suggestion picks it, through `onValueChange`.
+                  if (event.key === "Enter" && !highlighted) {
+                    event.preventDefault();
+                    addTag(tagDraft);
+                  } else if (event.key === "Backspace" && !tagDraft && tags.length) {
+                    setTags(tags.slice(0, -1));
+                  }
+                }}
+                className="h-6 w-28 rounded-lg border border-dashed border-foreground/15 bg-transparent px-2 text-[11px] outline-none placeholder:text-muted-foreground focus:border-solid focus:border-ring"
+              />
+              <ComboboxContent>
+                <ComboboxList>
+                  {(known: string) => (
+                    <ComboboxItem key={known} value={known} className="text-xs">
+                      {known}
+                    </ComboboxItem>
+                  )}
+                </ComboboxList>
+              </ComboboxContent>
+            </Autocomplete.Root>
           </div>
         </div>
 
