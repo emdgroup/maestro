@@ -18,6 +18,10 @@ Hold **Ctrl** for about a second to see the shortcuts drawn over the buttons the
 | Agents                    | Ctrl+H          | Session history                        |
 | Agents                    | Shift+Tab       | Next agent mode                        |
 | Agents                    | Esc             | Cancel the agent's turn                |
-| Files editor              | Ctrl+S          | Save the file                          |
+| Files                     | Ctrl+E          | Edit the file                          |
+| Files                     | Esc             | Stop editing                           |
+| Files                     | Ctrl+S          | Save the file                          |
+| Files                     | Ctrl+W          | Close the file's tab                   |
+| Files                     | Ctrl+O          | Open in the default application        |
 | Workspaces                | Ctrl+N          | New worktree                           |
 | Workspaces                | Ctrl+R          | Refresh                                |
