@@ -696,6 +696,15 @@
   stroke-dasharray: none;
 }
 
+/* Set by `main.tsx` while the window is minimized or covered. WebView2 still reports the page as
+   visible then, so without this every infinite animation keeps compositing frames nobody sees.
+   Paused rather than reset, so everything picks up where it was when the window comes back. */
+.window-hidden *,
+.window-hidden *::before,
+.window-hidden *::after {
+  animation-play-state: paused !important;
+}
+
 .shimmer-thinking-icon {
   mask-image: linear-gradient(
     90deg,

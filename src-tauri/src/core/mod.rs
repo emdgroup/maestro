@@ -3,6 +3,7 @@ pub mod desktop_entry;
 pub mod logging;
 pub mod project_storage;
 pub mod schema;
+pub mod window_occlusion;
 
 pub use connection::{
     get_git_connection, get_project_with_git_conn, git_connection_for, init_db, new_session_id,

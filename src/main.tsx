@@ -9,6 +9,7 @@ import { AppErrorBoundary } from "@/components/common/AppErrorBoundary";
 import { AppContextMenu } from "@/components/common/context-menu/AppContextMenu";
 import { WindowResizeHandles } from "@/components/layout/window-chrome/WindowResizeHandles";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 
 // Detect and apply system theme synchronously before React renders
 // This prevents flash of unstyled content on startup
@@ -44,3 +45,9 @@ void getCurrentWindow()
   .catch((error: unknown) => {
     console.error("Failed to show the main window:", error);
   });
+
+// Set by the backend while the window is minimized or covered, which WebView2 never notices on its
+// own. `.window-hidden` in index.css pauses every animation. See `core/window_occlusion.rs`.
+void listen<boolean>("window-hidden", (event) => {
+  document.documentElement.classList.toggle("window-hidden", event.payload);
+});

@@ -10,6 +10,9 @@ function bubbleRand(seed: number): number {
   return (h >>> 0) / 4294967296;
 }
 
+/** How often the field steps, whatever the monitor's refresh rate. See the clock in `AccentBubbles`. */
+const FIELD_FRAME_MS = 1000 / 30;
+
 // Lanes are 100px wide, and both fields span the window, so the count follows the window: a
 // fixed count either leaves a bare strip on a wide monitor or animates lanes that are clipped
 // off-screen. One spare lane covers the remainder past the last full one.
@@ -235,6 +238,45 @@ export function AccentBubbles({ variant, className }: AccentBubblesProps) {
     root.addEventListener("animationiteration", onIteration);
     return () => root.removeEventListener("animationiteration", onIteration);
   }, [bubbles, spec, lanes]);
+
+  // The field covers the window, so every step of it redraws the whole window, the glass tiles'
+  // backdrop blur included, at the monitor's rate: 127 a second on a 120 Hz panel. The bubbles move
+  // slowly enough that 30 steps a second read the same, so they are paused and advanced here on a
+  // 30 Hz timer instead. Measured at 127 Hz: ~55% of a core native, ~35% capped. Nothing advances
+  // while the window is hidden (see `window_occlusion.rs`).
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const html = document.documentElement;
+    let last = performance.now();
+    // Times are kept here and only ever written: reading an animation's time right after writing
+    // another's forces a style recalculation each, ~3300 a second for this field.
+    let animations: Animation[] = [];
+    let times: number[] = [];
+    let stale = true;
+    const restale = () => (stale = true);
+    // A timer, not requestAnimationFrame: asking for even one frame per step keeps Chromium's frame
+    // clock ticking at the monitor's rate, which measured no cheaper than not capping at all.
+    const timer = window.setInterval(() => {
+      if (stale) {
+        stale = false;
+        animations = root.getAnimations({ subtree: true });
+        times = animations.map((animation) => Number(animation.currentTime ?? 0));
+        for (const animation of animations) animation.pause();
+      }
+      const now = performance.now();
+      const elapsed = now - last;
+      last = now;
+      if (html.classList.contains("window-hidden")) return;
+      animations.forEach((animation, index) => (animation.currentTime = times[index] += elapsed));
+    }, FIELD_FRAME_MS);
+    // Showing the field again after reduce motion starts new animations, which start running.
+    root.addEventListener("animationstart", restale);
+    return () => {
+      root.removeEventListener("animationstart", restale);
+      clearInterval(timer);
+    };
+  }, [field]);
 
   // Two elements per bubble: the wrapper carries the motion, the inner span is the visible disc.
   // See `.accent-bubble` in index.css for why the geometry is split this way.
