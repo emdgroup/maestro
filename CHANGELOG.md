@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.46.0](https://github.com/emdgroup/maestro/compare/v0.45.2...v0.46.0) (2026-11-06)
+
+
+### Features
+
+* **board:** separate queue controls from filters in the board header ([7c3025c](https://github.com/emdgroup/maestro/commit/7c3025ccdcdd043c1caba33ce0cd3b9a6e48c56c))
+* **board:** show picked filter values and use the accent for Auto-run ([7c3025c](https://github.com/emdgroup/maestro/commit/7c3025ccdcdd043c1caba33ce0cd3b9a6e48c56c))
+* **ssh:** verify host keys by trust on first use ([#612](https://github.com/emdgroup/maestro/issues/612)) ([0ca24cc](https://github.com/emdgroup/maestro/commit/0ca24cc64e9fb609d7fec3110608027769a054ea))
+
+
+### Bug Fixes
+
+* pause animations while the window is minimized or covered ([669321d](https://github.com/emdgroup/maestro/commit/669321dcf1f41a175c72384fd42f7d4cab1f37af))
+* step the bubble field at 30 Hz instead of the monitor's rate ([669321d](https://github.com/emdgroup/maestro/commit/669321dcf1f41a175c72384fd42f7d4cab1f37af))
+
 ## [0.45.2](https://github.com/emdgroup/maestro/compare/v0.45.1...v0.45.2) (2026-11-05)
 
 
