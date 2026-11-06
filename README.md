@@ -12,9 +12,6 @@
 
 ---
 
-> [!WARNING]
-> Maestro is under active development. Features may be heavily modified or removed without notice, and the UI changes frequently between releases.
-
 <p align="center"><img src="docs/assets/workflow.webp" alt="Approving an agent's plan from the Kanban board, watching the review session, and reading the task's diff in Maestro" width="960" /></p>
 
 ---
