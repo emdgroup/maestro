@@ -115,6 +115,9 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // dropping the frame here costs no visible flash.
     maestro_lib::settings::handlers::apply_window_frame(app.handle(), settings.native_window_frame);
 
+    // Pauses the frontend's animations while the window is minimized or covered.
+    maestro_lib::core::window_occlusion::watch(app.handle());
+
     // First lines of every log: the facts a bug report is useless without. The level and directory
     // are among them — they are user-settable, so a reader cannot assume the defaults. PATH is
     // there because local children inherit it: on macOS it is the only way to tell from a log
