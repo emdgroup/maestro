@@ -109,7 +109,7 @@
     {
       "id": "auggie",
       "name": "Auggie CLI",
-      "version": "0.36.0",
+      "version": "0.37.0",
       "description": "Augment Code's powerful software agent, backed by industry-leading context engine",
       "repository": "https://github.com/augmentcode/auggie",
       "website": "https://www.augmentcode.com/",
@@ -119,7 +119,7 @@
       "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/auggie.svg",
       "distribution": {
         "npx": {
-          "package": "@augmentcode/auggie@0.36.0",
+          "package": "@augmentcode/auggie@0.37.0",
           "args": ["--acp"],
           "env": {
             "AUGMENT_DISABLE_AUTO_UPDATE": "1"
@@ -130,7 +130,7 @@
     {
       "id": "autohand",
       "name": "Autohand Code",
-      "version": "0.9.9",
+      "version": "0.9.10",
       "description": "Autohand Code CLI with native ACP support",
       "repository": "https://github.com/autohandai/code-cli",
       "website": "https://github.com/autohandai/code-cli/blob/main/docs/guides/ACP.md",
@@ -140,32 +140,44 @@
       "distribution": {
         "binary": {
           "darwin-aarch64": {
-            "archive": "https://github.com/autohandai/code-cli/releases/download/v0.9.9/autohand-macos-arm64.tar.gz",
-            "sha256": "e873edb3a98f067365dbdc74fd0ee52a78e9b5cc7341ac6a76d9a71b95d74a4d",
+            "archive": "https://github.com/autohandai/code-cli/releases/download/v0.9.10/autohand-macos-arm64.tar.gz",
+            "sha256": "bd3aa36d0e0c5bc1105ffafa5d4f4e1723a98255b6e7d9c7b5c8705fa87eddc0",
             "cmd": "./autohand",
             "args": ["--acp"]
           },
           "darwin-x86_64": {
-            "archive": "https://github.com/autohandai/code-cli/releases/download/v0.9.9/autohand-macos-x64.tar.gz",
-            "sha256": "cdd5395a52eb043efcb2d325367c0f364c76f254ebb67148d22227770336d8e7",
+            "archive": "https://github.com/autohandai/code-cli/releases/download/v0.9.10/autohand-macos-x64.tar.gz",
+            "sha256": "2d91db448f4b5623e78610d7e743137a81c3a83fc9a70da31a7dab1f9760d05d",
             "cmd": "./autohand",
             "args": ["--acp"]
           },
           "linux-aarch64": {
-            "archive": "https://github.com/autohandai/code-cli/releases/download/v0.9.9/autohand-linux-arm64.tar.gz",
-            "sha256": "3fb41af063007b7f8ff4fd947051631c8c5089a8b931e99b40c07c56a1d4ba19",
+            "archive": "https://github.com/autohandai/code-cli/releases/download/v0.9.10/autohand-linux-arm64.tar.gz",
+            "sha256": "174db918844cf0a7c78ad8bbfaf33093f28a38f4951182a893075e75b819fac5",
             "cmd": "./autohand",
             "args": ["--acp"]
           },
           "linux-x86_64": {
-            "archive": "https://github.com/autohandai/code-cli/releases/download/v0.9.9/autohand-linux-x64.tar.gz",
-            "sha256": "852ef7decae6405ae2139d04eb82649aab798145644b0136f7eeb958cd791775",
+            "archive": "https://github.com/autohandai/code-cli/releases/download/v0.9.10/autohand-linux-x64.tar.gz",
+            "sha256": "dcec59cf889db661c7f6678efa554616ce80758fda7ab4d5c03f18e0645a5e8a",
+            "cmd": "./autohand",
+            "args": ["--acp"]
+          },
+          "linux-aarch64-musl": {
+            "archive": "https://github.com/autohandai/code-cli/releases/download/v0.9.10/autohand-linux-arm64-musl.tar.gz",
+            "sha256": "de3ef40020ceed8a19e5478b0e38220d1aadcd76490997b7eb6c068709f4ed57",
+            "cmd": "./autohand",
+            "args": ["--acp"]
+          },
+          "linux-x86_64-musl": {
+            "archive": "https://github.com/autohandai/code-cli/releases/download/v0.9.10/autohand-linux-x64-musl.tar.gz",
+            "sha256": "1d799472884281f8767e08a3634980412651a578d42f4d84feedcb0931d69828",
             "cmd": "./autohand",
             "args": ["--acp"]
           },
           "windows-x86_64": {
-            "archive": "https://github.com/autohandai/code-cli/releases/download/v0.9.9/autohand-windows-x64.zip",
-            "sha256": "d109c17dd1a5669b73a259991766b1b143c1f727eb698b6c730609f330341dfd",
+            "archive": "https://github.com/autohandai/code-cli/releases/download/v0.9.10/autohand-windows-x64.zip",
+            "sha256": "4dbce386c61d860c323bbfbbdb851e15b35dfbb2aa4bb32b13b4d53e54a04419",
             "cmd": "./autohand.exe",
             "args": ["--acp"]
           }
@@ -193,15 +205,57 @@
     {
       "id": "claude-acp",
       "name": "Claude Agent",
-      "version": "0.99.1",
+      "version": "0.101.1",
       "description": "ACP wrapper for Anthropic's Claude",
       "repository": "https://github.com/agentclientprotocol/claude-agent-acp",
       "authors": ["Anthropic", "Zed Industries", "JetBrains"],
       "license": "proprietary",
       "license_url": "https://github.com/agentclientprotocol/claude-agent-acp/blob/main/LICENSE",
       "distribution": {
+        "binary": {
+          "darwin-aarch64": {
+            "archive": "https://github.com/agentclientprotocol/claude-agent-acp/releases/download/v0.101.1/claude-agent-acp-darwin-arm64.zip",
+            "cmd": "./claude-agent-acp",
+            "sha256": "60acc44d1b9964456c22fb0f32ae12e25a7b2c37c4f98cb1b2345f690b6d1116"
+          },
+          "darwin-x86_64": {
+            "archive": "https://github.com/agentclientprotocol/claude-agent-acp/releases/download/v0.101.1/claude-agent-acp-darwin-x64.zip",
+            "cmd": "./claude-agent-acp",
+            "sha256": "bcf02862a1ecb5566b84da83777620fb26d48d5e046329a9177d55a4cc55d5f6"
+          },
+          "linux-aarch64": {
+            "archive": "https://github.com/agentclientprotocol/claude-agent-acp/releases/download/v0.101.1/claude-agent-acp-linux-arm64.tar.gz",
+            "cmd": "./claude-agent-acp",
+            "sha256": "91889a2e6280d47293e599c95f4c2c61905b26c33d7e0e94a8719d2e08636222"
+          },
+          "linux-x86_64": {
+            "archive": "https://github.com/agentclientprotocol/claude-agent-acp/releases/download/v0.101.1/claude-agent-acp-linux-x64.tar.gz",
+            "cmd": "./claude-agent-acp",
+            "sha256": "5f06b504424ff6e4e9ae1cd12b3d483d4665eda742ba3ac91513f3cb45e8e5fc"
+          },
+          "linux-aarch64-musl": {
+            "archive": "https://github.com/agentclientprotocol/claude-agent-acp/releases/download/v0.101.1/claude-agent-acp-linux-arm64-musl.tar.gz",
+            "cmd": "./claude-agent-acp",
+            "sha256": "f40459f31a9b209d8f0f75c98b7877ecb794ed9661e1063696aa0a71053ff868"
+          },
+          "linux-x86_64-musl": {
+            "archive": "https://github.com/agentclientprotocol/claude-agent-acp/releases/download/v0.101.1/claude-agent-acp-linux-x64-musl.tar.gz",
+            "cmd": "./claude-agent-acp",
+            "sha256": "2bd42bdcfaea02f3fc0c5e803eb0dfae97e57e286e72ac761e6076ed3080ec70"
+          },
+          "windows-aarch64": {
+            "archive": "https://github.com/agentclientprotocol/claude-agent-acp/releases/download/v0.101.1/claude-agent-acp-windows-arm64.zip",
+            "cmd": "./claude-agent-acp.exe",
+            "sha256": "3525001caa55f2e0296ca135b644d91d5f801a850647a0179bc2d89b77a05e09"
+          },
+          "windows-x86_64": {
+            "archive": "https://github.com/agentclientprotocol/claude-agent-acp/releases/download/v0.101.1/claude-agent-acp-windows-x64.zip",
+            "cmd": "./claude-agent-acp.exe",
+            "sha256": "3e42a3b676a5d676184ffac8ea90fa2e578db7f0bb1a0aaa23031840945620a7"
+          }
+        },
         "npx": {
-          "package": "@agentclientprotocol/claude-agent-acp@0.99.1"
+          "package": "@agentclientprotocol/claude-agent-acp@0.101.1"
         }
       },
       "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/claude-acp.svg"
@@ -227,7 +281,7 @@
     {
       "id": "codebuddy-code",
       "name": "Codebuddy Code",
-      "version": "2.179.2",
+      "version": "2.181.0",
       "description": "Tencent Cloud's official intelligent coding tool",
       "website": "https://www.codebuddy.cn/cli/",
       "authors": ["Tencent Cloud"],
@@ -235,7 +289,7 @@
       "license_url": "https://www.codebuddy.cn/agreement/",
       "distribution": {
         "npx": {
-          "package": "@tencent-ai/codebuddy-code@2.179.2",
+          "package": "@tencent-ai/codebuddy-code@2.181.0",
           "args": ["--acp"]
         }
       },
@@ -244,7 +298,7 @@
     {
       "id": "codex-acp",
       "name": "Codex",
-      "version": "2.5.0",
+      "version": "2.6.0",
       "description": "ACP adapter for OpenAI's coding assistant",
       "repository": "https://github.com/agentclientprotocol/codex-acp",
       "authors": ["OpenAI", "JetBrains s.r.o", "Zed Industries"],
@@ -252,7 +306,7 @@
       "license_url": "https://github.com/agentclientprotocol/codex-acp/blob/main/LICENSE",
       "distribution": {
         "npx": {
-          "package": "@agentclientprotocol/codex-acp@2.5.0"
+          "package": "@agentclientprotocol/codex-acp@2.6.0"
         }
       },
       "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/codex-acp.svg"
@@ -383,7 +437,7 @@
     {
       "id": "cursor",
       "name": "Cursor",
-      "version": "2026.10.22",
+      "version": "2026.11.05",
       "description": "Cursor's coding agent",
       "website": "https://cursor.com/docs/cli/acp",
       "authors": ["Cursor"],
@@ -392,32 +446,32 @@
       "distribution": {
         "binary": {
           "darwin-aarch64": {
-            "archive": "https://downloads.cursor.com/lab/2026.10.22-27dcf5f/darwin/arm64/agent-cli-package.tar.gz",
+            "archive": "https://downloads.cursor.com/lab/2026.11.05-86047df/darwin/arm64/agent-cli-package.tar.gz",
             "cmd": "./dist-package/cursor-agent",
             "args": ["acp"]
           },
           "darwin-x86_64": {
-            "archive": "https://downloads.cursor.com/lab/2026.10.22-27dcf5f/darwin/x64/agent-cli-package.tar.gz",
+            "archive": "https://downloads.cursor.com/lab/2026.11.05-86047df/darwin/x64/agent-cli-package.tar.gz",
             "cmd": "./dist-package/cursor-agent",
             "args": ["acp"]
           },
           "linux-aarch64": {
-            "archive": "https://downloads.cursor.com/lab/2026.10.22-27dcf5f/linux/arm64/agent-cli-package.tar.gz",
+            "archive": "https://downloads.cursor.com/lab/2026.11.05-86047df/linux/arm64/agent-cli-package.tar.gz",
             "cmd": "./dist-package/cursor-agent",
             "args": ["acp"]
           },
           "linux-x86_64": {
-            "archive": "https://downloads.cursor.com/lab/2026.10.22-27dcf5f/linux/x64/agent-cli-package.tar.gz",
+            "archive": "https://downloads.cursor.com/lab/2026.11.05-86047df/linux/x64/agent-cli-package.tar.gz",
             "cmd": "./dist-package/cursor-agent",
             "args": ["acp"]
           },
           "windows-aarch64": {
-            "archive": "https://downloads.cursor.com/lab/2026.10.22-27dcf5f/windows/arm64/agent-cli-package.zip",
+            "archive": "https://downloads.cursor.com/lab/2026.11.05-86047df/windows/arm64/agent-cli-package.zip",
             "cmd": "./dist-package\\cursor-agent.cmd",
             "args": ["acp"]
           },
           "windows-x86_64": {
-            "archive": "https://downloads.cursor.com/lab/2026.10.22-27dcf5f/windows/x64/agent-cli-package.zip",
+            "archive": "https://downloads.cursor.com/lab/2026.11.05-86047df/windows/x64/agent-cli-package.zip",
             "cmd": "./dist-package\\cursor-agent.cmd",
             "args": ["acp"]
           }
@@ -446,7 +500,7 @@
     {
       "id": "devin",
       "name": "Devin",
-      "version": "3000.11.234",
+      "version": "3000.12.32",
       "description": "Devin CLI coding agent by Cognition",
       "website": "https://docs.devin.ai/cli",
       "authors": ["Cognition"],
@@ -456,32 +510,32 @@
       "distribution": {
         "binary": {
           "darwin-aarch64": {
-            "archive": "https://static.devin.ai/cli/3000.11.234/devin-3000.11.234-aarch64-apple-darwin.tar.gz",
+            "archive": "https://static.devin.ai/cli/3000.12.32/devin-3000.12.32-aarch64-apple-darwin.tar.gz",
             "cmd": "./bin/devin",
             "args": ["acp"]
           },
           "darwin-x86_64": {
-            "archive": "https://static.devin.ai/cli/3000.11.234/devin-3000.11.234-x86_64-apple-darwin.tar.gz",
+            "archive": "https://static.devin.ai/cli/3000.12.32/devin-3000.12.32-x86_64-apple-darwin.tar.gz",
             "cmd": "./bin/devin",
             "args": ["acp"]
           },
           "linux-aarch64": {
-            "archive": "https://static.devin.ai/cli/3000.11.234/devin-3000.11.234-aarch64-unknown-linux.tar.gz",
+            "archive": "https://static.devin.ai/cli/3000.12.32/devin-3000.12.32-aarch64-unknown-linux.tar.gz",
             "cmd": "./bin/devin",
             "args": ["acp"]
           },
           "linux-x86_64": {
-            "archive": "https://static.devin.ai/cli/3000.11.234/devin-3000.11.234-x86_64-unknown-linux.tar.gz",
+            "archive": "https://static.devin.ai/cli/3000.12.32/devin-3000.12.32-x86_64-unknown-linux.tar.gz",
             "cmd": "./bin/devin",
             "args": ["acp"]
           },
           "windows-aarch64": {
-            "archive": "https://static.devin.ai/cli/3000.11.234/devin-3000.11.234-aarch64-pc-windows.zip",
+            "archive": "https://static.devin.ai/cli/3000.12.32/devin-3000.12.32-aarch64-pc-windows.zip",
             "cmd": "./bin\\devin.exe",
             "args": ["acp"]
           },
           "windows-x86_64": {
-            "archive": "https://static.devin.ai/cli/3000.11.234/devin-3000.11.234-x86_64-pc-windows.zip",
+            "archive": "https://static.devin.ai/cli/3000.12.32/devin-3000.12.32-x86_64-pc-windows.zip",
             "cmd": "./bin\\devin.exe",
             "args": ["acp"]
           }
@@ -492,7 +546,7 @@
     {
       "id": "dimcode",
       "name": "DimCode",
-      "version": "0.5.22",
+      "version": "0.5.24",
       "description": "A coding agent that puts leading models at your command.",
       "website": "https://dimagent.cn/",
       "authors": ["ArcShips"],
@@ -500,7 +554,7 @@
       "license_url": "https://dimagent.cn/terms",
       "distribution": {
         "npx": {
-          "package": "dimcode@0.5.22",
+          "package": "dimcode@0.5.24",
           "args": ["acp"]
         }
       },
@@ -527,7 +581,7 @@
     {
       "id": "factory-droid",
       "name": "Factory Droid",
-      "version": "1.1.0",
+      "version": "1.6.0",
       "description": "Factory Droid - AI coding agent powered by Factory AI",
       "website": "https://factory.ai/product/cli",
       "authors": ["Factory AI"],
@@ -535,7 +589,7 @@
       "license_url": "https://factory.ai/legal/terms",
       "distribution": {
         "npx": {
-          "package": "droid@1.1.0",
+          "package": "droid@1.6.0",
           "args": ["exec", "--output-format", "acp-daemon"],
           "env": {
             "DROID_DISABLE_AUTO_UPDATE": "true",
@@ -569,7 +623,7 @@
     {
       "id": "gemini",
       "name": "Gemini CLI",
-      "version": "0.66.0",
+      "version": "0.67.0",
       "description": "Google's official CLI for Gemini",
       "repository": "https://github.com/google-gemini/gemini-cli",
       "website": "https://geminicli.com",
@@ -578,7 +632,7 @@
       "license_url": "https://github.com/google-gemini/gemini-cli/blob/main/LICENSE",
       "distribution": {
         "npx": {
-          "package": "@google/gemini-cli@0.66.0",
+          "package": "@google/gemini-cli@0.67.0",
           "args": ["--acp"]
         }
       },
@@ -586,8 +640,8 @@
     },
     {
       "id": "github-copilot-cli",
-      "name": "Copilot",
-      "version": "1.0.105",
+      "name": "GitHub Copilot",
+      "version": "1.0.107",
       "description": "GitHub's AI pair programmer",
       "repository": "https://github.com/github/copilot-cli",
       "website": "https://github.com/features/copilot/cli/",
@@ -596,7 +650,7 @@
       "license_url": "https://github.com/github/copilot-cli/blob/main/LICENSE.md",
       "distribution": {
         "npx": {
-          "package": "@github/copilot@1.0.105",
+          "package": "@github/copilot@1.0.107",
           "args": ["--acp"]
         }
       },
@@ -654,6 +708,18 @@
             "args": ["acp"],
             "sha256": "e54036f3b7f95d3b0d7854c09465af5ef52a28c7fa03d2497d0ea68a6382282d"
           },
+          "linux-aarch64-musl": {
+            "archive": "https://github.com/block/goose/releases/download/v1.57.0/goose-aarch64-unknown-linux-musl.tar.bz2",
+            "cmd": "./goose",
+            "args": ["acp"],
+            "sha256": "26dc9be443e92760c4b74c85a0c9be327ac8b48f74cca0985398e8dfdbb7e0d4"
+          },
+          "linux-x86_64-musl": {
+            "archive": "https://github.com/block/goose/releases/download/v1.57.0/goose-x86_64-unknown-linux-musl.tar.bz2",
+            "cmd": "./goose",
+            "args": ["acp"],
+            "sha256": "90ac71084236e1a896098e26a4cb9c3e090de6eba30782886d64de839924a966"
+          },
           "windows-x86_64": {
             "archive": "https://github.com/block/goose/releases/download/v1.57.0/goose-x86_64-pc-windows-msvc.zip",
             "cmd": "./goose-package\\goose.exe",
@@ -667,7 +733,7 @@
     {
       "id": "grok-build",
       "name": "Grok Build",
-      "version": "1.0.73",
+      "version": "1.0.79",
       "description": "xAI's coding agent and CLI",
       "website": "https://x.ai/cli",
       "authors": ["xAI"],
@@ -675,7 +741,7 @@
       "license_url": "https://x.ai/legal/terms-of-service",
       "distribution": {
         "npx": {
-          "package": "@xai-official/grok@1.0.73",
+          "package": "@xai-official/grok@1.0.79",
           "args": ["agent", "stdio"]
         }
       },
@@ -684,7 +750,7 @@
     {
       "id": "harn",
       "name": "Harn",
-      "version": "0.10.185",
+      "version": "0.10.192",
       "description": "Harn runs .harn agent pipelines as a native ACP coding agent over stdio.",
       "repository": "https://github.com/burin-labs/harn",
       "website": "https://harnlang.com",
@@ -694,34 +760,34 @@
       "distribution": {
         "binary": {
           "darwin-aarch64": {
-            "archive": "https://github.com/burin-labs/harn/releases/download/v0.10.185/harn-aarch64-apple-darwin.tar.gz",
+            "archive": "https://github.com/burin-labs/harn/releases/download/v0.10.192/harn-aarch64-apple-darwin.tar.gz",
             "cmd": "./harn",
             "args": ["serve", "acp"],
-            "sha256": "28c29df3c27ce4be8677de0a6908e77999a03ed3662ea0404922992df106317d"
+            "sha256": "a953d7c1d22d16eb55ac300c005ea7201bde2907e56a31e27d5ad5bc53fa3437"
           },
           "darwin-x86_64": {
-            "archive": "https://github.com/burin-labs/harn/releases/download/v0.10.185/harn-x86_64-apple-darwin.tar.gz",
+            "archive": "https://github.com/burin-labs/harn/releases/download/v0.10.192/harn-x86_64-apple-darwin.tar.gz",
             "cmd": "./harn",
             "args": ["serve", "acp"],
-            "sha256": "9c13468f816b3e0c1feb1428179f19cfa0648ee108738611ae6f02eafc5eedb8"
+            "sha256": "2ed970f49caaba04a73f4dc9f4d81346e32b9cbb51488428ba5c6f6e9e91310c"
           },
           "linux-aarch64": {
-            "archive": "https://github.com/burin-labs/harn/releases/download/v0.10.185/harn-aarch64-unknown-linux-gnu.tar.gz",
+            "archive": "https://github.com/burin-labs/harn/releases/download/v0.10.192/harn-aarch64-unknown-linux-gnu.tar.gz",
             "cmd": "./harn",
             "args": ["serve", "acp"],
-            "sha256": "c1818ca6c49614e5600e9d8f8d82f5bc54a3cb97d0ba8a1da615a65ff7a3f295"
+            "sha256": "a27a811e113ec09c91b8383329a8ae274466ae13571132ae2d146f6cda9bdc64"
           },
           "linux-x86_64": {
-            "archive": "https://github.com/burin-labs/harn/releases/download/v0.10.185/harn-x86_64-unknown-linux-gnu.tar.gz",
+            "archive": "https://github.com/burin-labs/harn/releases/download/v0.10.192/harn-x86_64-unknown-linux-gnu.tar.gz",
             "cmd": "./harn",
             "args": ["serve", "acp"],
-            "sha256": "ac55d0b1544b4f6175b26aaae65de74cd3767efff705bfcd0dfc3deb74a1e5ec"
+            "sha256": "64126bcc6da857c782e6c8a973321c32f385e22a4e8585d778eea613395a79ac"
           },
           "windows-x86_64": {
-            "archive": "https://github.com/burin-labs/harn/releases/download/v0.10.185/harn-x86_64-pc-windows-msvc.zip",
+            "archive": "https://github.com/burin-labs/harn/releases/download/v0.10.192/harn-x86_64-pc-windows-msvc.zip",
             "cmd": "harn.exe",
             "args": ["serve", "acp"],
-            "sha256": "a6354030455e7fb82d3953907698b6ab60f2baa1f2dcc868723980a227c56195"
+            "sha256": "d42bc1f43655d82121f9571b044e6dea1f6b0bb504c3b63573b24e2348171877"
           }
         }
       },
@@ -730,7 +796,7 @@
     {
       "id": "junie",
       "name": "Junie",
-      "version": "3893.6.0",
+      "version": "3959.5.0",
       "description": "AI Coding Agent by JetBrains",
       "repository": "https://github.com/JetBrains/junie-acp-release",
       "website": "https://junie.jetbrains.com",
@@ -740,32 +806,32 @@
       "distribution": {
         "binary": {
           "darwin-aarch64": {
-            "archive": "https://github.com/JetBrains/junie-acp-release/releases/download/3893.6/junie-release-3893.6-macos-aarch64.zip",
+            "archive": "https://github.com/JetBrains/junie-acp-release/releases/download/3959.5/junie-release-3959.5-macos-aarch64.zip",
             "cmd": "./Applications/junie.app/Contents/MacOS/junie",
             "args": ["--acp=true"]
           },
           "darwin-x86_64": {
-            "archive": "https://github.com/JetBrains/junie-acp-release/releases/download/3893.6/junie-release-3893.6-macos-amd64.zip",
+            "archive": "https://github.com/JetBrains/junie-acp-release/releases/download/3959.5/junie-release-3959.5-macos-amd64.zip",
             "cmd": "./Applications/junie.app/Contents/MacOS/junie",
             "args": ["--acp=true"]
           },
           "linux-aarch64": {
-            "archive": "https://github.com/JetBrains/junie-acp-release/releases/download/3893.6/junie-release-3893.6-linux-aarch64.zip",
+            "archive": "https://github.com/JetBrains/junie-acp-release/releases/download/3959.5/junie-release-3959.5-linux-aarch64.zip",
             "cmd": "./junie-app/bin/junie",
             "args": ["--acp=true"]
           },
           "linux-x86_64": {
-            "archive": "https://github.com/JetBrains/junie-acp-release/releases/download/3893.6/junie-release-3893.6-linux-amd64.zip",
+            "archive": "https://github.com/JetBrains/junie-acp-release/releases/download/3959.5/junie-release-3959.5-linux-amd64.zip",
             "cmd": "./junie-app/bin/junie",
             "args": ["--acp=true"]
           },
           "windows-x86_64": {
-            "archive": "https://github.com/JetBrains/junie-acp-release/releases/download/3893.6/junie-release-3893.6-windows-amd64.zip",
+            "archive": "https://github.com/JetBrains/junie-acp-release/releases/download/3959.5/junie-release-3959.5-windows-amd64.zip",
             "cmd": "./junie/junie.exe",
             "args": ["--acp=true"]
           },
           "windows-aarch64": {
-            "archive": "https://github.com/JetBrains/junie-acp-release/releases/download/3893.6/junie-release-3893.6-windows-aarch64.zip",
+            "archive": "https://github.com/JetBrains/junie-acp-release/releases/download/3959.5/junie-release-3959.5-windows-aarch64.zip",
             "cmd": "./junie/junie.exe",
             "args": ["--acp=true"]
           }
@@ -776,7 +842,7 @@
     {
       "id": "kilo",
       "name": "Kilo",
-      "version": "7.8.18",
+      "version": "7.8.27",
       "description": "The open source coding agent",
       "repository": "https://github.com/Kilo-Org/kilocode",
       "website": "https://kilo.ai/",
@@ -787,38 +853,50 @@
       "distribution": {
         "binary": {
           "darwin-aarch64": {
-            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.8.18/kilo-darwin-arm64.zip",
+            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.8.27/kilo-darwin-arm64.zip",
             "cmd": "./kilo",
             "args": ["acp"],
-            "sha256": "1ea2285a2f45ec27b7fa3b644f92700adf4a91fd671aaf18ba0cb8f26c795df5"
+            "sha256": "768c8358783c34b7309c212af86c546df472d6df7d6f3254d72efe6010a8ffc7"
           },
           "darwin-x86_64": {
-            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.8.18/kilo-darwin-x64.zip",
+            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.8.27/kilo-darwin-x64.zip",
             "cmd": "./kilo",
             "args": ["acp"],
-            "sha256": "00f6ac8fb49368e5726dc23780ee1c18fd1fd89a817e8cc38c1fe9d7db6232d2"
+            "sha256": "54fee6c1e309b795df2bb4c554208d7031c7a1f2a46cfcd21195736a9bcd2300"
           },
           "linux-aarch64": {
-            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.8.18/kilo-linux-arm64.tar.gz",
+            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.8.27/kilo-linux-arm64.tar.gz",
             "cmd": "./kilo",
             "args": ["acp"],
-            "sha256": "55a1c13fca09eb96e5de6ec8206e1e47e5f9ec0dbf02bd1316be737bfd0666ae"
+            "sha256": "65491b899f62b07beafb3ce89b88b987a03197c88563afbf976d38fb78df5ff6"
           },
           "linux-x86_64": {
-            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.8.18/kilo-linux-x64.tar.gz",
+            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.8.27/kilo-linux-x64.tar.gz",
             "cmd": "./kilo",
             "args": ["acp"],
-            "sha256": "503561fb8c4b8ede26703457a912b98cf18c9c9e8961649f3718cf7676b5c02a"
+            "sha256": "4c08aa46dd87453a329f48b0f00d34d0fa7b8f0ac910fe8937814d4e8582de08"
+          },
+          "linux-aarch64-musl": {
+            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.8.27/kilo-linux-arm64-musl.tar.gz",
+            "cmd": "./kilo",
+            "args": ["acp"],
+            "sha256": "b527c57bc4226ca36f314d61d31cb3ace6a06188fbead1d9c7ddf56a9a63e6d8"
+          },
+          "linux-x86_64-musl": {
+            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.8.27/kilo-linux-x64-musl.tar.gz",
+            "cmd": "./kilo",
+            "args": ["acp"],
+            "sha256": "ef06e63c72e0ed9874eabe094359b1d112fb778c6013ceffd3aaa537e6fc8101"
           },
           "windows-x86_64": {
-            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.8.18/kilo-windows-x64.zip",
+            "archive": "https://github.com/Kilo-Org/kilocode/releases/download/v7.8.27/kilo-windows-x64.zip",
             "cmd": "./kilo.exe",
             "args": ["acp"],
-            "sha256": "4d13c566a3e7d91ceb6986ea037a4eee6aa145918a75b38f8208034c07e74780"
+            "sha256": "5d8fe8a8fcbff260ab50612f69721ef8544960c9317c97ce556698269b90d035"
           }
         },
         "npx": {
-          "package": "@kilocode/cli@7.8.18",
+          "package": "@kilocode/cli@7.8.27",
           "args": ["acp"]
         }
       }
@@ -826,7 +904,7 @@
     {
       "id": "kimchi",
       "name": "Kimchi",
-      "version": "1.25.1",
+      "version": "1.30.0",
       "description": "Coding agent powered by multi-model orchestration",
       "repository": "https://github.com/getkimchi/kimchi",
       "website": "https://kimchi.dev",
@@ -836,32 +914,32 @@
       "distribution": {
         "binary": {
           "darwin-aarch64": {
-            "archive": "https://github.com/getkimchi/kimchi/releases/download/v1.25.1/kimchi_darwin_arm64.tar.gz",
-            "sha256": "f9b5f26b35198a4893c0c4847e6e6bfd24b12353decd4ae98025c0bea952c9bf",
+            "archive": "https://github.com/getkimchi/kimchi/releases/download/v1.30.0/kimchi_darwin_arm64.tar.gz",
+            "sha256": "26c2fd354fe349ba3fe599f2cdc18716efe2275f0799f33e9cc830d3b3b429ca",
             "cmd": "./bin/kimchi",
             "args": ["--mode", "acp"]
           },
           "darwin-x86_64": {
-            "archive": "https://github.com/getkimchi/kimchi/releases/download/v1.25.1/kimchi_darwin_amd64.tar.gz",
-            "sha256": "ade9e154ad5ef23a233a641bf7eae20722c3acb7cbf5c8323f8117777fbf1322",
+            "archive": "https://github.com/getkimchi/kimchi/releases/download/v1.30.0/kimchi_darwin_amd64.tar.gz",
+            "sha256": "92d6365fc4bf682a1da0aafa2e8594f2a3d83b8d90401d50ab53878b0ba03934",
             "cmd": "./bin/kimchi",
             "args": ["--mode", "acp"]
           },
           "linux-aarch64": {
-            "archive": "https://github.com/getkimchi/kimchi/releases/download/v1.25.1/kimchi_linux_arm64.tar.gz",
-            "sha256": "42301b962ec6c6feab6d92f90c077eddf194bac156e08acbd236acb7c4215f6f",
+            "archive": "https://github.com/getkimchi/kimchi/releases/download/v1.30.0/kimchi_linux_arm64.tar.gz",
+            "sha256": "9c943b8ed65cea210a40df9f9cb9111d3ff94c4f02d2d07f539ec34a03749f03",
             "cmd": "./bin/kimchi",
             "args": ["--mode", "acp"]
           },
           "linux-x86_64": {
-            "archive": "https://github.com/getkimchi/kimchi/releases/download/v1.25.1/kimchi_linux_amd64.tar.gz",
-            "sha256": "2d782cf78d40d0303d72374ae6d827895b083afcfd8dc6be483d503a854cd242",
+            "archive": "https://github.com/getkimchi/kimchi/releases/download/v1.30.0/kimchi_linux_amd64.tar.gz",
+            "sha256": "6e7bda499f0a5669dd9fd1c779495d9a1e294832f31671f8ea2f447ab0853a86",
             "cmd": "./bin/kimchi",
             "args": ["--mode", "acp"]
           },
           "windows-x86_64": {
-            "archive": "https://github.com/getkimchi/kimchi/releases/download/v1.25.1/kimchi_windows_amd64.zip",
-            "sha256": "1b9f64e447d2a98ac4b44aacb7788ae33b85abe24a90a04b06bb8093434beb38",
+            "archive": "https://github.com/getkimchi/kimchi/releases/download/v1.30.0/kimchi_windows_amd64.zip",
+            "sha256": "9451dc810de774f0a39369b34f0367c849998b5a46595b5038b63578a2366831",
             "cmd": "./bin/kimchi.exe",
             "args": ["--mode", "acp"]
           }
@@ -871,9 +949,9 @@
     },
     {
       "id": "kimi",
-      "name": "Kimi CLI",
+      "name": "Kimi CLI (Legacy)",
       "version": "1.52.0",
-      "description": "Moonshot AI's coding assistant",
+      "description": "Archived by Moonshot AI. Use Kimi Code instead",
       "repository": "https://github.com/MoonshotAI/kimi-cli",
       "website": "https://moonshotai.github.io/kimi-cli/",
       "authors": ["Moonshot AI"],
@@ -916,9 +994,27 @@
       "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/kimi.svg"
     },
     {
+      "id": "kimi-code",
+      "name": "Kimi Code",
+      "version": "2.5.2",
+      "description": "Moonshot AI's next-gen coding agent",
+      "repository": "https://github.com/MoonshotAI/kimi-code",
+      "website": "https://moonshotai.github.io/kimi-code/",
+      "authors": ["Moonshot AI"],
+      "license": "MIT",
+      "license_url": "https://github.com/MoonshotAI/kimi-code/blob/main/LICENSE",
+      "distribution": {
+        "npx": {
+          "package": "@moonshot-ai/kimi-code@2.5.2",
+          "args": ["acp"]
+        }
+      },
+      "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/kimi-code.svg"
+    },
+    {
       "id": "kiro",
       "name": "Kiro CLI",
-      "version": "2.37.1",
+      "version": "3.0.0",
       "description": "The Kiro coding agent",
       "repository": "https://github.com/kirodotdev/Kiro",
       "website": "https://kiro.dev/docs/cli/acp/",
@@ -928,27 +1024,39 @@
       "distribution": {
         "binary": {
           "darwin-aarch64": {
-            "archive": "https://prod.download.cli.kiro.dev/stable/2.37.1/kirocli-universal-darwin.tar.gz",
-            "sha256": "c2b2bb628673cea6f05174528735ac1f82478dd936a27f0826f0cd7029699c8e",
+            "archive": "https://prod.download.cli.kiro.dev/stable/3.0.0/kirocli-universal-darwin.tar.gz",
+            "sha256": "fa32d8f2054d79642922db696683630114b2cea99a2c7f655becd923afe33ccf",
             "cmd": "./kirocli/bin/kiro-cli",
             "args": ["acp", "--agent-engine=v3"]
           },
           "darwin-x86_64": {
-            "archive": "https://prod.download.cli.kiro.dev/stable/2.37.1/kirocli-universal-darwin.tar.gz",
-            "sha256": "c2b2bb628673cea6f05174528735ac1f82478dd936a27f0826f0cd7029699c8e",
+            "archive": "https://prod.download.cli.kiro.dev/stable/3.0.0/kirocli-universal-darwin.tar.gz",
+            "sha256": "fa32d8f2054d79642922db696683630114b2cea99a2c7f655becd923afe33ccf",
             "cmd": "./kirocli/bin/kiro-cli",
             "args": ["acp", "--agent-engine=v3"]
           },
           "linux-aarch64": {
-            "archive": "https://prod.download.cli.kiro.dev/stable/2.37.1/kirocli-aarch64-linux.tar.gz",
-            "sha256": "10f0318a379b27ba9bbfb2a06b33db2abaedcde2ea0c10f46e3cffbce86368aa",
-            "cmd": "./kirocli/bin/kiro-cli-chat",
+            "archive": "https://prod.download.cli.kiro.dev/stable/3.0.0/kirocli-aarch64-linux.tar.gz",
+            "sha256": "ee719fcf8d1166a44eb543e9acada6e2766cf13765787612336d0a43f3903766",
+            "cmd": "./kirocli/bin/kiro-cli",
             "args": ["acp", "--agent-engine=v3"]
           },
           "linux-x86_64": {
-            "archive": "https://prod.download.cli.kiro.dev/stable/2.37.1/kirocli-x86_64-linux.tar.gz",
-            "sha256": "cf6c7438934a169781b3d564e81bcdfccac901c5d659f35235ac19e0d01192a3",
-            "cmd": "./kirocli/bin/kiro-cli-chat",
+            "archive": "https://prod.download.cli.kiro.dev/stable/3.0.0/kirocli-x86_64-linux.tar.gz",
+            "sha256": "2ebb8688b84765e4baf46d6e28b3e79780e7724e198591c22d0528d03a88a282",
+            "cmd": "./kirocli/bin/kiro-cli",
+            "args": ["acp", "--agent-engine=v3"]
+          },
+          "linux-aarch64-musl": {
+            "archive": "https://prod.download.cli.kiro.dev/stable/3.0.0/kirocli-aarch64-linux-musl.zip",
+            "sha256": "374cdf12c03ccd1c7d04a2e911a0f0b89277a3750c52b6cf10f44236fabb6fd9",
+            "cmd": "./kirocli/bin/kiro-cli",
+            "args": ["acp", "--agent-engine=v3"]
+          },
+          "linux-x86_64-musl": {
+            "archive": "https://prod.download.cli.kiro.dev/stable/3.0.0/kirocli-x86_64-linux-musl.zip",
+            "sha256": "f11185c3edb2a9b80aa3b3f407e3fd6f003175c07ea9d83804d74f298d24eba3",
+            "cmd": "./kirocli/bin/kiro-cli",
             "args": ["acp", "--agent-engine=v3"]
           }
         }
@@ -992,7 +1100,7 @@
     {
       "id": "mistral-vibe",
       "name": "Mistral Vibe",
-      "version": "3.0.4",
+      "version": "3.1.0",
       "description": "Mistral's open-source coding assistant",
       "repository": "https://github.com/mistralai/mistral-vibe",
       "website": "https://mistral.ai/products/vibe",
@@ -1003,29 +1111,29 @@
       "distribution": {
         "binary": {
           "darwin-aarch64": {
-            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v3.0.4/vibe-acp-darwin-aarch64-3.0.4.tar.gz",
+            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v3.1.0/vibe-acp-darwin-aarch64-3.1.0.tar.gz",
             "cmd": "./vibe-acp",
-            "sha256": "cc9c1d94ccb7890b36e82b096031e80d6c78d68f891e527e01c0865a04f90008"
+            "sha256": "c56ec63bd6bcd60591bee441cf31f3fe555da493275a1756b2f5152039f65ec4"
           },
           "darwin-x86_64": {
-            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v3.0.4/vibe-acp-darwin-x86_64-3.0.4.tar.gz",
+            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v3.1.0/vibe-acp-darwin-x86_64-3.1.0.tar.gz",
             "cmd": "./vibe-acp",
-            "sha256": "9f94678a670b9c13b5f20bc4878075b37f9ba537bec32cbccee45ff8e78e165e"
+            "sha256": "6a7e3399f344e43ad38851b56cbff522cde5af714fca1139c5d04d778ba2dea9"
           },
           "linux-aarch64": {
-            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v3.0.4/vibe-acp-linux-aarch64-3.0.4.tar.gz",
+            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v3.1.0/vibe-acp-linux-aarch64-3.1.0.tar.gz",
             "cmd": "./vibe-acp",
-            "sha256": "dfac99ccd25de9780f54f0dc32aa90a3838810a0becc8f7fe393ea07748d3107"
+            "sha256": "96276b6d7cc49473e48a79f95c397a05dc7f8b1d5c459893562e0dd533112074"
           },
           "linux-x86_64": {
-            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v3.0.4/vibe-acp-linux-x86_64-3.0.4.tar.gz",
+            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v3.1.0/vibe-acp-linux-x86_64-3.1.0.tar.gz",
             "cmd": "./vibe-acp",
-            "sha256": "83d9cd21758a99719382e1c8c55420e9693d7e3358b3d3a744727e2291a9d5b3"
+            "sha256": "31e03174516ddc1b8dc2a229a3085ba59a50f4b380753a510ebb204730da4def"
           },
           "windows-x86_64": {
-            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v3.0.4/vibe-acp-windows-x86_64-3.0.4.zip",
+            "archive": "https://github.com/mistralai/mistral-vibe/releases/download/v3.1.0/vibe-acp-windows-x86_64-3.1.0.zip",
             "cmd": "./vibe-acp.exe",
-            "sha256": "e853cc56f586bf3e618d2d82eca5659db2f781f070252b24ea273f6c156b5aec"
+            "sha256": "2b65e70d0dc5cc0a5edba0ae836b225edf2068b6aebd321f047ccfae32275416"
           }
         }
       }
@@ -1033,7 +1141,7 @@
     {
       "id": "nova",
       "name": "Nova",
-      "version": "1.1.62",
+      "version": "1.1.65",
       "description": "Nova by Compass AI - a fully-fledged software engineer at your command",
       "repository": "https://github.com/Compass-Agentic-Platform/nova",
       "website": "https://www.compassap.ai/portfolio/nova.html",
@@ -1043,7 +1151,7 @@
       "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/nova.svg",
       "distribution": {
         "npx": {
-          "package": "@compass-ai/nova@1.1.62",
+          "package": "@compass-ai/nova@1.1.65",
           "args": ["acp"]
         }
       }
@@ -1051,7 +1159,7 @@
     {
       "id": "opencode",
       "name": "OpenCode",
-      "version": "2.2.5",
+      "version": "2.2.6",
       "description": "The open source coding agent",
       "repository": "https://github.com/anomalyco/opencode",
       "website": "https://opencode.ai",
@@ -1062,40 +1170,52 @@
       "distribution": {
         "binary": {
           "darwin-aarch64": {
-            "archive": "https://github.com/anomalyco/opencode/releases/download/v2.2.5/opencode-darwin-arm64.zip",
+            "archive": "https://github.com/anomalyco/opencode/releases/download/v2.2.6/opencode-darwin-arm64.zip",
             "cmd": "./opencode",
             "args": ["acp"],
-            "sha256": "25ba9908979fa7d764792c82589b4b5768ab1511154e0317d98aa77d216ce767"
+            "sha256": "15491608f6b0bc4debe5eac35eab629a2b07ea9a1fbac68ad53bcea59fcc4b45"
           },
           "darwin-x86_64": {
-            "archive": "https://github.com/anomalyco/opencode/releases/download/v2.2.5/opencode-darwin-x64.zip",
+            "archive": "https://github.com/anomalyco/opencode/releases/download/v2.2.6/opencode-darwin-x64.zip",
             "cmd": "./opencode",
             "args": ["acp"],
-            "sha256": "4d4419022e6ffbd48afc97c5101bdf001d38b0499f516169b9a80a87a340fd56"
+            "sha256": "b2962dc445d873df56ae7d3ba7e66502b046bbc4dafa820eca18d0303a98a29c"
           },
           "linux-aarch64": {
-            "archive": "https://github.com/anomalyco/opencode/releases/download/v2.2.5/opencode-linux-arm64.tar.gz",
+            "archive": "https://github.com/anomalyco/opencode/releases/download/v2.2.6/opencode-linux-arm64.tar.gz",
             "cmd": "./opencode",
             "args": ["acp"],
-            "sha256": "5a528f42caf576c6cdece6a191eb273d3db54effa5518e0402684d8f8026aeb6"
+            "sha256": "f2d27600c367e45057d6a16f6a5c2aa8d77b41a9b10d4bc3d849c2f88870e944"
           },
           "linux-x86_64": {
-            "archive": "https://github.com/anomalyco/opencode/releases/download/v2.2.5/opencode-linux-x64.tar.gz",
+            "archive": "https://github.com/anomalyco/opencode/releases/download/v2.2.6/opencode-linux-x64.tar.gz",
             "cmd": "./opencode",
             "args": ["acp"],
-            "sha256": "09f44302c10fd036912f59c81fd1aef5df45dd06f649197f9dfc9bbe2a79614e"
+            "sha256": "08bb21d6326ce740d91cce7ebe88a6536933f6e1e30353b91a06b01f25da306c"
+          },
+          "linux-aarch64-musl": {
+            "archive": "https://github.com/anomalyco/opencode/releases/download/v2.2.6/opencode-linux-arm64-musl.tar.gz",
+            "cmd": "./opencode",
+            "args": ["acp"],
+            "sha256": "ef1907a3ac88f92669fbbe4f7a94b7117208b63b5cc02b2cc2db29243e744291"
+          },
+          "linux-x86_64-musl": {
+            "archive": "https://github.com/anomalyco/opencode/releases/download/v2.2.6/opencode-linux-x64-musl.tar.gz",
+            "cmd": "./opencode",
+            "args": ["acp"],
+            "sha256": "97ce1345a1fdbfb105d9cdf23c57385ac30ed1495ef329dbdbf09c917b479f21"
           },
           "windows-aarch64": {
-            "archive": "https://github.com/anomalyco/opencode/releases/download/v2.2.5/opencode-windows-arm64.zip",
+            "archive": "https://github.com/anomalyco/opencode/releases/download/v2.2.6/opencode-windows-arm64.zip",
             "cmd": "./opencode.exe",
             "args": ["acp"],
-            "sha256": "4e426a39d68516b036cd28b574c5ce5f3b50846ab460521f83f2458fe7f242d8"
+            "sha256": "d2cf2b4de31203e6984263d40fc70206d6a62e800b4b4492a809f28cae862139"
           },
           "windows-x86_64": {
-            "archive": "https://github.com/anomalyco/opencode/releases/download/v2.2.5/opencode-windows-x64.zip",
+            "archive": "https://github.com/anomalyco/opencode/releases/download/v2.2.6/opencode-windows-x64.zip",
             "cmd": "./opencode.exe",
             "args": ["acp"],
-            "sha256": "2f3bfd6b3527c60c2a882557b20ddc9ba6bdff4b5a8fe61c853da8fcfb3076e8"
+            "sha256": "f75c16b33b8523fe1ff41e7d97e3ae654a47d59a0e327def24db2d9291bb24be"
           }
         }
       }
@@ -1103,7 +1223,7 @@
     {
       "id": "opencode-v2",
       "name": "OpenCode V2",
-      "version": "2.2.5",
+      "version": "2.2.6",
       "description": "The open source coding agent, version 2",
       "repository": "https://github.com/anomalyco/opencode",
       "website": "https://opencode.ai",
@@ -1114,40 +1234,52 @@
       "distribution": {
         "binary": {
           "darwin-aarch64": {
-            "archive": "https://opencode.ai/files/bin/2.2.5/opencode-darwin-arm64.zip",
+            "archive": "https://opencode.ai/files/bin/2.2.6/opencode-darwin-arm64.zip",
             "cmd": "./opencode",
             "args": ["acp"],
-            "sha256": "25ba9908979fa7d764792c82589b4b5768ab1511154e0317d98aa77d216ce767"
+            "sha256": "15491608f6b0bc4debe5eac35eab629a2b07ea9a1fbac68ad53bcea59fcc4b45"
           },
           "darwin-x86_64": {
-            "archive": "https://opencode.ai/files/bin/2.2.5/opencode-darwin-x64.zip",
+            "archive": "https://opencode.ai/files/bin/2.2.6/opencode-darwin-x64.zip",
             "cmd": "./opencode",
             "args": ["acp"],
-            "sha256": "4d4419022e6ffbd48afc97c5101bdf001d38b0499f516169b9a80a87a340fd56"
+            "sha256": "b2962dc445d873df56ae7d3ba7e66502b046bbc4dafa820eca18d0303a98a29c"
           },
           "linux-aarch64": {
-            "archive": "https://opencode.ai/files/bin/2.2.5/opencode-linux-arm64.tar.gz",
+            "archive": "https://opencode.ai/files/bin/2.2.6/opencode-linux-arm64.tar.gz",
             "cmd": "./opencode",
             "args": ["acp"],
-            "sha256": "5a528f42caf576c6cdece6a191eb273d3db54effa5518e0402684d8f8026aeb6"
+            "sha256": "f2d27600c367e45057d6a16f6a5c2aa8d77b41a9b10d4bc3d849c2f88870e944"
           },
           "linux-x86_64": {
-            "archive": "https://opencode.ai/files/bin/2.2.5/opencode-linux-x64.tar.gz",
+            "archive": "https://opencode.ai/files/bin/2.2.6/opencode-linux-x64.tar.gz",
             "cmd": "./opencode",
             "args": ["acp"],
-            "sha256": "09f44302c10fd036912f59c81fd1aef5df45dd06f649197f9dfc9bbe2a79614e"
+            "sha256": "08bb21d6326ce740d91cce7ebe88a6536933f6e1e30353b91a06b01f25da306c"
+          },
+          "linux-aarch64-musl": {
+            "archive": "https://opencode.ai/files/bin/2.2.6/opencode-linux-arm64-musl.tar.gz",
+            "cmd": "./opencode",
+            "args": ["acp"],
+            "sha256": "ef1907a3ac88f92669fbbe4f7a94b7117208b63b5cc02b2cc2db29243e744291"
+          },
+          "linux-x86_64-musl": {
+            "archive": "https://opencode.ai/files/bin/2.2.6/opencode-linux-x64-musl.tar.gz",
+            "cmd": "./opencode",
+            "args": ["acp"],
+            "sha256": "97ce1345a1fdbfb105d9cdf23c57385ac30ed1495ef329dbdbf09c917b479f21"
           },
           "windows-aarch64": {
-            "archive": "https://opencode.ai/files/bin/2.2.5/opencode-windows-arm64.zip",
+            "archive": "https://opencode.ai/files/bin/2.2.6/opencode-windows-arm64.zip",
             "cmd": "./opencode.exe",
             "args": ["acp"],
-            "sha256": "4e426a39d68516b036cd28b574c5ce5f3b50846ab460521f83f2458fe7f242d8"
+            "sha256": "d2cf2b4de31203e6984263d40fc70206d6a62e800b4b4492a809f28cae862139"
           },
           "windows-x86_64": {
-            "archive": "https://opencode.ai/files/bin/2.2.5/opencode-windows-x64.zip",
+            "archive": "https://opencode.ai/files/bin/2.2.6/opencode-windows-x64.zip",
             "cmd": "./opencode.exe",
             "args": ["acp"],
-            "sha256": "2f3bfd6b3527c60c2a882557b20ddc9ba6bdff4b5a8fe61c853da8fcfb3076e8"
+            "sha256": "f75c16b33b8523fe1ff41e7d97e3ae654a47d59a0e327def24db2d9291bb24be"
           }
         }
       }
@@ -1223,7 +1355,7 @@
     {
       "id": "qoder",
       "name": "Qoder CLI",
-      "version": "0.2.14",
+      "version": "1.1.85",
       "description": "AI coding assistant with agentic capabilities",
       "website": "https://qoder.com",
       "authors": ["Qoder AI"],
@@ -1232,7 +1364,7 @@
       "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/qoder.svg",
       "distribution": {
         "npx": {
-          "package": "@qoder-ai/qodercli@0.2.14",
+          "package": "@qoder-ai/qodercli@1.1.85",
           "args": ["--acp"]
         }
       }
@@ -1240,7 +1372,7 @@
     {
       "id": "qwen-code",
       "name": "Qwen Code",
-      "version": "0.26.5",
+      "version": "0.27.0",
       "description": "Alibaba's Qwen coding assistant",
       "repository": "https://github.com/QwenLM/qwen-code",
       "website": "https://qwenlm.github.io/qwen-code-docs/en/users/overview",
@@ -1249,7 +1381,7 @@
       "license_url": "https://github.com/QwenLM/qwen-code/blob/main/LICENSE",
       "distribution": {
         "npx": {
-          "package": "@qwen-code/qwen-code@0.26.5",
+          "package": "@qwen-code/qwen-code@0.27.0",
           "args": ["--acp", "--experimental-skills"]
         }
       },
@@ -1258,7 +1390,7 @@
     {
       "id": "sigit",
       "name": "siGit Code",
-      "version": "1.7.7",
+      "version": "1.7.10",
       "description": "Local-first coding agent. Runs entirely on your machine with optional on-device LLM inference via Onde.",
       "repository": "https://github.com/getsigit/sigit",
       "website": "https://github.com/getsigit/sigit",
@@ -1268,38 +1400,38 @@
       "distribution": {
         "binary": {
           "darwin-aarch64": {
-            "archive": "https://github.com/getsigit/sigit/releases/download/v1.7.7/sigit-macos-arm64.tar.gz",
+            "archive": "https://github.com/getsigit/sigit/releases/download/v1.7.10/sigit-macos-arm64.tar.gz",
             "cmd": "./sigit",
-            "sha256": "e45f4354e2399e6ec85d70f7e19c5172165f53769a44f1f8c1888c95d29b4bfe"
+            "sha256": "2802e3a5a430e72b3c448e83e68509ad5668e4a19873b0ff0c917575400036f1"
           },
           "darwin-x86_64": {
-            "archive": "https://github.com/getsigit/sigit/releases/download/v1.7.7/sigit-macos-amd64.tar.gz",
+            "archive": "https://github.com/getsigit/sigit/releases/download/v1.7.10/sigit-macos-amd64.tar.gz",
             "cmd": "./sigit",
-            "sha256": "ddec50229024c81d8336467bf9d8478356e6e9c3e3d09318209772c35231e4e9"
+            "sha256": "ab11cb079bb1a90e3534d3efe6ffd80cb98d4ca4ea43b378f25882acbf671bf5"
           },
           "linux-aarch64": {
-            "archive": "https://github.com/getsigit/sigit/releases/download/v1.7.7/sigit-linux-arm64",
+            "archive": "https://github.com/getsigit/sigit/releases/download/v1.7.10/sigit-linux-arm64",
             "cmd": "./sigit-linux-arm64",
-            "sha256": "c400e63e18443179a424c56482e1d6c86a60535b97b8a20de9e41a41ec62c2a1"
+            "sha256": "4f013ef2f7df26a68fede65b25d86a1e63cd6a0dd3af553c483cec2cde16457f"
           },
           "linux-x86_64": {
-            "archive": "https://github.com/getsigit/sigit/releases/download/v1.7.7/sigit-linux-amd64",
+            "archive": "https://github.com/getsigit/sigit/releases/download/v1.7.10/sigit-linux-amd64",
             "cmd": "./sigit-linux-amd64",
-            "sha256": "e44937032b3a9439561c683e3801150dd62770df76666c690a1d2de9fe2ad58d"
+            "sha256": "a748a6dc1acbe873f116f2d1837b95f5ca19c44bede012f04ae69f88269e459a"
           },
           "windows-aarch64": {
-            "archive": "https://github.com/getsigit/sigit/releases/download/v1.7.7/sigit-win-arm64.exe",
+            "archive": "https://github.com/getsigit/sigit/releases/download/v1.7.10/sigit-win-arm64.exe",
             "cmd": "./sigit-win-arm64.exe",
-            "sha256": "72e20c5f1d4234191387224efefcb1c40fb7f4b73c44e3264e26dd65ae804321"
+            "sha256": "ec2452dc1eef001ed85f7ab0efb58db5cec52dfebcf261021e6d1715a56f92d1"
           },
           "windows-x86_64": {
-            "archive": "https://github.com/getsigit/sigit/releases/download/v1.7.7/sigit-win-amd64.exe",
+            "archive": "https://github.com/getsigit/sigit/releases/download/v1.7.10/sigit-win-amd64.exe",
             "cmd": "./sigit-win-amd64.exe",
-            "sha256": "58a98ee917f63f6ab6077d837c9e57eca4aea83272e66c27c7978e1ccd4e5486"
+            "sha256": "332057a6219dfdf2fdce1e515b80a1c75912ec34723b28e4816071e6aa751afc"
           }
         },
         "npx": {
-          "package": "@smbcloud/sigit@1.7.7"
+          "package": "@smbcloud/sigit@1.7.10"
         }
       },
       "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/sigit.svg"
@@ -1334,6 +1466,18 @@
           },
           "linux-x86_64": {
             "archive": "https://github.com/stakpak/agent/releases/download/v0.3.88/stakpak-linux-x86_64.tar.gz",
+            "cmd": "./stakpak",
+            "args": ["acp"]
+          },
+          "linux-aarch64-musl": {
+            "archive": "https://github.com/stakpak/agent/releases/download/v0.3.88/stakpak-linux-aarch64.tar.gz",
+            "sha256": "8312b611b5a635ea7411555f082b0fb3b6d644f99007d2c6a1f30fc6c13e725d",
+            "cmd": "./stakpak",
+            "args": ["acp"]
+          },
+          "linux-x86_64-musl": {
+            "archive": "https://github.com/stakpak/agent/releases/download/v0.3.88/stakpak-linux-x86_64.tar.gz",
+            "sha256": "1e923d6b632e6bda743b3f48c40914f657853478647c26d0a47729a7728490c6",
             "cmd": "./stakpak",
             "args": ["acp"]
           },
@@ -1377,6 +1521,16 @@
           },
           "linux-x86_64": {
             "archive": "https://github.com/vinhnx/VTCode/releases/download/0.96.14/vtcode-0.96.14-x86_64-unknown-linux-gnu.tar.gz",
+            "cmd": "./vtcode",
+            "args": ["acp"],
+            "env": {
+              "VT_ACP_ENABLED": "1",
+              "VT_ACP_ZED_ENABLED": "1"
+            }
+          },
+          "linux-x86_64-musl": {
+            "archive": "https://github.com/vinhnx/VTCode/releases/download/0.96.14/vtcode-0.96.14-x86_64-unknown-linux-musl.tar.gz",
+            "sha256": "78aad82cfb46e22595c77619afb0b1e82908798a7f4e4609eb25cb796f53c9b8",
             "cmd": "./vtcode",
             "args": ["acp"],
             "env": {
