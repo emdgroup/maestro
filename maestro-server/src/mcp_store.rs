@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 
-use acp::schema::v1::McpServer;
+use acp::v1::schema::McpServer;
 use agent_client_protocol as acp;
 use maestro_protocol::{ManagedMcpServer, McpKeyValue, McpSecret, McpTestResult};
 use serde::{Deserialize, Serialize};
@@ -272,7 +272,7 @@ async fn probe(server: ManagedMcpServer) -> Result<Vec<String>, String> {
     }
 }
 
-async fn probe_stdio(stdio: acp::schema::v1::McpServerStdio) -> Result<Vec<String>, String> {
+async fn probe_stdio(stdio: acp::v1::schema::McpServerStdio) -> Result<Vec<String>, String> {
     let env: HashMap<String, String> = stdio.env.into_iter().map(|v| (v.name, v.value)).collect();
     let home = maestro_protocol::paths::home_dir()?;
     // ponytail: `kill_on_drop` stops the direct child only; a launcher such as `npx` can leave its
@@ -377,7 +377,7 @@ fn http_client() -> Result<reqwest::Client, String> {
 
 fn with_headers(
     mut request: reqwest::RequestBuilder,
-    headers: &[acp::schema::v1::HttpHeader],
+    headers: &[acp::v1::schema::HttpHeader],
 ) -> reqwest::RequestBuilder {
     for header in headers {
         request = request.header(&header.name, &header.value);
@@ -389,7 +389,7 @@ fn with_headers(
 /// endpoint handshake the legacy transport requires. Speak it if sse servers stay common.
 async fn probe_sse(
     url: &str,
-    headers: &[acp::schema::v1::HttpHeader],
+    headers: &[acp::v1::schema::HttpHeader],
 ) -> Result<Vec<String>, String> {
     let response = with_headers(http_client()?.get(url), headers)
         .header("Accept", "text/event-stream")
@@ -406,7 +406,7 @@ async fn probe_sse(
 /// Streamable HTTP: `initialize`, then `tools/list` on the session the server hands back.
 async fn probe_http(
     url: &str,
-    headers: &[acp::schema::v1::HttpHeader],
+    headers: &[acp::v1::schema::HttpHeader],
 ) -> Result<Vec<String>, String> {
     let client = http_client()?;
     let post = |body: serde_json::Value, session: Option<String>| {

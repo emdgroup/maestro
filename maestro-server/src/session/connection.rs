@@ -1,21 +1,19 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use acp::schema::v1::{
-    ClientCapabilities, CloseSessionRequest, ContentBlock, CreateTerminalRequest,
-    CreateTerminalResponse, DeleteSessionRequest, EnvVariable, Implementation, InitializeRequest,
-    KillTerminalRequest, KillTerminalResponse, ListSessionsRequest, LoadSessionRequest, McpServer,
-    McpServerStdio, NewSessionRequest, ReleaseTerminalRequest, ReleaseTerminalResponse,
-    RequestPermissionRequest, RequestPermissionResponse, SessionNotification, SystemPrompt,
-    TerminalExitStatus, TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
-    WaitForTerminalExitResponse,
-};
 use acp::schema::ProtocolVersion;
-use agent_client_protocol as acp;
-use agent_client_protocol_schema::v1::{
-    AuthCapabilities, AuthMethod, ClientSessionCapabilities, CompactionCapabilities,
-    ElicitationCapabilities, ElicitationFormCapabilities, NoticeCapabilities,
+use acp::v1::schema::{
+    AuthCapabilities, AuthMethod, ClientCapabilities, ClientSessionCapabilities,
+    CloseSessionRequest, CompactionCapabilities, ContentBlock, CreateTerminalRequest,
+    CreateTerminalResponse, DeleteSessionRequest, ElicitationCapabilities,
+    ElicitationFormCapabilities, EnvVariable, Implementation, InitializeRequest,
+    KillTerminalRequest, KillTerminalResponse, ListSessionsRequest, LoadSessionRequest, McpServer,
+    McpServerStdio, NewSessionRequest, NoticeCapabilities, ReleaseTerminalRequest,
+    ReleaseTerminalResponse, RequestPermissionRequest, RequestPermissionResponse,
+    SessionNotification, SystemPrompt, TerminalExitStatus, TerminalOutputRequest,
+    TerminalOutputResponse, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
 };
+use agent_client_protocol as acp;
 use maestro_protocol::{
     AuthMethodInfo, ErrorResponse, PromptCapabilitiesInfo, ServerResponse, SessionListEntry,
     SessionModeState as ProtocolSessionModeState, SessionModelState as ProtocolSessionModelState,
@@ -312,7 +310,7 @@ pub(crate) async fn create_session_on_connection(
     {
         Ok(r) => r,
         Err(e) => {
-            let message = if e.code == acp::schema::v1::ErrorCode::AuthRequired {
+            let message = if e.code == acp::ErrorCode::AUTH_REQUIRED {
                 AUTH_REQUIRED_ERROR.to_string()
             } else {
                 format!("ACP new_session failed: {}", e)
@@ -508,7 +506,7 @@ pub(crate) async fn load_session_on_connection(
                     // failure, a crash or a lapsed sign-in among them, may succeed next time.
                     message: format!(
                         "{}: {}",
-                        if e.code == acp::schema::v1::ErrorCode::ResourceNotFound {
+                        if e.code == acp::ErrorCode::RESOURCE_NOT_FOUND {
                             SESSION_GONE_ERROR
                         } else {
                             SESSION_LOAD_FAILED_ERROR
@@ -520,15 +518,15 @@ pub(crate) async fn load_session_on_connection(
             )
             .await;
             // Named ACP error codes mean the agent responded — connection is still alive.
-            // Transport failures (channel closed, I/O error) appear as InternalError or Other.
+            // Transport failures (channel closed, I/O error) appear as INTERNAL_ERROR or another code.
             let connection_alive = matches!(
                 e.code,
-                acp::schema::v1::ErrorCode::ResourceNotFound
-                    | acp::schema::v1::ErrorCode::MethodNotFound
-                    | acp::schema::v1::ErrorCode::InvalidParams
-                    | acp::schema::v1::ErrorCode::AuthRequired
-                    | acp::schema::v1::ErrorCode::ParseError
-                    | acp::schema::v1::ErrorCode::InvalidRequest
+                acp::ErrorCode::RESOURCE_NOT_FOUND
+                    | acp::ErrorCode::METHOD_NOT_FOUND
+                    | acp::ErrorCode::INVALID_PARAMS
+                    | acp::ErrorCode::AUTH_REQUIRED
+                    | acp::ErrorCode::PARSE_ERROR
+                    | acp::ErrorCode::INVALID_REQUEST
             );
             return if connection_alive { Ok(None) } else { Err(()) };
         }
@@ -553,7 +551,7 @@ pub(crate) async fn load_session_on_connection(
         .config_options
         .as_deref()
         .map(serialize_config_options);
-    let session_id = acp::schema::v1::SessionId::new(resume_session_id.clone());
+    let session_id = acp::v1::schema::SessionId::new(resume_session_id.clone());
 
     let prompt_capabilities =
         conn.capabilities
@@ -656,13 +654,13 @@ pub(crate) async fn pre_initialize_agent(
     let terms = Arc::clone(&handlers.terminals);
 
     // Channels: ready signal carries capabilities + cloned connection handle
-    type ReadyPayload = Result<(AgentCapabilities, acp::ConnectionTo<acp::Agent>), String>;
+    type ReadyPayload = Result<(AgentCapabilities, acp::v1::ConnectionTo<acp::Agent>), String>;
     let (ready_tx, ready_rx) = oneshot::channel::<ReadyPayload>();
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
     let connection_task = tokio::spawn(async move {
         let result = configure_acp_builder!(handlers, terms)
-            .connect_with(transport, async move |cx: acp::ConnectionTo<acp::Agent>| {
+            .connect_with(transport, async move |cx: acp::v1::ConnectionTo<acp::Agent>| {
                 let init_result = cx
                     .send_request(
                         InitializeRequest::new(ProtocolVersion::V1)

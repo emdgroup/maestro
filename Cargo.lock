@@ -53,12 +53,13 @@ dependencies = [
 
 [[package]]
 name = "agent-client-protocol"
-version = "3.6.0"
+version = "5.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89b41f18aeb4a6d1a463b994cb880cc562cdea7d616ea3e22f9c6f2a438fc4f6"
+checksum = "c60cfd8cddbb23d9e30f51dca5316b4cea769ba55900db1fa8951dca4f28d02d"
 dependencies = [
  "agent-client-protocol-derive",
  "agent-client-protocol-schema",
+ "anyhow",
  "futures",
  "futures-concurrency",
  "rustc-hash",
@@ -70,9 +71,9 @@ dependencies = [
 
 [[package]]
 name = "agent-client-protocol-derive"
-version = "3.6.0"
+version = "5.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d2d255cb5d3afa4760084fbcaf87c7d214d316328546cd777d8736a8af6e368"
+checksum = "b296716e42d77d38aef7f645cbe0765287b0e0a84722cb9f8ac39e6cdcecdb2a"
 dependencies = [
  "quote",
  "syn 3.0.9",
@@ -80,13 +81,12 @@ dependencies = [
 
 [[package]]
 name = "agent-client-protocol-schema"
-version = "1.13.0"
+version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7c7cee33b16d162a617d5ea7292471c542ab31b416a2c089228aa8a6d4d18fe"
+checksum = "e20d2c4af6eb08f6a4f562520bdd939a4af803255fec461dd523638c22f5b265"
 dependencies = [
  "anyhow",
  "derive_more",
- "schemars 1.2.3",
  "serde",
  "serde_json",
  "serde_with",
@@ -3609,7 +3609,6 @@ name = "maestro-server"
 version = "0.46.0"
 dependencies = [
  "agent-client-protocol",
- "agent-client-protocol-schema",
  "base64 0.23.1",
  "bytes",
  "chrono",
@@ -5673,7 +5672,7 @@ checksum = "3fbf2ae1b8bc8e02df939598064d22402220cd5bbcca1c76f7d6a310974d5615"
 dependencies = [
  "dyn-clone",
  "indexmap 1.9.3",
- "schemars_derive 0.8.22",
+ "schemars_derive",
  "serde",
  "serde_json",
  "url",
@@ -5700,7 +5699,6 @@ checksum = "ab508826f74a77ca9d5aba6ff19b522583ee3eaf28a19384ff3d0e5835fadf6e"
 dependencies = [
  "dyn-clone",
  "ref-cast",
- "schemars_derive 1.2.3",
  "serde",
  "serde_json",
 ]
@@ -5713,20 +5711,8 @@ checksum = "32e265784ad618884abaea0600a9adf15393368d840e0222d101a072f3f7534d"
 dependencies = [
  "proc-macro2",
  "quote",
- "serde_derive_internals 0.29.1",
+ "serde_derive_internals",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "schemars_derive"
-version = "1.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1c3a92094fa7d61aa124645844facb6b554dfc797136d0f5fd1f890e2bffc69"
-dependencies = [
- "proc-macro2",
- "quote",
- "serde_derive_internals 0.30.0",
- "syn 3.0.9",
 ]
 
 [[package]]
@@ -5901,17 +5887,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "serde_derive_internals"
-version = "0.30.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f852137cce035d6a4df67ccce505ff6b3e9fd3a10e3e52b24dc71e650bb1a9bd"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.9",
 ]
 
 [[package]]

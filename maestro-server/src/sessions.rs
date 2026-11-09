@@ -195,7 +195,7 @@ pub struct AgentCapabilities {
 /// Cloneable subset of `AgentConnection` used by spawned tasks that need to call ACP methods
 /// without holding the agent_connections lock for the duration of the async operation.
 pub struct AgentConnectionHandle {
-    pub connection: acp::ConnectionTo<acp::Agent>,
+    pub connection: acp::v1::ConnectionTo<acp::Agent>,
     pub router: Arc<SessionRouter>,
     pub capabilities: AgentCapabilities,
 }
@@ -212,7 +212,7 @@ impl From<&AgentConnection> for AgentConnectionHandle {
 
 /// A long-lived agent process shared across multiple sessions.
 pub struct AgentConnection {
-    pub connection: acp::ConnectionTo<acp::Agent>,
+    pub connection: acp::v1::ConnectionTo<acp::Agent>,
     pub router: Arc<SessionRouter>,
     pub capabilities: AgentCapabilities,
     /// Dropping this signals the background task to exit and kill the child process.
@@ -223,7 +223,7 @@ pub struct AgentConnection {
 
 impl AgentConnection {
     pub fn new(
-        connection: acp::ConnectionTo<acp::Agent>,
+        connection: acp::v1::ConnectionTo<acp::Agent>,
         router: Arc<SessionRouter>,
         capabilities: AgentCapabilities,
         shutdown_tx: oneshot::Sender<()>,
