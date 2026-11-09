@@ -4,7 +4,7 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use acp::schema::v1::{CreateTerminalRequest, CreateTerminalResponse, TerminalId};
+use acp::v1::schema::{CreateTerminalRequest, CreateTerminalResponse, TerminalId};
 use agent_client_protocol as acp;
 use maestro_protocol::{ServerResponse, TerminalOutput};
 use tokio::sync::{mpsc, Mutex, Notify};

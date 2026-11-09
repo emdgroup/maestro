@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use acp::schema::v1::{
+use acp::v1::schema::{
     CancelNotification, CloseSessionRequest, PromptRequest, PromptResponse, SessionConfigId,
     SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions, SessionConfigValueId,
     SetSessionConfigOptionRequest, SetSessionModeRequest, StopReason,
@@ -52,7 +52,7 @@ fn turn_ended(result: Result<PromptResponse, acp::Error>, session_id: String) ->
                 "error",
                 format!("[prompt] ACP error for session {session_id}: {e}"),
             );
-            let stop_reason = if e.code == acp::schema::v1::ErrorCode::AuthRequired {
+            let stop_reason = if e.code == acp::ErrorCode::AUTH_REQUIRED {
                 "auth_required"
             } else {
                 if crate::agent_gate::is_limit(e.data.as_ref(), &e.message) {
@@ -118,7 +118,7 @@ async fn announce_turn(stdout: &crate::ClientOut, session_id: &str) {
 }
 
 pub(crate) fn convert_acp_modes(
-    acp_modes: Option<&acp::schema::v1::SessionModeState>,
+    acp_modes: Option<&acp::v1::schema::SessionModeState>,
 ) -> Option<ProtocolSessionModeState> {
     acp_modes.map(|m| ProtocolSessionModeState {
         current_mode_id: m.current_mode_id.0.to_string(),
@@ -212,7 +212,7 @@ pub(crate) fn modes_from_config_options(
 }
 
 pub(crate) fn extract_prompt_capabilities(
-    response: &acp::schema::v1::InitializeResponse,
+    response: &acp::v1::schema::InitializeResponse,
 ) -> PromptCapabilitiesInfo {
     PromptCapabilitiesInfo {
         embedded_context: response
@@ -246,8 +246,8 @@ impl PromptsInFlight {
 
 pub(crate) async fn run_command_loop(
     mut cmd_rx: mpsc::Receiver<SessionCommand>,
-    cx: acp::ConnectionTo<acp::Agent>,
-    session_id: acp::schema::v1::SessionId,
+    cx: acp::v1::ConnectionTo<acp::Agent>,
+    session_id: acp::v1::schema::SessionId,
     so: crate::ClientOut,
     maestro_sid: String,
     router: Option<Arc<crate::sessions::SessionRouter>>,
@@ -336,7 +336,7 @@ pub(crate) async fn run_command_loop(
                 crate::turn::note_turn_started(&maestro_sid);
                 let sid = maestro_sid.clone();
                 announce_prompt(&so, &maestro_sid, serde_json::Value::Array(blocks.clone())).await;
-                let content_blocks: Vec<acp::schema::v1::ContentBlock> = blocks
+                let content_blocks: Vec<acp::v1::schema::ContentBlock> = blocks
                     .into_iter()
                     .filter_map(|b| serde_json::from_value(b).ok())
                     .collect();
@@ -454,7 +454,7 @@ pub(crate) async fn run_command_loop(
                             config_options: serialize_config_options(&response.config_options),
                         })
                     }
-                    Err(e) if e.code == acp::ErrorCode::MethodNotFound => {
+                    Err(e) if e.code == acp::ErrorCode::METHOD_NOT_FOUND => {
                         let fallback = cx
                             .send_request(SetSessionModeRequest::new(
                                 session_id.clone(),
@@ -521,7 +521,7 @@ pub(crate) async fn run_command_loop(
 #[cfg(test)]
 mod tests {
     use super::{turn_ended, PromptsInFlight};
-    use acp::schema::v1::PromptResponse;
+    use acp::v1::schema::PromptResponse;
     use agent_client_protocol as acp;
     use maestro_protocol::TurnUsage;
 

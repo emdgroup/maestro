@@ -143,7 +143,7 @@ pub(crate) async fn authenticate(
             send_response(&stdout_task, &response).await.ok();
         });
     } else {
-        use agent_client_protocol_schema::v1::{AuthMethodId, AuthenticateRequest};
+        use agent_client_protocol::v1::schema::{AuthMethodId, AuthenticateRequest};
         let stdout_task = Arc::clone(stdout);
         tokio::spawn(async move {
             let result = tokio::time::timeout(
@@ -374,7 +374,7 @@ pub(crate) async fn logout(
         .await
         .is_ok();
     };
-    use agent_client_protocol_schema::v1::LogoutRequest;
+    use agent_client_protocol::v1::schema::LogoutRequest;
     let stdout_task = Arc::clone(stdout);
     tokio::spawn(async move {
         let response = match conn.send_request(LogoutRequest::new()).block_task().await {

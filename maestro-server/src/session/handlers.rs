@@ -2,13 +2,12 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use acp::schema::v1::{
-    CreateTerminalRequest, CreateTerminalResponse, PermissionOptionId, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
-    SessionNotification,
+use acp::v1::schema::{
+    CreateElicitationRequest, CreateElicitationResponse, CreateTerminalRequest,
+    CreateTerminalResponse, PermissionOptionId, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionNotification,
 };
 use agent_client_protocol as acp;
-use agent_client_protocol_schema::v1::{CreateElicitationRequest, CreateElicitationResponse};
 use maestro_protocol::{
     ElicitationRequest as MaestroElicitationRequest, PermissionRequest as MaestroPermissionRequest,
     ServerResponse, SessionUpdate,
@@ -35,14 +34,14 @@ macro_rules! configure_acp_builder {
         let _h = $handlers;
         let _terms = $terms;
         acp::Client
-            .builder()
+            .v1()
             .name("maestro-server")
             .on_receive_request(
                 {
                     let h = _h.clone();
                     move |request: RequestPermissionRequest,
-                          responder: acp::Responder<RequestPermissionResponse>,
-                          cx: acp::ConnectionTo<acp::Agent>| {
+                          responder: acp::v1::Responder<RequestPermissionResponse>,
+                          cx: acp::v1::ConnectionTo<acp::Agent>| {
                         let h = h.clone();
                         async move { h.handle_permission(request, responder, cx).await }
                     }
@@ -52,7 +51,8 @@ macro_rules! configure_acp_builder {
             .on_receive_notification(
                 {
                     let h = _h.clone();
-                    move |notification: SessionNotification, _cx: acp::ConnectionTo<acp::Agent>| {
+                    move |notification: SessionNotification,
+                          _cx: acp::v1::ConnectionTo<acp::Agent>| {
                         let h = h.clone();
                         async move { h.handle_notification(notification).await }
                     }
@@ -63,8 +63,8 @@ macro_rules! configure_acp_builder {
                 {
                     let h = _h.clone();
                     move |request: CreateTerminalRequest,
-                          responder: acp::Responder<CreateTerminalResponse>,
-                          _cx: acp::ConnectionTo<acp::Agent>| {
+                          responder: acp::v1::Responder<CreateTerminalResponse>,
+                          _cx: acp::v1::ConnectionTo<acp::Agent>| {
                         let h = h.clone();
                         async move { h.handle_create_terminal(request, responder).await }
                     }
@@ -75,8 +75,8 @@ macro_rules! configure_acp_builder {
                 {
                     let terms = Arc::clone(&_terms);
                     move |request: TerminalOutputRequest,
-                          responder: acp::Responder<TerminalOutputResponse>,
-                          _cx: acp::ConnectionTo<acp::Agent>| {
+                          responder: acp::v1::Responder<TerminalOutputResponse>,
+                          _cx: acp::v1::ConnectionTo<acp::Agent>| {
                         let terms = terms.clone();
                         async move {
                             let terminal_id_str = request.terminal_id.to_string();
@@ -106,8 +106,8 @@ macro_rules! configure_acp_builder {
                 {
                     let terms = Arc::clone(&_terms);
                     move |request: ReleaseTerminalRequest,
-                          responder: acp::Responder<ReleaseTerminalResponse>,
-                          _cx: acp::ConnectionTo<acp::Agent>| {
+                          responder: acp::v1::Responder<ReleaseTerminalResponse>,
+                          _cx: acp::v1::ConnectionTo<acp::Agent>| {
                         let terms = terms.clone();
                         async move {
                             let terminal_id_str = request.terminal_id.to_string();
@@ -122,8 +122,8 @@ macro_rules! configure_acp_builder {
                 {
                     let terms = Arc::clone(&_terms);
                     move |request: WaitForTerminalExitRequest,
-                          responder: acp::Responder<WaitForTerminalExitResponse>,
-                          cx: acp::ConnectionTo<acp::Agent>| {
+                          responder: acp::v1::Responder<WaitForTerminalExitResponse>,
+                          cx: acp::v1::ConnectionTo<acp::Agent>| {
                         let terms = terms.clone();
                         async move {
                             let terminal_id_str = request.terminal_id.to_string();
@@ -174,8 +174,8 @@ macro_rules! configure_acp_builder {
                 {
                     let terms = Arc::clone(&_terms);
                     move |request: KillTerminalRequest,
-                          responder: acp::Responder<KillTerminalResponse>,
-                          _cx: acp::ConnectionTo<acp::Agent>| {
+                          responder: acp::v1::Responder<KillTerminalResponse>,
+                          _cx: acp::v1::ConnectionTo<acp::Agent>| {
                         let terms = terms.clone();
                         async move {
                             let terminal_id_str = request.terminal_id.to_string();
@@ -195,8 +195,8 @@ macro_rules! configure_acp_builder {
                 {
                     let h = _h.clone();
                     move |request: acp::UntypedMessage,
-                          responder: acp::Responder<serde_json::Value>,
-                          cx: acp::ConnectionTo<acp::Agent>| {
+                          responder: acp::v1::Responder<serde_json::Value>,
+                          cx: acp::v1::ConnectionTo<acp::Agent>| {
                         let h = h.clone();
                         async move { h.handle_elicitation(request, responder, cx).await }
                     }
@@ -235,15 +235,15 @@ impl ConnectionHandlers {
     pub async fn handle_permission(
         &self,
         request: RequestPermissionRequest,
-        responder: acp::Responder<RequestPermissionResponse>,
-        cx: acp::ConnectionTo<acp::Agent>,
+        responder: acp::v1::Responder<RequestPermissionResponse>,
+        cx: acp::v1::ConnectionTo<acp::Agent>,
     ) -> acp::Result<()> {
         let acp_sid = request.session_id.to_string();
         let (maestro_sid, state) = self
             .router
             .get_session(&acp_sid)
             .await
-            .ok_or_else(|| acp::Error::session_not_found(acp_sid.clone()))?;
+            .ok_or_else(|| acp::v1::schema::Error::session_not_found(acp_sid.clone()))?;
 
         // Not the tool call id: one tool call may request permission more than once (per-file
         // approval, say), and reusing the id would overwrite the first request's sender — which
@@ -314,7 +314,7 @@ impl ConnectionHandlers {
             .router
             .get_maestro_id(&acp_sid)
             .await
-            .ok_or_else(|| acp::Error::session_not_found(acp_sid.clone()))?;
+            .ok_or_else(|| acp::v1::schema::Error::session_not_found(acp_sid.clone()))?;
 
         let payload = serde_json::to_value(&notification.update)
             .map_err(|e| acp::Error::new(-32603, e.to_string()))?;
@@ -333,14 +333,14 @@ impl ConnectionHandlers {
     pub async fn handle_create_terminal(
         &self,
         request: CreateTerminalRequest,
-        responder: acp::Responder<CreateTerminalResponse>,
+        responder: acp::v1::Responder<CreateTerminalResponse>,
     ) -> acp::Result<()> {
         let acp_sid = request.session_id.to_string();
         let maestro_sid = self
             .router
             .get_maestro_id(&acp_sid)
             .await
-            .ok_or_else(|| acp::Error::session_not_found(acp_sid.clone()))?;
+            .ok_or_else(|| acp::v1::schema::Error::session_not_found(acp_sid.clone()))?;
 
         let resp = handle_create_terminal(
             request,
@@ -356,8 +356,8 @@ impl ConnectionHandlers {
     pub async fn handle_elicitation(
         &self,
         request: acp::UntypedMessage,
-        responder: acp::Responder<serde_json::Value>,
-        cx: acp::ConnectionTo<acp::Agent>,
+        responder: acp::v1::Responder<serde_json::Value>,
+        cx: acp::v1::ConnectionTo<acp::Agent>,
     ) -> acp::Result<()> {
         if request.method() != "elicitation/create" {
             return responder.respond_with_error(
@@ -370,9 +370,7 @@ impl ConnectionHandlers {
             })?;
 
         let acp_sid = match elicitation.scope() {
-            agent_client_protocol_schema::v1::ElicitationScope::Session(scope) => {
-                scope.session_id.to_string()
-            }
+            acp::v1::schema::ElicitationScope::Session(scope) => scope.session_id.to_string(),
             _ => {
                 return responder.respond_with_error(acp::Error::new(
                     -32603,
@@ -384,7 +382,7 @@ impl ConnectionHandlers {
             .router
             .get_session(&acp_sid)
             .await
-            .ok_or_else(|| acp::Error::session_not_found(acp_sid.clone()))?;
+            .ok_or_else(|| acp::v1::schema::Error::session_not_found(acp_sid.clone()))?;
 
         let request_id = format!(
             "elicit-{}",
