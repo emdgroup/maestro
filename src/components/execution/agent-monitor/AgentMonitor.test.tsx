@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SidebarProvider } from "@/ui/sidebar";
@@ -147,5 +147,45 @@ describe("AgentMonitor reload button", () => {
       ],
     });
     expect(queryByLabelText("Reload session")).not.toBeInTheDocument();
+  });
+});
+
+describe("AgentMonitor session groups", () => {
+  const stage = (id: string, role: "Planner" | "Coder") => ({
+    ...baseSession,
+    session_id: id,
+    execution_mode: "acp" as const,
+    agent_id: "claude-acp",
+    task_id: 7,
+    task_name: "Fix login",
+    session_name: "Fix login",
+    task_role: { role, profile_id: null },
+  });
+
+  it("gathers a task's sessions under one header, each named by its stage", () => {
+    const { getByText, getAllByText } = renderMonitor({
+      ...defaultProps,
+      sessions: [
+        stage("p", "Planner"),
+        stage("c", "Coder"),
+        { ...baseSession, execution_mode: "pty" as const },
+      ],
+    });
+    expect(getByText("Tasks")).toBeInTheDocument();
+    expect(getByText("Yours")).toBeInTheDocument();
+    expect(getAllByText("Fix login")).toHaveLength(1);
+    expect(getByText("Plan")).toBeInTheDocument();
+    expect(getByText("Implement")).toBeInTheDocument();
+  });
+
+  it("folds a section when its header is clicked", () => {
+    const { getByText, queryByText } = renderMonitor({
+      ...defaultProps,
+      sessions: [{ ...baseSession, execution_mode: "pty" as const }],
+    });
+    fireEvent.click(getByText("Yours"));
+    expect(queryByText("test-session")).toBeNull();
+    fireEvent.click(getByText("Yours"));
+    expect(getByText("test-session")).toBeInTheDocument();
   });
 });
