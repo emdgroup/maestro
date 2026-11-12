@@ -4,13 +4,20 @@ import { act, renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 vi.mock("@/lib/tauri-utils", () => ({
-  api: { createFileAt: vi.fn(async () => {}), connectSshWithoutCredentials: vi.fn() },
+  api: {
+    createFileAt: vi.fn(async () => {}),
+    connectSshWithoutCredentials: vi.fn(),
+    preflightConnection: vi.fn(),
+    syncUsage: vi.fn(async () => {}),
+  },
 }));
 
 import { api } from "@/lib/tauri-utils";
 import { connectionKeyStr } from "@/lib/connection-utils";
+import { useConfigStore } from "@/store/configStore";
 import { useHomeStore } from "@/store/homeStore";
-import { connect, connectionQueryKeys, useCreateFile } from "./connection.service";
+import type { ToolCheckEntry } from "@/types/bindings";
+import { attach, connect, connectionQueryKeys, useCreateFile } from "./connection.service";
 
 describe("useCreateFile", () => {
   /** The tree filters on the workspace index, so a new file has to reach it as well as the folder. */
@@ -51,7 +58,6 @@ describe("connect", () => {
     expect(useHomeStore.getState().phases[connectionKeyStr(ssh)]).toEqual({
       kind: "failed",
       error,
-      result: null,
     });
   });
 
@@ -64,5 +70,19 @@ describe("connect", () => {
       kind: "signin",
       error: null,
     });
+  });
+});
+
+describe("attach", () => {
+  /** Every missing tool leaves a working connection; stopping on one asked again on every connect. */
+  it("comes up with a tool missing, and keeps the check for the warning", async () => {
+    const local = { type: "local" } as const;
+    const git = { tool: "git", available: false } as ToolCheckEntry;
+    vi.mocked(api.preflightConnection).mockResolvedValueOnce({ agents: [], tool_checks: [git] });
+
+    await attach(local);
+
+    expect(useHomeStore.getState().phases[connectionKeyStr(local)]).toEqual({ kind: "up" });
+    expect(useConfigStore.getState().preflightToolChecks[connectionKeyStr(local)]).toEqual([git]);
   });
 });

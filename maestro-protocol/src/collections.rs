@@ -40,6 +40,13 @@ pub struct CheckToolsResponse {
     pub results: Vec<ToolCheckResult>,
 }
 
+/// Point Maestro at a tool it did not find. Saved only when the path runs.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SetToolPathRequest {
+    pub tool: String,
+    pub path: String,
+}
+
 /// One file of a skill, carried by value so the skills version with the Maestro app rather than
 /// with the maestro-server release deployed on the target.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -123,6 +123,7 @@ pub enum ServerRequest {
     Authenticate(AuthenticateRequest),
     Logout(LogoutRequest),
     CheckTools(CheckToolsRequest),
+    SetToolPath(SetToolPathRequest),
     InstallSkills(InstallSkillsRequest),
     /// The MCP servers the user manages for this machine, secrets blanked, and the ones a
     /// project's own `.mcp.json` declares.
@@ -295,6 +296,7 @@ pub enum ServerResponse {
     LogoutOk,
     AuthTerminalExit(AuthTerminalExitResponse),
     CheckToolsOk(CheckToolsResponse),
+    SetToolPathOk(ToolCheckResult),
     InstallSkillsOk(InstallSkillsResponse),
     ListMcpServersOk(McpServerList),
     SaveMcpServersOk,
@@ -449,6 +451,7 @@ impl ServerResponse {
             | Self::AuthenticateOk
             | Self::LogoutOk
             | Self::CheckToolsOk(_)
+            | Self::SetToolPathOk(_)
             | Self::InstallSkillsOk(_)
             | Self::ListMcpServersOk(_)
             | Self::SaveMcpServersOk

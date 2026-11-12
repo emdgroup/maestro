@@ -11,6 +11,7 @@ use crate::acp::ConnectionKey;
 use crate::core::AppState;
 use maestro_protocol::{
     CheckToolsRequest, CheckToolsResponse, InstallSkillsRequest, ServerRequest, ServerResponse,
+    SetToolPathRequest,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -494,6 +495,29 @@ pub async fn prefetch_agent_discovery(
     )
     .await;
     Ok(())
+}
+
+/// Point the connection at a tool it did not detect. `Err` carries why the path was refused; on
+/// success the caller runs preflight again to see the tool as available.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_tool_path(
+    app_state: State<'_, Arc<AppState>>,
+    connection: crate::acp::ConnectionKey,
+    tool: String,
+    path: String,
+) -> Result<(), String> {
+    let result = query_via_server(
+        connection,
+        &app_state,
+        ServerRequest::SetToolPath(SetToolPathRequest { tool, path }),
+        reply!(ServerResponse::SetToolPathOk(result) => result),
+    )
+    .await?;
+    match result.error {
+        Some(error) if !result.available => Err(error),
+        _ => Ok(()),
+    }
 }
 
 #[tauri::command]

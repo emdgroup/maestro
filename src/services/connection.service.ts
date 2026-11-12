@@ -467,7 +467,7 @@ export async function attach(connection: ConnectionKey, replace = false) {
   try {
     result = await api.preflightConnection(connection, replace);
   } catch (error) {
-    setPhase(id, { kind: "failed", error: getErrorMessage(error), result: null });
+    setPhase(id, { kind: "failed", error: getErrorMessage(error) });
     return;
   }
   useConfigStore.getState().setPreflightToolChecks(connection, result.tool_checks);
@@ -475,12 +475,25 @@ export async function attach(connection: ConnectionKey, replace = false) {
   void api
     .syncUsage(connection)
     .catch((error: unknown) => console.warn("could not sync usage", getErrorMessage(error)));
-  setPhase(
-    id,
-    result.tool_checks.some((tool) => !tool.available)
-      ? { kind: "failed", error: null, result }
-      : { kind: "up" },
-  );
+  // A missing tool never stops the connect: each one leaves a working, degraded connection, and
+  // the panel's warning says which and what the user gives up.
+  setPhase(id, { kind: "up" });
+}
+
+/** Run the tool checks again on a connection that is up, without leaving the up phase. */
+export async function recheckTools(connection: ConnectionKey) {
+  const result = await api.preflightConnection(connection, false);
+  useConfigStore.getState().setPreflightToolChecks(connection, result.tool_checks);
+}
+
+/** Point a connection at a tool it did not detect, then check again so the warning clears. */
+export function useSetToolPathMutation(connection: ConnectionKey) {
+  return useMutation({
+    mutationFn: async ({ tool, path }: { tool: string; path: string }) => {
+      await api.setToolPath(connection, tool, path);
+      await recheckTools(connection);
+    },
+  });
 }
 
 /** The prefix of the error an SSH connect returns when the host presents a key other than the pinned one. */
@@ -504,7 +517,7 @@ export async function connect(connection: ConnectionKey) {
       setPhase(
         connectionKeyStr(connection),
         isHostKeyChanged(message)
-          ? { kind: "failed", error: message, result: null }
+          ? { kind: "failed", error: message }
           : { kind: "signin", error: null },
       );
       return;
