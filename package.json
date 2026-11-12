@@ -63,7 +63,7 @@
     "framer-motion": "14.9.1",
     "immer": "11.2.9",
     "katex": "^0.19.1",
-    "lucide-react": "1.69.0",
+    "lucide-react": "1.70.0",
     "mermaid": "12.3.0",
     "react": "^19.3.1",
     "react-day-picker": "^10.0.2",
