@@ -33,7 +33,7 @@ Pick the connected provider to import issues from, with its project fields, such
 
 ### Appearance
 
-The project's own header colour, and the tab it **Opens On**: Tasks, Agents, Collections or Workspaces.
+The project's own accent colour, and the tab it **Opens On**: Tasks, Agents, Collections or Workspaces.
 
 <img src="../../docs/assets/settings-project-appearance.webp" alt="The project Appearance page with the project color and the tab it opens on" width="960" />
 
