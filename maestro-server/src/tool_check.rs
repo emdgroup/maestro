@@ -199,9 +199,17 @@ fn is_executable(path: &Path) -> bool {
         use std::os::unix::fs::PermissionsExt;
         metadata.permissions().mode() & 0o111 != 0
     }
+    // Only these launch on Windows. Node ships an extensionless `npx` shell script beside
+    // `npx.cmd`, and accepting it would resolve, and persist, a path `CreateProcess` refuses.
     #[cfg(not(unix))]
     {
-        true
+        path.extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|extension| {
+                ["exe", "cmd", "bat", "com"]
+                    .iter()
+                    .any(|known| extension.eq_ignore_ascii_case(known))
+            })
     }
 }
 
@@ -313,5 +321,21 @@ fn failed(
         resolved_path: None,
         source,
         error: Some(error),
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    #[test]
+    fn skips_the_extensionless_shell_script_node_ships() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("npx"), "#!/bin/sh").unwrap();
+        std::fs::write(dir.path().join("npx.cmd"), "@echo off").unwrap();
+
+        assert_eq!(
+            super::find_in_directory(dir.path(), "npx"),
+            Some(dir.path().join("npx.cmd"))
+        );
+        assert!(!super::is_executable(&dir.path().join("npx")));
     }
 }
