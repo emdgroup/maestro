@@ -15,7 +15,7 @@ maestro-protocol = { path = "../maestro-protocol", features = ["image", "process
 # client system prompt as of 1.16.0, so the `unstable_elicitation` / `unstable_auth_methods` /
 # `unstable_session_system_prompt` flags no longer exist upstream. The schema is reached through
 # `agent_client_protocol::v1::schema` rather than as a dependency of its own: the SDK pins it with `=`.
-agent-client-protocol = { version = "5.1.0", features = ["unstable_end_turn_token_usage"] }
+agent-client-protocol = { version = "5.2.0", features = ["unstable_end_turn_token_usage"] }
 tokio = { version = "1", features = [
   "rt",
   "io-util",
