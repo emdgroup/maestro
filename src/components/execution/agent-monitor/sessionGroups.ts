@@ -14,7 +14,7 @@ export interface AutomationOrigin {
 }
 
 export interface SessionGroup {
-  /** `task:<id>`, `automation:<id>`, or the session id for a group of one in Yours. */
+  /** `automation:<id>`, or the session id for a group of one. */
   key: string;
   sessions: MonitorSession[];
 }
@@ -34,9 +34,10 @@ const SECTIONS: { key: SectionKey; label: string }[] = [
 ];
 
 /**
- * Sort the sessions into Tasks, Automations and Yours, a task's or an automation's sessions
- * gathered under it. Inside a group, and between groups, a session waiting on the user comes
- * first, then one at work, then the newest. Empty sections are left out.
+ * Sort the sessions into Tasks, Automations and Yours, an automation's live runs gathered under
+ * it. A task's sessions are not gathered: starting a stage closes the one before it
+ * (`finish_spawn`), so a task never has two. Inside a group, and between groups, a session waiting
+ * on the user comes first, then one at work, then the newest. Empty sections are left out.
  */
 export function groupSessions(
   sessions: MonitorSession[],
@@ -51,7 +52,7 @@ export function groupSessions(
     const automation = session.task_id == null ? automationOf(session) : undefined;
     const [section, key]: [SectionKey, string] =
       session.task_id != null
-        ? ["tasks", `task:${session.task_id}`]
+        ? ["tasks", session.session_id]
         : automation
           ? ["automations", `automation:${automation.id}`]
           : ["yours", session.session_id];

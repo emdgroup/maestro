@@ -14,6 +14,11 @@ vi.mock("@/services/execution.service", () => ({
   useReloadAcpSessionMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
+const automationRuns = vi.hoisted(() => ({ current: [] as object[] }));
+vi.mock("@/services/automation.service", () => ({
+  useAutomationRunsQuery: () => ({ data: automationRuns.current }),
+}));
+
 const baseSession = {
   session_id: "1",
   task_id: null,
@@ -151,31 +156,41 @@ describe("AgentMonitor reload button", () => {
 });
 
 describe("AgentMonitor session groups", () => {
-  const stage = (id: string, role: "Planner" | "Coder") => ({
+  const run = (id: string) => ({
     ...baseSession,
     session_id: id,
     execution_mode: "acp" as const,
     agent_id: "claude-acp",
-    task_id: 7,
-    task_name: "Fix login",
-    session_name: "Fix login",
-    task_role: { role, profile_id: null },
+    acp_session_id: `agent-${id}`,
+    session_name: "Daily summary",
   });
 
-  it("gathers a task's sessions under one header, each named by its stage", () => {
+  it("gathers an automation's live runs under one header, each named by its run", () => {
+    automationRuns.current = [
+      {
+        automation_id: "daily",
+        automation_name: "Daily summary",
+        agent_session_id: "agent-r1",
+        ordinal: 13,
+      },
+      {
+        automation_id: "daily",
+        automation_name: "Daily summary",
+        agent_session_id: "agent-r2",
+        ordinal: 14,
+      },
+    ];
     const { getByText, getAllByText } = renderMonitor({
       ...defaultProps,
-      sessions: [
-        stage("p", "Planner"),
-        stage("c", "Coder"),
-        { ...baseSession, execution_mode: "pty" as const },
-      ],
+      projectId: 1,
+      sessions: [run("r1"), run("r2"), { ...baseSession, execution_mode: "pty" as const }],
     });
-    expect(getByText("Tasks")).toBeInTheDocument();
+    automationRuns.current = [];
+    expect(getByText("Automations")).toBeInTheDocument();
     expect(getByText("Yours")).toBeInTheDocument();
-    expect(getAllByText("Fix login")).toHaveLength(1);
-    expect(getByText("Plan")).toBeInTheDocument();
-    expect(getByText("Implement")).toBeInTheDocument();
+    expect(getAllByText("Daily summary")).toHaveLength(1);
+    expect(getByText("Run #13")).toBeInTheDocument();
+    expect(getByText("Run #14")).toBeInTheDocument();
   });
 
   it("folds a section when its header is clicked", () => {

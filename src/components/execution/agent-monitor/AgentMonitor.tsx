@@ -43,7 +43,6 @@ import {
 import { STAGE_NAMES } from "@/lib/default-profiles";
 import { useAgentProfilesQuery } from "@/services/project.service";
 import { useAutomationRunsQuery } from "@/services/automation.service";
-import { useTasksQuery } from "@/services/task.service";
 import { ACTIVITY_DOT } from "@/components/execution/shared/activityStatus";
 import { ElapsedTime } from "@/components/execution/shared/ElapsedTime";
 import { AgentIcon } from "@/components/common/AgentIcon";
@@ -171,8 +170,8 @@ interface SessionRowProps {
   /** Which run of its automation this session is, when an automation started it. */
   runOrdinal?: number;
   /**
-   * Set when the row sits under its task's or automation's header. The header carries the title,
-   * so a name that only repeats it gives way to the stage or the run number.
+   * Set when the row sits under its automation's header. The header carries the name, so a name
+   * that only repeats it gives way to the run number.
    */
   groupTitle?: string;
 }
@@ -192,12 +191,10 @@ const SessionRow = memo(function SessionRow({
   const fullName =
     session.session_name ?? session.task_name ?? session.branch_name ?? "Interactive session";
   const groupLabel =
-    groupTitle != null && (session.session_name == null || session.session_name === groupTitle)
-      ? session.task_role
-        ? STAGE_NAMES[session.task_role.role]
-        : runOrdinal != null
-          ? `Run #${runOrdinal}`
-          : null
+    groupTitle != null &&
+    runOrdinal != null &&
+    (session.session_name == null || session.session_name === groupTitle)
+      ? `Run #${runOrdinal}`
       : null;
   const name = groupLabel ?? fullName;
 
@@ -265,9 +262,7 @@ const SessionRow = memo(function SessionRow({
               {session.execution_mode === "acp" && (
                 <div className="text-xs text-muted-foreground flex items-center justify-between gap-2 min-w-0">
                   <span className="flex items-center gap-1.5 min-w-0">
-                    {groupLabel == null && (
-                      <RoleChip session={session} profileNames={profileNames} tooltip={false} />
-                    )}
+                    <RoleChip session={session} profileNames={profileNames} tooltip={false} />
                     <span className={cn("truncate", getStatusLabelClass(activityInfo))}>
                       {activityInfo ? getStatusLabel(activityInfo) : "Starting…"}
                     </span>
@@ -321,7 +316,7 @@ function loadCollapsed(key: string): Set<string> {
 }
 
 /**
- * The fold line over a section of the session list, or over one task's or automation's sessions.
+ * The fold line over a section of the session list, or over one automation's live runs.
  * Its contents fade with the rail like a row's text, so the collapsed rail keeps a gap between
  * groups rather than a header squeezed into 52px.
  */
@@ -330,7 +325,6 @@ function ListHeader({
   onToggle,
   ranks,
   className,
-  detail,
   children,
 }: {
   open: boolean;
@@ -338,8 +332,6 @@ function ListHeader({
   /** `activityRank` of every session under the header, for its summary. */
   ranks: number[];
   className?: string;
-  /** A second line, in mono: a task's branch. */
-  detail?: string | null;
   children: ReactNode;
 }) {
   const waiting = ranks.filter((rank) => rank === 0).length;
@@ -358,13 +350,8 @@ function ListHeader({
           <ChevronDown
             className={cn("size-3 shrink-0 transition-transform", !open && "-rotate-90")}
           />
-          <span className="min-w-0 flex-1">
-            <span className="flex min-w-0 items-center gap-1.5 text-foreground/90">{children}</span>
-            {detail && (
-              <span className="block truncate font-mono text-[11px] font-normal normal-case tracking-normal text-muted-foreground">
-                {detail}
-              </span>
-            )}
+          <span className="flex min-w-0 flex-1 items-center gap-1.5 text-foreground/90">
+            {children}
           </span>
           {waiting > 0 ? (
             <span className="shrink-0 rounded-full bg-warning/15 px-1.5 text-[11px] font-medium normal-case tracking-normal text-warning">
@@ -500,8 +487,6 @@ export function AgentMonitor({
       session.acp_session_id ? runsBySession.get(session.acp_session_id) : undefined,
     [runsBySession],
   );
-  const { data: tasks } = useTasksQuery(projectId ?? null);
-  const tasksById = useMemo(() => new Map((tasks ?? []).map((task) => [task.id, task])), [tasks]);
   // Ranks rather than the activity itself, so a status label ticking over does not re-render the
   // whole monitor: only a session starting or stopping work, or blocking on the user, does.
   const ranks = useSessionActivityStore(
@@ -805,7 +790,6 @@ export function AgentMonitor({
                     {sectionOpen &&
                       section.groups.map((group) => {
                         const first = group.sessions[0];
-                        const run = runOf(first);
                         const row = (session: MonitorSession, groupTitle?: string) => (
                           <SessionRow
                             key={session.session_id}
@@ -821,12 +805,7 @@ export function AgentMonitor({
                           />
                         );
                         if (group.sessions.length === 1) return row(first);
-                        const task =
-                          first.task_id != null ? tasksById.get(first.task_id) : undefined;
-                        const title =
-                          first.task_id != null
-                            ? (task?.title ?? first.task_name ?? `Task ${first.task_id}`)
-                            : (run?.automation_name ?? "");
+                        const title = runOf(first)?.automation_name ?? "";
                         const groupRanks = group.sessions.map(rankOf);
                         // Something waiting on the user opens its group, folded or not.
                         const groupOpen =
@@ -838,22 +817,8 @@ export function AgentMonitor({
                               onToggle={() => toggleCollapsed(group.key)}
                               ranks={groupRanks}
                               className="py-1 text-[13px] font-medium"
-                              detail={first.task_id != null ? first.branch_name : null}
                             >
-                              {first.task_id != null && (
-                                <span className="font-mono text-muted-foreground">
-                                  #{first.task_id}
-                                </span>
-                              )}
                               <span className="truncate">{title}</span>
-                              {task?.run_mode === "Loop" && (
-                                <span className="shrink-0 rounded-full border border-border bg-muted/50 px-1.5 text-[11px] leading-[16px] font-normal text-muted-foreground">
-                                  Loop
-                                  {task.loop_summary && task.loop_config
-                                    ? ` ${task.loop_summary.counted}/${task.loop_config.max_iterations}`
-                                    : ""}
-                                </span>
-                              )}
                             </ListHeader>
                             {groupOpen && group.sessions.map((session) => row(session, title))}
                           </Fragment>
