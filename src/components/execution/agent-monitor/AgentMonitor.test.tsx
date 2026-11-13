@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SidebarProvider } from "@/ui/sidebar";
@@ -12,6 +12,11 @@ vi.mock("@/services/execution.service", () => ({
   useRenameAcpSessionMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useCancelActiveSessionMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useReloadAcpSessionMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+}));
+
+const automationRuns = vi.hoisted(() => ({ current: [] as object[] }));
+vi.mock("@/services/automation.service", () => ({
+  useAutomationRunsQuery: () => ({ data: automationRuns.current }),
 }));
 
 const baseSession = {
@@ -147,5 +152,78 @@ describe("AgentMonitor reload button", () => {
       ],
     });
     expect(queryByLabelText("Reload session")).not.toBeInTheDocument();
+  });
+});
+
+describe("AgentMonitor session groups", () => {
+  const run = (id: string) => ({
+    ...baseSession,
+    session_id: id,
+    execution_mode: "acp" as const,
+    agent_id: "claude-acp",
+    acp_session_id: `agent-${id}`,
+    session_name: "Daily summary",
+  });
+
+  it("gathers an automation's live runs under one header, each named by its run", () => {
+    automationRuns.current = [
+      {
+        automation_id: "daily",
+        automation_name: "Daily summary",
+        agent_session_id: "agent-r1",
+        ordinal: 13,
+      },
+      {
+        automation_id: "daily",
+        automation_name: "Daily summary",
+        agent_session_id: "agent-r2",
+        ordinal: 14,
+      },
+    ];
+    const { getByText, getAllByText } = renderMonitor({
+      ...defaultProps,
+      projectId: 1,
+      sessions: [run("r1"), run("r2"), { ...baseSession, execution_mode: "pty" as const }],
+    });
+    automationRuns.current = [];
+    expect(getByText("Automations")).toBeInTheDocument();
+    expect(getByText("test-session")).toBeInTheDocument();
+    expect(getAllByText("Daily summary")).toHaveLength(1);
+    expect(getByText("Run #13")).toBeInTheDocument();
+    expect(getByText("Run #14")).toBeInTheDocument();
+  });
+
+  it("folds a section when its header is clicked", () => {
+    const { getByText, queryByText } = renderMonitor({
+      ...defaultProps,
+      sessions: [
+        { ...baseSession, task_id: 7, task_name: "Fix login", execution_mode: "pty" as const },
+      ],
+    });
+    fireEvent.click(getByText("Tasks"));
+    expect(queryByText("test-session")).toBeNull();
+    fireEvent.click(getByText("Tasks"));
+    expect(getByText("test-session")).toBeInTheDocument();
+  });
+
+  it("puts the user's own sessions first, at the root, with no header", () => {
+    const { getByText, queryByText } = renderMonitor({
+      ...defaultProps,
+      sessions: [
+        {
+          ...baseSession,
+          session_id: "t",
+          task_id: 7,
+          session_name: "Fix login",
+          execution_mode: "pty" as const,
+        },
+        { ...baseSession, execution_mode: "pty" as const },
+      ],
+    });
+    expect(queryByText("Yours")).toBeNull();
+    const mine = getByText("test-session");
+    expect(
+      mine.compareDocumentPosition(getByText("Tasks")) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });

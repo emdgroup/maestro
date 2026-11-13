@@ -1,14 +1,18 @@
 import {
+  Fragment,
   useMemo,
   useState,
   useCallback,
   useRef,
   useEffect,
+  useLayoutEffect,
   memo,
   useSyncExternalStore,
+  type ReactNode,
 } from "react";
 import { motion } from "framer-motion";
-import { BotOff, FolderOpen, GitBranch, RotateCw, Terminal, X } from "lucide-react";
+import { useShallow } from "zustand/shallow";
+import { BotOff, ChevronDown, FolderOpen, GitBranch, RotateCw, Terminal, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { Empty, EmptyDescription } from "@/ui/empty";
@@ -22,6 +26,7 @@ import type { ConnectionKey } from "@/types/bindings";
 import type { FileSession, MonitorSession } from "@/store/fileSessionStore";
 import {
   useSessionActivity,
+  useSessionActivityStore,
   type SessionActivityStatus,
   type SessionActivityInfo,
 } from "@/store/sessionActivityStore";
@@ -41,6 +46,7 @@ import { useAutomationRunsQuery } from "@/services/automation.service";
 import { ACTIVITY_DOT } from "@/components/execution/shared/activityStatus";
 import { ElapsedTime } from "@/components/execution/shared/ElapsedTime";
 import { AgentIcon } from "@/components/common/AgentIcon";
+import { activityRank, groupSessions } from "./sessionGroups";
 
 const STATUS_FALLBACK: Record<SessionActivityStatus, string> = {
   spawning: "Starting",
@@ -153,9 +159,6 @@ function RoleChip({
   );
 }
 
-/** A row's height, set by `.pr-row`. The selected pane slides between rows by this much. */
-const SESSION_ROW_HEIGHT = 56;
-
 interface SessionRowProps {
   session: MonitorSession;
   isSelected: boolean;
@@ -166,6 +169,11 @@ interface SessionRowProps {
   profileNames: Record<string, string>;
   /** Which run of its automation this session is, when an automation started it. */
   runOrdinal?: number;
+  /**
+   * Set when the row sits under its automation's header. The header carries the name, so a name
+   * that only repeats it gives way to the run number.
+   */
+  groupTitle?: string;
 }
 
 const SessionRow = memo(function SessionRow({
@@ -176,11 +184,19 @@ const SessionRow = memo(function SessionRow({
   agentIcons,
   profileNames,
   runOrdinal,
+  groupTitle,
 }: SessionRowProps) {
   const activityInfo = useSessionActivity(session.session_id);
   const ringClass = session.execution_mode === "acp" ? getAvatarRingClass(activityInfo) : null;
-  const name =
+  const fullName =
     session.session_name ?? session.task_name ?? session.branch_name ?? "Interactive session";
+  const groupLabel =
+    groupTitle != null &&
+    runOrdinal != null &&
+    (session.session_name == null || session.session_name === groupTitle)
+      ? `Run #${runOrdinal}`
+      : null;
+  const name = groupLabel ?? fullName;
 
   const nameRef = useRef<HTMLSpanElement>(null);
   const [isNameTruncated, setIsNameTruncated] = useState(false);
@@ -199,6 +215,7 @@ const SessionRow = memo(function SessionRow({
       <Tooltip>
         <TooltipTrigger render={<span className="block" />}>
           <div
+            data-session-id={session.session_id}
             onClick={() => onSelect(session.session_id)}
             className={cn(
               "pr-row relative flex items-stretch cursor-pointer transition-colors",
@@ -234,11 +251,13 @@ const SessionRow = memo(function SessionRow({
                 <span ref={nameRef} className="session-item-name text-sm font-medium truncate">
                   {name}
                 </span>
-                <span className="text-xs font-mono text-muted-foreground/40 shrink-0 transition-opacity group-hover/menu-item:opacity-0">
-                  {/* An automation's run number matches its entry in run history. Any other
-                      daemon-started session is keyed by a uuid, which would push the name out. */}
-                  #{runOrdinal ?? session.session_id.slice(0, 8)}
-                </span>
+                {groupLabel == null && (
+                  <span className="text-xs font-mono text-muted-foreground/40 shrink-0 transition-opacity group-hover/menu-item:opacity-0">
+                    {/* An automation's run number matches its entry in run history. Any other
+                        daemon-started session is keyed by a uuid, which would push the name out. */}
+                    #{runOrdinal ?? session.session_id.slice(0, 8)}
+                  </span>
+                )}
               </div>
               {session.execution_mode === "acp" && (
                 <div className="text-xs text-muted-foreground flex items-center justify-between gap-2 min-w-0">
@@ -287,6 +306,67 @@ const SessionRow = memo(function SessionRow({
     </SidebarMenuItem>
   );
 });
+
+function loadCollapsed(key: string): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(key) ?? "[]") as string[]);
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * The fold line over a section of the session list, or over one automation's live runs.
+ * Its contents fade with the rail like a row's text, so the collapsed rail keeps a gap between
+ * groups rather than a header squeezed into 52px.
+ */
+function ListHeader({
+  open,
+  onToggle,
+  ranks,
+  className,
+  children,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  /** `activityRank` of every session under the header, for its summary. */
+  ranks: number[];
+  className?: string;
+  children: ReactNode;
+}) {
+  const waiting = ranks.filter((rank) => rank === 0).length;
+  return (
+    <li>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={onToggle}
+        className={cn(
+          "flex w-full items-center pl-4 pr-3 text-left text-muted-foreground hover:text-foreground",
+          className,
+        )}
+      >
+        <span className="session-text-col flex min-w-0 flex-1 items-center gap-1.5">
+          <ChevronDown
+            className={cn("size-3 shrink-0 transition-transform", !open && "-rotate-90")}
+          />
+          <span className="flex min-w-0 flex-1 items-center gap-1.5 text-foreground/90">
+            {children}
+          </span>
+          {waiting > 0 ? (
+            <span className="shrink-0 rounded-full bg-warning/15 px-1.5 text-[11px] font-medium normal-case tracking-normal text-warning">
+              {waiting === 1 ? "1 needs you" : `${waiting} need you`}
+            </span>
+          ) : (
+            ranks.includes(1) && (
+              <span className={cn("size-2 shrink-0 rounded-full", ACTIVITY_DOT.thinking)} />
+            )
+          )}
+        </span>
+      </button>
+    </li>
+  );
+}
 
 /**
  * Attach the session again from the daemon. Reopening Maestro used to be the only way to get a
@@ -395,15 +475,46 @@ export function AgentMonitor({
   // Joined on the agent's own session id rather than ours: a run reopened after the idle sweep
   // closed it is a new session here, but the same conversation to the agent.
   const { data: runs } = useAutomationRunsQuery(projectId ?? null);
-  const runOrdinals = useMemo(
+  const runsBySession = useMemo(
     () =>
       new Map(
-        (runs ?? []).flatMap((run) =>
-          run.agent_session_id && run.ordinal != null ? [[run.agent_session_id, run.ordinal]] : [],
-        ),
+        (runs ?? []).flatMap((run) => (run.agent_session_id ? [[run.agent_session_id, run]] : [])),
       ),
     [runs],
   );
+  const runOf = useCallback(
+    (session: MonitorSession) =>
+      session.acp_session_id ? runsBySession.get(session.acp_session_id) : undefined,
+    [runsBySession],
+  );
+  // Ranks rather than the activity itself, so a status label ticking over does not re-render the
+  // whole monitor: only a session starting or stopping work, or blocking on the user, does.
+  const ranks = useSessionActivityStore(
+    useShallow((s) =>
+      Object.fromEntries(
+        Object.entries(s.sessions).map(([id, info]) => [id, activityRank(info.status)]),
+      ),
+    ),
+  );
+  const rankOf = useCallback(
+    (session: MonitorSession) => ranks[session.session_id] ?? activityRank(undefined),
+    [ranks],
+  );
+
+  // Folded sections and groups, kept per project across restarts.
+  const collapsedKey = `maestro.agents.collapsed.${projectId ?? "none"}`;
+  const [collapsedFor, setCollapsedFor] = useState(collapsedKey);
+  const [collapsed, setCollapsed] = useState(() => loadCollapsed(collapsedKey));
+  if (collapsedFor !== collapsedKey) {
+    setCollapsedFor(collapsedKey);
+    setCollapsed(loadCollapsed(collapsedKey));
+  }
+  const toggleCollapsed = (key: string) => {
+    const next = new Set(collapsed);
+    if (!next.delete(key)) next.add(key);
+    setCollapsed(next);
+    localStorage.setItem(collapsedKey, JSON.stringify([...next]));
+  };
 
   const commitRename = useCallback(
     (session: MonitorSession) => {
@@ -442,7 +553,34 @@ export function AgentMonitor({
           .includes(search.toLowerCase()),
     );
   }, [sessions, search]);
-  const selectedIndex = filteredSessions.findIndex((s) => s.session_id === selectedSessionId);
+  const sections = useMemo(
+    () =>
+      groupSessions(
+        filteredSessions,
+        (session) => {
+          const run = runOf(session);
+          return run ? { id: run.automation_id, name: run.automation_name } : undefined;
+        },
+        rankOf,
+      ),
+    [filteredSessions, runOf, rankOf],
+  );
+  // A search shows every match, folded or not.
+  const searching = search.trim() !== "";
+
+  // The selected pane slides to the selected row, measured because headers sit between rows.
+  const listRef = useRef<HTMLDivElement>(null);
+  const [pillY, setPillY] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const row =
+      selectedSessionId != null
+        ? list?.querySelector(`[data-session-id="${selectedSessionId}"]`)
+        : null;
+    setPillY(
+      list && row ? row.getBoundingClientRect().top - list.getBoundingClientRect().top : null,
+    );
+  }, [selectedSessionId, sections, collapsed, searching]);
 
   const selectedSession = sessions.find((s) => s.session_id === selectedSessionId);
 
@@ -624,32 +762,74 @@ export function AgentMonitor({
               <BotOff className="size-8" strokeWidth={1.5} />
             </div>
           )}
-          <div className="relative">
-            {selectedIndex >= 0 && (
+          <div ref={listRef} className="relative">
+            {pillY != null && (
               <motion.div
                 aria-hidden
                 className="glass-pill absolute inset-x-1 top-1 h-12 rounded-xl"
                 initial={false}
-                animate={{ y: selectedIndex * SESSION_ROW_HEIGHT }}
+                animate={{ y: pillY }}
                 transition={{ type: "spring", stiffness: 400, damping: 35 }}
               />
             )}
             <SidebarMenu className="relative gap-0">
-              {filteredSessions.map((session) => (
-                <SessionRow
-                  key={session.session_id}
-                  session={session}
-                  isSelected={session.session_id === selectedSessionId}
-                  onSelect={onSelect}
-                  onClose={state === "collapsed" && !railExpanded ? undefined : onClose}
-                  agentIcons={agentIcons}
-                  agentNames={agentNames}
-                  profileNames={profileNames}
-                  runOrdinal={
-                    session.acp_session_id ? runOrdinals.get(session.acp_session_id) : undefined
-                  }
-                />
-              ))}
+              {sections.map((section) => {
+                const sectionSessions = section.groups.flatMap((g) => g.sessions);
+                const rooted = section.key === "yours";
+                const sectionOpen = rooted || searching || !collapsed.has(section.key);
+                return (
+                  <Fragment key={section.key}>
+                    {!rooted && (
+                      <ListHeader
+                        open={sectionOpen}
+                        onToggle={() => toggleCollapsed(section.key)}
+                        ranks={sectionSessions.map(rankOf)}
+                        className="h-8 pt-2 text-[11px] font-semibold uppercase tracking-wide"
+                      >
+                        {section.label}
+                        <span className="font-normal opacity-70">{sectionSessions.length}</span>
+                      </ListHeader>
+                    )}
+                    {sectionOpen &&
+                      section.groups.map((group) => {
+                        const first = group.sessions[0];
+                        const row = (session: MonitorSession, groupTitle?: string) => (
+                          <SessionRow
+                            key={session.session_id}
+                            session={session}
+                            isSelected={session.session_id === selectedSessionId}
+                            onSelect={onSelect}
+                            onClose={state === "collapsed" && !railExpanded ? undefined : onClose}
+                            agentIcons={agentIcons}
+                            agentNames={agentNames}
+                            profileNames={profileNames}
+                            runOrdinal={runOf(session)?.ordinal ?? undefined}
+                            groupTitle={groupTitle}
+                          />
+                        );
+                        if (group.sessions.length === 1) return row(first);
+                        const title = runOf(first)?.automation_name ?? "";
+                        const groupRanks = group.sessions.map(rankOf);
+                        // Something waiting on the user opens its group, folded or not.
+                        const groupOpen =
+                          searching || groupRanks.includes(0) || !collapsed.has(group.key);
+                        return (
+                          <Fragment key={group.key}>
+                            <ListHeader
+                              open={groupOpen}
+                              onToggle={() => toggleCollapsed(group.key)}
+                              ranks={groupRanks}
+                              className="py-1 text-[13px] font-medium"
+                            >
+                              <span className="truncate">{title}</span>
+                            </ListHeader>
+                            {groupOpen && group.sessions.map((session) => row(session, title))}
+                          </Fragment>
+                        );
+                      })}
+                  </Fragment>
+                );
+              })}
             </SidebarMenu>
           </div>
         </SidebarContent>
