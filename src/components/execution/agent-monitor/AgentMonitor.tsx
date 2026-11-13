@@ -775,18 +775,21 @@ export function AgentMonitor({
             <SidebarMenu className="relative gap-0">
               {sections.map((section) => {
                 const sectionSessions = section.groups.flatMap((g) => g.sessions);
-                const sectionOpen = searching || !collapsed.has(section.key);
+                const rooted = section.key === "yours";
+                const sectionOpen = rooted || searching || !collapsed.has(section.key);
                 return (
                   <Fragment key={section.key}>
-                    <ListHeader
-                      open={sectionOpen}
-                      onToggle={() => toggleCollapsed(section.key)}
-                      ranks={sectionSessions.map(rankOf)}
-                      className="h-8 pt-2 text-[11px] font-semibold uppercase tracking-wide"
-                    >
-                      {section.label}
-                      <span className="font-normal opacity-70">{sectionSessions.length}</span>
-                    </ListHeader>
+                    {!rooted && (
+                      <ListHeader
+                        open={sectionOpen}
+                        onToggle={() => toggleCollapsed(section.key)}
+                        ranks={sectionSessions.map(rankOf)}
+                        className="h-8 pt-2 text-[11px] font-semibold uppercase tracking-wide"
+                      >
+                        {section.label}
+                        <span className="font-normal opacity-70">{sectionSessions.length}</span>
+                      </ListHeader>
+                    )}
                     {sectionOpen &&
                       section.groups.map((group) => {
                         const first = group.sessions[0];

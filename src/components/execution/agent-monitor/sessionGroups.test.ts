@@ -30,7 +30,7 @@ describe("groupSessions", () => {
     a2: { id: "daily", name: "Daily summary" },
   };
 
-  it("sorts sessions into tasks, automations and yours, gathering an automation's runs", () => {
+  it("sorts sessions into yours, tasks and automations, gathering an automation's runs", () => {
     const sections = groupSessions(
       [
         session("y1"),
@@ -43,11 +43,11 @@ describe("groupSessions", () => {
       () => 2,
     );
     expect(sections.map((s) => [s.key, s.groups.map((g) => g.key)])).toEqual([
+      ["yours", ["y1"]],
       ["tasks", ["t1", "t3"]],
       ["automations", ["automation:daily"]],
-      ["yours", ["y1"]],
     ]);
-    expect(sections[1].groups[0].sessions).toHaveLength(2);
+    expect(sections[2].groups[0].sessions).toHaveLength(2);
   });
 
   it("puts what needs the user first, then work in progress, then the newest", () => {
@@ -63,8 +63,8 @@ describe("groupSessions", () => {
       () => undefined,
       (s) => ranks[s.session_id] ?? 2,
     );
-    expect(sections[0].groups.map((g) => g.key)).toEqual(["blocked", "idle-task"]);
-    expect(sections[1].groups.map((g) => g.key)).toEqual(["busy", "new", "old"]);
+    expect(sections[0].groups.map((g) => g.key)).toEqual(["busy", "new", "old"]);
+    expect(sections[1].groups.map((g) => g.key)).toEqual(["blocked", "idle-task"]);
   });
 
   it("leaves empty sections out", () => {

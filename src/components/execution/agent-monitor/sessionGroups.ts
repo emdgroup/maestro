@@ -27,14 +27,15 @@ export interface SessionSection {
   groups: SessionGroup[];
 }
 
+/** Yours comes first and has no header: the sessions the user started sit at the list's root. */
 const SECTIONS: { key: SectionKey; label: string }[] = [
+  { key: "yours", label: "Yours" },
   { key: "tasks", label: "Tasks" },
   { key: "automations", label: "Automations" },
-  { key: "yours", label: "Yours" },
 ];
 
 /**
- * Sort the sessions into Tasks, Automations and Yours, an automation's live runs gathered under
+ * Sort the sessions into Yours, Tasks and Automations, an automation's live runs gathered under
  * it. A task's sessions are not gathered: starting a stage closes the one before it
  * (`finish_spawn`), so a task never has two. Inside a group, and between groups, a session waiting
  * on the user comes first, then one at work, then the newest. Empty sections are left out.
