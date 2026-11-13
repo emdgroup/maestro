@@ -1010,6 +1010,13 @@ pub(crate) async fn dispatch_message(
             });
         }
 
+        ServerRequest::SetToolPath(req) => {
+            answer_off_loop(stdout, async move {
+                let result = crate::tool_check::set_tool_path(req.tool, req.path).await;
+                ServerResponse::SetToolPathOk(result)
+            });
+        }
+
         ServerRequest::InstallSkills(req) => {
             answer_off_loop(stdout, async move {
                 match crate::skills::install(req.skills).await {

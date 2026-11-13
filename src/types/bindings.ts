@@ -2054,6 +2054,18 @@ async preflightConnection(connection: ConnectionKey, replace: boolean) : Promise
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Point the connection at a tool it did not detect. `Err` carries why the path was refused; on
+ * success the caller runs preflight again to see the tool as available.
+ */
+async setToolPath(connection: ConnectionKey, tool: string, path: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_tool_path", { connection, tool, path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async discoverAgents(connection: ConnectionKey) : Promise<Result<AgentDiscoveryResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("discover_agents", { connection }) };

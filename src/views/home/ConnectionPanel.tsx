@@ -1,11 +1,14 @@
 import { useRef, useState, type ReactNode } from "react";
-import { Check, Pencil, ServerOff } from "lucide-react";
+import { Check, Pencil, ServerOff, TriangleAlert } from "lucide-react";
 import { CONNECTION_ICONS, type HomeConnection } from "@/components/home/useHomeConnections";
 import { useSshReachable, useUpdateSshConnection } from "@/services/connection.service";
 import { useHomeStore } from "@/store/homeStore";
 import type { ConnectionPhase } from "@/store/homeStore";
+import { usePreflightToolChecks } from "@/store/configStore";
+import type { ToolCheckEntry } from "@/types/bindings";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import {
   AddProjectTile,
   ProjectChip,
@@ -18,10 +21,14 @@ import {
   connect,
   HOST_KEY_CHANGED,
   isHostKeyChanged,
+  recheckTools,
   signIn,
+  useSetToolPathMutation,
 } from "@/services/connection.service";
+import { getErrorMessage } from "@/lib/error-utils";
 import { Button } from "@/ui/button";
 import { Spinner } from "@/ui/spinner";
+import { toast } from "sonner";
 
 const SERVER_BUSY = "server_busy: ";
 
@@ -137,10 +144,7 @@ function SignInForm({
   );
 }
 
-/**
- * A connect that stopped short: the server is busy with another build, the SSH host key changed, or
- * tools are missing.
- */
+/** A connect that stopped short: the server is busy with another build, or the SSH host key changed. */
 function FailedBody({
   connection,
   phase,
@@ -148,40 +152,22 @@ function FailedBody({
   connection: HomeConnection;
   phase: Extract<ConnectionPhase, { kind: "failed" }>;
 }) {
-  const busy = phase.error?.startsWith(SERVER_BUSY);
-  const missing = phase.result?.tool_checks.filter((tool) => !tool.available) ?? [];
+  const busy = phase.error.startsWith(SERVER_BUSY);
   const pill =
     "home-pill cursor-pointer rounded-full px-3 py-1.5 text-xs text-foreground hover:bg-foreground/10";
   return (
     <div className="mt-4 space-y-2 text-xs text-muted-foreground">
-      {phase.error && (
-        <p className="text-rose-600 dark:text-rose-400">
-          {busy
-            ? phase.error.slice(SERVER_BUSY.length)
-            : isHostKeyChanged(phase.error)
-              ? phase.error.slice(HOST_KEY_CHANGED.length)
-              : phase.error}
-        </p>
-      )}
-      {missing.length > 0 && (
-        <p>
-          Missing on {connection.name}: {missing.map((tool) => tool.tool).join(", ")}. Agents that
-          need them will not start. Set their paths in Settings.
-        </p>
-      )}
+      <p className="text-rose-600 dark:text-rose-400">
+        {busy
+          ? phase.error.slice(SERVER_BUSY.length)
+          : isHostKeyChanged(phase.error)
+            ? phase.error.slice(HOST_KEY_CHANGED.length)
+            : phase.error}
+      </p>
       <div className="flex gap-2">
         {busy && (
           <button type="button" className={pill} onClick={() => void attach(connection.key, true)}>
             Update anyway
-          </button>
-        )}
-        {missing.length > 0 && !phase.error && (
-          <button
-            type="button"
-            className={pill}
-            onClick={() => setPhase(connection.id, { kind: "up" })}
-          >
-            Continue anyway
           </button>
         )}
         <button type="button" className={pill} onClick={() => void connect(connection.key)}>
@@ -189,6 +175,108 @@ function FailedBody({
         </button>
       </div>
     </div>
+  );
+}
+
+/** One missing tool in the warning popover: what is lost, and the two ways out of it. */
+function MissingTool({ connection, tool }: { connection: HomeConnection; tool: ToolCheckEntry }) {
+  const [path, setPath] = useState("");
+  const setToolPath = useSetToolPathMutation(connection.key);
+  return (
+    <div className="space-y-2 text-[11px]">
+      <div>
+        <div className="text-xs font-medium">
+          {tool.tool} is missing on {connection.name}
+        </div>
+        {tool.required_by.length > 0 && (
+          <p className="mt-0.5 text-muted-foreground">Needed by {tool.required_by.join(", ")}</p>
+        )}
+      </div>
+      <p>
+        <span className="font-medium">Not installed?</span>{" "}
+        <span className="text-muted-foreground">Install {tool.tool}, then check again.</span>
+      </p>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          setToolPath.mutate({ tool: tool.tool, path: path.trim() });
+        }}
+      >
+        <p>
+          <span className="font-medium">Already installed?</span>{" "}
+          <span className="text-muted-foreground">
+            Maestro did not find it. Enter its full path.
+          </span>
+        </p>
+        <div className="mt-1.5 flex gap-1.5">
+          <input
+            value={path}
+            onChange={(event) => setPath(event.target.value)}
+            placeholder={`Full path to ${tool.tool}`}
+            aria-label={`Path to ${tool.tool}`}
+            className="home-field h-7 min-w-0 flex-1 rounded-lg px-2 text-xs"
+          />
+          <button
+            type="submit"
+            disabled={!path.trim() || setToolPath.isPending}
+            className="home-pill flex cursor-pointer items-center gap-1 rounded-full px-3 text-xs hover:bg-foreground/10 disabled:cursor-default disabled:opacity-50"
+          >
+            {setToolPath.isPending && <Spinner className="size-3" />}
+            Save
+          </button>
+        </div>
+        {setToolPath.error && (
+          <p className="mt-1 text-rose-600 dark:text-rose-400">
+            {getErrorMessage(setToolPath.error)}
+          </p>
+        )}
+      </form>
+    </div>
+  );
+}
+
+/**
+ * The warning beside `⋯` when tools are missing on a connection that is up. It never blocks: each
+ * missing tool leaves a working, degraded connection, so this only says what is lost and how to
+ * get it back.
+ */
+function ToolIssues({ connection }: { connection: HomeConnection }) {
+  const missing = usePreflightToolChecks(connection.key).filter((tool) => !tool.available);
+  const [checking, setChecking] = useState(false);
+  if (missing.length === 0) return null;
+  const checkAgain = async () => {
+    setChecking(true);
+    try {
+      await recheckTools(connection.key);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setChecking(false);
+    }
+  };
+  return (
+    <Popover>
+      <PopoverTrigger
+        aria-label={`${missing.length} issue${missing.length > 1 ? "s" : ""} on ${connection.name}`}
+        className="grid size-7 cursor-pointer place-items-center rounded-full text-amber-600 hover:bg-amber-500/10 data-popup-open:bg-amber-500/10 dark:text-amber-400"
+      >
+        <TriangleAlert className="size-4" />
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 gap-4 p-3">
+        {missing.map((tool) => (
+          <MissingTool key={tool.tool} connection={connection} tool={tool} />
+        ))}
+        <button
+          type="button"
+          onClick={() => void checkAgain()}
+          disabled={checking}
+          className="home-pill flex cursor-pointer items-center gap-1.5 self-start rounded-full px-3 py-1 text-xs hover:bg-foreground/10"
+        >
+          {checking && <Spinner className="size-3" />}
+          Check again
+        </button>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -399,7 +487,13 @@ export function ConnectionPanel({
       id={`connection-${connection.id}`}
       onClick={(event) => {
         // A click on the panel itself, not on anything in it, folds it to one line of chips.
-        if (!up || (event.target as Element).closest("a,button,input,form,[role=menu]")) return;
+        if (
+          !up ||
+          (event.target as Element).closest(
+            "a,button,input,form,[role=menu],[data-slot=popover-content]",
+          )
+        )
+          return;
         onToggleMinimized();
       }}
       className={cn(
@@ -465,6 +559,7 @@ export function ConnectionPanel({
           ) : (
             <>
               {status}
+              {up && <ToolIssues connection={connection} />}
               {menu}
             </>
           )}

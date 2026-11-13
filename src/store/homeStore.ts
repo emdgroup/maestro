@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
-import type { PreflightResult } from "@/types/bindings";
 
 /**
  * Where one connection stands on Home.
@@ -18,8 +17,8 @@ export type ConnectionPhase =
    */
   | { kind: "connecting"; step: 0 | 1 | 2; starting?: boolean }
   | { kind: "up" }
-  /** The connect stopped short: the server is busy with another build, or tools are missing. */
-  | { kind: "failed"; error: string | null; result: PreflightResult | null }
+  /** The connect stopped short: the server is busy with another build, or the SSH host key changed. */
+  | { kind: "failed"; error: string }
   /** Asked to stop; its sessions and runs are ending. */
   | { kind: "stopping" }
   | { kind: "stopped" }

@@ -66,6 +66,36 @@ pub(crate) async fn check_tools(tools: Vec<String>) -> Vec<ToolCheckResult> {
     futures::future::join_all(tools.into_iter().map(check_tool)).await
 }
 
+/// Save `path` for `tool` once it runs, so a tool installed where detection does not look still
+/// works. A path that fails is reported and not saved.
+pub(crate) async fn set_tool_path(tool: String, path: String) -> ToolCheckResult {
+    let candidate = PathBuf::from(&path);
+    if !candidate.is_absolute() {
+        let error = "The path must be absolute".to_string();
+        return failed(tool, Some(path), ToolPathSource::Override, error);
+    }
+    if !is_executable(&candidate) {
+        let error = "The path does not exist or is not executable".to_string();
+        return failed(tool, Some(path), ToolPathSource::Override, error);
+    }
+    let version = match probe(&candidate).await {
+        Ok(version) => version,
+        Err(error) => return failed(tool, Some(path), ToolPathSource::Override, error),
+    };
+    if let Err(error) = crate::tool_config::set(&tool, Some(path.clone())) {
+        return failed(tool, Some(path), ToolPathSource::Override, error);
+    }
+    ToolCheckResult {
+        tool,
+        available: true,
+        version,
+        configured_path: Some(path.clone()),
+        resolved_path: Some(path),
+        source: ToolPathSource::Override,
+        error: None,
+    }
+}
+
 pub(crate) async fn resolve_tool_path(tool: &str) -> Result<PathBuf, String> {
     if let Some(path) = crate::tool_config::get(tool)? {
         let path = PathBuf::from(path);
@@ -199,9 +229,17 @@ fn is_executable(path: &Path) -> bool {
         use std::os::unix::fs::PermissionsExt;
         metadata.permissions().mode() & 0o111 != 0
     }
+    // Only these launch on Windows. Node ships an extensionless `npx` shell script beside
+    // `npx.cmd`, and accepting it would resolve, and persist, a path `CreateProcess` refuses.
     #[cfg(not(unix))]
     {
-        true
+        path.extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|extension| {
+                ["exe", "cmd", "bat", "com"]
+                    .iter()
+                    .any(|known| extension.eq_ignore_ascii_case(known))
+            })
     }
 }
 
@@ -313,5 +351,37 @@ fn failed(
         resolved_path: None,
         source,
         error: Some(error),
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    #[test]
+    fn skips_the_extensionless_shell_script_node_ships() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("npx"), "#!/bin/sh").unwrap();
+        std::fs::write(dir.path().join("npx.cmd"), "@echo off").unwrap();
+
+        assert_eq!(
+            super::find_in_directory(dir.path(), "npx"),
+            Some(dir.path().join("npx.cmd"))
+        );
+        assert!(!super::is_executable(&dir.path().join("npx")));
+    }
+
+    /// A path that cannot run is reported, never saved over a working detection.
+    #[tokio::test]
+    async fn refuses_a_path_that_cannot_run() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("npx"), "#!/bin/sh").unwrap();
+
+        for path in [
+            "npx".to_string(),
+            dir.path().join("npx").display().to_string(),
+        ] {
+            let result = super::set_tool_path("npx".into(), path).await;
+            assert!(!result.available);
+            assert!(result.error.is_some());
+        }
     }
 }

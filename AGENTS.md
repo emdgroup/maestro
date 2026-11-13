@@ -180,7 +180,7 @@ All IPC uses TanStack Query — components never call `invoke()` directly. The p
 Component → TanStack Query hook → service function (invoke()) → Rust #[tauri::command]
 ```
 
-Service functions in `src/services/` wrap `invoke()` and export TanStack Query hooks directly (useQuery/useMutation co-located with the invoke call). `src/utils/hooks/` contains non-query custom hooks (keyboard nav, path nav, etc.). Rust handlers marked `#[tauri::command]` live in the file of their owning domain module (e.g. `task/crud.rs`, `git/review.rs`, `acp/session_handlers.rs`), and `lib.rs` registers each by its full path (`crate::task::crud::create_task`) via `tauri-specta`'s `collect_commands![]` (currently 250 commands). Name the defining module there, not a re-export: the macro resolves hidden items `#[tauri::command]` generates beside the function, and a named re-export leaves them behind. Import models from their owning domain module too; there is no `crate::models` shim.
+Service functions in `src/services/` wrap `invoke()` and export TanStack Query hooks directly (useQuery/useMutation co-located with the invoke call). `src/utils/hooks/` contains non-query custom hooks (keyboard nav, path nav, etc.). Rust handlers marked `#[tauri::command]` live in the file of their owning domain module (e.g. `task/crud.rs`, `git/review.rs`, `acp/session_handlers.rs`), and `lib.rs` registers each by its full path (`crate::task::crud::create_task`) via `tauri-specta`'s `collect_commands![]` (currently 251 commands). Name the defining module there, not a re-export: the macro resolves hidden items `#[tauri::command]` generates beside the function, and a named re-export leaves them behind. Import models from their owning domain module too; there is no `crate::models` shim.
 
 `src/types/bindings.ts` is fully generated — do not edit manually. It exports both TypeScript types (all Rust model structs/enums annotated with `#[derive(TS)]`) and a `commands` const object (typed wrappers for every registered IPC command). Import types with `import type { Task } from "@/types/bindings"`.
 
@@ -265,7 +265,7 @@ flattens the wire's nested token counts.
 
 - SQLite DB location managed by Tauri app data directory, overridable with `MAESTRO_DATA_DIR` (see `src-tauri/AGENTS.md`)
 - Schema version: 34 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
-- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 18.
+- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 19.
   Bumping it redeploys `maestro-server` on every connection at first use, because `deploy.rs`
   compares `--app-version`, which embeds it
 - Two-phase startup: settings load → project selection → main UI

@@ -186,6 +186,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::acp::session_handlers::cancel_acp_session,
         crate::acp::session_handlers::interrupt_acp_turn,
         crate::acp::discovery_handlers::preflight_connection,
+        crate::acp::discovery_handlers::set_tool_path,
         crate::acp::discovery_handlers::discover_agents,
         crate::acp::prompt_handlers::set_acp_config_option,
         crate::acp::file_handlers::search_session_files,
