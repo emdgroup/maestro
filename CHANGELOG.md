@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.47.0](https://github.com/emdgroup/maestro/compare/v0.46.0...v0.47.0) (2026-11-13)
+
+
+### Features
+
+* **agents:** organize the session list by origin, with your own sessions first ([9fedbcf](https://github.com/emdgroup/maestro/commit/9fedbcf191a26e881f0de16aaf70f606923f97fb))
+* **home:** warn about missing tools instead of stopping the connect ([88f81f3](https://github.com/emdgroup/maestro/commit/88f81f3341d4a74014f4e46586f5f9f3497bb16f))
+
+
+### Bug Fixes
+
+* **server:** skip the extensionless npx script on Windows ([88f81f3](https://github.com/emdgroup/maestro/commit/88f81f3341d4a74014f4e46586f5f9f3497bb16f))
+
 ## [0.46.0](https://github.com/emdgroup/maestro/compare/v0.45.2...v0.46.0) (2026-11-06)
 
 
