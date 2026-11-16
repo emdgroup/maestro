@@ -228,6 +228,13 @@ function AddProjectSheet({
                   onChange={(event) => setInto(event.target.value)}
                   className={cn(FIELD, "flex-1")}
                 />
+                <button
+                  type="button"
+                  onClick={() => setBrowsing("into")}
+                  className="home-pill h-9 cursor-pointer rounded-xl px-3 text-xs"
+                >
+                  Browse…
+                </button>
                 <Button
                   type="button"
                   disabled={busy || !repoName || !into.trim()}
