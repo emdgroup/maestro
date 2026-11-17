@@ -32,13 +32,18 @@ pub async fn prime_project_server(
     // rest, and before the board is shown, which reads what the import writes.
     super::import::import_once(&app_state, project_id, &project_path, connection_key).await?;
 
-    // A config that cannot be read is a project with no default agent, not a failed prime: the
-    // session restore below is the more valuable half and must still happen.
+    // Before warming the default agent, never after: a warm-up that fails or takes its full minute
+    // must not keep the project's sessions from coming back. Loading them starts the agents they
+    // need anyway.
+    crate::acp::session_ops::attach_project_sessions(connection_key, project_id, None, &app_state)
+        .await;
+
+    // A config that cannot be read is a project with no default agent, not a failed prime.
     let config = super::settings::load_project_config_for(&app_state, project_id)
         .await
         .unwrap_or_default();
     if let Some(agent_id) = config.default_agent {
-        crate::acp::connection_server::query_via_server_within(
+        if let Err(e) = crate::acp::connection_server::query_via_server_within(
             connection_key,
             &app_state,
             maestro_protocol::ServerRequest::PreInitialize(
@@ -52,11 +57,11 @@ pub async fn prime_project_server(
             ),
             60,
         )
-        .await?;
+        .await
+        {
+            log::warn!("[prime] warming the default agent on {connection_key:?} failed: {e}");
+        }
     }
-
-    crate::acp::session_ops::attach_project_sessions(connection_key, project_id, None, &app_state)
-        .await;
 
     Ok(())
 }
