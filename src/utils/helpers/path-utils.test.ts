@@ -107,6 +107,22 @@ describe("splitLineAnchor", () => {
     expect(splitLineAnchor("a.ts#L10-20")).toEqual({ path: "a.ts", lines: { from: 10, to: 20 } });
   });
 
+  it("takes the file:line shape, with a range or a column", () => {
+    expect(splitLineAnchor("src-tauri/src/acp/reader_task.rs:425")).toEqual({
+      path: "src-tauri/src/acp/reader_task.rs",
+      lines: { from: 425, to: 425 },
+    });
+    expect(splitLineAnchor("a.rs:399-437")).toEqual({
+      path: "a.rs",
+      lines: { from: 399, to: 437 },
+    });
+    expect(splitLineAnchor("a.rs:42:7")).toEqual({ path: "a.rs", lines: { from: 42, to: 42 } });
+    expect(splitLineAnchor("file:///C:/p/a.ts:5")).toEqual({
+      path: "file:///C:/p/a.ts",
+      lines: { from: 5, to: 5 },
+    });
+  });
+
   it("leaves a path without a line anchor alone", () => {
     expect(splitLineAnchor("notes#1.md")).toEqual({ path: "notes#1.md" });
     expect(splitLineAnchor("C:/p/a.ts")).toEqual({ path: "C:/p/a.ts" });
