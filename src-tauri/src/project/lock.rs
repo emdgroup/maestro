@@ -77,6 +77,11 @@ pub async fn acquire(app_state: &Arc<AppState>, project: &Project) -> Result<(),
             log::warn!("could not release the project lock on {previous_key:?}: {e}");
         }
     }
+
+    // Another window had these while this one was away, so what this one kept of them stopped
+    // short. Dropped here, they are adopted or reloaded afresh when the project's sessions are
+    // attached.
+    crate::acp::session_ops::forget_sessions(app_state, &resp.taken_sessions).await;
     Ok(())
 }
 

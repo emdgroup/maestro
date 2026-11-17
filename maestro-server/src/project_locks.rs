@@ -85,6 +85,7 @@ impl ProjectLocks {
                 AcquireProjectLockResponse {
                     acquired: false,
                     holder_label: Some(holder.label.clone()),
+                    ..Default::default()
                 },
                 Vec::new(),
             );
@@ -93,7 +94,7 @@ impl ProjectLocks {
         (
             AcquireProjectLockResponse {
                 acquired: true,
-                holder_label: None,
+                ..Default::default()
             },
             vec![changed()],
         )

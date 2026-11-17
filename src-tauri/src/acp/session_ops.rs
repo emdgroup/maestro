@@ -162,6 +162,34 @@ pub(crate) async fn forget_sessions(
     }
 }
 
+/// Drop what this window holds of a conversation the server has closed and runs no more.
+///
+/// Only entries that came up: one still loading is Session History reopening the row, which the
+/// load itself opens again.
+async fn forget_closed(
+    app_state: &Arc<crate::core::AppState>,
+    agent_id: &str,
+    acp_session_id: &str,
+) {
+    let gone: Vec<String> = app_state
+        .acp
+        .sessions
+        .lock()
+        .await
+        .iter()
+        .filter(|(_, proc)| {
+            proc.agent_id_meta == agent_id
+                && proc.initialized.lock().is_ok_and(|done| *done)
+                && proc
+                    .acp_session_id
+                    .lock()
+                    .is_ok_and(|id| id.as_deref() == Some(acp_session_id))
+        })
+        .map(|(session_id, _)| session_id.clone())
+        .collect();
+    forget_sessions(app_state, &gone).await;
+}
+
 /// The project a `TaskSessionStarted` is for, when it is the one this window holds on that
 /// connection. Every other window leaves the session to whoever holds its project.
 pub(crate) fn task_session_target(
@@ -226,7 +254,8 @@ pub(crate) fn adopt_task_session(
     })
 }
 
-/// Bring this project's open conversations into this window, from the daemon's own rows.
+/// Bring this project's open conversations into this window, from the daemon's own rows, and drop
+/// what it still holds of closed ones.
 ///
 /// The daemon outlives the app and keeps one row per conversation, so a freshly opened project, a
 /// second window taking it over and an SSH connection coming back all ask the same question and get
@@ -252,10 +281,17 @@ pub async fn attach_project_sessions(
     let Some(project_path) = project_path(app_state, project_id) else {
         return 0;
     };
+    // Sessions are kept while their project is closed, and the server may close one meanwhile, a
+    // task's finished stage say, without a word to this window. Only its closed row says so, so
+    // those are asked for whenever there is something here they could be about.
+    let holding =
+        app_state.acp.sessions.lock().await.values().any(|proc| {
+            proc.project_id == Some(project_id) && proc.connection_key == connection_key
+        });
     let rows = match crate::acp::connection_server::query_project_sessions_via_server(
         connection_key,
         project_path.clone(),
-        false,
+        holding,
         app_state,
     )
     .await
@@ -278,6 +314,9 @@ pub async fn attach_project_sessions(
     let mut attached = 0;
     for row in rows {
         if row.closed {
+            if row.live.is_none() {
+                forget_closed(app_state, &row.agent_id, &row.acp_session_id).await;
+            }
             continue;
         }
         let live_session_id = row.live.as_ref().map(|live| live.session_id.as_str());

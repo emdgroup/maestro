@@ -249,7 +249,7 @@ impl ClientSink {
     ) -> AcquireProjectLockResponse {
         let granted = || AcquireProjectLockResponse {
             acquired: true,
-            holder_label: None,
+            ..Default::default()
         };
         self.with_locks(|locks, me| match me {
             Some(me) => locks.acquire(me, path, label),
@@ -341,6 +341,30 @@ impl ClientSink {
                 .owners
                 .insert(session_id.to_string(), id);
         }
+    }
+
+    /// Make this route's client the owner of `session_ids`, the live sessions of a project it has
+    /// just taken. Ownership otherwise moves only when a window names a session in a request, and
+    /// adopting one names it in none, so without this a window opening a project another had open
+    /// would hear nothing from its running sessions until it prompted them.
+    ///
+    /// Returns the ones another client owned until now, whose output that client was receiving.
+    pub async fn claim_project_sessions(&mut self, session_ids: Vec<String>) -> Vec<String> {
+        let Route::Daemon {
+            clients,
+            reply_to: Some(me),
+        } = &self.route
+        else {
+            return Vec::new();
+        };
+        let mut clients = clients.lock().await;
+        session_ids
+            .into_iter()
+            .filter(|session_id| {
+                let previous = clients.owners.insert(session_id.clone(), *me);
+                previous.is_some_and(|previous| previous != *me)
+            })
+            .collect()
     }
 
     /// Whether anybody is listening. False is the normal state of a daemon between app runs, and
@@ -498,6 +522,29 @@ mod tests {
         // A reply to a window that has gone goes nowhere, not to another window.
         to_b.lock().await.write(None, &[5]).await.unwrap();
         assert_eq!(read(&mut a_rx).await, None);
+    }
+
+    #[tokio::test]
+    async fn opening_a_project_moves_its_sessions_and_names_the_ones_taken() {
+        let root = ClientSink::detached();
+        let (a, mut a_rx) = client(&root).await;
+        let (b, mut b_rx) = client(&root).await;
+        let to_a = ClientSink::for_client(&root, a).await;
+        let to_b = ClientSink::for_client(&root, b).await;
+        root.lock().await.claim(a, "mine").await;
+        root.lock().await.claim(b, "theirs").await;
+
+        let taken = to_a
+            .lock()
+            .await
+            .claim_project_sessions(vec!["mine".into(), "theirs".into(), "nobodys".into()])
+            .await;
+        // Only one another window owned: what this one owned or nobody did, it already heard.
+        assert_eq!(taken, vec!["theirs".to_string()]);
+
+        to_b.lock().await.write(Some("theirs"), &[1]).await.unwrap();
+        assert_eq!(read(&mut a_rx).await, Some(1));
+        assert_eq!(read(&mut b_rx).await, None);
     }
 
     #[tokio::test]

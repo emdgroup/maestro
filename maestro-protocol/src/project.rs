@@ -12,12 +12,17 @@ pub struct AcquireProjectLockRequest {
     pub label: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct AcquireProjectLockResponse {
     pub acquired: bool,
     /// Who holds it, when `acquired` is false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub holder_label: Option<String>,
+    /// The project's live sessions another window owned until this acquire moved them to the one
+    /// that asked. Their output went to that other window, so whatever the asker still holds of
+    /// them is behind and has to be attached again.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub taken_sessions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
