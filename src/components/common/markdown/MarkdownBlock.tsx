@@ -20,6 +20,7 @@ import rehypeSlug from "rehype-slug";
 import "katex/dist/katex.min.css";
 import "katex/contrib/mhchem";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { splitLineAnchor } from "@/lib/path-utils";
 import { ZoomableContent } from "@/ui/zoomable-content";
 import { useProxyImageQuery } from "@/services/task.service";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
@@ -147,6 +148,16 @@ function MarkdownCommandComponent({
   );
 }
 
+/**
+ * Agents often put the line only in the link text, `[a.rs:425](file:///…/a.rs)`. When the href
+ * cites no line, carry the text's one over as `#L` so the file still opens at it.
+ */
+function withLinkTextLines(href: string, text: string): string {
+  if (splitLineAnchor(href).lines) return href;
+  const lines = splitLineAnchor(text.trim()).lines;
+  return lines ? `${href}#L${lines.from}-L${lines.to}` : href;
+}
+
 function MarkdownAnchorComponent({
   href,
   children,
@@ -180,7 +191,7 @@ function MarkdownAnchorComponent({
         } else if (openFile && (href.startsWith("file://") || !/^[a-z][a-z0-9+.-]+:/i.test(href))) {
           // No scheme means a path, the shape agents use to cite code (`src/a.ts#L42`). A drive
           // letter is a single character, so `C:/…` falls through to here as well.
-          openFile(href);
+          openFile(withLinkTextLines(href, e.currentTarget.textContent ?? ""));
         } else {
           openUrl(href);
         }
