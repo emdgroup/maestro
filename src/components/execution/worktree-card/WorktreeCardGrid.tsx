@@ -72,23 +72,21 @@ export function WorktreeCardGrid({
           enough to set it apart. */}
       {repository && <div className="flex flex-wrap gap-3 px-2 pb-3">{card(repository)}</div>}
 
-      {groups.length === 0 ? (
-        <div className="py-8 text-center text-sm text-muted-foreground">
-          {emptyMessage ?? "No worktrees yet"}
-        </div>
-      ) : (
-        groups.map((group) => (
-          <WorktreeCardGroup
-            key={group.groupKey}
-            groupKey={group.groupKey}
-            count={group.items.length}
-            isCollapsed={collapsedGroups[group.groupKey] ?? false}
-            onToggleCollapse={() => onToggleGroup(group.groupKey)}
-          >
-            {group.items.map(card)}
-          </WorktreeCardGroup>
-        ))
-      )}
+      {groups.length === 0
+        ? emptyMessage && (
+            <div className="py-8 text-center text-sm text-muted-foreground">{emptyMessage}</div>
+          )
+        : groups.map((group) => (
+            <WorktreeCardGroup
+              key={group.groupKey}
+              groupKey={group.groupKey}
+              count={group.items.length}
+              isCollapsed={collapsedGroups[group.groupKey] ?? false}
+              onToggleCollapse={() => onToggleGroup(group.groupKey)}
+            >
+              {group.items.map(card)}
+            </WorktreeCardGroup>
+          ))}
     </div>
   );
 }
