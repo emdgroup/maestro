@@ -478,8 +478,11 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
                   pullRequests={showPullRequests && onWorktreesTab}
                   emptyMessage={
                     // The repository checkout is always listed, so it does not count as a worktree.
+                    // With none beside it, its card alone is the page: no message under it.
                     worktrees.every((wt) => isRepositoryRoot(wt.path, repoPath ?? ""))
-                      ? "No worktrees yet"
+                      ? repositoryWorktree
+                        ? undefined
+                        : "No worktrees yet"
                       : "No worktrees match your filter"
                   }
                 />
