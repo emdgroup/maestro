@@ -1112,7 +1112,18 @@ pub(crate) async fn dispatch_message(
 
         ServerRequest::AcquireProjectLock(req) => {
             let path = crate::project_path::canonical_project_path(&req.project_path);
-            let resp = stdout.lock().await.acquire_project(path, req.label).await;
+            let mut resp = stdout
+                .lock()
+                .await
+                .acquire_project(path.clone(), req.label)
+                .await;
+            if resp.acquired {
+                let live = running_project_sessions(sessions, &path)
+                    .into_iter()
+                    .filter_map(|(_, session_id)| session_id)
+                    .collect();
+                resp.taken_sessions = stdout.lock().await.claim_project_sessions(live).await;
+            }
             reply(stdout, &ServerResponse::AcquireProjectLockOk(resp)).await;
         }
 

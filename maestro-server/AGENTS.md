@@ -51,9 +51,21 @@ nobody watching is the normal state of a daemon between app runs, not an error.
 **Every window attaches at once.** Each window numbers its own requests from 1, so an id says
 which request a reply answers and nothing about which window sent it. The sink routes: a reply
 goes to the window that asked, a message naming a session goes to that session's owner (the
-window that last sent a request naming it), and anything unowned or unprompted goes to every
-window. A window receiving a session it does not hold parks it, and answers a `HostToolCall` only
-for a session it holds, so two windows never both answer one call.
+window that last sent a request naming it, or that last acquired the lock of its project), and
+anything unowned or unprompted goes to every window. A window receiving a session it does not hold
+parks it, and answers a `HostToolCall` only for a session it holds, so two windows never both
+answer one call.
+
+**Leaving a project keeps its sessions.** `release_active_project_lock` drops the lock and nothing
+else: the window stays the sessions' owner, their output keeps arriving, and the frontend runtimes
+keep building their transcripts, so reopening finds them whole and `attach_project_sessions` skips
+them as held. Forgetting them instead parked that output in `park_unclaimed`'s bounded buffer, and a
+working session overflowed it within seconds. Two things can make a kept entry wrong, and each has
+its answer. Another window opening the project takes ownership of its live sessions with the lock
+(`ClientSink::claim_project_sessions`), and `AcquireProjectLockResponse.taken_sessions` names the
+ones another window owned, which the returning window drops before attaching. And the server may
+close a session meanwhile without telling anyone, so an attach by a window holding any of the
+project's entries asks for closed rows too, and drops the entries they name.
 
 **A reply is matched by id, a session message by its session.** A frame may carry an `rpc_id`
 beside its `request` or `response`. The host stamps one on every sessionless request and keeps a map

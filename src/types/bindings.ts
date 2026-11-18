@@ -46,8 +46,14 @@ async openProject(projectId: number) : Promise<Result<Project, string>> {
  * Release the project lock this window holds. Called when the user goes back to Home.
  * 
  * The relays to the connections' servers stay, so Home can keep reading them; they live until
- * the app closes. The sessions this window held are forgotten, not closed, as `ProjectKicked`
- * leaves them: opening the project again adopts or reloads them from the server.
+ * the app closes. So do the sessions this window held: the server keeps sending their output
+ * here, and the frontend keeps building their transcripts, so opening the project again finds
+ * them whole. Forgetting them instead parked that output in a bounded buffer, and a working
+ * session overflowed it within seconds, leaving a hole in its transcript.
+ * 
+ * Should another window open the project meanwhile, the server moves the sessions to it, and
+ * [`crate::project::lock::acquire`] drops them here when this window comes back. One the server
+ * closed meanwhile is dropped when the project's sessions are attached again.
  */
 async releaseActiveProjectLock() : Promise<Result<null, string>> {
     try {
