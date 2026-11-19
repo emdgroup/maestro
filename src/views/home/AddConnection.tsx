@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { Check, Container, Server, SquareTerminal } from "lucide-react";
+import {
+  Check,
+  Container,
+  FileKey,
+  RectangleEllipsis,
+  Server,
+  ShieldUser,
+  SquareTerminal,
+} from "lucide-react";
 import { connectionKeyStr } from "@/lib/connection-utils";
 import type { ConnectionKey, SshAuthMethod } from "@/types/bindings";
 import { getErrorMessage } from "@/lib/error-utils";
@@ -128,9 +136,33 @@ function SshForm({
           value={auth}
           onChange={setAuth}
           options={[
-            { value: "agent", label: "SSH agent" },
-            { value: "key", label: "Key file" },
-            { value: "password", label: "Password" },
+            {
+              value: "agent",
+              label: (
+                <>
+                  <ShieldUser />
+                  SSH agent
+                </>
+              ),
+            },
+            {
+              value: "key",
+              label: (
+                <>
+                  <FileKey />
+                  Key file
+                </>
+              ),
+            },
+            {
+              value: "password",
+              label: (
+                <>
+                  <RectangleEllipsis />
+                  Password
+                </>
+              ),
+            },
           ]}
         />
       </div>
