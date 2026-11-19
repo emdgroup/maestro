@@ -4,7 +4,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/ui/field";
 import { Checkbox } from "@/ui/checkbox";
 import { Label } from "@/ui/label";
 import { Button } from "@/ui/button";
-import { DialogFooter, DialogClose } from "@/ui/dialog";
+import { DialogClose } from "@/ui/dialog";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import type { AuthProps } from "./ssh-auth-utils";
 
@@ -14,12 +14,22 @@ import type { AuthProps } from "./ssh-auth-utils";
 
 export function AuthFooter({ loading, disabled }: { loading: boolean; disabled?: boolean }) {
   return (
-    <DialogFooter className="mt-4">
-      <DialogClose render={<Button variant="outline">Cancel</Button>} />
-      <Button type="submit" disabled={loading || disabled}>
+    <div className="mt-4 flex justify-end gap-2">
+      <DialogClose
+        render={
+          <button type="button" className="home-pill h-9 cursor-pointer rounded-xl px-4 text-xs">
+            Cancel
+          </button>
+        }
+      />
+      <Button
+        type="submit"
+        disabled={loading || disabled}
+        className="h-9 cursor-pointer rounded-xl px-4 text-xs"
+      >
         {loading ? "Connecting..." : "Connect"}
       </Button>
-    </DialogFooter>
+    </div>
   );
 }
 
@@ -44,9 +54,7 @@ export function PasswordAuth({ username, loading, onSubmit }: AuthProps & { user
     <form onSubmit={handleSubmit}>
       <FieldGroup>
         <Field>
-          <FieldLabel htmlFor="ssh-password">
-            Password<span className="text-destructive">*</span>
-          </FieldLabel>
+          <FieldLabel htmlFor="ssh-password">Password</FieldLabel>
           <InputGroup>
             <InputGroupInput
               id="ssh-password"
@@ -80,8 +88,8 @@ export function PasswordAuth({ username, loading, onSubmit }: AuthProps & { user
                 onCheckedChange={setSavePassword}
                 disabled={loading}
               />
-              <Label htmlFor="save-password" className="text-sm font-normal cursor-pointer">
-                Save password (securely stored in OS keychain)
+              <Label htmlFor="save-password" className="cursor-pointer">
+                Remember in the system keychain
               </Label>
             </div>
           </FieldDescription>

@@ -449,6 +449,7 @@ export function ProjectPath({ project }: { project: Project }) {
       <SshAuthModal
         open={signInFor !== null}
         username={signInFor?.ssh?.username ?? ""}
+        host={signInFor?.ssh?.host}
         onSubmit={(submission) => void submitSignIn(submission)}
         onCancel={() => setSignInFor(null)}
         loading={signingIn}

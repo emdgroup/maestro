@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { Check, ChevronRight, Container, Server, SquareTerminal } from "lucide-react";
+import { Check, Container, Server, SquareTerminal } from "lucide-react";
 import { connectionKeyStr } from "@/lib/connection-utils";
 import type { ConnectionKey, SshAuthMethod } from "@/types/bindings";
 import { getErrorMessage } from "@/lib/error-utils";
@@ -20,8 +20,7 @@ import {
 import { useHomeStore } from "@/store/homeStore";
 import { HomeSheet } from "@/components/home/HomeSheet";
 import { Segmented } from "@/components/common/Segmented";
-import { AgentSetupSteps } from "@/components/home/ssh-auth-modal/AgentAuth";
-import { KeySetupSteps } from "@/components/home/ssh-auth-modal/KeyFileAuth";
+import { SetupInstructions } from "@/components/home/ssh-auth-modal/SetupSteps";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Spinner } from "@/ui/spinner";
@@ -36,7 +35,6 @@ const KINDS: { kind: Kind; label: string; Icon: typeof Server }[] = [
 ];
 
 const BUTTON = "h-9 cursor-pointer rounded-xl px-4 text-xs";
-const STEPS = "home-field rounded-xl px-3.5 py-3";
 
 /** The checklist an added connection goes through, read from its phase on Home. */
 function Checklist({
@@ -159,21 +157,7 @@ function SshForm({
             </button>
           </div>
         )}
-        {auth !== "password" && (
-          <details className="group mt-2">
-            <summary className="flex w-fit cursor-pointer list-none items-center gap-1 select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
-              <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
-              Setup instructions
-            </summary>
-            <div className="mt-2">
-              {auth === "agent" ? (
-                <AgentSetupSteps className={STEPS} />
-              ) : (
-                <KeySetupSteps className={STEPS} />
-              )}
-            </div>
-          </details>
-        )}
+        {auth !== "password" && <SetupInstructions kind={auth} />}
         {auth === "password" && (
           <>
             <input

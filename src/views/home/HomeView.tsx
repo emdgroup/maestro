@@ -361,6 +361,7 @@ export function HomeView() {
       <SshAuthModal
         open={signInFor !== null}
         username={signInFor?.ssh?.username ?? ""}
+        host={signInFor?.ssh?.host}
         onSubmit={(submission) => void changeSignIn(submission)}
         onCancel={() => setSignInFor(null)}
         loading={signingIn}
