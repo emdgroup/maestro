@@ -7,17 +7,19 @@ export const promptQueryKeys = {
   base: ["prompts"] as const,
   shared: () => [...promptQueryKeys.base, "shared"] as const,
   projects: () => [...promptQueryKeys.base, "project"] as const,
-  project: (projectId: number) => [...promptQueryKeys.projects(), projectId] as const,
+  project: (projectId: number | null) => [...promptQueryKeys.projects(), projectId] as const,
 };
 
 /**
  * One collection, favorites first then newest, in the backend's order: the project's from its
  * daemon, or the app's shared one. Apart, so a daemon that is down blanks only its own column.
  */
-export function usePromptsQuery(projectId: number, shared: boolean) {
+export function usePromptsQuery(projectId: number | null, shared: boolean) {
   return useQuery({
     queryKey: shared ? promptQueryKeys.shared() : promptQueryKeys.project(projectId),
-    queryFn: () => api.listPrompts(projectId, shared),
+    // The shared collection ignores the project id, so it can be listed without one.
+    queryFn: () => api.listPrompts(projectId ?? 0, shared),
+    enabled: shared || projectId !== null,
   });
 }
 
