@@ -43,8 +43,8 @@ export function usePathNavigation(isLocal: boolean, drives: string[]) {
       return;
     }
 
-    // Check if we're at a drive root on Windows (e.g., "C:/")
-    if (isLocal && drivesRef.current.length > 0 && /^[A-Z]:\/$/i.test(currentPath)) {
+    // At a drive root (e.g., "C:/") of a machine with drives, local or remote: up is the drive list
+    if (drivesRef.current.length > 0 && /^[A-Z]:\/$/i.test(currentPath)) {
       // Go back to drives list
       setCurrentPath(DRIVES_ROOT);
       return;
@@ -72,8 +72,8 @@ export function usePathNavigation(isLocal: boolean, drives: string[]) {
 
   const navigateToBreadcrumb = (index: number) => {
     if (index === -1) {
-      // Root click - on Windows with drives, go to drives root
-      if (isLocal && drivesRef.current.length > 0) {
+      // Root click - on a machine with drives, local or remote, go to drives root
+      if (drivesRef.current.length > 0) {
         setCurrentPath(DRIVES_ROOT);
       } else {
         setCurrentPath("/");
@@ -96,12 +96,13 @@ export function usePathNavigation(isLocal: boolean, drives: string[]) {
   };
 
   /**
-   * Go to a path the user typed or pasted. Explorer's "Copy as path" wraps it in quotes, and on this
-   * computer a Windows path arrives with backslashes; both become the `C:/x/y` form used here.
+   * Go to a path the user typed or pasted. Explorer's "Copy as path" wraps it in quotes, and a
+   * Windows path, on this computer or a remote one, arrives with backslashes; both become the
+   * `C:/x/y` form used here.
    */
   const navigateToPath = (typed: string) => {
     let path = typed.trim().replace(/^"(.*)"$/, "$1");
-    if (isLocal) path = path.replace(/\\/g, "/");
+    if (isLocal || /^[A-Z]:\\/i.test(path)) path = path.replace(/\\/g, "/");
     path = path.replace(/\/+/g, "/");
     if (/^[A-Z]:$/i.test(path)) path += "/";
     if (path.length > 1 && !/^[A-Z]:\/$/i.test(path)) path = path.replace(/\/$/, "");
@@ -111,7 +112,7 @@ export function usePathNavigation(isLocal: boolean, drives: string[]) {
   // Parse path into breadcrumb parts
   const pathParts = currentPath === DRIVES_ROOT ? [] : currentPath.split("/").filter(Boolean);
 
-  const isDrivesRoot = isLocal && currentPath === DRIVES_ROOT;
+  const isDrivesRoot = currentPath === DRIVES_ROOT;
 
   return {
     currentPath,

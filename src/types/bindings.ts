@@ -1705,6 +1705,28 @@ async writeFile(connection: ConnectionKey, path: string, contents: string) : Pro
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Where the directory picker starts on a connection: its user's home folder.
+ */
+async getConnectionHome(connection: ConnectionKey) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_connection_home", { connection }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The drive roots of a connection's machine, which the directory picker lists above its root.
+ */
+async listConnectionDrives(connection: ConnectionKey) : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_connection_drives", { connection }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async createFileAt(connection: ConnectionKey, path: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("create_file_at", { connection, path }) };
@@ -1738,7 +1760,8 @@ async deleteFile(connection: ConnectionKey, path: string, recursive: boolean) : 
 }
 },
 /**
- * Read a local file's raw content as a base64-encoded string. Rejects files over [`BINARY_LIMIT`].
+ * Read a local file's raw content as a base64-encoded string. Rejects files over
+ * [`maestro_protocol::fs::BINARY_LIMIT`].
  */
 async readLocalFileBinary(path: string) : Promise<Result<string, string>> {
     try {

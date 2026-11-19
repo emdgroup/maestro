@@ -24,6 +24,10 @@ export const connectionQueryKeys = {
   details: (connectionId: number | string) =>
     [...connectionQueryKeys.base, "detail", connectionId] as const,
   fileBrowser: () => [...connectionQueryKeys.base, "fileBrowser"] as const,
+  home: (connectionId: number | null | undefined) =>
+    [...connectionQueryKeys.base, "home", connectionId ?? null] as const,
+  sshDrives: (connectionId: number | null | undefined) =>
+    [...connectionQueryKeys.base, "drives", connectionId ?? null] as const,
   dirs: (connectionId: number | null | undefined, path: string) =>
     [...connectionQueryKeys.fileBrowser(), connectionId ?? "local", path] as const,
   /** Every listing on one connection, for a write that can change a parent nobody named. */
@@ -133,6 +137,32 @@ export function useListDirectories(
     queryKey: connectionQueryKeys.dirs(connectionId, path),
     queryFn: () => api.listDirectories(connection, path),
     enabled,
+  });
+}
+
+/** The home folder of the user Maestro runs as on an SSH connection, where its picker starts. */
+export function useSshHome(connectionId: number | null | undefined) {
+  return useQuery({
+    queryKey: connectionQueryKeys.home(connectionId),
+    queryFn: () => {
+      if (!connectionId) throw new Error("No SSH connection");
+      return api.getConnectionHome({ type: "ssh", id: connectionId });
+    },
+    enabled: !!connectionId,
+    staleTime: Infinity,
+  });
+}
+
+/** The drive roots of an SSH connection's machine; empty unless it runs Windows. */
+export function useSshDrives(connectionId: number | null | undefined) {
+  return useQuery({
+    queryKey: connectionQueryKeys.sshDrives(connectionId),
+    queryFn: () => {
+      if (!connectionId) throw new Error("No SSH connection");
+      return api.listConnectionDrives({ type: "ssh", id: connectionId });
+    },
+    enabled: !!connectionId,
+    staleTime: Infinity,
   });
 }
 

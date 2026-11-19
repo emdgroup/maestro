@@ -43,11 +43,12 @@ pub(crate) async fn handshake_local_child(
 /// has to know whether one is. `replace` is the user agreeing to retire a busy daemon from another
 /// build, which `attach` otherwise refuses with `SERVER_BUSY_ERROR`.
 pub(crate) fn attach_command(server_path: &str, replace: bool) -> String {
-    if replace {
-        format!("{server_path} attach --replace")
+    let args = if replace {
+        "attach --replace"
     } else {
-        format!("{server_path} attach")
-    }
+        "attach"
+    };
+    crate::connectivity::exec_channel::server_command_line(server_path, args)
 }
 
 /// Where the local daemon keeps its lock and runtime file.
@@ -213,4 +214,21 @@ pub(crate) fn spawn_stdin_writer_task(
         }
     });
     write_tx
+}
+
+#[cfg(test)]
+mod tests {
+    use super::attach_command;
+
+    #[test]
+    fn a_native_windows_server_is_attached_through_cmd() {
+        assert_eq!(
+            attach_command("C:/Users/me/.local/bin/maestro-server.exe", false),
+            r#"cmd /c "C:\Users\me\.local\bin\maestro-server.exe" attach"#
+        );
+        assert_eq!(
+            attach_command("/home/me/.local/bin/maestro-server", true),
+            "'/home/me/.local/bin/maestro-server' attach --replace"
+        );
+    }
 }

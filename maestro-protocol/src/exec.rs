@@ -1,5 +1,5 @@
-//! Messages for the exec channel — a second, dedicated connection to `maestro-server` used only
-//! to run commands.
+//! Messages for the exec channel — a second, dedicated connection to `maestro-server` used to run
+//! commands and file operations.
 //!
 //! Deliberately not part of [`crate::ServerRequest`]. That protocol is served by a loop which
 //! handles one message at a time, on a pipe that also carries live agent output, so a slow command
@@ -23,6 +23,15 @@ pub const EXEC_CHANNEL_ARG: &str = "exec-channel";
 pub const EXEC_CHUNK_SIZE: usize = 256 * 1024;
 
 pub type RequestId = u64;
+
+/// What the host sends down the channel: a command to run, or a file operation the server carries
+/// out itself with [`crate::fs::apply`], answered by one [`ExecEvent::Fs`].
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExecRequest {
+    Run(ExecCommand),
+    Fs { id: RequestId, op: crate::fs::FsOp },
+}
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct ExecCommand {
@@ -66,6 +75,22 @@ pub enum ExecEvent {
         id: RequestId,
         message: String,
     },
+    /// The answer to an [`ExecRequest::Fs`].
+    Fs {
+        id: RequestId,
+        result: Result<crate::fs::FsReply, String>,
+    },
+}
+
+impl ExecEvent {
+    pub fn id(&self) -> RequestId {
+        match self {
+            ExecEvent::Chunk { id, .. }
+            | ExecEvent::Exit { id, .. }
+            | ExecEvent::Failed { id, .. }
+            | ExecEvent::Fs { id, .. } => *id,
+        }
+    }
 }
 
 // Bytes ride as base64 rather than as a JSON array of numbers, which costs about four bytes per
@@ -129,6 +154,41 @@ mod tests {
             // Invalid UTF-8 on purpose: git diff of a binary file produces exactly this, and the
             // old code path reached the host as raw bytes.
             bytes: vec![0x00, 0xff, 0xfe, b'h', b'i'],
+        };
+        let json = serde_json::to_string(&event).expect("serialize");
+        assert_eq!(
+            serde_json::from_str::<ExecEvent>(&json).expect("deserialize"),
+            event
+        );
+    }
+
+    #[test]
+    fn both_kinds_of_request_survive_a_round_trip() {
+        for request in [
+            ExecRequest::Run(ExecCommand {
+                id: 1,
+                cwd: None,
+                program: "git".to_string(),
+                args: vec!["status".to_string()],
+                env: Vec::new(),
+                stdin: None,
+            }),
+            ExecRequest::Fs {
+                id: 2,
+                op: crate::fs::FsOp::Directories {
+                    path: "C:/Users/me".to_string(),
+                },
+            },
+        ] {
+            let json = serde_json::to_string(&request).expect("serialize");
+            assert_eq!(
+                serde_json::from_str::<ExecRequest>(&json).expect("deserialize"),
+                request
+            );
+        }
+        let event = ExecEvent::Fs {
+            id: 2,
+            result: Ok(crate::fs::FsReply::Names(vec!["src".to_string()])),
         };
         let json = serde_json::to_string(&event).expect("serialize");
         assert_eq!(

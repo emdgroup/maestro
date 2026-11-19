@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { useGetDefaultFilePickerPath, useListDrives } from "@/services/connection.service";
+import {
+  useGetDefaultFilePickerPath,
+  useListDrives,
+  useSshDrives,
+  useSshHome,
+} from "@/services/connection.service";
 import type { SshConnection } from "@/types/bindings";
 
 interface UseFilePickerInitializationReturn {
@@ -20,14 +25,14 @@ export function useFilePickerInitialization(
   // Service hooks for initialization
   const getDefaultPathQuery = useGetDefaultFilePickerPath();
   const listDrivesQuery = useListDrives();
+  const sshHomeQuery = useSshHome(isLocal ? null : connection?.id);
+  const sshDrivesQuery = useSshDrives(isLocal ? null : connection?.id);
 
-  const initialPath = isLocal
-    ? (getDefaultPathQuery.data ?? "/")
-    : connection
-      ? `/home/${connection.username}`
-      : "";
+  // The root is the fallback when the home folder cannot be read: it lists on every OS.
+  const sshHome = sshHomeQuery.data ?? (sshHomeQuery.isError ? "/" : "");
+  const initialPath = isLocal ? (getDefaultPathQuery.data ?? "/") : connection ? sshHome : "";
 
-  const drives = isLocal && listDrivesQuery.data ? listDrivesQuery.data : [];
+  const drives = (isLocal ? listDrivesQuery.data : sshDrivesQuery.data) ?? [];
 
   // Initialization is complete when queries have finished loading
   const isInitialized = !getDefaultPathQuery.isLoading && !listDrivesQuery.isLoading;

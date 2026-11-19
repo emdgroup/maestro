@@ -16,7 +16,10 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use maestro_protocol::exec::{ExecCommand, ExecEvent, ExecStream, RequestId, EXEC_CHANNEL_ARG};
+use maestro_protocol::exec::{
+    ExecCommand, ExecEvent, ExecRequest, ExecStream, RequestId, EXEC_CHANNEL_ARG,
+};
+use maestro_protocol::fs::{FsOp, FsReply};
 use maestro_protocol::write_frame;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
@@ -30,6 +33,21 @@ use maestro_protocol::command_ext::NoConsoleWindow;
 /// Wraps in single quotes and escapes internal single quotes as '\'' (end quote, escaped quote, restart quote).
 pub fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// The command line that starts `maestro-server` with `args` on the host its path is on.
+///
+/// A native Windows host, the only one whose path starts with a drive letter, gets `cmd /c`: the
+/// release server is a GUI-subsystem binary, PowerShell (a common SSH default shell there) neither
+/// runs a quoted path nor waits for such a binary, and sshd closes the channel as soon as the shell
+/// exits. cmd waits.
+pub(crate) fn server_command_line(server_path: &str, args: &str) -> String {
+    let bytes = server_path.as_bytes();
+    if bytes.len() > 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+        format!("cmd /c \"{}\" {args}", server_path.replace('/', "\\"))
+    } else {
+        format!("{} {args}", shell_quote(server_path))
+    }
 }
 
 pub struct CommandOutput {
@@ -189,42 +207,25 @@ pub async fn run_with_stdin(
     };
 
     let id = channel.next_id.fetch_add(1, Ordering::Relaxed);
-    let (tx, mut rx) = mpsc::unbounded_channel();
-    {
-        let mut pending = channel
-            .pending
-            .lock()
-            .map_err(|_| "exec channel state poisoned".to_string())?;
-        pending.insert(id, tx);
-    }
-    // Re-check after registering: the reader task may have cleared the map in between, and this
-    // entry would then never be delivered to or dropped. Nothing was sent yet, so falling back to
-    // a cold spawn cannot run the command twice.
-    if !channel.alive.load(Ordering::Acquire) {
-        forget(&channel, id);
-        drop_channel(&target.key()).await;
-        return cold_spawn(target, cwd, program, args, stdin).await;
-    }
-
-    let command = ExecCommand {
+    let request = ExecRequest::Run(ExecCommand {
         id,
         cwd: cwd.map(str::to_string),
         program: program.to_string(),
         args: args.iter().map(|a| (*a).to_string()).collect(),
         env: Vec::new(),
         stdin,
+    });
+    let mut rx = match submit(&channel, &target.key(), id, &request).await? {
+        Some(rx) => rx,
+        // Nothing was written, so running it cold cannot run the command twice.
+        None => {
+            let stdin = match request {
+                ExecRequest::Run(command) => command.stdin,
+                ExecRequest::Fs { .. } => None,
+            };
+            return cold_spawn(target, cwd, program, args, stdin).await;
+        }
     };
-    let mut frame = Vec::new();
-    if let Err(e) = write_frame(&mut frame, &command).await {
-        forget(&channel, id);
-        return Err(format!("failed to encode command: {}", e));
-    }
-    if channel.outgoing.send(frame).await.is_err() {
-        // Nothing was written, so re-running is safe.
-        forget(&channel, id);
-        drop_channel(&target.key()).await;
-        return cold_spawn(target, cwd, program, args, command.stdin).await;
-    }
 
     let mut output = CommandOutput {
         stdout: Vec::new(),
@@ -242,6 +243,9 @@ pub async fn run_with_stdin(
                 break Ok(output);
             }
             Some(ExecEvent::Failed { message, .. }) => break Err(message),
+            Some(ExecEvent::Fs { .. }) => {
+                break Err(format!("exec channel answered {program} with a file reply"))
+            }
             // The channel died mid-command. Not retried: the command may already have run, and
             // several of them are not safe to repeat.
             None => break Err(format!("exec channel closed while running {}", program)),
@@ -249,6 +253,85 @@ pub async fn run_with_stdin(
     };
     forget(&channel, id);
     result
+}
+
+/// Carry out a file operation on the target's host, with the `maestro-server` deployed there.
+pub async fn fs(target: &ExecTarget<'_>, op: FsOp) -> Result<FsReply, String> {
+    if let Some(channel) = channel_for(target).await {
+        let id = channel.next_id.fetch_add(1, Ordering::Relaxed);
+        let request = ExecRequest::Fs { id, op: op.clone() };
+        if let Some(mut rx) = submit(&channel, &target.key(), id, &request).await? {
+            let result = loop {
+                match rx.recv().await {
+                    Some(ExecEvent::Fs { result, .. }) => break result,
+                    Some(_) => {}
+                    // Not retried, as a command is not: a write may already have happened.
+                    None => break Err("exec channel closed during a file operation".to_string()),
+                }
+            };
+            forget(&channel, id);
+            return result;
+        }
+    }
+    one_shot(target, op).await
+}
+
+/// With no channel up, the same request answered by a server started for it alone.
+async fn one_shot(target: &ExecTarget<'_>, op: FsOp) -> Result<FsReply, String> {
+    let server_path = server_path_for(&target.key())
+        .ok_or_else(|| "maestro-server is not running on this connection yet".to_string())?;
+    let mut frame = Vec::new();
+    write_frame(&mut frame, &ExecRequest::Fs { id: 0, op })
+        .await
+        .map_err(|e| format!("failed to encode file operation: {e}"))?;
+    let output = cold_spawn(target, None, &server_path, &[EXEC_CHANNEL_ARG], Some(frame)).await?;
+    let mut buffer = output.stdout.clone();
+    loop {
+        match try_parse_acp_frame::<ExecEvent>(&mut buffer) {
+            Ok(Some(ExecEvent::Fs { result, .. })) => return result,
+            Ok(Some(_)) => {}
+            Ok(None) | Err(_) => {
+                return Err(format!(
+                    "maestro-server did not answer a file operation: {}",
+                    output.stderr_string()
+                ))
+            }
+        }
+    }
+}
+
+/// Register `id` and send `request`. `None` when the channel turned out to be gone before
+/// anything was written, so the caller can safely run the request another way.
+async fn submit(
+    channel: &Channel,
+    key: &ExecHost,
+    id: RequestId,
+    request: &ExecRequest,
+) -> Result<Option<mpsc::UnboundedReceiver<ExecEvent>>, String> {
+    let (tx, rx) = mpsc::unbounded_channel();
+    channel
+        .pending
+        .lock()
+        .map_err(|_| "exec channel state poisoned".to_string())?
+        .insert(id, tx);
+    // Re-check after registering: the reader task may have cleared the map in between, and this
+    // entry would then never be delivered to or dropped.
+    if !channel.alive.load(Ordering::Acquire) {
+        forget(channel, id);
+        drop_channel(key).await;
+        return Ok(None);
+    }
+    let mut frame = Vec::new();
+    if let Err(e) = write_frame(&mut frame, request).await {
+        forget(channel, id);
+        return Err(format!("failed to encode request: {}", e));
+    }
+    if channel.outgoing.send(frame).await.is_err() {
+        forget(channel, id);
+        drop_channel(key).await;
+        return Ok(None);
+    }
+    Ok(Some(rx))
 }
 
 fn forget(channel: &Channel, id: RequestId) {
@@ -309,7 +392,7 @@ async fn channel_for(target: &ExecTarget<'_>) -> Option<Arc<Channel>> {
 async fn start(target: &ExecTarget<'_>, server_path: &str) -> Result<Channel, String> {
     // A login shell so commands see the same PATH the user's own shell would give them — nvm,
     // pyenv and friends. The ACP transport already starts its server this way.
-    let launch = format!("{} {}", shell_quote(server_path), EXEC_CHANNEL_ARG);
+    let launch = server_command_line(server_path, EXEC_CHANNEL_ARG);
 
     match target {
         ExecTarget::Ssh { session, .. } => start_over_ssh(session, &launch).await,
@@ -452,13 +535,8 @@ async fn start_over_ssh(session: &RemoteSshSession, launch: &str) -> Result<Chan
 }
 
 fn deliver(pending: &Pending, event: ExecEvent) {
-    let id = match &event {
-        ExecEvent::Chunk { id, .. } | ExecEvent::Exit { id, .. } | ExecEvent::Failed { id, .. } => {
-            *id
-        }
-    };
     if let Ok(pending) = pending.lock() {
-        if let Some(sink) = pending.get(&id) {
+        if let Some(sink) = pending.get(&event.id()) {
             let _ = sink.send(event);
         }
     }

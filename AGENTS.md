@@ -149,7 +149,7 @@ re-exported from `lib.rs` so every `maestro_protocol::X` path is flat: `messages
 `framing.rs`, `session.rs`, `task.rs`, `loops.rs`, `pipeline.rs`, `project.rs`, `automation.rs`,
 `collections.rs` and `usage.rs`. The shared rules are public modules, one each: `completion.rs` (the completion marker and
 review cap), `worktree_names.rs`, `paths.rs` (path tidying and the home directory),
-`attachments.rs`, `mcp_args.rs` (MCP tool arguments) and `skill_names.rs`. It stays light because
+`attachments.rs`, `fs.rs` (file operations, run by the app for a local project and by the server for every other), `mcp_args.rs` (MCP tool arguments) and `skill_names.rs`. It stays light because
 `maestro-server` is built on its own for remote hosts: anything heavier sits behind an optional
 feature, `image` for scaling attachments and `process` for `command_ext::NoConsoleWindow`.
 
@@ -265,7 +265,7 @@ flattens the wire's nested token counts.
 
 - SQLite DB location managed by Tauri app data directory, overridable with `MAESTRO_DATA_DIR` (see `src-tauri/AGENTS.md`)
 - Schema version: 34 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
-- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 19.
+- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 20.
   Bumping it redeploys `maestro-server` on every connection at first use, because `deploy.rs`
   compares `--app-version`, which embeds it
 - Two-phase startup: settings load → project selection → main UI
