@@ -220,41 +220,46 @@ export function KeyFileAuth({
           )}
           Setup instructions
         </button>
-        {showInstructions && (
-          <div className="rounded-md bg-muted p-3 space-y-3 text-xs font-mono text-muted-foreground">
-            <div className="space-y-1.5">
-              <p className="font-sans font-medium text-foreground text-xs">Generate keys (local)</p>
-              <p className="font-sans text-muted-foreground leading-relaxed">
-                Generate a new SSH key pair (if you don't have one).
-              </p>
-              <p className="font-sans text-muted-foreground leading-relaxed">
-                Key types: ed25519 (recommended), rsa or ecdsa.
-              </p>
-              <p className="text-foreground">ssh-keygen -t ed25519 -C "your_email@example.com"</p>
-              <p className="font-sans text-muted-foreground leading-relaxed">
-                Keys are saved to{" "}
-                <span className="font-mono text-foreground">
-                  {hostPlatform === "windows" ? `$env:USERPROFILE\\.ssh\\` : `~/.ssh/`}
-                </span>{" "}
-                by default
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <p className="font-sans font-medium text-foreground text-xs">
-                Authorize on server (remote)
-              </p>
-              <p className="font-sans text-muted-foreground leading-relaxed">
-                Copy the contents of your public key file (e.g.{" "}
-                <span className="font-mono text-foreground">id_ed25519.pub</span>) and place it into{" "}
-                <span className="font-mono text-foreground">~/.ssh/authorized_keys</span> on the
-                remote server.
-              </p>
-            </div>
-          </div>
-        )}
+        {showInstructions && <KeySetupSteps />}
       </div>
 
       <AuthFooter loading={loading} disabled={!activePath} />
     </form>
+  );
+}
+
+/** How to make a key pair and authorize it on the remote host. */
+export function KeySetupSteps() {
+  return (
+    <div className="rounded-md bg-muted p-3 space-y-3 text-xs font-mono text-muted-foreground">
+      <div className="space-y-1.5">
+        <p className="font-sans font-medium text-foreground text-xs">Generate keys (local)</p>
+        <p className="font-sans text-muted-foreground leading-relaxed">
+          Generate a new SSH key pair (if you don't have one).
+        </p>
+        <p className="font-sans text-muted-foreground leading-relaxed">
+          Key types: ed25519 (recommended), rsa or ecdsa.
+        </p>
+        <p className="text-foreground">ssh-keygen -t ed25519 -C "your_email@example.com"</p>
+        <p className="font-sans text-muted-foreground leading-relaxed">
+          Keys are saved to{" "}
+          <span className="font-mono text-foreground">
+            {hostPlatform === "windows" ? `$env:USERPROFILE\\.ssh\\` : `~/.ssh/`}
+          </span>{" "}
+          by default
+        </p>
+      </div>
+      <div className="space-y-1.5">
+        <p className="font-sans font-medium text-foreground text-xs">
+          Authorize on server (remote)
+        </p>
+        <p className="font-sans text-muted-foreground leading-relaxed">
+          Copy the contents of your public key file (e.g.{" "}
+          <span className="font-mono text-foreground">id_ed25519.pub</span>) and place it into{" "}
+          <span className="font-mono text-foreground">~/.ssh/authorized_keys</span> on the remote
+          server.
+        </p>
+      </div>
+    </div>
   );
 }

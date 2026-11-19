@@ -20,6 +20,8 @@ import {
 import { useHomeStore } from "@/store/homeStore";
 import { HomeSheet } from "@/components/home/HomeSheet";
 import { Segmented } from "@/components/common/Segmented";
+import { AgentSetupSteps } from "@/components/home/ssh-auth-modal/AgentAuth";
+import { KeySetupSteps } from "@/components/home/ssh-auth-modal/KeyFileAuth";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Spinner } from "@/ui/spinner";
@@ -155,6 +157,14 @@ function SshForm({
               Browse…
             </button>
           </div>
+        )}
+        {auth !== "password" && (
+          <details className="mt-2">
+            <summary className="cursor-pointer select-none hover:text-foreground">
+              Setup instructions
+            </summary>
+            <div className="mt-2">{auth === "agent" ? <AgentSetupSteps /> : <KeySetupSteps />}</div>
+          </details>
         )}
         {auth === "password" && (
           <>

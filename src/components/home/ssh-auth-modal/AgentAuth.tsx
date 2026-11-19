@@ -36,47 +36,52 @@ export function AgentAuth({ loading, onSubmit }: AuthProps) {
           )}
           Setup instructions
         </button>
-        {showInstructions && (
-          <div className="rounded-md bg-muted p-3 space-y-1.5 text-xs font-mono text-muted-foreground">
-            <p className="font-sans font-medium text-foreground text-xs mb-2">
-              On your local environment:
-            </p>
-            {hostPlatform === "windows" && (
-              <>
-                <p># Enable and start the SSH agent service (run as Admin)</p>
-                <p className="text-foreground">
-                  Get-Service ssh-agent | Set-Service -StartupType Automatic
-                </p>
-                <p className="text-foreground">Start-Service ssh-agent</p>
-                <p className="mt-1"># Verify key is loaded</p>
-                <p className="text-foreground">ssh-add -l</p>
-                <p className="mt-1"># Add your private key, can be rsa, ecdsa or ed25519.</p>
-                <p className="text-foreground">ssh-add $env:USERPROFILE\.ssh\id_ed25519</p>
-              </>
-            )}
-            {hostPlatform === "macos" && (
-              <>
-                <p># macOS starts ssh-agent automatically</p>
-                <p className="mt-1"># Verify key is loaded</p>
-                <p className="text-foreground">ssh-add -l</p>
-                <p className="mt-1"># Add your private key, can be rsa, ecdsa or ed25519</p>
-                <p className="text-foreground">ssh-add --apple-use-keychain ~/.ssh/id_ed25519</p>
-              </>
-            )}
-            {hostPlatform === "linux" && (
-              <>
-                <p># Start the SSH agent</p>
-                <p className="text-foreground">eval "$(ssh-agent -s)"</p>
-                <p className="mt-1"># Verify key is loaded</p>
-                <p className="text-foreground">ssh-add -l</p>
-                <p className="mt-1"># Add your private key, can be rsa, ecdsa or ed25519.</p>
-                <p className="text-foreground">ssh-add ~/.ssh/id_ed25519</p>
-              </>
-            )}
-          </div>
-        )}
+        {showInstructions && <AgentSetupSteps />}
       </div>
       <AuthFooter loading={loading} />
     </form>
+  );
+}
+
+/** How to get a key into the local SSH agent, for the platform Maestro runs on. */
+export function AgentSetupSteps() {
+  return (
+    <div className="rounded-md bg-muted p-3 space-y-1.5 text-xs font-mono text-muted-foreground">
+      <p className="font-sans font-medium text-foreground text-xs mb-2">
+        On your local environment:
+      </p>
+      {hostPlatform === "windows" && (
+        <>
+          <p># Enable and start the SSH agent service (run as Admin)</p>
+          <p className="text-foreground">
+            Get-Service ssh-agent | Set-Service -StartupType Automatic
+          </p>
+          <p className="text-foreground">Start-Service ssh-agent</p>
+          <p className="mt-1"># Verify key is loaded</p>
+          <p className="text-foreground">ssh-add -l</p>
+          <p className="mt-1"># Add your private key, can be rsa, ecdsa or ed25519.</p>
+          <p className="text-foreground">ssh-add $env:USERPROFILE\.ssh\id_ed25519</p>
+        </>
+      )}
+      {hostPlatform === "macos" && (
+        <>
+          <p># macOS starts ssh-agent automatically</p>
+          <p className="mt-1"># Verify key is loaded</p>
+          <p className="text-foreground">ssh-add -l</p>
+          <p className="mt-1"># Add your private key, can be rsa, ecdsa or ed25519</p>
+          <p className="text-foreground">ssh-add --apple-use-keychain ~/.ssh/id_ed25519</p>
+        </>
+      )}
+      {hostPlatform === "linux" && (
+        <>
+          <p># Start the SSH agent</p>
+          <p className="text-foreground">eval "$(ssh-agent -s)"</p>
+          <p className="mt-1"># Verify key is loaded</p>
+          <p className="text-foreground">ssh-add -l</p>
+          <p className="mt-1"># Add your private key, can be rsa, ecdsa or ed25519.</p>
+          <p className="text-foreground">ssh-add ~/.ssh/id_ed25519</p>
+        </>
+      )}
+    </div>
   );
 }
