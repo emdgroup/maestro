@@ -44,15 +44,17 @@ export function fileUriToPath(uri: string): string {
 }
 
 /**
- * Split the `#L42` (or `#L42-L50`) that agents append to cite lines off a file link. Only that
- * shape is taken, so a `#` that is really part of a file name stays where it is.
+ * Split the line citation agents append to a file link: `#L42` / `#L42-L50`, or the
+ * `file:line` shape `:42` / `:42-50` / `:42:7` (the column is dropped). Only those shapes are
+ * taken, so a `#` that is really part of a file name stays where it is.
  *
  * @example
  * splitLineAnchor('src/a.ts#L42')      // { path: 'src/a.ts', lines: { from: 42, to: 42 } }
  * splitLineAnchor('src/a.ts#L42-L50')  // { path: 'src/a.ts', lines: { from: 42, to: 50 } }
+ * splitLineAnchor('src/a.ts:42-50')    // { path: 'src/a.ts', lines: { from: 42, to: 50 } }
  */
 export function splitLineAnchor(uri: string): { path: string; lines?: LineRange } {
-  const match = /#L(\d+)(?:-L?(\d+))?$/.exec(uri);
+  const match = /(?:#L|:)(\d+)(?:-L?(\d+)|:\d+)?$/.exec(uri);
   if (!match) return { path: uri };
   const from = Number(match[1]);
   return {

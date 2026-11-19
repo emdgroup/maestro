@@ -25,6 +25,18 @@ describe("MarkdownBlock links", () => {
     expect(openUrl).not.toHaveBeenCalled();
   });
 
+  it("takes the line from the link text when the href has none", async () => {
+    const openFile = renderLink(
+      "[reader_task.rs:425](file:///C:/w/src/reader_task.rs) and [ops.rs:399-437](file:///C:/w/ops.rs) and [a.rs:9](a.rs#L5)",
+    );
+    await userEvent.click(screen.getByText("reader_task.rs:425"));
+    expect(openFile).toHaveBeenLastCalledWith("file:///C:/w/src/reader_task.rs#L425-L425");
+    await userEvent.click(screen.getByText("ops.rs:399-437"));
+    expect(openFile).toHaveBeenLastCalledWith("file:///C:/w/ops.rs#L399-L437");
+    await userEvent.click(screen.getByText("a.rs:9"));
+    expect(openFile).toHaveBeenLastCalledWith("a.rs#L5");
+  });
+
   it("still sends a web link to the browser", async () => {
     const openFile = renderLink("[docs](https://example.com/a#L1)");
     await userEvent.click(screen.getByText("docs"));
