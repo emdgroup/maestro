@@ -1,18 +1,15 @@
 import React, { useState, useCallback } from "react";
 import { open as openFilePicker } from "@tauri-apps/plugin-dialog";
 import { homeDir, join } from "@tauri-apps/api/path";
-import { Eye, EyeOff, ChevronDown, ChevronUp, FileKey, Lock } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Eye, EyeOff, FileKey, Lock } from "lucide-react";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/ui/field";
 import { Checkbox } from "@/ui/checkbox";
 import { Label } from "@/ui/label";
 import { Input } from "@/ui/input";
-import { Button } from "@/ui/button";
-import { ButtonGroup } from "@/ui/button-group";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import type { AuthProps, SavedKeyFile } from "./ssh-auth-utils";
-import { hostPlatform } from "@/lib/platform-utils";
 import { AuthFooter } from "./PasswordAuth";
+import { SetupInstructions } from "./SetupSteps";
 import { basename } from "@/lib/path-utils";
 
 export function KeyFileAuth({
@@ -25,7 +22,6 @@ export function KeyFileAuth({
   const [passphrase, setPassphrase] = useState("");
   const [showPassphrase, setShowPassphrase] = useState(false);
   const [savePassphrase, setSavePassphrase] = useState(false);
-  const [showInstructions, setShowInstructions] = useState(false);
 
   const selectedSaved = savedKeyFiles.find((k) => k.path === selectedSavedPath) ?? null;
   const activePath = (selectedSavedPath ?? keyPath).trim();
@@ -68,7 +64,7 @@ export function KeyFileAuth({
         {/* Previously used key files */}
         {savedKeyFiles.length > 0 && (
           <Field>
-            <FieldLabel>Previously Used Keys</FieldLabel>
+            <FieldLabel>Keys used before</FieldLabel>
             <div className="space-y-1.5">
               {savedKeyFiles.map(({ path, hasSavedPassphrase }) => {
                 const isSelected = selectedSavedPath === path;
@@ -78,12 +74,8 @@ export function KeyFileAuth({
                     type="button"
                     onClick={() => handleSavedKeyClick(path)}
                     disabled={loading}
-                    className={cn(
-                      "w-full flex items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors",
-                      isSelected
-                        ? "border-ring bg-accent"
-                        : "border-border bg-muted/40 hover:bg-accent/50",
-                    )}
+                    data-selected={isSelected}
+                    className="home-pane flex w-full cursor-pointer items-center gap-3 rounded-xl px-3.5 py-2.5 text-left"
                   >
                     <FileKey className="size-4 text-muted-foreground shrink-0" />
                     <div className="flex flex-col min-w-0 flex-1">
@@ -106,30 +98,28 @@ export function KeyFileAuth({
         {!selectedSavedPath && (
           <Field>
             <FieldLabel htmlFor="key-path">
-              {savedKeyFiles.length > 0 ? (
-                "Or use a different key"
-              ) : (
-                <>
-                  {" "}
-                  Private Key Path<span className="text-destructive">*</span>{" "}
-                </>
-              )}
+              {savedKeyFiles.length > 0 ? "Or use a different key" : <> Key file </>}
             </FieldLabel>
-            <ButtonGroup>
+            <div className="flex gap-2">
               <Input
                 id="key-path"
                 type="text"
                 value={keyPath}
                 onChange={(e) => setKeyPath(e.target.value)}
-                placeholder="~/.ssh/id_rsa"
+                placeholder="~/.ssh/id_ed25519"
                 disabled={loading}
                 autoFocus={savedKeyFiles.length === 0}
                 className="font-mono text-sm"
               />
-              <Button type="button" variant="outline" disabled={loading} onClick={handleBrowse}>
-                Browse
-              </Button>
-            </ButtonGroup>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={handleBrowse}
+                className="home-pill h-9 shrink-0 cursor-pointer rounded-xl px-3 text-xs"
+              >
+                Browse…
+              </button>
+            </div>
           </Field>
         )}
 
@@ -147,7 +137,7 @@ export function KeyFileAuth({
 
         {/* Saved passphrase info banner */}
         {selectedSaved?.hasSavedPassphrase && (
-          <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          <div className="home-field flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-xs text-muted-foreground">
             <Lock className="size-4 shrink-0" />
             Passphrase securely saved in keychain
           </div>
@@ -188,8 +178,8 @@ export function KeyFileAuth({
                   onCheckedChange={setSavePassphrase}
                   disabled={loading || !passphrase}
                 />
-                <Label htmlFor="save-passphrase" className="text-sm font-normal cursor-pointer">
-                  Save passphrase (securely stored in OS keychain)
+                <Label htmlFor="save-passphrase" className="cursor-pointer">
+                  Remember in the system keychain
                 </Label>
               </div>
             </FieldDescription>
@@ -197,62 +187,7 @@ export function KeyFileAuth({
         )}
       </FieldGroup>
 
-      <div className="rounded-lg border border-border bg-muted/40 p-4 space-y-3 mt-4">
-        <div className="flex items-start gap-3">
-          <FileKey className="size-5 text-muted-foreground mt-0.5 shrink-0" />
-          <div>
-            <p className="text-sm font-medium">SSH Key Connection</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Ensure you have generated your SSH key pair and copied your public key on the remote
-              server.
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowInstructions(!showInstructions)}
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          {showInstructions ? (
-            <ChevronUp className="w-3 h-3" />
-          ) : (
-            <ChevronDown className="w-3 h-3" />
-          )}
-          Setup instructions
-        </button>
-        {showInstructions && (
-          <div className="rounded-md bg-muted p-3 space-y-3 text-xs font-mono text-muted-foreground">
-            <div className="space-y-1.5">
-              <p className="font-sans font-medium text-foreground text-xs">Generate keys (local)</p>
-              <p className="font-sans text-muted-foreground leading-relaxed">
-                Generate a new SSH key pair (if you don't have one).
-              </p>
-              <p className="font-sans text-muted-foreground leading-relaxed">
-                Key types: ed25519 (recommended), rsa or ecdsa.
-              </p>
-              <p className="text-foreground">ssh-keygen -t ed25519 -C "your_email@example.com"</p>
-              <p className="font-sans text-muted-foreground leading-relaxed">
-                Keys are saved to{" "}
-                <span className="font-mono text-foreground">
-                  {hostPlatform === "windows" ? `$env:USERPROFILE\\.ssh\\` : `~/.ssh/`}
-                </span>{" "}
-                by default
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <p className="font-sans font-medium text-foreground text-xs">
-                Authorize on server (remote)
-              </p>
-              <p className="font-sans text-muted-foreground leading-relaxed">
-                Copy the contents of your public key file (e.g.{" "}
-                <span className="font-mono text-foreground">id_ed25519.pub</span>) and place it into{" "}
-                <span className="font-mono text-foreground">~/.ssh/authorized_keys</span> on the
-                remote server.
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
+      <SetupInstructions kind="key-file" />
 
       <AuthFooter loading={loading} disabled={!activePath} />
     </form>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { Check, Container, Server, SquareTerminal } from "lucide-react";
+import { Check, Container, Eye, EyeOff, Server, SquareTerminal } from "lucide-react";
 import { connectionKeyStr } from "@/lib/connection-utils";
 import type { ConnectionKey, SshAuthMethod } from "@/types/bindings";
 import { getErrorMessage } from "@/lib/error-utils";
@@ -20,12 +20,17 @@ import {
 import { useHomeStore } from "@/store/homeStore";
 import { HomeSheet } from "@/components/home/HomeSheet";
 import { Segmented } from "@/components/common/Segmented";
+import {
+  SetupInstructions,
+  SIGN_IN_ITEM,
+  SIGN_IN_OPTIONS,
+} from "@/components/home/ssh-auth-modal/SetupSteps";
+import type { AuthMethod } from "@/components/home/ssh-auth-modal/ssh-auth-utils";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Spinner } from "@/ui/spinner";
 
 type Kind = "ssh" | "wsl" | "docker";
-type Auth = "agent" | "key" | "password";
 
 const KINDS: { kind: Kind; label: string; Icon: typeof Server }[] = [
   { kind: "ssh", label: "SSH host", Icon: Server },
@@ -81,15 +86,16 @@ function SshForm({
 }) {
   const [address, setAddress] = useState("");
   const [name, setName] = useState("");
-  const [auth, setAuth] = useState<Auth>("agent");
+  const [auth, setAuth] = useState<AuthMethod>("agent");
   const [keyPath, setKeyPath] = useState("~/.ssh/id_ed25519");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const authMethod: SshAuthMethod =
     auth === "agent"
       ? "Agent"
-      : auth === "key"
+      : auth === "key-file"
         ? { KeyFile: { path: keyPath, save_passphrase: false } }
         : { Password: { save_password: remember } };
 
@@ -126,17 +132,12 @@ function SshForm({
           size="lg"
           value={auth}
           onChange={setAuth}
-          options={[
-            { value: "agent", label: "SSH agent" },
-            { value: "key", label: "Key file" },
-            { value: "password", label: "Password" },
-          ]}
+          options={SIGN_IN_OPTIONS}
+          itemClassName={SIGN_IN_ITEM}
         />
       </div>
       <div className="mt-2 min-h-[44px] text-xs text-muted-foreground">
-        {auth === "agent" &&
-          "Uses the keys your SSH agent already holds. Nothing is stored by Maestro."}
-        {auth === "key" && (
+        {auth === "key-file" && (
           <div className="flex gap-2">
             <input
               value={keyPath}
@@ -156,15 +157,27 @@ function SshForm({
             </button>
           </div>
         )}
+        <SetupInstructions kind={auth} />
         {auth === "password" && (
           <>
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="Password"
-              className="home-field h-9 w-full rounded-xl px-3 text-foreground"
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Password"
+                autoComplete="new-password"
+                className="home-field h-9 w-full rounded-xl pr-9 pl-3 text-foreground"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                className="absolute inset-y-0 right-0 grid w-9 cursor-pointer place-items-center hover:text-foreground"
+              >
+                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              </button>
+            </div>
             <label className="mt-2 flex items-center gap-1.5">
               <Checkbox checked={remember} onCheckedChange={setRemember} />
               Remember in the system keychain

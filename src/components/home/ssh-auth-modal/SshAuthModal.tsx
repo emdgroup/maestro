@@ -1,16 +1,19 @@
 import React, { useState } from "react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/ui/dialog";
+import { HomeSheet } from "@/components/home/HomeSheet";
+import { Segmented } from "@/components/common/Segmented";
 import type { AuthMethod, AuthSubmission, SavedKeyFile } from "./ssh-auth-utils";
 import { PasswordAuth } from "./PasswordAuth";
 import { KeyFileAuth } from "./KeyFileAuth";
 import { AgentAuth } from "./AgentAuth";
-import { AuthTabBar } from "./AuthTabBar";
+import { SIGN_IN_ITEM, SIGN_IN_OPTIONS } from "./SetupSteps";
 
 export type { AuthSubmission, SavedKeyFile } from "./ssh-auth-utils";
 
 interface SshAuthModalProps {
   open: boolean;
   username: string;
+  /** Shown under the title, after `username@`. */
+  host?: string;
   savedKeyFiles?: SavedKeyFile[];
   onSubmit: (auth: AuthSubmission) => void;
   onCancel: () => void;
@@ -20,12 +23,13 @@ interface SshAuthModalProps {
 export function SshAuthModal({
   open,
   username,
+  host,
   savedKeyFiles = [],
   onSubmit,
   onCancel,
   loading = false,
 }: SshAuthModalProps) {
-  const [activeTab, setActiveTab] = useState<AuthMethod>("password");
+  const [activeTab, setActiveTab] = useState<AuthMethod>("agent");
   const authProps = { loading, onSubmit };
 
   const authForm: Record<AuthMethod, React.ReactNode> = {
@@ -35,19 +39,33 @@ export function SshAuthModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>SSH Authentication Required</DialogTitle>
-          <DialogDescription>
-            Choose an authentication method to connect to the remote server.
-          </DialogDescription>
-        </DialogHeader>
-
-        <AuthTabBar active={activeTab} onChange={setActiveTab} disabled={loading} />
-
+    <HomeSheet
+      open={open}
+      onOpenChange={(open) => !open && onCancel()}
+      eyebrow="Sign in"
+      title="SSH host"
+    >
+      {host && (
+        <div
+          title={`${username}@${host}`}
+          className="mt-1 truncate font-mono text-xs text-muted-foreground"
+        >
+          {username}@{host}
+        </div>
+      )}
+      <div className="home-form mt-5">
+        <div className="text-[11px] text-muted-foreground">Sign in with</div>
+        <div className="mt-1 mb-3">
+          <Segmented
+            size="lg"
+            value={activeTab}
+            onChange={(tab) => !loading && setActiveTab(tab)}
+            options={SIGN_IN_OPTIONS}
+            itemClassName={SIGN_IN_ITEM}
+          />
+        </div>
         {authForm[activeTab]}
-      </DialogContent>
-    </Dialog>
+      </div>
+    </HomeSheet>
   );
 }
