@@ -12,7 +12,7 @@ export type { AuthSubmission, SavedKeyFile } from "./ssh-auth-utils";
 interface SshAuthModalProps {
   open: boolean;
   username: string;
-  /** Shown as the sheet's title. */
+  /** Shown under the title, after `username@`. */
   host?: string;
   savedKeyFiles?: SavedKeyFile[];
   onSubmit: (auth: AuthSubmission) => void;
@@ -43,8 +43,16 @@ export function SshAuthModal({
       open={open}
       onOpenChange={(open) => !open && onCancel()}
       eyebrow="Sign in"
-      title={host ? `${username}@${host}` : "SSH host"}
+      title="SSH host"
     >
+      {host && (
+        <div
+          title={`${username}@${host}`}
+          className="mt-1 truncate font-mono text-xs text-muted-foreground"
+        >
+          {username}@{host}
+        </div>
+      )}
       <div className="home-form mt-5">
         <div className="text-[11px] text-muted-foreground">Sign in with</div>
         <div className="mt-1 mb-3">
