@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { ShieldUser, ChevronDown, ChevronUp } from "lucide-react";
 import type { AuthProps } from "./ssh-auth-utils";
+import { cn } from "@/lib/utils";
 import { hostPlatform } from "@/lib/platform-utils";
 import { AuthFooter } from "./PasswordAuth";
 
@@ -44,9 +45,9 @@ export function AgentAuth({ loading, onSubmit }: AuthProps) {
 }
 
 /** How to get a key into the local SSH agent, for the platform Maestro runs on. */
-export function AgentSetupSteps() {
+export function AgentSetupSteps({ className = "rounded-md bg-muted p-3" }: { className?: string }) {
   return (
-    <div className="rounded-md bg-muted p-3 space-y-1.5 text-xs font-mono text-muted-foreground">
+    <div className={cn(className, "space-y-1.5 text-xs font-mono text-muted-foreground")}>
       <p className="font-sans font-medium text-foreground text-xs mb-2">
         On your local environment:
       </p>

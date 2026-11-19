@@ -229,9 +229,9 @@ export function KeyFileAuth({
 }
 
 /** How to make a key pair and authorize it on the remote host. */
-export function KeySetupSteps() {
+export function KeySetupSteps({ className = "rounded-md bg-muted p-3" }: { className?: string }) {
   return (
-    <div className="rounded-md bg-muted p-3 space-y-3 text-xs font-mono text-muted-foreground">
+    <div className={cn(className, "space-y-3 text-xs font-mono text-muted-foreground")}>
       <div className="space-y-1.5">
         <p className="font-sans font-medium text-foreground text-xs">Generate keys (local)</p>
         <p className="font-sans text-muted-foreground leading-relaxed">
