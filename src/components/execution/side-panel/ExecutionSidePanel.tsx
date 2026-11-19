@@ -159,7 +159,10 @@ export function ExecutionSidePanel({
           {/* The gap is the slot beside the agent pane; maximized there is no agent pane, so the
               well sits where that pane's would, against the session list. */}
           <div className={cn("flex-1 min-h-0 flex flex-col", !maximized && "pl-[10px]")}>
-            <div className="flex-1 relative min-h-0 rounded-tl-xl border-t border-l inner-glass overflow-hidden">
+            <div
+              data-side-panel-well
+              className="flex-1 relative min-h-0 rounded-tl-xl border-t border-l inner-glass overflow-hidden"
+            >
               <SidePanelContent
                 tabs={tabs}
                 activeTabId={activeTabId}
