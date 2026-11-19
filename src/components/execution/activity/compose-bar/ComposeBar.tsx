@@ -7,7 +7,6 @@ import React, {
   useLayoutEffect,
 } from "react";
 import { flushSync } from "react-dom";
-import { Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   prepareExternalAttachments,
@@ -28,9 +27,9 @@ import { usePanelPositioner } from "./usePanelPositioner";
 import { AttachmentPills } from "./AttachmentPills";
 import { SendStopButton } from "./SendStopButton";
 import { AttachmentShelf } from "./AttachmentShelf";
+import { AddMenu } from "./AddMenu";
 import { MentionSuggestionsPanel } from "./MentionSuggestionsPanel";
 import { CommandSuggestionsPanel } from "./CommandSuggestionsPanel";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { basename } from "@/lib/path-utils";
 
 /** Share of its bounds the input may grow to before it scrolls internally. */
@@ -127,21 +126,25 @@ export function ComposeBar({
   const sizerRef = useRef<HTMLSpanElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  /** Put `text` in the box below anything already typed, and focus it, without sending. */
+  const seed = (text: string) => {
+    // Committing the value synchronously is what makes the measurement in `autoGrow` read the
+    // seeded text rather than what was there before.
+    flushSync(() => {
+      setValue((previous) => (previous.trim() ? `${previous.trimEnd()}\n\n${text}` : text));
+    });
+    const el = textareaRef.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    autoGrow(el);
+  };
+
   useImperativeHandle(ref, () => ({
     focus() {
       textareaRef.current?.focus();
     },
-    seed(text: string) {
-      // Committing the value synchronously is what makes the measurement in `autoGrow` read the
-      // seeded text rather than what was there before.
-      flushSync(() => {
-        setValue((previous) => (previous.trim() ? `${previous.trimEnd()}\n\n${text}` : text));
-      });
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      autoGrow(el);
-    },
+    seed,
   }));
 
   const { data: appSettings } = useSettings();
@@ -449,16 +452,12 @@ export function ComposeBar({
           />
           <div className="flex items-center gap-2 px-3.5 pt-2.5 pb-1">
             {sessionId && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={<button type="button" disabled={blocked || isSending} />}
-                  onClick={() => void attach.handleAttach()}
-                  className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-muted-foreground border border-transparent hover:border-border/40 hover:text-accent hover:bg-accent/8 disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-150"
-                >
-                  <Paperclip className="w-3.5 h-3.5" />
-                </TooltipTrigger>
-                <TooltipContent>Attach external files</TooltipContent>
-              </Tooltip>
+              <AddMenu
+                disabled={blocked || isSending}
+                projectId={sessionMeta?.project_id ?? null}
+                onAttach={() => void attach.handleAttach()}
+                onInsertPrompt={seed}
+              />
             )}
             <textarea
               ref={textareaRef}
