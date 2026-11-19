@@ -1,19 +1,65 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, FileKey, RectangleEllipsis, ShieldUser } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hostPlatform } from "@/lib/platform-utils";
+import type { AuthMethod } from "./ssh-auth-utils";
 
 const STEPS = "home-field rounded-xl px-3.5 py-3";
+const ICON = "size-5";
 
-/** A collapsed `Setup instructions` toggle over the steps for one way of signing in. */
-export function SetupInstructions({ kind }: { kind: "agent" | "key" }) {
+/** The ways to sign in to an SSH host, for the `Segmented` picker of every SSH form. */
+export const SIGN_IN_OPTIONS: { value: AuthMethod; label: React.ReactNode }[] = [
+  {
+    value: "agent",
+    label: (
+      <>
+        <ShieldUser className={ICON} />
+        SSH agent
+      </>
+    ),
+  },
+  {
+    value: "key-file",
+    label: (
+      <>
+        <FileKey className={ICON} />
+        Key file
+      </>
+    ),
+  },
+  {
+    value: "password",
+    label: (
+      <>
+        <RectangleEllipsis className={ICON} />
+        Password
+      </>
+    ),
+  },
+];
+
+/** Taller segments so the icons fit. */
+export const SIGN_IN_ITEM = "h-10 gap-2";
+
+const DESCRIPTION: Partial<Record<AuthMethod, string>> = {
+  agent: "Ensure you have a running SSH agent with your key loaded. Nothing is stored by Maestro.",
+  "key-file":
+    "Ensure you have generated your SSH key pair and copied your public key on the remote server.",
+};
+
+/** What a way of signing in needs, then a collapsed `Setup instructions` toggle over its steps. */
+export function SetupInstructions({ kind }: { kind: AuthMethod }) {
+  if (kind === "password") return null;
   return (
-    <details className="group mt-2 text-xs text-muted-foreground">
-      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
-        <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
-        Setup instructions
-      </summary>
-      <div className="mt-2">{kind === "agent" ? <AgentSetupSteps /> : <KeySetupSteps />}</div>
-    </details>
+    <div className="mt-2 text-xs text-muted-foreground">
+      <p>{DESCRIPTION[kind]}</p>
+      <details className="group mt-2">
+        <summary className="flex w-fit cursor-pointer list-none items-center gap-1 select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
+          <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
+          Setup instructions
+        </summary>
+        <div className="mt-2">{kind === "agent" ? <AgentSetupSteps /> : <KeySetupSteps />}</div>
+      </details>
+    </div>
   );
 }
 

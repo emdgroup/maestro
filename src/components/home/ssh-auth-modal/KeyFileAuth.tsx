@@ -187,7 +187,7 @@ export function KeyFileAuth({
         )}
       </FieldGroup>
 
-      <SetupInstructions kind="key" />
+      <SetupInstructions kind="key-file" />
 
       <AuthFooter loading={loading} disabled={!activePath} />
     </form>

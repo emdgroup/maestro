@@ -11,9 +11,6 @@ export function AgentAuth({ loading, onSubmit }: AuthProps) {
 
   return (
     <form onSubmit={handleSubmit}>
-      <p className="text-xs text-muted-foreground">
-        Uses the keys your SSH agent already holds. Nothing is stored by Maestro.
-      </p>
       <SetupInstructions kind="agent" />
       <AuthFooter loading={loading} />
     </form>

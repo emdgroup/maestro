@@ -1,11 +1,11 @@
 import React, { useState } from "react";
-import { FileKey, RectangleEllipsis, ShieldUser } from "lucide-react";
 import { HomeSheet } from "@/components/home/HomeSheet";
 import { Segmented } from "@/components/common/Segmented";
 import type { AuthMethod, AuthSubmission, SavedKeyFile } from "./ssh-auth-utils";
 import { PasswordAuth } from "./PasswordAuth";
 import { KeyFileAuth } from "./KeyFileAuth";
 import { AgentAuth } from "./AgentAuth";
+import { SIGN_IN_ITEM, SIGN_IN_OPTIONS } from "./SetupSteps";
 
 export type { AuthSubmission, SavedKeyFile } from "./ssh-auth-utils";
 
@@ -52,35 +52,8 @@ export function SshAuthModal({
             size="lg"
             value={activeTab}
             onChange={(tab) => !loading && setActiveTab(tab)}
-            options={[
-              {
-                value: "agent",
-                label: (
-                  <>
-                    <ShieldUser />
-                    SSH agent
-                  </>
-                ),
-              },
-              {
-                value: "key-file",
-                label: (
-                  <>
-                    <FileKey />
-                    Key file
-                  </>
-                ),
-              },
-              {
-                value: "password",
-                label: (
-                  <>
-                    <RectangleEllipsis />
-                    Password
-                  </>
-                ),
-              },
-            ]}
+            options={SIGN_IN_OPTIONS}
+            itemClassName={SIGN_IN_ITEM}
           />
         </div>
         {authForm[activeTab]}
