@@ -51,23 +51,6 @@ pub(crate) fn attach_command(server_path: &str, replace: bool) -> String {
     crate::connectivity::exec_channel::server_command_line(server_path, args)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::attach_command;
-
-    #[test]
-    fn a_native_windows_server_is_attached_through_cmd() {
-        assert_eq!(
-            attach_command("C:/Users/me/.local/bin/maestro-server.exe", false),
-            r#"cmd /c "C:\Users\me\.local\bin\maestro-server.exe" attach"#
-        );
-        assert_eq!(
-            attach_command("/home/me/.local/bin/maestro-server", true),
-            "'/home/me/.local/bin/maestro-server' attach --replace"
-        );
-    }
-}
-
 /// Where the local daemon keeps its lock and runtime file.
 ///
 /// Under the app's own data directory rather than the home directory, so a development build
@@ -231,4 +214,21 @@ pub(crate) fn spawn_stdin_writer_task(
         }
     });
     write_tx
+}
+
+#[cfg(test)]
+mod tests {
+    use super::attach_command;
+
+    #[test]
+    fn a_native_windows_server_is_attached_through_cmd() {
+        assert_eq!(
+            attach_command("C:/Users/me/.local/bin/maestro-server.exe", false),
+            r#"cmd /c "C:\Users\me\.local\bin\maestro-server.exe" attach"#
+        );
+        assert_eq!(
+            attach_command("/home/me/.local/bin/maestro-server", true),
+            "'/home/me/.local/bin/maestro-server' attach --replace"
+        );
+    }
 }
