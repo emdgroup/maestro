@@ -447,7 +447,10 @@ function DirContents({
 
         if (entry.is_dir) {
           const isExpanded = expandedFolders.has(childAbsolute);
-          const isFolderSelected = selectedFolder === childAbsolute;
+          // The target and every folder above it, so the path down to it reads at a glance.
+          const isFolderSelected =
+            selectedFolder === childAbsolute ||
+            (selectedFolder?.startsWith(`${childAbsolute}/`) ?? false);
           return (
             <div key={entry.name}>
               <button
@@ -472,8 +475,8 @@ function DirContents({
                 }
                 className={cn(
                   "w-full flex items-center gap-1 px-2 py-1 text-xs text-left border-l-2 border-transparent transition-colors file-tree-item",
-                  // The create target is marked by colour alone: the whole row (chevron, icon and
-                  // name) takes the accent, which no other row in this tree wears. A tint is the
+                  // The create target and its ancestors are marked by colour alone: the whole row
+                  // (chevron, icon and name) takes the accent, which no file row wears. A tint is the
                   // open file's, and the two tints met edge to edge over a folder's first file.
                   isFolderSelected
                     ? "text-accent font-medium"

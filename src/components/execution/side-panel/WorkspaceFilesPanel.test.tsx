@@ -590,6 +590,32 @@ describe("WorkspaceFilesPanel create destination", () => {
     ).toBeInTheDocument();
   });
 
+  /** Only the direct parent used to take the accent, which lost the path a file sits on. */
+  it("highlights every folder above the opened file, and no other", async () => {
+    listContents.mockImplementation((_conn: unknown, path: string) =>
+      Promise.resolve(
+        {
+          [WORKSPACE]: [
+            { name: "src", is_dir: true },
+            { name: "docs", is_dir: true },
+          ],
+          [`${WORKSPACE}/src`]: [{ name: "lib", is_dir: true }],
+          [`${WORKSPACE}/src/lib`]: [{ name: "deep.ts", is_dir: false }],
+        }[path] ?? [],
+      ),
+    );
+    renderPanel({ openRequest: undefined });
+    await userEvent.click(await screen.findByRole("button", { name: "src" }));
+    await userEvent.click(await screen.findByRole("button", { name: "lib" }));
+    await userEvent.click(await screen.findByRole("button", { name: "deep.ts" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "src" })).toHaveClass("text-accent"),
+    );
+    expect(screen.getByRole("button", { name: "lib" })).toHaveClass("text-accent");
+    expect(screen.getByRole("button", { name: "docs" })).not.toHaveClass("text-accent");
+  });
+
   it("creates in the highlighted folder, not the root", async () => {
     createFileAt.mockResolvedValue(null);
     renderPanel({ openRequest: undefined });
