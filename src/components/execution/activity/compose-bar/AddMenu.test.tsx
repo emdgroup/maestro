@@ -62,7 +62,7 @@ describe("AddMenu", () => {
     expect(screen.getByText("This project")).toBeTruthy();
     expect(screen.getByText("Shared")).toBeTruthy();
 
-    await user.type(screen.getByPlaceholderText("Search prompts by title or tag"), "git{Enter}");
+    await user.type(screen.getByPlaceholderText("Search prompts by title or tag..."), "git{Enter}");
     expect(onInsertPrompt).toHaveBeenCalledWith("Commit message body");
   });
 

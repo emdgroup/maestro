@@ -5,7 +5,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { usePromptsQuery } from "@/services/prompt.service";
 import type { Prompt } from "@/types/bindings";
-import { GLASS_CONTENT_CLASS } from "../config-selectors/BaseDropdownSelector";
+import {
+  DESC_CLASS,
+  GLASS_CONTENT_CLASS,
+  ITEM_TEXT_CLASS,
+} from "../config-selectors/BaseDropdownSelector";
 
 interface Props {
   disabled: boolean;
@@ -15,8 +19,10 @@ interface Props {
   onInsertPrompt: (body: string) => void;
 }
 
+// The compose bar's other menus (model, agent, mode) are base-ui Selects styled with ITEM_CLASS;
+// these are plain buttons, so hover and focus stand in for its `data-highlighted`.
 const ROW_CLASS =
-  "w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm outline-none hover:bg-foreground/7 focus-visible:bg-foreground/7";
+  "group relative flex w-full cursor-default items-start gap-2 rounded-[10px] p-2 text-left outline-hidden select-none hover:bg-foreground/7 focus-visible:bg-foreground/7";
 
 /** The compose bar's "+": attach files, or put a saved prompt in the box. */
 export function AddMenu({ disabled, projectId, onAttach, onInsertPrompt }: Props) {
@@ -52,7 +58,7 @@ export function AddMenu({ disabled, projectId, onAttach, onInsertPrompt }: Props
             )}
           >
             <Plus
-              className={cn("w-4 h-4 transition-transform duration-150", open && "rotate-45")}
+              className={cn("w-3.5 h-3.5 transition-transform duration-150", open && "rotate-45")}
             />
           </PopoverTrigger>
         </TooltipTrigger>
@@ -62,12 +68,12 @@ export function AddMenu({ disabled, projectId, onAttach, onInsertPrompt }: Props
         side="top"
         align="start"
         sideOffset={6}
-        className={cn(GLASS_CONTENT_CLASS, "gap-0 p-0", view === "menu" ? "w-60" : "w-140")}
+        className={cn(GLASS_CONTENT_CLASS, "gap-0 p-0", view === "menu" ? "w-64" : "w-120")}
       >
         {view === "menu" ? (
           <div
             role="menu"
-            className="p-1"
+            className="p-1.5"
             onKeyDown={(e) => {
               if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
               e.preventDefault();
@@ -87,8 +93,11 @@ export function AddMenu({ disabled, projectId, onAttach, onInsertPrompt }: Props
                 onAttach();
               }}
             >
-              <Paperclip className="w-4 h-4 text-muted-foreground" />
-              <span className="flex-1">Attach files</span>
+              <Paperclip className="mt-px size-3 shrink-0 text-muted-foreground" />
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className={ITEM_TEXT_CLASS}>Attach files</span>
+                <span className={DESC_CLASS}>Images, text or PDFs. Paste and drop work too</span>
+              </span>
             </button>
             <button
               type="button"
@@ -96,9 +105,12 @@ export function AddMenu({ disabled, projectId, onAttach, onInsertPrompt }: Props
               className={ROW_CLASS}
               onClick={() => setView("prompts")}
             >
-              <BookText className="w-4 h-4 text-muted-foreground" />
-              <span className="flex-1">Insert prompt</span>
-              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+              <BookText className="mt-px size-3 shrink-0 text-muted-foreground" />
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className={ITEM_TEXT_CLASS}>Insert prompt</span>
+                <span className={DESC_CLASS}>From this project or the shared collection</span>
+              </span>
+              <ChevronRight className="mt-px size-3 shrink-0 text-muted-foreground" />
             </button>
           </div>
         ) : (
@@ -158,14 +170,14 @@ function PromptPicker({
   let index = 0;
   return (
     <div onKeyDown={onKeyDown}>
-      <div className="flex items-center gap-1.5 border-b border-border/30 px-1.5 py-1.5">
+      <div className="flex items-center gap-2 border-b border-border/30 py-2 pl-1.5 pr-3">
         <button
           type="button"
           aria-label="Back"
           onClick={onBack}
-          className="w-7 h-7 rounded-md flex items-center justify-center text-muted-foreground hover:bg-foreground/7 hover:text-foreground"
+          className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-foreground/7 hover:text-foreground"
         >
-          <ChevronLeft className="w-4 h-4" />
+          <ChevronLeft className="size-3" />
         </button>
         <Search className="size-3 shrink-0 text-muted-foreground" />
         <input
@@ -175,22 +187,22 @@ function PromptPicker({
             setSearch(e.target.value);
             setHighlight(0);
           }}
-          placeholder="Search prompts by title or tag"
+          placeholder="Search prompts by title or tag..."
           className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
         />
       </div>
       <div className="flex h-64">
-        <div className="w-[46%] shrink-0 overflow-y-auto border-r border-border/20 p-1">
+        <div className="w-[45%] shrink-0 overflow-y-auto border-r border-border/30 p-1">
           {flat.length === 0 && (
-            <p className="px-2 py-3 text-xs text-muted-foreground">
-              {loading ? "Loading prompts…" : q ? "No prompts match" : "No saved prompts yet"}
+            <p className="px-2 py-4 text-xs text-muted-foreground">
+              {loading ? "Loading prompts..." : q ? "No prompts match" : "No saved prompts yet"}
             </p>
           )}
           {groups.map((group) => (
             <div key={group.label}>
-              <div className="px-2 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              <p className="sticky top-0 z-10 bg-muted/80 px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                 {group.label}
-              </div>
+              </p>
               {group.prompts.map((prompt) => {
                 const i = index++;
                 return (
@@ -200,13 +212,20 @@ function PromptPicker({
                     onMouseEnter={() => setHighlight(i)}
                     onClick={() => onPick(prompt)}
                     className={cn(
-                      "w-full flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-sm",
-                      prompt === current ? "bg-foreground/7 text-foreground" : "text-foreground/80",
+                      "flex w-full cursor-default items-center gap-1.5 rounded-[10px] p-2 text-left outline-none select-none",
+                      prompt === current && "bg-foreground/7",
                     )}
                   >
-                    <span className="truncate">{prompt.title}</span>
+                    <span
+                      className={cn(
+                        "truncate text-xs font-medium leading-none",
+                        prompt === current && "text-accent",
+                      )}
+                    >
+                      {prompt.title}
+                    </span>
                     {prompt.favorite && (
-                      <Star className="size-3 shrink-0 fill-amber-400 text-amber-400" />
+                      <Star className="size-2.5 shrink-0 fill-amber-400 text-amber-400" />
                     )}
                   </button>
                 );
@@ -214,11 +233,11 @@ function PromptPicker({
             </div>
           ))}
         </div>
-        <div className="flex-1 min-w-0 overflow-y-auto p-3">
+        <div className="min-w-0 flex-1 overflow-y-auto p-3">
           {current && (
             <>
-              <p className="mb-1.5 truncate text-sm font-medium">{current.title}</p>
-              <div className="mb-2 flex flex-wrap gap-1">
+              <p className="truncate text-xs font-medium">{current.title}</p>
+              <div className="mt-1.5 flex flex-wrap gap-1">
                 {current.tags.map((tag) => (
                   <span
                     key={tag}
@@ -227,18 +246,18 @@ function PromptPicker({
                     {tag}
                   </span>
                 ))}
-                <span className="rounded-full border border-border/60 px-1.5 py-px text-[10px] text-muted-foreground">
+                <span className="rounded-full border border-foreground/9 px-1.5 py-px text-[10px] text-muted-foreground">
                   {current.shared ? "Shared" : "Project"}
                 </span>
               </div>
-              <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
+              <p className="mt-2 whitespace-pre-wrap text-[11px] leading-relaxed text-muted-foreground">
                 {current.body}
               </p>
             </>
           )}
         </div>
       </div>
-      <div className="flex items-center gap-3 border-t border-border/30 px-3 py-1.5 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-3 border-t border-border/30 px-3 py-1.5 text-[10px] text-muted-foreground">
         <span>↑↓ move</span>
         <span>Enter insert</span>
         <span>Esc back</span>
