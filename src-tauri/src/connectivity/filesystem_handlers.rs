@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::fs;
 
 use crate::connectivity::docker_handlers::run_blocking;
 
@@ -51,30 +50,12 @@ pub fn get_default_file_picker_path() -> Result<String, String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn list_drives() -> Result<Vec<String>, String> {
-    // Probing A:-Z: can block for seconds on unreachable network/removable drives
-    run_blocking(|| {
-        #[cfg(target_os = "windows")]
-        {
-            let mut drives = Vec::new();
-
-            // Check common drive letters A-Z
-            for letter in b'A'..=b'Z' {
-                let drive = format!("{}:/", letter as char);
-                // Try to read the drive root to see if it exists
-                if fs::metadata(&drive).is_ok() {
-                    drives.push(drive);
-                }
-            }
-
-            Ok(drives)
-        }
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            // On non-Windows systems, return empty list
-            Ok(Vec::new())
-        }
-    })
+    run_blocking(
+        || match maestro_protocol::fs::apply(maestro_protocol::fs::FsOp::Drives)? {
+            maestro_protocol::fs::FsReply::Names(drives) => Ok(drives),
+            other => Err(format!("unexpected reply to a drive listing: {other:?}")),
+        },
+    )
     .await
 }
 

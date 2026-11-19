@@ -84,6 +84,11 @@ pub async fn home(conn: &GitConnection) -> Result<String, String> {
     text(conn, FsOp::Home).await
 }
 
+/// The drive roots of the connection's machine: `C:/` and the like on Windows, none elsewhere.
+pub async fn drives(conn: &GitConnection) -> Result<Vec<String>, String> {
+    names(conn, FsOp::Drives).await
+}
+
 /// Whether `path` exists at all on the connection's host, of any kind.
 pub async fn exists(conn: &GitConnection, path: &str) -> bool {
     try_exists(conn, path).await.unwrap_or(false)
@@ -315,6 +320,16 @@ pub async fn get_connection_home(
     connection: ConnectionKey,
 ) -> Result<String, String> {
     home(&connect(&app_state, connection, String::new()).await?).await
+}
+
+/// The drive roots of a connection's machine, which the directory picker lists above its root.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_connection_drives(
+    app_state: State<'_, Arc<AppState>>,
+    connection: ConnectionKey,
+) -> Result<Vec<String>, String> {
+    drives(&connect(&app_state, connection, String::new()).await?).await
 }
 
 #[tauri::command]

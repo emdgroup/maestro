@@ -112,6 +112,26 @@ describe("usePathNavigation – navigateToBreadcrumb", () => {
     act(() => result.current.navigateToBreadcrumb(0)); // "C:" segment
     expect(result.current.currentPath).toBe("C:/");
   });
+
+  // A remote Windows host has drives too: its root is the drive list, not the current drive's root.
+  it("goes to the drive list from a remote Windows path, by root or by going up", () => {
+    const { result } = setup(false, ["C:/", "D:/"]);
+    act(() => result.current.setCurrentPath("C:/Users/me"));
+    act(() => result.current.navigateToBreadcrumb(-1));
+    expect(result.current.isDrivesRoot).toBe(true);
+
+    act(() => result.current.setCurrentPath("D:/"));
+    act(() => result.current.navigateToParent());
+    expect(result.current.isDrivesRoot).toBe(true);
+  });
+
+  it("goes to / on a remote host without drives", () => {
+    const { result } = setup(false, []);
+    act(() => result.current.setCurrentPath("/home/me"));
+    act(() => result.current.navigateToBreadcrumb(-1));
+    expect(result.current.currentPath).toBe("/");
+    expect(result.current.isDrivesRoot).toBe(false);
+  });
 });
 
 describe("usePathNavigation – pathParts", () => {

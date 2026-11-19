@@ -155,6 +155,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::connectivity::files::read_file_binary,
         crate::connectivity::files::write_file,
         crate::connectivity::files::get_connection_home,
+        crate::connectivity::files::list_connection_drives,
         crate::connectivity::files::create_file_at,
         crate::connectivity::files::create_directory_at,
         crate::connectivity::files::rename_file,

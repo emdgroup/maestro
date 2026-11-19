@@ -1716,6 +1716,17 @@ async getConnectionHome(connection: ConnectionKey) : Promise<Result<string, stri
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * The drive roots of a connection's machine, which the directory picker lists above its root.
+ */
+async listConnectionDrives(connection: ConnectionKey) : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_connection_drives", { connection }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async createFileAt(connection: ConnectionKey, path: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("create_file_at", { connection, path }) };

@@ -26,6 +26,8 @@ const SKIPPED_DIRS: [&str; 4] = ["node_modules", "target", "dist", ".git"];
 pub enum FsOp {
     /// The home directory of the user the server runs as.
     Home,
+    /// The drive roots (`C:/`), on Windows only; elsewhere there are none.
+    Drives,
     /// Whether `path` is a file, a directory or absent, following symlinks.
     Kind {
         path: String,
@@ -122,6 +124,7 @@ pub fn apply(op: FsOp) -> Result<FsReply, String> {
     match op {
         FsOp::Home => crate::paths::home_dir()
             .map(|home| FsReply::Text(home.to_string_lossy().replace('\\', "/"))),
+        FsOp::Drives => Ok(FsReply::Names(drives())),
         FsOp::Kind { path } => kind(&path).map(FsReply::Kind),
         FsOp::CreateDirAll { path } => fs::create_dir_all(&path)
             .map(|()| FsReply::Done)
@@ -194,6 +197,18 @@ pub fn apply(op: FsOp) -> Result<FsReply, String> {
                 .map_err(|e| format!("Failed to delete {path}: {e}"))
         }
     }
+}
+
+/// Probing A: to Z: can block for seconds on an unreachable network or removable drive, which is
+/// why every caller runs this off the async runtime.
+fn drives() -> Vec<String> {
+    if !cfg!(windows) {
+        return Vec::new();
+    }
+    (b'A'..=b'Z')
+        .map(|letter| format!("{}:/", letter as char))
+        .filter(|drive| fs::metadata(drive).is_ok())
+        .collect()
 }
 
 /// `None` only when the path is absent: a caller deleting rows on the strength of "not there"

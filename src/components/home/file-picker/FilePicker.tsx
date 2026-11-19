@@ -127,7 +127,7 @@ export function FilePicker({
         return;
       }
 
-      const showingDrives = isLocal && navigation.currentPath === DRIVES_ROOT;
+      const showingDrives = navigation.isDrivesRoot;
       const itemList = showingDrives ? initialization.drives : visibleDirectories;
       const hasParent =
         !showingDrives && navigation.currentPath !== "/" && navigation.currentPath !== DRIVES_ROOT;
