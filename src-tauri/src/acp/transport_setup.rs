@@ -42,18 +42,13 @@ pub(crate) async fn handshake_local_child(
 /// the window that started it. `attach` starts the daemon when none is running, so no caller here
 /// has to know whether one is. `replace` is the user agreeing to retire a busy daemon from another
 /// build, which `attach` otherwise refuses with `SERVER_BUSY_ERROR`.
-///
-/// A native Windows host, the only one whose path starts with a drive letter, gets `cmd /c`: the
-/// release server is a GUI-subsystem binary, PowerShell (a common SSH default shell there) does not
-/// wait for one, and sshd closes the channel as soon as the shell exits. cmd waits.
 pub(crate) fn attach_command(server_path: &str, replace: bool) -> String {
-    let flag = if replace { " --replace" } else { "" };
-    let bytes = server_path.as_bytes();
-    if bytes.len() > 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
-        format!("cmd /c \"{}\" attach{flag}", server_path.replace('/', "\\"))
+    let args = if replace {
+        "attach --replace"
     } else {
-        format!("{server_path} attach{flag}")
-    }
+        "attach"
+    };
+    crate::connectivity::exec_channel::server_command_line(server_path, args)
 }
 
 #[cfg(test)]
@@ -68,7 +63,7 @@ mod tests {
         );
         assert_eq!(
             attach_command("/home/me/.local/bin/maestro-server", true),
-            "/home/me/.local/bin/maestro-server attach --replace"
+            "'/home/me/.local/bin/maestro-server' attach --replace"
         );
     }
 }

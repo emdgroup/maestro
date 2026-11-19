@@ -96,12 +96,13 @@ export function usePathNavigation(isLocal: boolean, drives: string[]) {
   };
 
   /**
-   * Go to a path the user typed or pasted. Explorer's "Copy as path" wraps it in quotes, and on this
-   * computer a Windows path arrives with backslashes; both become the `C:/x/y` form used here.
+   * Go to a path the user typed or pasted. Explorer's "Copy as path" wraps it in quotes, and a
+   * Windows path, on this computer or a remote one, arrives with backslashes; both become the
+   * `C:/x/y` form used here.
    */
   const navigateToPath = (typed: string) => {
     let path = typed.trim().replace(/^"(.*)"$/, "$1");
-    if (isLocal) path = path.replace(/\\/g, "/");
+    if (isLocal || /^[A-Z]:\\/i.test(path)) path = path.replace(/\\/g, "/");
     path = path.replace(/\/+/g, "/");
     if (/^[A-Z]:$/i.test(path)) path += "/";
     if (path.length > 1 && !/^[A-Z]:\/$/i.test(path)) path = path.replace(/\/$/, "");

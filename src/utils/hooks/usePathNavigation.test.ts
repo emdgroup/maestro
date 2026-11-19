@@ -141,6 +141,8 @@ describe("usePathNavigation – navigateToPath", () => {
     [true, "C:\\", "C:/"],
     [false, "/home/billy//src/", "/home/billy/src"],
     [false, "/", "/"],
+    // A remote Windows host, typed with backslashes, takes the same form as a local one.
+    [false, String.raw`C:\Users\me`, "C:/Users/me"],
   ];
   it.each(cases)("local=%s: %s goes to %s", (isLocal, typed, expected) => {
     const { result } = setup(isLocal);

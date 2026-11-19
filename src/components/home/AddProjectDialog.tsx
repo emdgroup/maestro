@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import {
   useDockerHome,
   useGetDefaultFilePickerPath,
+  useSshHome,
   useWslHome,
 } from "@/services/connection.service";
 import { useCloneProject, useCreateNewProject } from "@/services/project.service";
@@ -50,8 +51,9 @@ function useHomeFolder(connection: HomeConnection) {
   const docker = useDockerHome(
     key.type === "docker" ? (connection.docker?.container_name ?? "") : "",
   );
+  const ssh = useSshHome(key.type === "ssh" ? key.id : null);
   if (key.type === "local") return local.data ?? null;
-  if (key.type === "ssh") return connection.ssh ? `/home/${connection.ssh.username}` : null;
+  if (key.type === "ssh") return ssh.data ?? null;
   if (key.type === "wsl") return wsl.data ?? null;
   return docker.data ?? null;
 }

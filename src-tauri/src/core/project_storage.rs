@@ -1,91 +1,9 @@
-use crate::connectivity::exec_channel::shell_quote;
 use crate::connectivity::GitConnection;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
-use std::path::Path;
 
 const DEFAULT_COMMIT_TEMPLATE: &str = "\
 Merge task #{task_id}: {task_name}
 
 Squash merge {branch} into {target_branch}.";
-
-/// Replace a file without exposing partially-written contents to concurrent readers.
-pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<(), std::io::Error> {
-    let file_name = path.file_name().unwrap_or_default().to_string_lossy();
-
-    for attempt in 0..100 {
-        let temp_path = path.with_file_name(format!(
-            ".{file_name}.{}.{}.tmp",
-            std::process::id(),
-            attempt
-        ));
-        let mut temp = match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp_path)
-        {
-            Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(error),
-        };
-
-        let result = (|| {
-            temp.write_all(contents)?;
-            temp.sync_all()?;
-            drop(temp);
-            // `fs::rename` replaces the destination on every platform we ship — on Windows it
-            // is MoveFileExW with MOVEFILE_REPLACE_EXISTING. The temporary always lives in the
-            // destination's own directory, so this is a same-volume metadata rename.
-            fs::rename(&temp_path, path)
-        })();
-        if result.is_err() {
-            // The caller already has the write error; this only clears the partial file so a
-            // later attempt is not confused by it. Logged at debug because a leftover temporary
-            // is inert, but a directory filling with them explains itself nowhere else.
-            if let Err(e) = fs::remove_file(&temp_path) {
-                log::debug!(
-                    "Could not remove the temporary file {}: {}",
-                    temp_path.display(),
-                    e
-                );
-            }
-        }
-        return result;
-    }
-
-    Err(std::io::Error::new(
-        std::io::ErrorKind::AlreadyExists,
-        "could not allocate an atomic-write temporary file",
-    ))
-}
-
-/// Build a shell command that writes `contents` to `path` through a temporary file in the same
-/// directory, for the SSH, WSL and container paths where we cannot use [`atomic_write`].
-///
-/// Deliberately plain: no variable assignment, no `$$`, no `trap`. SSH runs this through the
-/// user's *login* shell rather than `sh -c`, so anything beyond `&&`, `printf` and redirection
-/// would break on a host whose login shell is not POSIX.
-///
-/// The temporary name carries a counter because the name has to be unique without any shell
-/// help. `state.json` is written fire-and-forget from several tasks at once, and with a fixed
-/// name two of them raced: both wrote the same temporary, the first `mv` consumed it and the
-/// second failed with `mv: cannot stat '…/state.json.tmp'`, losing that write.
-pub(crate) fn atomic_write_script(dir: &str, path: &str, contents: &str) -> String {
-    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let temp_path = format!(
-        "{path}.{}.{}.tmp",
-        std::process::id(),
-        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    );
-    format!(
-        "mkdir -p {} && printf '%s' {} > {} && mv -f {} {}",
-        shell_quote(dir),
-        shell_quote(contents),
-        shell_quote(&temp_path),
-        shell_quote(&temp_path),
-        shell_quote(path),
-    )
-}
 
 /// Read a JSON document out of the project's `.maestro/` folder, wherever the project lives.
 ///
@@ -97,16 +15,8 @@ pub async fn read_maestro_json<T: serde::de::DeserializeOwned + Default>(
 ) -> T {
     let path = format!("{}/.maestro/{}", conn.path(), file_name);
 
-    let text = if matches!(conn, GitConnection::Local { .. }) {
-        match fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(_) => return T::default(),
-        }
-    } else {
-        match crate::connectivity::exec_channel::run_on(conn, None, "cat", &[&path]).await {
-            Ok(output) if output.success() => output.stdout_string(),
-            _ => return T::default(),
-        }
+    let Ok(text) = crate::connectivity::files::read_text(conn, &path).await else {
+        return T::default();
     };
 
     serde_json::from_str(&text).unwrap_or_default()
@@ -134,23 +44,8 @@ pub async fn write_maestro_file(
     let dir = format!("{}/.maestro", conn.path());
     let path = format!("{dir}/{file_name}");
 
-    if matches!(conn, GitConnection::Local { .. }) {
-        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {dir}: {e}"))?;
-        return atomic_write(Path::new(&path), contents.as_bytes())
-            .map_err(|e| format!("Failed to write {path}: {e}"));
-    }
-
-    let script = atomic_write_script(&dir, &path, contents);
-    let output =
-        crate::connectivity::exec_channel::run_on(conn, None, "sh", &["-c", &script]).await?;
-    if output.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "Failed to write {path}: {}",
-            output.stderr_string()
-        ))
-    }
+    crate::connectivity::files::create_dir_all(conn, &dir).await?;
+    crate::connectivity::files::write_text(conn, &path, contents).await
 }
 
 /// Give a project the `.maestro/` folder and default commit template it expects, on whichever
@@ -223,7 +118,8 @@ async fn exclude_maestro_from_git(conn: &GitConnection) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{atomic_write, atomic_write_script, is_absolute_path};
+    use super::is_absolute_path;
+    use maestro_protocol::fs::atomic_write;
 
     /// `rev-parse --git-common-dir` answers `.git` from the main checkout and an absolute path
     /// from a worktree. Treating the relative form as absolute writes the exclude file to `/info`.
@@ -233,50 +129,6 @@ mod tests {
         assert!(!is_absolute_path("../.git"));
         assert!(is_absolute_path("/home/u/proj/.git"));
         assert!(is_absolute_path("C:/Users/u/proj/.git"));
-    }
-
-    /// SSH runs this through the user's login shell, not `sh -c`, so the script has to stay
-    /// within the subset every common login shell understands. An earlier version used
-    /// `tmp=…`, `$$` and `trap`, none of which are valid in fish — and every SSH call site
-    /// discards the error, so the breakage would have been silent.
-    #[test]
-    fn atomic_write_script_stays_portable_across_login_shells() {
-        let script = atomic_write_script("/srv/p/.maestro", "/srv/p/.maestro/state.json", "{}");
-
-        assert!(
-            script.starts_with("mkdir -p '/srv/p/.maestro' && printf '%s' '{}' > "),
-            "{script}"
-        );
-        assert!(
-            script.ends_with(" '/srv/p/.maestro/state.json'"),
-            "{script}"
-        );
-        assert!(script.contains("&& mv -f "), "{script}");
-        for construct in ["trap", "$$", "tmp="] {
-            assert!(
-                !script.contains(construct),
-                "{construct} is not portable: {script}"
-            );
-        }
-    }
-
-    /// Two fire-and-forget writers of the same file must not pick the same temporary: the first
-    /// `mv` consumes it and the second fails with `cannot stat`, silently dropping that write.
-    #[test]
-    fn atomic_write_script_uses_a_fresh_temporary_each_time() {
-        let one = atomic_write_script("/srv/p/.maestro", "/srv/p/.maestro/state.json", "{}");
-        let two = atomic_write_script("/srv/p/.maestro", "/srv/p/.maestro/state.json", "{}");
-
-        assert_ne!(one, two);
-    }
-
-    #[test]
-    fn atomic_write_script_quotes_paths_and_contents() {
-        let script =
-            atomic_write_script("/a b/.maestro", "/a b/.maestro/s.json", "{\"k\":\"it's\"}");
-
-        assert!(script.contains("'/a b/.maestro/s.json."), "{script}");
-        assert!(script.contains(r#"'{"k":"it'\''s"}'"#), "{script}");
     }
 
     #[test]

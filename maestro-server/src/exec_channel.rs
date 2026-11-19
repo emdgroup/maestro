@@ -1,4 +1,4 @@
-//! Exec-channel mode: run commands on this host on behalf of Maestro.
+//! Exec-channel mode: run commands and file operations on this host on behalf of Maestro.
 //!
 //! Entered with `maestro-server exec-channel`. The host starts one of these per connection and
 //! keeps it, so running a command costs a frame on an open pipe instead of a `wsl.exe` or
@@ -10,7 +10,9 @@
 use std::process::Stdio;
 use std::sync::Arc;
 
-use maestro_protocol::exec::{ExecCommand, ExecEvent, ExecStream, RequestId, EXEC_CHUNK_SIZE};
+use maestro_protocol::exec::{
+    ExecCommand, ExecEvent, ExecRequest, ExecStream, RequestId, EXEC_CHUNK_SIZE,
+};
 use maestro_protocol::{read_frame, write_frame};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::Mutex;
@@ -33,13 +35,16 @@ where
 {
     let mut running = Vec::new();
     loop {
-        let command: ExecCommand = match read_frame(&mut input).await {
-            Ok(command) => command,
+        let request: ExecRequest = match read_frame(&mut input).await {
+            Ok(request) => request,
             // The host closed the pipe, or sent something this build cannot parse. Either way
             // there is no way to answer, so exit rather than spin.
             Err(_) => break,
         };
-        running.push(tokio::spawn(execute(command, Arc::clone(&output))));
+        running.push(match request {
+            ExecRequest::Run(command) => tokio::spawn(execute(command, Arc::clone(&output))),
+            ExecRequest::Fs { id, op } => tokio::spawn(file_operation(id, op, Arc::clone(&output))),
+        });
     }
 
     // Let commands already in flight report their results before the process goes away.
@@ -132,6 +137,17 @@ async fn execute<W: AsyncWrite + Unpin + Send + 'static>(
         },
     };
     send(&output, &event).await;
+}
+
+async fn file_operation<W: AsyncWrite + Unpin + Send + 'static>(
+    id: RequestId,
+    op: maestro_protocol::fs::FsOp,
+    output: Arc<Mutex<W>>,
+) {
+    let result = tokio::task::spawn_blocking(move || maestro_protocol::fs::apply(op))
+        .await
+        .unwrap_or_else(|e| Err(format!("file operation failed: {e}")));
+    send(&output, &ExecEvent::Fs { id, result }).await;
 }
 
 async fn forward<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
@@ -232,13 +248,19 @@ mod tests {
     #[tokio::test]
     async fn the_channel_loop_reads_frames_and_answers_them() {
         let mut input = Vec::new();
-        for command in [
-            command(10, "git", &["--version"]),
-            command(11, "git", &["--version"]),
+        for request in [
+            ExecRequest::Run(command(10, "git", &["--version"])),
+            ExecRequest::Run(command(11, "git", &["--version"])),
+            ExecRequest::Fs {
+                id: 12,
+                op: maestro_protocol::fs::FsOp::Kind {
+                    path: std::env::temp_dir().to_string_lossy().into_owned(),
+                },
+            },
         ] {
-            write_frame(&mut input, &command)
+            write_frame(&mut input, &request)
                 .await
-                .expect("encode command");
+                .expect("encode request");
         }
 
         let output = Arc::new(Mutex::new(Cursor::new(Vec::new())));
@@ -257,6 +279,13 @@ mod tests {
             assert!(text_of(&events, id, ExecStream::Stdout).starts_with("git version"));
             assert_eq!(exit_of(&events, id), Some(0));
         }
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ExecEvent::Fs {
+                id: 12,
+                result: Ok(maestro_protocol::fs::FsReply::Kind(Some(_)))
+            }
+        )));
     }
 
     #[tokio::test]
