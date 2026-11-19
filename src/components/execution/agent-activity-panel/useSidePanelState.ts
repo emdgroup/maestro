@@ -129,10 +129,79 @@ export function useSidePanelState({
     if (isSelected) setMaximized(false);
   }
 
+  // Maximizing sweeps the panel's left edge across the agent pane and restoring sweeps it back,
+  // while its right edge stays put, so it reads as the panel resizing. What moves each frame is
+  // the panel's frame (tab bar, well, border), which is cheap. Its contents, a diff that may be
+  // very large, are pinned at the width they end at, so they are laid out once when the sweep
+  // starts and every frame after that reuses the layout. Nothing fades: the agent pane and the
+  // panel are frosted glass, and opacity below 1 would turn the blur behind them off.
+  const streamPanelElementRef = useRef<HTMLDivElement>(null);
+  const sweepNextRef = useRef(false);
+
   function handleMaximizedChange(v: boolean) {
+    sweepNextRef.current = !document.documentElement.classList.contains("reduce-motion");
     setMaximized(v);
     if (v) setSidePanelCollapsed(false);
   }
+
+  // Runs after the commit, so the layout is already the final one: the panel's column (the
+  // outer panel element, which keeps its slot while maximized) says where the edge sweeps from
+  // or to, and everything pinned is pinned at the width it ends at. The agent pane is cut off at
+  // the edge rather than drawn under the panel, whose tab bar has no surface of its own. Session
+  // switches reset `maximized` without sweeping.
+  useLayoutEffect(() => {
+    if (!sweepNextRef.current) return;
+    sweepNextRef.current = false;
+    const column = sidePanelElementRef.current;
+    const panel = column?.firstElementChild as HTMLElement | null;
+    const stream = streamPanelElementRef.current?.firstElementChild as HTMLElement | null;
+    const streamBody = stream?.firstElementChild as HTMLElement | null;
+    const well = panel?.querySelector<HTMLElement>("[data-side-panel-well]");
+    const group = groupElementRef.current;
+    if (!column || !panel || !stream || !streamBody || !well || !group) return;
+    const edge = column.getBoundingClientRect().left - group.getBoundingClientRect().left;
+    if (edge <= 0) return;
+
+    // Inline CSS properties set for the sweep's run only, by property name, and put back after.
+    const pinned: Array<[HTMLElement, Record<string, string>]> = [
+      ...[...well.children].map((body): [HTMLElement, Record<string, string>] => [
+        body as HTMLElement,
+        { width: `${well.clientWidth}px`, right: "auto" },
+      ]),
+      [streamBody, { width: `${streamBody.offsetWidth}px` }],
+      // The panel library sets `overflow: auto` inline, which would scroll rather than clip.
+      [stream, { overflow: "hidden" }],
+    ];
+    // Restoring has already put the panel back in its column; it floats over the agent pane, as
+    // it does maximized, until the edge gets there.
+    if (!maximized) pinned.push([panel, { position: "absolute", inset: "0", "z-index": "20" }]);
+    const saved = pinned.map(([el, style]) =>
+      Object.keys(style).map((name) => [el, name, el.style.getPropertyValue(name)] as const),
+    );
+    for (const [el, style] of pinned)
+      for (const [name, value] of Object.entries(style)) el.style.setProperty(name, value);
+
+    const [from, to] = maximized ? [`${edge}px`, "0px"] : ["0px", `${edge}px`];
+    const timing = { duration: 260, easing: "cubic-bezier(0.2, 0, 0, 1)" };
+    const sweep = panel.animate({ left: [from, to] }, timing);
+    // The agent pane is `invisible` while maximized; it stays on screen until the panel covers it.
+    const cut = stream.animate(
+      maximized
+        ? { maxWidth: [from, to], visibility: ["visible", "visible"] }
+        : { maxWidth: [from, to] },
+      timing,
+    );
+
+    const settle = () => {
+      for (const [el, name, value] of saved.flat()) el.style.setProperty(name, value);
+    };
+    sweep.finished.then(settle, () => {});
+    return () => {
+      sweep.cancel();
+      cut.cancel();
+      settle();
+    };
+  }, [maximized, sidePanelElementRef, groupElementRef]);
 
   // A plan permission arriving from the agent opens the panel on it. Adjusted during
   // render rather than from an effect so the plan is on screen in the same frame the
@@ -176,6 +245,7 @@ export function useSidePanelState({
     sidePanelRef,
     syncCollapsedFromPanel,
     groupElementRef,
+    streamPanelElementRef,
     maximized,
     sidePanelPlan,
     handleMaximizedChange,

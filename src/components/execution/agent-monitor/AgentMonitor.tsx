@@ -875,7 +875,7 @@ export function AgentMonitor({
                 s.session_id !== selectedSessionId && "hidden",
               )}
             >
-              <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r inner-glass overflow-hidden">
+              <div className="flex flex-col flex-1 min-h-0 mr-[7px] rounded-t-xl border-t border-l border-r inner-glass overflow-hidden">
                 {s.session_id === selectedSessionId && renderSessionHeader(s)}
                 <div className="relative flex-1 min-h-0">
                   <FileSessionPanel
@@ -891,7 +891,7 @@ export function AgentMonitor({
         {selectedSession?.execution_mode === "pty" && (
           <div className="flex-1 flex flex-col min-h-0">
             <div className="flex flex-col flex-1 min-h-0">
-              <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r inner-glass overflow-hidden">
+              <div className="flex flex-col flex-1 min-h-0 mr-[7px] rounded-t-xl border-t border-l border-r inner-glass overflow-hidden">
                 {renderSessionHeader(selectedSession)}
                 <div className="relative flex-1 min-h-0">
                   <div className="absolute inset-0">
