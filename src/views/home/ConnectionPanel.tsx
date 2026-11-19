@@ -27,6 +27,7 @@ import {
 } from "@/services/connection.service";
 import { getErrorMessage } from "@/lib/error-utils";
 import { Button } from "@/ui/button";
+import { Checkbox } from "@/ui/checkbox";
 import { Spinner } from "@/ui/spinner";
 import { toast } from "sonner";
 
@@ -127,11 +128,7 @@ function SignInForm({
       </div>
       <div className="mt-2 flex items-center gap-4 text-[11px] text-muted-foreground">
         <label className="flex items-center gap-1.5">
-          <input
-            type="checkbox"
-            checked={remember}
-            onChange={(event) => setRemember(event.target.checked)}
-          />
+          <Checkbox checked={remember} onCheckedChange={setRemember} />
           Remember in the system keychain
         </label>
         {error ? (

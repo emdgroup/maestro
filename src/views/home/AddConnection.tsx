@@ -21,6 +21,7 @@ import { useHomeStore } from "@/store/homeStore";
 import { HomeSheet } from "@/components/home/HomeSheet";
 import { Segmented } from "@/components/common/Segmented";
 import { Button } from "@/ui/button";
+import { Checkbox } from "@/ui/checkbox";
 import { Spinner } from "@/ui/spinner";
 
 type Kind = "ssh" | "wsl" | "docker";
@@ -165,11 +166,7 @@ function SshForm({
               className="home-field h-9 w-full rounded-xl px-3 text-foreground"
             />
             <label className="mt-2 flex items-center gap-1.5">
-              <input
-                type="checkbox"
-                checked={remember}
-                onChange={(event) => setRemember(event.target.checked)}
-              />
+              <Checkbox checked={remember} onCheckedChange={setRemember} />
               Remember in the system keychain
             </label>
           </>
