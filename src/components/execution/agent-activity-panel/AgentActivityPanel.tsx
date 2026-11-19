@@ -200,6 +200,7 @@ export function AgentActivityPanel({
     sidePanelRef,
     syncCollapsedFromPanel,
     groupElementRef,
+    streamPanelElementRef,
     maximized,
     sidePanelPlan,
     handleMaximizedChange,
@@ -585,6 +586,7 @@ export function AgentActivityPanel({
           className="relative flex-1 min-h-0 overflow-hidden"
         >
           <ResizablePanel
+            elementRef={streamPanelElementRef}
             minSize="42rem"
             // Hidden under a maximized side panel, which floats over this one and is transparent
             // outside its own inset well.

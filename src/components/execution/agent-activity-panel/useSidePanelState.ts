@@ -129,10 +129,80 @@ export function useSidePanelState({
     if (isSelected) setMaximized(false);
   }
 
-  function handleMaximizedChange(v: boolean) {
-    setMaximized(v);
-    if (v) setSidePanelCollapsed(false);
+  // Maximizing slides the panel from its column across the agent pane, which fades under it, and
+  // restoring slides it back. Only transform and opacity move: the panel is laid out once at its
+  // full width, before the first frame of the slide in and after the last frame of the slide out,
+  // so a large diff costs one layout either way and the frames in between are composited.
+  const streamPanelElementRef = useRef<HTMLDivElement>(null);
+  const slideRef = useRef<{ from: number | null; gap: number; running: Animation[] }>({
+    from: null,
+    gap: 0,
+    running: [],
+  });
+
+  function slide(from: number, to: number, fill: FillMode) {
+    const panel = sidePanelElementRef.current;
+    const stream = streamPanelElementRef.current;
+    if (!panel || !stream) return null;
+    const timing = { duration: 240, easing: "cubic-bezier(0.2, 0, 0, 1)", fill };
+    const moving = panel.animate(
+      { transform: [`translateX(${from}px)`, `translateX(${to}px)`] },
+      timing,
+    );
+    // The agent pane is `invisible` while maximized; the animation overrides that for its run.
+    const fading = stream.animate(
+      { visibility: ["visible", "visible"], opacity: from === 0 ? [0, 1] : [1, 0] },
+      timing,
+    );
+    slideRef.current.running = [moving, fading];
+    return moving;
   }
+
+  function handleMaximizedChange(v: boolean) {
+    for (const a of slideRef.current.running) a.cancel();
+    slideRef.current.running = [];
+    const panel = sidePanelElementRef.current;
+    const group = groupElementRef.current;
+    const stream = streamPanelElementRef.current;
+    const animate =
+      panel && group && stream && !document.documentElement.classList.contains("reduce-motion");
+
+    if (v) {
+      if (animate) {
+        // Measured before the panel leaves its column: where it starts, and the separator's width,
+        // which is hidden while maximized and so cannot be measured on the way back.
+        const from = panel.getBoundingClientRect().left - group.getBoundingClientRect().left;
+        slideRef.current.from = from;
+        slideRef.current.gap = from - stream.getBoundingClientRect().width;
+      }
+      setMaximized(true);
+      setSidePanelCollapsed(false);
+      return;
+    }
+
+    if (!animate || !maximized) {
+      setMaximized(false);
+      return;
+    }
+    // Played while still maximized, holding its last frame until the layout below cancels it, so
+    // there is never a frame of the full-width panel between the slide ending and React committing.
+    const to = stream.getBoundingClientRect().width + slideRef.current.gap;
+    slide(0, to, "forwards")?.finished.then(
+      () => setMaximized(false),
+      () => {}, // cancelled: maximized again mid-slide, or the session was switched away
+    );
+  }
+
+  useLayoutEffect(() => {
+    if (!maximized) {
+      for (const a of slideRef.current.running) a.cancel();
+      slideRef.current.running = [];
+      return;
+    }
+    const from = slideRef.current.from;
+    slideRef.current.from = null;
+    if (from) slide(from, 0, "none");
+  }, [maximized]);
 
   // A plan permission arriving from the agent opens the panel on it. Adjusted during
   // render rather than from an effect so the plan is on screen in the same frame the
@@ -176,6 +246,7 @@ export function useSidePanelState({
     sidePanelRef,
     syncCollapsedFromPanel,
     groupElementRef,
+    streamPanelElementRef,
     maximized,
     sidePanelPlan,
     handleMaximizedChange,
