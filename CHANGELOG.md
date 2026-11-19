@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.48.0](https://github.com/emdgroup/maestro/compare/v0.47.0...v0.48.0) (2026-11-19)
+
+
+### Features
+
+* **agents:** animate maximizing and restoring the side panel ([edf5258](https://github.com/emdgroup/maestro/commit/edf52587f5e8e4f761d18405eabb64724283d772))
+* **compose-bar:** add a + menu for attaching files and inserting saved prompts ([2350b6a](https://github.com/emdgroup/maestro/commit/2350b6ade9561389ec546056d0d34a573ae3e9ba))
+* **files:** list a remote Windows host's drives in the directory picker ([a609494](https://github.com/emdgroup/maestro/commit/a609494ae8c462dd9b11f7061c31955316404027))
+* **files:** serve file operations from maestro-server on every connection ([a609494](https://github.com/emdgroup/maestro/commit/a609494ae8c462dd9b11f7061c31955316404027))
+* **home:** add a Browse button to the clone target folder ([7663898](https://github.com/emdgroup/maestro/commit/7663898e76037bb8dd3784e18603d05b86f1ad6e))
+
+
+### Bug Fixes
+
+* **agents:** hold terminal and files session panes off the window edge ([edf5258](https://github.com/emdgroup/maestro/commit/edf52587f5e8e4f761d18405eabb64724283d772))
+* **agents:** line a maximized side panel up with the agent pane ([edf5258](https://github.com/emdgroup/maestro/commit/edf52587f5e8e4f761d18405eabb64724283d772))
+* **deps:** update agent-client-protocol to 5.4.0 so invalid UTF-8 from an agent no longer drops its sessions ([8e81c1c](https://github.com/emdgroup/maestro/commit/8e81c1c8fdef5c8f8a77aacdf7f48b7ae0e784c5))
+* **files:** accent every folder above the open file in the files tree ([edf5258](https://github.com/emdgroup/maestro/commit/edf52587f5e8e4f761d18405eabb64724283d772))
+* **home:** restore SSH setup instructions and the password eye toggles, and move the SSH sign-in modal onto the Home style ([58c1f6e](https://github.com/emdgroup/maestro/commit/58c1f6ed5f976c3aae167e9e73f178e996a7f8a7))
+* **home:** use the app Checkbox for the keychain option on SSH password sign-in ([b8a2a45](https://github.com/emdgroup/maestro/commit/b8a2a4577e9814d7f64cae1c2e58cc8a5aa8cd05))
+* open file links at the line cited in the link text ([9a528b3](https://github.com/emdgroup/maestro/commit/9a528b35910da5077d8eb0a008c88f52ab1a8ffc))
+* **sessions:** attach a project's sessions before warming its default agent ([499273e](https://github.com/emdgroup/maestro/commit/499273e8b009a345b9998277d0cfc07495f851ad))
+* **sessions:** keep a project's sessions while it is closed ([499273e](https://github.com/emdgroup/maestro/commit/499273e8b009a345b9998277d0cfc07495f851ad))
+* **ssh:** deploy and attach maestro-server on native Windows hosts ([a609494](https://github.com/emdgroup/maestro/commit/a609494ae8c462dd9b11f7061c31955316404027))
+* **worktrees:** hide the empty-state message when only the repository checkout is listed ([d7862d9](https://github.com/emdgroup/maestro/commit/d7862d9f2dfd7b469ac8188a56a74a91b0613fd4))
+
 ## [0.47.0](https://github.com/emdgroup/maestro/compare/v0.46.0...v0.47.0) (2026-11-13)
 
 
