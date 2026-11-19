@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
-import { Check, Pencil, ServerOff, TriangleAlert } from "lucide-react";
+import { Check, Eye, EyeOff, Pencil, ServerOff, TriangleAlert } from "lucide-react";
 import { CONNECTION_ICONS, type HomeConnection } from "@/components/home/useHomeConnections";
 import { useSshReachable, useUpdateSshConnection } from "@/services/connection.service";
 import { useHomeStore } from "@/store/homeStore";
@@ -96,6 +96,7 @@ function SignInForm({
 }) {
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
   const host = connection.detail;
   return (
     <form
@@ -106,15 +107,26 @@ function SignInForm({
       }}
     >
       <div key={error ?? ""} className={cn("flex gap-2", error && "animate-shake")}>
-        <input
-          type="password"
-          autoFocus
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder={`Password for ${host}`}
-          aria-label={`Password for ${host}`}
-          className="home-field h-10 flex-1 rounded-xl px-3.5 text-sm"
-        />
+        <div className="relative flex-1">
+          <input
+            type={showPassword ? "text" : "password"}
+            autoFocus
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder={`Password for ${host}`}
+            aria-label={`Password for ${host}`}
+            autoComplete="current-password"
+            className="home-field h-10 w-full rounded-xl pr-10 pl-3.5 text-sm"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            aria-label={showPassword ? "Hide password" : "Show password"}
+            className="absolute inset-y-0 right-0 grid w-10 cursor-pointer place-items-center text-muted-foreground hover:text-foreground"
+          >
+            {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          </button>
+        </div>
         <Button type="submit" className="h-10 cursor-pointer rounded-xl px-4 text-xs">
           Sign in
         </Button>
