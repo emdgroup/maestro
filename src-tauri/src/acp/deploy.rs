@@ -39,7 +39,7 @@ fn triple_for_remote(os: &str, arch: &str) -> Result<&'static str, String> {
     match (os, arch) {
         ("Darwin", "arm64") | ("Darwin", "aarch64") => Ok("aarch64-apple-darwin"),
         ("Darwin", other) => Err(format!("Unsupported macOS architecture: {}", other)),
-        (os, "x86_64") if os.contains("NT") => Ok("x86_64-pc-windows-msvc"),
+        (os, "x86_64" | "AMD64") if os.contains("NT") => Ok("x86_64-pc-windows-msvc"),
         (os, arch) if os.contains("NT") => {
             Err(format!("Unsupported Windows architecture: {}", arch))
         }
@@ -116,19 +116,24 @@ pub async fn ensure_remote_server(
     // Encoded as base64 UTF-16LE via -EncodedCommand to avoid all shell-quoting issues
     // regardless of whether the outer shell is cmd.exe or PowerShell.
     // $env:PROCESSOR_ARCHITECTURE returns AMD64 (x86-64) or ARM64 on Windows.
-    // Backslashes in USERPROFILE are replaced with / so the path is usable as an SFTP path.
+    // Backslashes in USERPROFILE are replaced with / so the path is usable as an SFTP path, by
+    // string Replace: `-replace` takes a regex, and a lone backslash is not a valid one.
+    // The release server is a GUI-subsystem binary, and PowerShell neither waits for one nor
+    // captures its output when it is assigned to a variable; piping it into a cmdlet does both.
     let windows_ps_probe = "\
         $a=$env:PROCESSOR_ARCHITECTURE; \
-        $h=($env:USERPROFILE -replace [char]92,[char]47); \
+        $h=$env:USERPROFILE.Replace([char]92,[char]47); \
         $p=$env:USERPROFILE+[char]92+'.local'+[char]92+'bin'+[char]92+'maestro-server.exe'; \
-        $v=if(Test-Path $p){try{(& $p --app-version 2>$null).Trim()}catch{'MISSING'}}else{'MISSING'}; \
+        $v=if(Test-Path $p){try{(& $p --app-version 2>$null | Out-String).Trim()}catch{'MISSING'}}else{'MISSING'}; \
         Write-Output ('Windows_NT|||' + $a + '|||' + $v + '|||' + $h)";
 
     let (probe_output, is_windows_native) = match ssh.execute_command(&unix_probe).await {
         Ok(output) if output.contains("|||") => (output, false),
         _ => {
+            // Direct, not `execute_command`: that one wraps the line in `sh -c`, which a native
+            // Windows shell does not have.
             let output = ssh
-                .execute_command(&powershell_encoded(windows_ps_probe))
+                .execute_command_direct(&powershell_encoded(windows_ps_probe))
                 .await
                 .map_err(|e| format!("Remote probe failed: {}", e))?;
             (output, true)
@@ -146,9 +151,19 @@ pub async fn ensure_remote_server(
         parts[3].trim(),
     );
 
+    if home.is_empty() {
+        return Err(format!(
+            "Remote probe found no home directory: {}",
+            probe_output.trim()
+        ));
+    }
     let remote_triple = triple_for_remote(os, arch)?;
     let binary_name = remote_binary_name(remote_triple);
     let local_version = deployment_version();
+    log::debug!(
+        "[deploy] ssh {connection_id}: os={os} arch={arch} windows_native={is_windows_native} \
+         home={home} remote={remote_version} local={local_version}"
+    );
 
     if remote_version == local_version {
         let abs_path = format!("{}/{}/{}", home, REMOTE_INSTALL_DIR, binary_name);
@@ -166,7 +181,7 @@ pub async fn ensure_remote_server(
     let abs_remote_path = format!("{}/{}", abs_dir, binary_name);
 
     if is_windows_native {
-        ssh.execute_command(&powershell_encoded(&format!(
+        ssh.execute_command_direct(&powershell_encoded(&format!(
             "New-Item -ItemType Directory -Force -Path {} | Out-Null",
             powershell_quote(&abs_dir)
         )))
@@ -177,7 +192,7 @@ pub async fn ensure_remote_server(
         // Windows refuses to delete a running executable but lets it be renamed. The daemon is
         // retired or kept by `attach` afterwards, which is where that decision belongs. The
         // previous `.old` goes first, and may itself still be running, hence SilentlyContinue.
-        ssh.execute_command(&powershell_encoded(&format!(
+        ssh.execute_command_direct(&powershell_encoded(&format!(
             "if (Test-Path {0}) {{ Remove-Item -Force {1} -ErrorAction SilentlyContinue; Move-Item -Force {0} {1} }}",
             powershell_quote(&abs_remote_path),
             powershell_quote(&format!("{abs_remote_path}.old"))
@@ -208,6 +223,7 @@ pub async fn ensure_remote_server(
     )
     .await
     .map_err(|e| format!("SFTP upload failed: {}", e))?;
+    log::debug!("[deploy] ssh {connection_id}: uploaded {local_version} to {abs_remote_path}");
 
     if !is_windows_native {
         ssh.execute_command(&format!("chmod +x {}", shell_quote(&abs_remote_path)))
@@ -710,6 +726,15 @@ mod tests {
         );
         assert!(parse_linux_probe("wsl: no such distro").is_err());
         assert!(linux_probe_script().contains("\"$HOME\"/.local/bin/maestro-server --app-version"));
+    }
+
+    /// The PowerShell probe reports the architecture as Windows names it, not as `uname` does.
+    #[test]
+    fn a_native_windows_probe_maps_to_the_windows_build() {
+        assert_eq!(
+            triple_for_remote("Windows_NT", "AMD64"),
+            Ok("x86_64-pc-windows-msvc")
+        );
     }
 
     fn write(path: &Path, contents: &str) {

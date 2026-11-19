@@ -80,12 +80,19 @@ impl AcpReadSource {
                 }
                 match read_half.wait().await {
                     Some(ChannelMsg::Data { data }) => msg_buf.extend_from_slice(&data),
-                    Some(ChannelMsg::ExtendedData { .. })
-                    | Some(ChannelMsg::WindowAdjusted { .. }) => {}
-                    Some(ChannelMsg::Eof)
-                    | Some(ChannelMsg::Close)
-                    | Some(ChannelMsg::ExitStatus { .. })
-                    | None => return None,
+                    // The remote server's stderr: the only place it can say why it exited.
+                    Some(ChannelMsg::ExtendedData { data, .. }) => log::warn!(
+                        "[acp] remote maestro-server stderr: {}",
+                        String::from_utf8_lossy(&data).trim_end()
+                    ),
+                    Some(ChannelMsg::WindowAdjusted { .. }) => {}
+                    Some(ChannelMsg::ExitStatus { exit_status }) => {
+                        if exit_status != 0 {
+                            log::warn!("[acp] remote maestro-server exited with {exit_status}");
+                        }
+                        return None;
+                    }
+                    Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => return None,
                     _ => {}
                 }
             },
