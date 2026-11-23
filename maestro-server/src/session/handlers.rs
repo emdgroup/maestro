@@ -460,7 +460,7 @@ mod tests {
     /// and `error` are patches, so dropping a `null` would leave a cleared summary on screen; a
     /// notice's severity may be a value this build has no variant for.
     #[test]
-    fn compaction_and_notice_updates_survive_the_round_trip() {
+    fn compaction_notice_and_plan_updates_survive_the_round_trip() {
         for update in [
             serde_json::json!({
                 "sessionUpdate": "compaction_update",
@@ -477,6 +477,19 @@ mod tests {
                 "description": "Not available for the selected model.",
             }),
             serde_json::json!({ "sessionUpdate": "notice", "severity": "_vendor", "title": "Custom" }),
+            serde_json::json!({
+                "sessionUpdate": "plan_update",
+                "plan": {
+                    "type": "items",
+                    "planId": "plan:toolu_1",
+                    "entries": [{ "content": "Read", "priority": "medium", "status": "pending" }],
+                },
+            }),
+            serde_json::json!({
+                "sessionUpdate": "plan_update",
+                "plan": { "type": "markdown", "planId": "plan-mode", "content": "# Plan" },
+            }),
+            serde_json::json!({ "sessionUpdate": "plan_removed", "planId": "plan" }),
             serde_json::json!({
                 "sessionUpdate": "compaction_summary_chunk",
                 "compactionId": "c1",

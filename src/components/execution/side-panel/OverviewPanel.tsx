@@ -34,6 +34,8 @@ interface OverviewPanelProps {
   planEntries?: PlanEntry[] | null;
   planTitle?: string | null;
   planReviewState?: "waiting" | "accepted" | "rejected" | null;
+  /** A Markdown plan is there to read, with or without a review behind it. */
+  hasPlanBody?: boolean;
   workingFiles?: ArtifactFile[];
   taskId: number | null;
   onNavigate: (kind: TabKind, filePath?: string) => void;
@@ -142,6 +144,7 @@ export function OverviewPanel({
   planEntries,
   planTitle,
   planReviewState,
+  hasPlanBody,
   workingFiles,
   taskId,
   onNavigate,
@@ -225,14 +228,16 @@ export function OverviewPanel({
       <div className="[column-count:2] [column-width:268px] gap-2">
         {/* Plan */}
         <Card
-          available={(planEntries?.length ?? 0) > 0 || !!planTitle || !!planReviewState}
+          available={
+            (planEntries?.length ?? 0) > 0 || !!planTitle || !!planReviewState || !!hasPlanBody
+          }
           onClick={() => onNavigate("plan")}
           icon={<ScrollText className="w-3.5 h-3.5 text-warning" />}
           iconBg="bg-warning/15"
           label="Plan"
           sub={
             totalPlanSteps === 0
-              ? (planTitle ?? "Approved")
+              ? (planTitle ?? (planReviewState ? "Approved" : "Plan"))
               : `${donePlanSteps} of ${plural(totalPlanSteps, "step")} complete`
           }
           badge={

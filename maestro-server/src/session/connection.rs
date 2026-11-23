@@ -8,10 +8,11 @@ use acp::v1::schema::{
     CreateTerminalResponse, DeleteSessionRequest, ElicitationCapabilities,
     ElicitationFormCapabilities, EnvVariable, Implementation, InitializeRequest,
     KillTerminalRequest, KillTerminalResponse, ListSessionsRequest, LoadSessionRequest, McpServer,
-    McpServerStdio, NewSessionRequest, NoticeCapabilities, ReleaseTerminalRequest,
-    ReleaseTerminalResponse, RequestPermissionRequest, RequestPermissionResponse,
-    SessionNotification, SystemPrompt, TerminalExitStatus, TerminalOutputRequest,
-    TerminalOutputResponse, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
+    McpServerStdio, NewSessionRequest, NoticeCapabilities, PlanCapabilities,
+    ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionRequest,
+    RequestPermissionResponse, SessionNotification, SystemPrompt, TerminalExitStatus,
+    TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
+    WaitForTerminalExitResponse,
 };
 use agent_client_protocol as acp;
 use maestro_protocol::{
@@ -681,7 +682,10 @@ pub(crate) async fn pre_initialize_agent(
                                         ClientSessionCapabilities::new()
                                             .compaction(CompactionCapabilities::new())
                                             .notices(NoticeCapabilities::new()),
-                                    ),
+                                    )
+                                    // Plans by ID: a subagent's checklist then arrives as a plan
+                                    // of its own instead of replacing the session's checklist.
+                                    .plan(PlanCapabilities::new()),
                             ),
                     )
                     .block_task()

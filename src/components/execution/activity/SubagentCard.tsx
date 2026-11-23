@@ -1,19 +1,39 @@
 import { useContext, useState, useMemo } from "react";
 import { Reveal } from "@/components/common/Reveal";
-import { Bot, ChevronRight, Square } from "lucide-react";
+import { Bot, Check, ChevronRight, Circle, LoaderCircle, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatElapsed, formatTokens } from "@/lib/format-utils";
 import { MarkdownBlock } from "@/components/common/markdown/MarkdownBlock";
 import { TypingDots } from "./ActivityMessageItem";
 import { ToolCallTimeline } from "./ToolCallTimeline";
+import type { PlanEntry, ToolCallItem } from "./types";
 import { subagentName } from "./utils";
 import { StopSubagentContext, stopSubagentPrompt } from "./subagent-stop";
 import { useSettings } from "@/services/settings.service";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import type { ToolCallItem } from "./types";
 
 function stripUsage(text: string): string {
   return text.replace(/<usage>[\s\S]*?<\/usage>/g, "").trim();
+}
+
+const sectionClass =
+  "flex items-center gap-1.5 w-full px-3.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-accent/55 bg-accent/[0.06] hover:text-accent hover:bg-accent/[0.09] transition-colors text-left";
+
+function ChecklistEntry({ entry }: { entry: PlanEntry }) {
+  const done = entry.status === "completed";
+  const Icon = done ? Check : entry.status === "in_progress" ? LoaderCircle : Circle;
+  return (
+    <li className="flex items-start gap-2">
+      <Icon
+        className={cn(
+          "mt-0.5 size-3 shrink-0",
+          done ? "text-success" : "text-muted-foreground/60",
+          entry.status === "in_progress" && "animate-spin text-accent",
+        )}
+      />
+      <span className={cn(done && "text-muted-foreground line-through")}>{entry.content}</span>
+    </li>
+  );
 }
 
 const pillClass =
@@ -31,6 +51,7 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
   const [toolCallsOpen, setToolCallsOpen] = useState(true);
+  const [checklistOpen, setChecklistOpen] = useState(true);
 
   const isStreaming = item.status === "in_progress" || item.status === "pending";
   const isInterrupted = item.status === "interrupted";
@@ -100,6 +121,9 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
     return text;
   }, [rawText, prompt]);
   const name = subagentName(item);
+  const checklist = item.plan ?? [];
+  const stepsDone = checklist.filter((e) => e.status === "completed").length;
+  const currentStep = checklist.find((e) => e.status === "in_progress")?.content;
 
   const childToolCalls = useMemo(() => {
     if (!item.childToolCallIds || item.childToolCallIds.length === 0) return [];
@@ -151,6 +175,14 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
             {isStreaming ? (
               stopAsked ? (
                 "Stopping…"
+              ) : checklist.length > 0 ? (
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <TypingDots />
+                  <span className="shrink-0 tabular-nums">
+                    {stepsDone}/{checklist.length}
+                  </span>
+                  {currentStep && <span className="truncate">{currentStep}</span>}
+                </span>
               ) : (
                 <TypingDots />
               )
@@ -233,7 +265,7 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
               <button
                 type="button"
                 onClick={() => setPromptOpen((v) => !v)}
-                className="flex items-center gap-1.5 w-full px-3.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-accent/55 bg-accent/[0.06] hover:text-accent hover:bg-accent/[0.09] transition-colors text-left"
+                className={sectionClass}
               >
                 <ChevronRight
                   className={cn(
@@ -251,12 +283,37 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
             </div>
           )}
 
+          {checklist.length > 0 && (
+            <div className="border-b border-border/40">
+              <button
+                type="button"
+                onClick={() => setChecklistOpen((v) => !v)}
+                className={sectionClass}
+              >
+                <ChevronRight
+                  className={cn(
+                    "w-3 h-3 transition-transform duration-150",
+                    checklistOpen && "rotate-90",
+                  )}
+                />
+                Checklist ({stepsDone}/{checklist.length})
+              </button>
+              <Reveal open={checklistOpen}>
+                <ul className="flex flex-col gap-1 px-3.5 py-2.5 bg-accent/[0.03] text-[11px] border-t border-accent/10">
+                  {checklist.map((entry, i) => (
+                    <ChecklistEntry key={i} entry={entry} />
+                  ))}
+                </ul>
+              </Reveal>
+            </div>
+          )}
+
           {childToolCalls.length > 0 && toolCallsVisible && (
             <div className="border-b border-border/40">
               <button
                 type="button"
                 onClick={() => setToolCallsOpen((v) => !v)}
-                className="flex items-center gap-1.5 w-full px-3.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-accent/55 bg-accent/[0.06] hover:text-accent hover:bg-accent/[0.09] transition-colors text-left"
+                className={sectionClass}
               >
                 <ChevronRight
                   className={cn(

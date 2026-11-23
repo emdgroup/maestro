@@ -209,20 +209,16 @@ function settleStoppedSubagent(state: ActivityState, toolCallId: string): Activi
     (tc) => tc.meta?.background && tc.meta.agentId === taskId && tc.status === "in_progress",
   );
   if (!target) return state;
-  const stopped: ToolCallItem = { ...target, status: "interrupted" };
-  const toolCallMap = new Map(state.toolCallMap).set(target.toolCallId, stopped);
-  const at = state.items.findIndex(
-    (i) => i.type === "toolCall" && i.item.toolCallId === target.toolCallId,
-  );
-  const items =
-    at < 0
-      ? state.items
-      : [
-          ...state.items.slice(0, at),
-          { type: "toolCall" as const, item: stopped },
-          ...state.items.slice(at + 1),
-        ];
-  return { ...state, items, toolCallMap };
+  return replaceToolCall(state, { ...target, status: "interrupted" });
+}
+
+/**
+ * The tool call whose subagent a plan belongs to. Claude names a subagent's checklist
+ * `plan:<toolUseId>` after the call that launched it; any other plan is the session's own.
+ */
+function subagentOfPlan(state: ActivityState, planId: string): ToolCallItem | undefined {
+  const at = planId.indexOf(":");
+  return at < 0 ? undefined : state.toolCallMap.get(planId.slice(at + 1));
 }
 
 function flushOrphans(state: ActivityState): ActivityState {
@@ -542,6 +538,26 @@ function processEvent(
         plan: payload.entries,
         planTitle: state.planTitle ?? payload.title ?? null,
       };
+    }
+
+    case "plan_update": {
+      const { plan } = payload;
+      const subagent = subagentOfPlan(state, plan.planId);
+      if (plan.type === "markdown") {
+        // A subagent's prose plan has no place on its card.
+        if (subagent) return state;
+        return { ...newState, planMarkdown: { planId: plan.planId, content: plan.content } };
+      }
+      if (subagent) return replaceToolCall(state, { ...subagent, plan: plan.entries });
+      return { ...newState, plan: plan.entries, planId: plan.planId };
+    }
+
+    case "plan_removed": {
+      const subagent = subagentOfPlan(state, payload.planId);
+      if (subagent) return replaceToolCall(state, { ...subagent, plan: undefined });
+      if (payload.planId === state.planMarkdown?.planId) return { ...newState, planMarkdown: null };
+      if (payload.planId !== state.planId) return state;
+      return { ...newState, plan: null, planId: null };
     }
 
     case "user_message": {

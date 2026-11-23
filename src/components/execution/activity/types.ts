@@ -80,6 +80,19 @@ export type PlanUpdate = {
   title?: string;
 };
 
+/** ACP plan operations: a session holds any number of plans, each replaced whole by its ID. */
+export type PlanOperationUpdate = {
+  sessionUpdate: "plan_update";
+  plan:
+    | { type: "items"; planId: string; entries: PlanEntry[] }
+    | { type: "markdown"; planId: string; content: string; path?: string | null };
+};
+
+export type PlanRemoved = {
+  sessionUpdate: "plan_removed";
+  planId: string;
+};
+
 export type UsageUpdatePayload = {
   sessionUpdate: "usage_update";
   used: number;
@@ -177,6 +190,8 @@ export type SessionUpdatePayload =
   | ToolCallCreated
   | ToolCallUpdate
   | PlanUpdate
+  | PlanOperationUpdate
+  | PlanRemoved
   | UserMessagePayload
   | UserMessageChunkPayload
   | UsageUpdatePayload
@@ -224,6 +239,8 @@ export type ToolCallItem = {
   rawInput?: Record<string, unknown>;
   parentToolCallId?: string;
   childToolCallIds?: string[];
+  /** The checklist of the subagent this call launched, sent as a plan of its own. */
+  plan?: PlanEntry[];
   /** Everything the agent said about the call beyond title/kind/content. */
   meta?: AgentMeta;
 };
@@ -301,6 +318,13 @@ export type ActivityState = {
   pendingOrphans: Map<string, string[]>;
   lastUserMessageId: string | null;
   plan: PlanEntry[] | null;
+  /** The ID of the plan `plan` shows, so its `plan_removed` can clear it. */
+  planId: string | null;
+  /**
+   * The session's Markdown plan, for an agent that sends its plan as prose. The Plan tab shows it
+   * when no ExitPlanMode tool call has supplied one.
+   */
+  planMarkdown: { planId: string; content: string } | null;
   planTitle: string | null;
   isInitializing: boolean;
   isTurnActive: boolean;
@@ -329,6 +353,8 @@ export const INITIAL_ACTIVITY_STATE: ActivityState = {
   pendingOrphans: new Map(),
   lastUserMessageId: null,
   plan: null,
+  planId: null,
+  planMarkdown: null,
   planTitle: null,
   isInitializing: true,
   isTurnActive: false,

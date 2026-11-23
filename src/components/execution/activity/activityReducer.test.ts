@@ -1235,3 +1235,66 @@ describe("activityReducer — background subagents", () => {
     expect(state.toolCallMap.get("agent")?.status).toBe("completed");
   });
 });
+
+describe("activityReducer — plan operations", () => {
+  const step = (content: string, status: "pending" | "in_progress" | "completed" = "pending") => ({
+    content,
+    priority: "medium" as const,
+    status,
+  });
+  const items = (planId: string, entries: ReturnType<typeof step>[]): ActivityAction =>
+    event({ sessionUpdate: "plan_update", plan: { type: "items", planId, entries } });
+
+  it("shows the session's checklist and clears it on its removal", () => {
+    let state = activityReducer(makeState(), items("plan", [step("a"), step("b")]));
+    expect(state.plan).toHaveLength(2);
+    expect(state.planId).toBe("plan");
+
+    state = activityReducer(state, event({ sessionUpdate: "plan_removed", planId: "other" }));
+    expect(state.plan).toHaveLength(2);
+    state = activityReducer(state, event({ sessionUpdate: "plan_removed", planId: "plan" }));
+    expect(state.plan).toBeNull();
+  });
+
+  it("puts a subagent's checklist on its card and leaves the session's alone", () => {
+    let state = activityReducer(makeState(), items("plan", [step("main")]));
+    state = activityReducer(
+      state,
+      event({ sessionUpdate: "tool_call", toolCallId: "toolu_1", title: "Task", kind: "other" }),
+    );
+    state = activityReducer(state, items("plan:toolu_1", [step("sub", "in_progress")]));
+
+    expect(state.plan).toEqual([step("main")]);
+    expect(state.toolCallMap.get("toolu_1")?.plan).toEqual([step("sub", "in_progress")]);
+    expect(state.items.find((i) => i.type === "toolCall")?.item).toMatchObject({
+      plan: [step("sub", "in_progress")],
+    });
+
+    state = activityReducer(
+      state,
+      event({ sessionUpdate: "plan_removed", planId: "plan:toolu_1" }),
+    );
+    expect(state.toolCallMap.get("toolu_1")?.plan).toBeUndefined();
+    expect(state.plan).toEqual([step("main")]);
+  });
+
+  it("keeps the session's Markdown plan apart from its checklist, and drops a subagent's", () => {
+    const markdown = (planId: string, content: string): ActivityAction =>
+      event({ sessionUpdate: "plan_update", plan: { type: "markdown", planId, content } });
+    let state = activityReducer(makeState(), items("plan", [step("a")]));
+    state = activityReducer(state, markdown("plan-mode", "# Fix retries"));
+    expect(state.planMarkdown).toEqual({ planId: "plan-mode", content: "# Fix retries" });
+    expect(state.plan).toEqual([step("a")]);
+
+    state = activityReducer(
+      state,
+      event({ sessionUpdate: "tool_call", toolCallId: "toolu_1", title: "Task", kind: "other" }),
+    );
+    const before = state;
+    expect(activityReducer(state, markdown("plan-mode:toolu_1", "# Sub"))).toBe(before);
+
+    state = activityReducer(state, event({ sessionUpdate: "plan_removed", planId: "plan-mode" }));
+    expect(state.planMarkdown).toBeNull();
+    expect(state.plan).toEqual([step("a")]);
+  });
+});

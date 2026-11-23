@@ -55,6 +55,23 @@ describe("SubagentCard", () => {
     expect(screen.queryByRole("button", { name: "Stop Worker B" })).toBeNull();
   });
 
+  it("shows its checklist's progress in the header and the steps when opened", () => {
+    renderCard(
+      subagent({
+        plan: [
+          { content: "Read the file", priority: "medium", status: "completed" },
+          { content: "Write the fix", priority: "medium", status: "in_progress" },
+          { content: "Run tests", priority: "medium", status: "pending" },
+        ],
+      }),
+    );
+    expect(screen.getByText("1/3")).toBeInTheDocument();
+    expect(screen.getByText("Write the fix")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Worker B" }));
+    expect(screen.getByText("Checklist (1/3)")).toBeInTheDocument();
+    expect(screen.getByText("Run tests")).toBeInTheDocument();
+  });
+
   it("reads Stopped once a background subagent is interrupted", () => {
     renderCard(subagent({ status: "interrupted" }));
     expect(screen.getAllByText("Stopped")).toHaveLength(2);
