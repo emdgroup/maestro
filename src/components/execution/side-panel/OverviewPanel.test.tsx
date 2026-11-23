@@ -119,3 +119,23 @@ describe("OverviewPanel — Changes card", () => {
     expect(screen.getByText("Open pull request")).toBeTruthy();
   });
 });
+
+describe("OverviewPanel — Plan card", () => {
+  it("shows a Markdown plan that no review carried, under its heading", () => {
+    renderCard({ hasPlanBody: true, planTitle: "Fix retries" });
+    expect(screen.getByText("Fix retries")).toBeTruthy();
+  });
+
+  it("names a headingless Markdown plan a plan, not an approved one", () => {
+    renderCard({ hasPlanBody: true });
+    // The card label and its subtitle.
+    expect(screen.getAllByText("Plan")).toHaveLength(2);
+    expect(screen.queryByText("Approved")).toBeNull();
+  });
+
+  it("stays hidden with no plan at all", () => {
+    renderCard();
+    expect(screen.queryByText("Approved")).toBeNull();
+    expect(screen.queryByText("Plan")).toBeNull();
+  });
+});

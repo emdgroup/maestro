@@ -33,6 +33,8 @@ export interface SessionPanelValue {
   connection: ConnectionKey;
   planEntries?: PlanEntry[] | null;
   planTitle?: string | null;
+  /** The agent's Markdown plan, shown when no ExitPlanMode tool call carries one. */
+  planMarkdown?: string | null;
   onOpenTabKind: (kind: TabKind) => void;
   /** Opens a path (absolute, or project-relative) in a Files tab. */
   onOpenFile: (path: string) => void;

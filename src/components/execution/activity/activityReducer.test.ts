@@ -1278,15 +1278,23 @@ describe("activityReducer — plan operations", () => {
     expect(state.plan).toEqual([step("main")]);
   });
 
-  it("ignores a Markdown plan, which the plan tab shows from its tool call", () => {
-    const state = makeState();
-    const next = activityReducer(
+  it("keeps the session's Markdown plan apart from its checklist, and drops a subagent's", () => {
+    const markdown = (planId: string, content: string): ActivityAction =>
+      event({ sessionUpdate: "plan_update", plan: { type: "markdown", planId, content } });
+    let state = activityReducer(makeState(), items("plan", [step("a")]));
+    state = activityReducer(state, markdown("plan-mode", "# Fix retries"));
+    expect(state.planMarkdown).toEqual({ planId: "plan-mode", content: "# Fix retries" });
+    expect(state.plan).toEqual([step("a")]);
+
+    state = activityReducer(
       state,
-      event({
-        sessionUpdate: "plan_update",
-        plan: { type: "markdown", planId: "plan-mode", content: "# Plan" },
-      }),
+      event({ sessionUpdate: "tool_call", toolCallId: "toolu_1", title: "Task", kind: "other" }),
     );
-    expect(next).toBe(state);
+    const before = state;
+    expect(activityReducer(state, markdown("plan-mode:toolu_1", "# Sub"))).toBe(before);
+
+    state = activityReducer(state, event({ sessionUpdate: "plan_removed", planId: "plan-mode" }));
+    expect(state.planMarkdown).toBeNull();
+    expect(state.plan).toEqual([step("a")]);
   });
 });

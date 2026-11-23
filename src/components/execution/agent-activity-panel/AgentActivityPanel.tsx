@@ -647,6 +647,7 @@ export function AgentActivityPanel({
                 connection,
                 planEntries: liveState.plan,
                 planTitle: liveState.planTitle,
+                planMarkdown: liveState.planMarkdown?.content,
                 onOpenTabKind: openTabKind,
                 onOpenFile: handleOpenFile,
                 onSpawnShell,

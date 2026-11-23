@@ -320,6 +320,11 @@ export type ActivityState = {
   plan: PlanEntry[] | null;
   /** The ID of the plan `plan` shows, so its `plan_removed` can clear it. */
   planId: string | null;
+  /**
+   * The session's Markdown plan, for an agent that sends its plan as prose. The Plan tab shows it
+   * when no ExitPlanMode tool call has supplied one.
+   */
+  planMarkdown: { planId: string; content: string } | null;
   planTitle: string | null;
   isInitializing: boolean;
   isTurnActive: boolean;
@@ -349,6 +354,7 @@ export const INITIAL_ACTIVITY_STATE: ActivityState = {
   lastUserMessageId: null,
   plan: null,
   planId: null,
+  planMarkdown: null,
   planTitle: null,
   isInitializing: true,
   isTurnActive: false,

@@ -81,6 +81,7 @@ export function SidePanelContent({
     connection,
     planEntries,
     planTitle,
+    planMarkdown,
     onOpenTabKind,
     onOpenFile,
     onSpawnShell,
@@ -279,13 +280,14 @@ export function SidePanelContent({
           tc.status === "completed" ? "accepted" : tc.status === "pending" ? "waiting" : "rejected";
       }
     }
+    content ??= planMarkdown ?? null;
     const titleMatch = content?.match(/^#\s+(.+)/m);
     return {
       planContent: content,
       planReviewState: state,
       derivedPlanTitle: titleMatch ? titleMatch[1].trim() : null,
     };
-  }, [toolCallMap]);
+  }, [toolCallMap, planMarkdown]);
 
   // A pending request carries its own copy of the plan, which is the freshest one. The tool call
   // the stream already holds is the fallback, and the only source once the request is answered.
@@ -316,6 +318,7 @@ export function SidePanelContent({
                 planEntries={planEntries}
                 planTitle={planTitle ?? derivedPlanTitle}
                 planReviewState={planReviewState}
+                hasPlanBody={!!planContent}
                 workingFiles={workingFiles}
                 taskId={taskId}
                 onNavigate={(kind, filePath) => {

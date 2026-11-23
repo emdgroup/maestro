@@ -542,10 +542,12 @@ function processEvent(
 
     case "plan_update": {
       const { plan } = payload;
-      // A Markdown plan is the approved ExitPlanMode plan, which the plan tab already shows from
-      // its tool call. Only checklists have a place of their own.
-      if (plan.type !== "items") return state;
       const subagent = subagentOfPlan(state, plan.planId);
+      if (plan.type === "markdown") {
+        // A subagent's prose plan has no place on its card.
+        if (subagent) return state;
+        return { ...newState, planMarkdown: { planId: plan.planId, content: plan.content } };
+      }
       if (subagent) return replaceToolCall(state, { ...subagent, plan: plan.entries });
       return { ...newState, plan: plan.entries, planId: plan.planId };
     }
@@ -553,6 +555,7 @@ function processEvent(
     case "plan_removed": {
       const subagent = subagentOfPlan(state, payload.planId);
       if (subagent) return replaceToolCall(state, { ...subagent, plan: undefined });
+      if (payload.planId === state.planMarkdown?.planId) return { ...newState, planMarkdown: null };
       if (payload.planId !== state.planId) return state;
       return { ...newState, plan: null, planId: null };
     }
