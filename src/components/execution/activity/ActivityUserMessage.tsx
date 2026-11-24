@@ -1,4 +1,5 @@
-import { User, MousePointerClick } from "lucide-react";
+import { useState } from "react";
+import { User, MousePointerClick, BookmarkPlus } from "lucide-react";
 import type { UserMessageItem } from "./types";
 import { parseCanvasPrompt } from "./canvas/canvas-prompt";
 import type { CanvasPrompt } from "./canvas/canvas-prompt";
@@ -17,6 +18,10 @@ import { fileIcon } from "./fileTypeUtils";
 import { MessageActionBar } from "./MessageActionBar";
 import { basename } from "@/lib/path-utils";
 import { formatBytes, plural } from "@/lib/format-utils";
+import { Button } from "@/ui/button";
+import { usePromptsQuery } from "@/services/prompt.service";
+import { PromptEditorDialog } from "@/components/common/PromptEditorDialog";
+import { deriveTaskDraft } from "./task-draft";
 
 function fileTypeLabel(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -94,6 +99,8 @@ function buildTextMarkdown(blocks: ParsedContentBlock[]): string {
 interface ActivityUserMessageProps {
   message: UserMessageItem;
   onOpenFile?: (uri: string) => void;
+  /** Project whose prompt collection the message can be saved to. Omitted: the action is hidden. */
+  projectId?: number;
 }
 
 export type ParsedContentBlock =
@@ -203,7 +210,44 @@ function CanvasPromptRow({ prompt }: { prompt: CanvasPrompt }) {
   );
 }
 
-export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessageProps) {
+/** Opens the prompt editor on the message, titled from its first line like a task draft. */
+function SaveAsPromptButton({ projectId, text }: { projectId: number; text: string }) {
+  const [open, setOpen] = useState(false);
+  const { data: prompts } = usePromptsQuery(open ? projectId : null, false);
+  const knownTags = [...new Set(prompts?.flatMap((prompt) => prompt.tags))].sort();
+  const { title, description } = deriveTaskDraft(text);
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setOpen(true)}
+              aria-label="Save as project prompt"
+              className="text-muted-foreground/60 hover:text-foreground"
+            />
+          }
+        >
+          <BookmarkPlus className="size-3.5" />
+        </TooltipTrigger>
+        <TooltipContent>Save as project prompt</TooltipContent>
+      </Tooltip>
+      <PromptEditorDialog
+        open={open}
+        onOpenChange={setOpen}
+        projectId={projectId}
+        editing={null}
+        newShared={false}
+        knownTags={knownTags}
+        draft={{ title, body: description }}
+      />
+    </>
+  );
+}
+
+export function ActivityUserMessage({ message, onOpenFile, projectId }: ActivityUserMessageProps) {
   const parsed = parseUserContent(message.content);
   const canvasPrompt = parseCanvasPrompt(parsed.text);
   if (canvasPrompt) return <CanvasPromptRow prompt={canvasPrompt} />;
@@ -321,7 +365,11 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
             </div>
           )}
         </div>
-        <MessageActionBar copyText={parsed.text} sentAt={message.sentAt} align="end" />
+        <MessageActionBar copyText={parsed.text} sentAt={message.sentAt} align="end">
+          {projectId !== undefined && parsed.text.trim() && (
+            <SaveAsPromptButton projectId={projectId} text={parsed.text} />
+          )}
+        </MessageActionBar>
       </MessageContent>
     </Message>
   );

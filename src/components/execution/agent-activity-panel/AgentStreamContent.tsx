@@ -234,7 +234,11 @@ export function AgentStreamContent({
                       const msgId = gi.item.item.id;
                       return (
                         <MessageScrollerItem key={msgId} messageId={msgId} className="px-3">
-                          <MemoActivityUserMessage message={gi.item.item} onOpenFile={onOpenFile} />
+                          <MemoActivityUserMessage
+                            message={gi.item.item}
+                            onOpenFile={onOpenFile}
+                            projectId={projectId}
+                          />
                         </MessageScrollerItem>
                       );
                     }
