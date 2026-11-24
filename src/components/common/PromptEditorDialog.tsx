@@ -11,7 +11,7 @@ import { useSavePromptMutation } from "@/services/prompt.service";
 import type { Prompt } from "@/types/bindings";
 
 /**
- * Creates a prompt, or edits `editing`. Tags are typed one at a time and committed with Enter or a
+ * Creates a prompt, prefilled from `draft` when given, or edits `editing`. Tags are typed one at a time and committed with Enter or a
  * comma; ones already used elsewhere are offered, since reusing a tag is what makes it group
  * anything.
  */
@@ -22,6 +22,7 @@ export function PromptEditorDialog({
   editing,
   newShared,
   knownTags,
+  draft,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -31,6 +32,8 @@ export function PromptEditorDialog({
   /** The collection a new prompt goes to unless the user picks the other. */
   newShared: boolean;
   knownTags: string[];
+  /** What a new prompt starts with. */
+  draft?: { title: string; body: string };
 }) {
   const save = useSavePromptMutation();
   const [title, setTitle] = useState("");
@@ -48,8 +51,8 @@ export function PromptEditorDialog({
   if (shownFor !== current) {
     setShownFor(current);
     if (open) {
-      setTitle(editing?.title ?? "");
-      setBody(editing?.body ?? "");
+      setTitle(editing?.title ?? draft?.title ?? "");
+      setBody(editing?.body ?? draft?.body ?? "");
       setTags(editing?.tags ?? []);
       setTagDraft("");
       setShared(editing?.shared ?? newShared);

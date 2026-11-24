@@ -41,7 +41,7 @@ import {
   usePromptsQuery,
   useSetPromptFavoriteMutation,
 } from "@/services/prompt.service";
-import { PromptEditorDialog } from "./PromptEditorDialog";
+import { PromptEditorDialog } from "@/components/common/PromptEditorDialog";
 import { allTags, filterPrompts, type PromptFilter } from "./prompts";
 import type { Prompt } from "@/types/bindings";
 

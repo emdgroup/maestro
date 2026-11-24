@@ -1,5 +1,5 @@
+import { useState } from "react";
 import { User, MousePointerClick, BookmarkPlus } from "lucide-react";
-import { toast } from "sonner";
 import type { UserMessageItem } from "./types";
 import { parseCanvasPrompt } from "./canvas/canvas-prompt";
 import type { CanvasPrompt } from "./canvas/canvas-prompt";
@@ -19,7 +19,8 @@ import { MessageActionBar } from "./MessageActionBar";
 import { basename } from "@/lib/path-utils";
 import { formatBytes, plural } from "@/lib/format-utils";
 import { Button } from "@/ui/button";
-import { useSavePromptMutation } from "@/services/prompt.service";
+import { usePromptsQuery } from "@/services/prompt.service";
+import { PromptEditorDialog } from "@/components/common/PromptEditorDialog";
 import { deriveTaskDraft } from "./task-draft";
 
 function fileTypeLabel(name: string): string {
@@ -209,37 +210,40 @@ function CanvasPromptRow({ prompt }: { prompt: CanvasPrompt }) {
   );
 }
 
-/** Saves the message as a prompt of the project, titled from its first line like a task draft. */
+/** Opens the prompt editor on the message, titled from its first line like a task draft. */
 function SaveAsPromptButton({ projectId, text }: { projectId: number; text: string }) {
-  const savePrompt = useSavePromptMutation();
-  const save = () => {
-    const { title, description } = deriveTaskDraft(text);
-    savePrompt.mutate(
-      {
-        projectId,
-        prompt: { id: null, title, body: description, tags: [], shared: false, favorite: false },
-      },
-      { onSuccess: () => toast.success(`Prompt saved: ${title}`) },
-    );
-  };
+  const [open, setOpen] = useState(false);
+  const { data: prompts } = usePromptsQuery(open ? projectId : null, false);
+  const knownTags = [...new Set(prompts?.flatMap((prompt) => prompt.tags))].sort();
+  const { title, description } = deriveTaskDraft(text);
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={save}
-            disabled={savePrompt.isPending}
-            aria-label="Save as project prompt"
-            className="text-muted-foreground/60 hover:text-foreground"
-          />
-        }
-      >
-        <BookmarkPlus className="size-3.5" />
-      </TooltipTrigger>
-      <TooltipContent>Save as project prompt</TooltipContent>
-    </Tooltip>
+    <>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setOpen(true)}
+              aria-label="Save as project prompt"
+              className="text-muted-foreground/60 hover:text-foreground"
+            />
+          }
+        >
+          <BookmarkPlus className="size-3.5" />
+        </TooltipTrigger>
+        <TooltipContent>Save as project prompt</TooltipContent>
+      </Tooltip>
+      <PromptEditorDialog
+        open={open}
+        onOpenChange={setOpen}
+        projectId={projectId}
+        editing={null}
+        newShared={false}
+        knownTags={knownTags}
+        draft={{ title, body: description }}
+      />
+    </>
   );
 }
 
