@@ -98,7 +98,7 @@ static DETECTION_TABLE: &[AgentDetectionEntry] = &[
     AgentDetectionEntry {
         agent_id: "qwen-code",
         tool_name: "Qwen Code",
-        binary: Some("qwen-code"),
+        binary: Some("qwen"),
         config_dir: None,
     },
     AgentDetectionEntry {
