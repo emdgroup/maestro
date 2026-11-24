@@ -15,7 +15,7 @@ use maestro_protocol::{
 use tokio::sync::{oneshot, Mutex};
 
 use crate::send_response;
-use crate::sessions::{SessionRouter, TerminalHandle};
+use crate::sessions::{SessionRouter, SharedSessionState, TerminalHandle};
 use crate::terminal::handle_create_terminal;
 
 /// Shared state for ACP connection handlers, routable across N sessions.
@@ -316,10 +316,21 @@ impl ConnectionHandlers {
             .await
             .ok_or_else(|| acp::v1::schema::Error::session_not_found(acp_sid.clone()))?;
 
-        let payload = serde_json::to_value(&notification.update)
+        let mut payload = serde_json::to_value(&notification.update)
             .map_err(|e| acp::Error::new(-32603, e.to_string()))?;
-        crate::turn::note_update(&maestro_sid, &payload);
-        crate::usage_store::note_update(&maestro_sid, &payload);
+        if payload.get("sessionUpdate").and_then(|v| v.as_str()) == Some("subagent_update") {
+            self.note_subagent(&acp_sid, &maestro_sid, &payload).await;
+        }
+        if self.router.is_child(&acp_sid).await {
+            // A subagent's own stream. Its text is not the turn's and its usage is not the
+            // session's; the window files all of it under the subagent this names.
+            if let Some(update) = payload.as_object_mut() {
+                update.insert("childSessionId".to_string(), acp_sid.into());
+            }
+        } else {
+            crate::turn::note_update(&maestro_sid, &payload);
+            crate::usage_store::note_update(&maestro_sid, &payload);
+        }
         let msg = ServerResponse::SessionUpdate(SessionUpdate {
             session_id: maestro_sid,
             payload,
@@ -328,6 +339,26 @@ impl ConnectionHandlers {
             .await
             .map_err(|e| acp::Error::new(-32603, e.to_string()))?;
         Ok(())
+    }
+
+    /// A subagent appeared or changed: route its session here, follow whether it still works,
+    /// and settle what it asked once it stops, since nothing will wait on the answer then.
+    async fn note_subagent(&self, acp_sid: &str, maestro_sid: &str, payload: &serde_json::Value) {
+        let Some(child) = payload.get("sessionId").and_then(|v| v.as_str()) else {
+            return;
+        };
+        self.router.register_child(acp_sid, child).await;
+        let Some(state) = payload.pointer("/state/state").and_then(|v| v.as_str()) else {
+            return;
+        };
+        if !crate::subagents::is_working(state) {
+            if let Some((_, session)) = self.router.get_session(child).await {
+                withdraw_requests(&session, child).await;
+            }
+        }
+        if let Some(ended) = crate::subagents::note_state(maestro_sid, child, state) {
+            crate::helpers::announce_turn_end(ended);
+        }
     }
 
     pub async fn handle_create_terminal(
@@ -449,6 +480,38 @@ impl ConnectionHandlers {
             Ok(())
         })?;
         Ok(())
+    }
+}
+
+/// Answers `cancelled` to whatever a stopped subagent was still waiting on. The window drops the
+/// same requests when it sees the subagent stop.
+async fn withdraw_requests(session: &SharedSessionState, child: &str) {
+    let asked_by_child = |payload: &serde_json::Value| {
+        payload.get("sessionId").and_then(|v| v.as_str()) == Some(child)
+            || payload.pointer("/scope/sessionId").and_then(|v| v.as_str()) == Some(child)
+    };
+    let mut permissions = session.pending_permissions.lock().await;
+    let ids: Vec<String> = permissions
+        .iter()
+        .filter(|(_, (request, _))| asked_by_child(&request.payload))
+        .map(|(id, _)| id.clone())
+        .collect();
+    for id in ids {
+        if let Some((_, tx)) = permissions.remove(&id) {
+            let _ = tx.send(None);
+        }
+    }
+    drop(permissions);
+    let mut elicitations = session.pending_elicitations.lock().await;
+    let ids: Vec<String> = elicitations
+        .iter()
+        .filter(|(_, (request, _))| asked_by_child(&request.payload))
+        .map(|(id, _)| id.clone())
+        .collect();
+    for id in ids {
+        if let Some((_, tx)) = elicitations.remove(&id) {
+            let _ = tx.send(serde_json::json!({ "action": "cancel" }));
+        }
     }
 }
 

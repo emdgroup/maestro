@@ -610,6 +610,9 @@ export const sendAcpPrompt = (sessionId: string, content: string) =>
 export const sendAcpPromptStructured = (sessionId: string, blocks: JsonValue) =>
   api.sendAcpPromptStructured(sessionId, blocks);
 export const interruptAcpTurn = (sessionId: string) => api.interruptAcpTurn(sessionId);
+/** Stops one subagent of a session, leaving the turn and its other subagents running. */
+export const stopAcpSubagent = (sessionId: string, subagentSessionId: string) =>
+  api.stopAcpSubagent(sessionId, subagentSessionId);
 export const respondAcpPermission = (
   sessionId: string,
   requestId: string,

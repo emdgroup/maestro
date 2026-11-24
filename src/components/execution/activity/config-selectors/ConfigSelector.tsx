@@ -4,6 +4,7 @@ import { ModeSelector } from "./ModeSelector";
 import { EffortSelector } from "./EffortSelector";
 import { GenericSelector } from "./GenericSelector";
 import { AgentSelector } from "./AgentSelector";
+import { BooleanToggle } from "./BooleanToggle";
 
 interface ConfigSelectorProps {
   option: ConfigOption;
@@ -13,6 +14,9 @@ interface ConfigSelectorProps {
 }
 
 export function ConfigSelector({ option, value, onChange, disabled }: ConfigSelectorProps) {
+  if (option.type === "boolean") {
+    return <BooleanToggle option={option} value={value} onChange={onChange} disabled={disabled} />;
+  }
   if (option.id === "agent") {
     return <AgentSelector option={option} value={value} onChange={onChange} disabled={disabled} />;
   }

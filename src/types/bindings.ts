@@ -2070,6 +2070,17 @@ async interruptAcpTurn(sessionId: string) : Promise<Result<null, string>> {
 }
 },
 /**
+ * Stop one subagent of a session (its ACP child session), leaving the turn running.
+ */
+async stopAcpSubagent(sessionId: string, subagentSessionId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_acp_subagent", { sessionId, subagentSessionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Validate the environment for a connection and boot the persistent server.
  * 
  * `replace` is the user choosing to update a server from another build of Maestro that is in use

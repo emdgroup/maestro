@@ -160,11 +160,30 @@ pub async fn set_acp_config_option(
             session_id: session_id.to_string(),
             mode_id: value,
         }),
-        other => ServerRequest::SetConfigOption(SetConfigOptionRequest {
-            session_id: session_id.to_string(),
-            config_id: other.to_string(),
-            value,
-        }),
+        other => {
+            // The frontend speaks strings; a boolean option is sent typed, so its kind is read
+            // off the options the agent last reported.
+            let boolean = app_state
+                .acp
+                .sessions
+                .lock()
+                .await
+                .get(session_id)
+                .and_then(|s| {
+                    s.config_options
+                        .iter()
+                        .find(|o| o.get("id").and_then(|v| v.as_str()) == Some(other))
+                        .cloned()
+                })
+                .filter(|o| o.get("type").and_then(|v| v.as_str()) == Some("boolean"))
+                .map(|_| value == "true");
+            ServerRequest::SetConfigOption(SetConfigOptionRequest {
+                session_id: session_id.to_string(),
+                config_id: other.to_string(),
+                value,
+                boolean,
+            })
+        }
     };
     crate::acp::write_to_acp_session(&app_state, session_id, &msg).await
 }

@@ -47,25 +47,34 @@ pub(crate) static TURN_TX: std::sync::OnceLock<TurnSender> = std::sync::OnceLock
 pub(crate) fn forget_session(session_id: &str) {
     let _ = crate::turn::take_turn_facts(session_id);
     crate::usage_store::forget(session_id);
+    crate::subagents::forget(session_id);
 }
 
-/// Note that a turn has ended. No-op until the main loop is running.
+/// Note that a turn has ended. No-op until the main loop is running. Held while the session's
+/// subagents still work, and announced when the last of them stops (see `subagents`).
 pub(crate) fn note_turn_ended(
     session_id: &str,
     stop_reason: &str,
     usage: Option<maestro_protocol::TurnUsage>,
     model_usage: Option<serde_json::Value>,
 ) {
-    let facts = crate::turn::take_turn_facts(session_id);
+    let ended = TurnEnd {
+        session_id: session_id.to_string(),
+        stop_reason: stop_reason.to_string(),
+        facts: crate::turn::take_turn_facts(session_id),
+        usage,
+        model_usage,
+        meter: crate::usage_store::take_turn(session_id),
+    };
+    if let Some(ended) = crate::subagents::hold_turn_end(ended) {
+        announce_turn_end(ended);
+    }
+}
+
+/// Hands a finished turn to the main loop.
+pub(crate) fn announce_turn_end(ended: TurnEnd) {
     if let Some(tx) = TURN_TX.get() {
-        if let Err(e) = tx.send(TurnEnd {
-            session_id: session_id.to_string(),
-            stop_reason: stop_reason.to_string(),
-            facts,
-            usage,
-            model_usage,
-            meter: crate::usage_store::take_turn(session_id),
-        }) {
+        if let Err(e) = tx.send(ended) {
             send_diag("warn", format!("[prompt] turn end went unheard: {e}"));
         }
     }

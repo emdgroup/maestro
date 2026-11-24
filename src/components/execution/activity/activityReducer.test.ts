@@ -22,7 +22,6 @@ function makeState(overrides: Partial<ActivityState> = {}): ActivityState {
     ...INITIAL_ACTIVITY_STATE,
     items: [],
     toolCallMap: new Map(),
-    pendingOrphans: new Map(),
     canvasMap: new Map(),
     terminalBuffers: new Map(),
     ...overrides,
@@ -31,11 +30,6 @@ function makeState(overrides: Partial<ActivityState> = {}): ActivityState {
 
 function event(payload: SessionUpdatePayload, raw: Record<string, unknown> = {}): ActivityAction {
   return { type: "event", payload, raw };
-}
-
-/** `raw` shape that makes extractAgentMeta report a parent tool call. */
-function childOf(parentToolCallId: string): Record<string, unknown> {
-  return { _meta: { claudeCode: { parentToolUseId: parentToolCallId } } };
 }
 
 function toolCall(toolCallId: string, over: Partial<ToolCallItem> = {}): ToolCallItem {
@@ -481,67 +475,7 @@ describe("activityReducer — finalize_streaming", () => {
   });
 });
 
-describe("activityReducer — tool call parenting", () => {
-  it("attaches a child that arrives after its parent, without listing it separately", () => {
-    let state = makeState();
-    state = activityReducer(
-      state,
-      event({ sessionUpdate: "tool_call", toolCallId: "parent", title: "Task", kind: "think" }),
-    );
-    state = activityReducer(
-      state,
-      event(
-        { sessionUpdate: "tool_call", toolCallId: "child", title: "Read", kind: "read" },
-        childOf("parent"),
-      ),
-    );
-
-    expect(toolCallItems(state)).toHaveLength(1);
-    expect(state.toolCallMap.get("parent")?.childToolCallIds).toEqual(["child"]);
-    expect(state.toolCallMap.get("child")?.parentToolCallId).toBe("parent");
-  });
-
-  it("holds a child that arrives before its parent instead of rendering it at top level", () => {
-    const state = activityReducer(
-      makeState(),
-      event(
-        { sessionUpdate: "tool_call", toolCallId: "child", title: "Read", kind: "read" },
-        childOf("parent"),
-      ),
-    );
-
-    expect(toolCallItems(state)).toHaveLength(0);
-    expect(state.pendingOrphans.get("parent")).toEqual(["child"]);
-    // Still tracked, so a later update can find it.
-    expect(state.toolCallMap.has("child")).toBe(true);
-  });
-
-  it("adopts waiting orphans when the parent finally arrives", () => {
-    let state = makeState();
-    state = activityReducer(
-      state,
-      event(
-        { sessionUpdate: "tool_call", toolCallId: "child-a", title: "A", kind: "read" },
-        childOf("parent"),
-      ),
-    );
-    state = activityReducer(
-      state,
-      event(
-        { sessionUpdate: "tool_call", toolCallId: "child-b", title: "B", kind: "read" },
-        childOf("parent"),
-      ),
-    );
-    state = activityReducer(
-      state,
-      event({ sessionUpdate: "tool_call", toolCallId: "parent", title: "Task", kind: "think" }),
-    );
-
-    expect(state.toolCallMap.get("parent")?.childToolCallIds).toEqual(["child-a", "child-b"]);
-    expect(state.pendingOrphans.has("parent")).toBe(false);
-    expect(toolCallItems(state)).toHaveLength(1);
-  });
-
+describe("activityReducer — suppressed tool calls", () => {
   it("keeps AskUserQuestion out of the transcript but still tracks it", () => {
     // The elicitation panel renders this one; a generic tool card would duplicate it.
     const state = activityReducer(
@@ -703,23 +637,6 @@ describe("activityReducer — end of turn and session", () => {
 
     const turn = activityReducer(makeState({ isTurnActive: true }), { type: "turn_ended" });
     expect(turn).toMatchObject({ isTurnActive: false, sessionEnded: false, endReason: null });
-  });
-
-  it("surfaces orphaned children at the end rather than dropping them", () => {
-    // A child whose parent never arrived would otherwise be invisible forever.
-    const orphan = toolCall("orphan", { status: "completed", parentToolCallId: "never-arrives" });
-    const state = activityReducer(
-      makeState({
-        toolCallMap: new Map([["orphan", orphan]]),
-        pendingOrphans: new Map([["never-arrives", ["orphan"]]]),
-      }),
-      { type: "session_ended" },
-    );
-
-    expect(toolCallItems(state).map((i) => i.item.toolCallId)).toEqual(["orphan"]);
-    expect(state.pendingOrphans.size).toBe(0);
-    // Promoted to top level, since the parent it referenced never showed up.
-    expect(state.toolCallMap.get("orphan")?.parentToolCallId).toBeUndefined();
   });
 });
 
@@ -1067,175 +984,6 @@ describe("activityReducer — notices", () => {
   });
 });
 
-describe("activityReducer — background subagents", () => {
-  const PROMPT = "Run `sleep 6` with Bash, then reply with its output.";
-  const agentMeta = (extra: Record<string, unknown> = {}) => ({
-    _meta: { claudeCode: { toolName: "Agent", ...extra } },
-  });
-  const childMeta = (toolName: string) => ({
-    _meta: { claudeCode: { toolName, parentToolUseId: "agent" } },
-  });
-
-  /** The frames claude-agent-acp 0.86 sends for an Agent call with `run_in_background`. */
-  function launched(): ActivityState {
-    let state = makeState({ isTurnActive: true });
-    for (const [payload, raw] of [
-      [
-        { sessionUpdate: "tool_call", toolCallId: "agent", title: "Task", kind: "think" },
-        agentMeta(),
-      ],
-      [
-        {
-          sessionUpdate: "tool_call_update",
-          toolCallId: "agent",
-          rawInput: { run_in_background: true, description: "Probe worker", prompt: PROMPT },
-          content: [{ type: "content", content: { type: "text", text: PROMPT } }],
-        },
-        agentMeta(),
-      ],
-      [
-        { sessionUpdate: "tool_call_update", toolCallId: "agent" },
-        agentMeta({
-          toolResponse: { isAsync: true, status: "async_launched", agentId: "a4e26c83" },
-        }),
-      ],
-      [
-        {
-          sessionUpdate: "tool_call_update",
-          toolCallId: "agent",
-          status: "completed",
-          content: [{ type: "content", content: { type: "text", text: "Async agent launched" } }],
-        },
-        agentMeta(),
-      ],
-      [
-        { sessionUpdate: "tool_call", toolCallId: "bash", title: "sleep 6", kind: "execute" },
-        childMeta("Bash"),
-      ],
-    ] as const) {
-      state = activityReducer(state, event(payload as SessionUpdatePayload, raw));
-    }
-    return state;
-  }
-
-  function handBack(state: ActivityState): ActivityState {
-    state = activityReducer(
-      state,
-      event(
-        {
-          sessionUpdate: "tool_call",
-          toolCallId: "handback",
-          title: "SubagentHandback",
-          kind: "other",
-          rawInput: { message: "It printed probe-ok." },
-        } as SessionUpdatePayload,
-        childMeta("SubagentHandback"),
-      ),
-    );
-    return activityReducer(
-      state,
-      event(
-        { sessionUpdate: "tool_call_update", toolCallId: "handback", status: "completed" },
-        childMeta("SubagentHandback"),
-      ),
-    );
-  }
-
-  it("keeps running past its launch, without the launch receipt as output", () => {
-    const agent = launched().toolCallMap.get("agent")!;
-    expect(agent.status).toBe("in_progress");
-    expect(agent.childToolCallIds).toEqual(["bash"]);
-    expect(JSON.stringify(agent.content)).not.toContain("Async agent launched");
-  });
-
-  it("survives the end of the turn that launched it", () => {
-    const state = activityReducer(launched(), { type: "turn_ended" });
-    expect(state.toolCallMap.get("agent")?.status).toBe("in_progress");
-    expect(state.toolCallMap.get("bash")?.status).toBe("pending");
-  });
-
-  it("ends when it hands its report back, which becomes its output", () => {
-    const state = handBack(launched());
-    const agent = state.toolCallMap.get("agent")!;
-    expect(agent.status).toBe("completed");
-    expect(agent.childToolCallIds).toEqual(["bash"]);
-    expect(agent.content[agent.content.length - 1]).toEqual({
-      type: "content",
-      content: { type: "text", text: "It printed probe-ok." },
-    });
-    expect(toolCallItems(state)[0].item).toBe(agent);
-  });
-
-  it("is interrupted when the session ends before it hands back", () => {
-    const state = activityReducer(launched(), { type: "session_ended" });
-    expect(state.toolCallMap.get("agent")?.status).toBe("interrupted");
-  });
-
-  it("is interrupted when the user stops the turn, which takes it down too", () => {
-    const state = activityReducer(launched(), { type: "turn_ended", stopReason: "cancelled" });
-    expect(state.toolCallMap.get("agent")?.status).toBe("interrupted");
-    expect(state.toolCallMap.get("bash")?.status).toBe("interrupted");
-  });
-
-  it("is stopped by a TaskStop naming its agent id, and only that one", () => {
-    let state = launched();
-    const stop = (taskId: string) => {
-      state = activityReducer(
-        state,
-        event(
-          {
-            sessionUpdate: "tool_call",
-            toolCallId: `stop-${taskId}`,
-            title: "TaskStop",
-            kind: "other",
-          },
-          { _meta: { claudeCode: { toolName: "TaskStop" } } },
-        ),
-      );
-      state = activityReducer(
-        state,
-        event(
-          { sessionUpdate: "tool_call_update", toolCallId: `stop-${taskId}` },
-          { _meta: { claudeCode: { toolName: "TaskStop", toolResponse: { task_id: taskId } } } },
-        ),
-      );
-      state = activityReducer(
-        state,
-        event(
-          { sessionUpdate: "tool_call_update", toolCallId: `stop-${taskId}`, status: "completed" },
-          { _meta: { claudeCode: { toolName: "TaskStop" } } },
-        ),
-      );
-    };
-    stop("some-shell");
-    expect(state.toolCallMap.get("agent")?.status).toBe("in_progress");
-    stop("a4e26c83");
-    expect(state.toolCallMap.get("agent")?.status).toBe("interrupted");
-    expect(toolCallItems(state).find((i) => i.item.toolCallId === "agent")?.item.status).toBe(
-      "interrupted",
-    );
-  });
-
-  it("leaves a foreground subagent finishing at its own completion", () => {
-    let state = makeState();
-    state = activityReducer(
-      state,
-      event(
-        { sessionUpdate: "tool_call", toolCallId: "agent", title: "Task", kind: "think" },
-        agentMeta(),
-      ),
-    );
-    state = activityReducer(
-      state,
-      event(
-        { sessionUpdate: "tool_call_update", toolCallId: "agent", status: "completed" },
-        agentMeta(),
-      ),
-    );
-    expect(state.toolCallMap.get("agent")?.status).toBe("completed");
-  });
-});
-
 describe("activityReducer — plan operations", () => {
   const step = (content: string, status: "pending" | "in_progress" | "completed" = "pending") => ({
     content,
@@ -1256,16 +1004,29 @@ describe("activityReducer — plan operations", () => {
     expect(state.plan).toBeNull();
   });
 
-  it("puts a subagent's checklist on its card and leaves the session's alone", () => {
-    let state = activityReducer(makeState(), items("plan", [step("main")]));
+  /** A subagent whose prompt arrived as message `toolu_1`, which Claude names its checklist after. */
+  function withSubagent(state: ActivityState): ActivityState {
     state = activityReducer(
       state,
-      event({ sessionUpdate: "tool_call", toolCallId: "toolu_1", title: "Task", kind: "other" }),
+      event({ sessionUpdate: "subagent_update", sessionId: "child", state: { state: "running" } }),
     );
+    return activityReducer(
+      state,
+      event({
+        sessionUpdate: "session_message",
+        messageId: "toolu_1",
+        recipientSessionId: "child",
+        content: [{ type: "text", text: "Count lines" }],
+      }),
+    );
+  }
+
+  it("puts a subagent's checklist on its card and leaves the session's alone", () => {
+    let state = withSubagent(activityReducer(makeState(), items("plan", [step("main")])));
     state = activityReducer(state, items("plan:toolu_1", [step("sub", "in_progress")]));
 
     expect(state.plan).toEqual([step("main")]);
-    expect(state.toolCallMap.get("toolu_1")?.plan).toEqual([step("sub", "in_progress")]);
+    expect(state.toolCallMap.get("subagent:child")?.plan).toEqual([step("sub", "in_progress")]);
     expect(state.items.find((i) => i.type === "toolCall")?.item).toMatchObject({
       plan: [step("sub", "in_progress")],
     });
@@ -1274,7 +1035,7 @@ describe("activityReducer — plan operations", () => {
       state,
       event({ sessionUpdate: "plan_removed", planId: "plan:toolu_1" }),
     );
-    expect(state.toolCallMap.get("toolu_1")?.plan).toBeUndefined();
+    expect(state.toolCallMap.get("subagent:child")?.plan).toBeUndefined();
     expect(state.plan).toEqual([step("main")]);
   });
 
@@ -1286,10 +1047,7 @@ describe("activityReducer — plan operations", () => {
     expect(state.planMarkdown).toEqual({ planId: "plan-mode", content: "# Fix retries" });
     expect(state.plan).toEqual([step("a")]);
 
-    state = activityReducer(
-      state,
-      event({ sessionUpdate: "tool_call", toolCallId: "toolu_1", title: "Task", kind: "other" }),
-    );
+    state = withSubagent(state);
     const before = state;
     expect(activityReducer(state, markdown("plan-mode:toolu_1", "# Sub"))).toBe(before);
 

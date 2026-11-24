@@ -144,6 +144,11 @@ fn handle_server_message(
     completion_filter: &Arc<std::sync::Mutex<maestro_protocol::completion::CompletionMarkerFilter>>,
 ) -> Option<String> {
     match msg {
+        // A subagent's own stream (the daemon tags it): its mode is not the session's, and its
+        // text runs beside the parent's, so it must not go through the parent's marker filter.
+        ServerResponse::SessionUpdate(upd) if upd.payload.get("childSessionId").is_some() => {
+            emit_or_buffer_payload(upd.payload, replay_buffer, app_handle, session_id);
+        }
         ServerResponse::SessionUpdate(upd) => {
             // Detect CurrentModeUpdate to keep the per-session current_mode_id current.
             if upd.payload.get("sessionUpdate").and_then(|v| v.as_str())
@@ -396,7 +401,8 @@ pub(crate) async fn update_session_from_response(
         }
         ServerResponse::SessionUpdate(upd)
             if upd.payload.get("sessionUpdate").and_then(|v| v.as_str())
-                == Some("config_option_update") =>
+                == Some("config_option_update")
+                && upd.payload.get("childSessionId").is_none() =>
         {
             if let Some(options_val) = upd.payload.get("configOptions") {
                 if let Ok(options) =

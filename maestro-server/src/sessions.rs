@@ -39,8 +39,15 @@ pub enum SessionCommand {
     PromptStructured(Vec<serde_json::Value>),
     SetModel(String),
     SetMode(String),
-    SetConfigOption { config_id: String, value: String },
+    SetConfigOption {
+        config_id: String,
+        value: String,
+        /// A boolean option's value, sent typed rather than as a value id.
+        boolean: Option<bool>,
+    },
     CancelTurn,
+    /// `session/cancel` to one subagent, leaving the turn and the other subagents running.
+    CancelSubagent(String),
     CloseSession,
 }
 
@@ -78,7 +85,11 @@ pub(crate) fn settings_commands(
 ) -> Vec<SessionCommand> {
     let effort = effort
         .zip(effort_option_id(config_options))
-        .map(|(value, config_id)| SessionCommand::SetConfigOption { config_id, value });
+        .map(|(value, config_id)| SessionCommand::SetConfigOption {
+            config_id,
+            value,
+            boolean: None,
+        });
     [
         model.map(SessionCommand::SetModel),
         effort,
@@ -129,6 +140,10 @@ pub struct SessionRouter {
     routes: RwLock<HashMap<String, String>>,
     /// maestro_session_id → per-session state
     state: RwLock<HashMap<String, Arc<SharedSessionState>>>,
+    /// A subagent's ACP session id → the maestro session it reports to. Kept apart from `routes`
+    /// so its traffic can be told from the parent's: a subagent's model, mode and usage describe
+    /// it alone. Nested subagents map to the same maestro session as their parent.
+    children: RwLock<HashMap<String, String>>,
 }
 
 impl SessionRouter {
@@ -149,12 +164,35 @@ impl SessionRouter {
     }
 
     pub async fn get_maestro_id(&self, acp_session_id: &str) -> Option<String> {
-        self.routes.read().await.get(acp_session_id).cloned()
+        if let Some(id) = self.routes.read().await.get(acp_session_id) {
+            return Some(id.clone());
+        }
+        self.children.read().await.get(acp_session_id).cloned()
+    }
+
+    /// Routes a subagent's session to the maestro session its parent reports to. The parent is
+    /// itself a session or an already known subagent.
+    pub async fn register_child(&self, parent_acp_session_id: &str, child_acp_session_id: &str) {
+        if let Some(maestro_id) = self.get_maestro_id(parent_acp_session_id).await {
+            self.children
+                .write()
+                .await
+                .insert(child_acp_session_id.to_string(), maestro_id);
+        }
+    }
+
+    /// Whether this ACP session is a subagent rather than a session of its own.
+    pub async fn is_child(&self, acp_session_id: &str) -> bool {
+        self.children.read().await.contains_key(acp_session_id)
     }
 
     pub async fn unregister(&self, acp_session_id: &str) {
         if let Some(maestro_id) = self.routes.write().await.remove(acp_session_id) {
             self.state.write().await.remove(&maestro_id);
+            self.children
+                .write()
+                .await
+                .retain(|_, parent| *parent != maestro_id);
         }
     }
 
@@ -163,9 +201,7 @@ impl SessionRouter {
         &self,
         acp_session_id: &str,
     ) -> Option<(String, Arc<SharedSessionState>)> {
-        let routes = self.routes.read().await;
-        let maestro_id = routes.get(acp_session_id)?.clone();
-        drop(routes);
+        let maestro_id = self.get_maestro_id(acp_session_id).await?;
         let state = self.state.read().await.get(&maestro_id)?.clone();
         Some((maestro_id, state))
     }
@@ -322,7 +358,9 @@ mod tests {
             commands.as_slice(),
             [
                 SessionCommand::SetModel(model),
-                SessionCommand::SetConfigOption { config_id, value },
+                SessionCommand::SetConfigOption {
+                    config_id, value, ..
+                },
                 SessionCommand::SetMode(mode),
             ] if model == "opus" && config_id == "effort" && value == "high" && mode == "plan"
         ));

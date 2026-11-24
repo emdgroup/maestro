@@ -33,28 +33,47 @@ fn server_status(
     }
 }
 
-/// The requests a session sent a client and is still waiting on.
+/// The requests a session sent a client and is still waiting on, oldest first within each kind:
+/// the window queues them in the order they arrive and shows the oldest.
+// ponytail: permissions and elicitations have separate counters, so their relative order is
+// lost; permissions go first. Share one counter if mixed bursts ever matter.
 pub(crate) async fn pending_requests(
     session: &ActiveSession,
 ) -> Vec<maestro_protocol::PendingSessionRequest> {
-    let mut pending: Vec<maestro_protocol::PendingSessionRequest> = session
+    let mut permissions: Vec<_> = session
         .pending_permissions
         .lock()
         .await
         .values()
-        .map(|(request, _tx)| maestro_protocol::PendingSessionRequest::Permission(request.clone()))
+        .map(|(request, _tx)| request.clone())
         .collect();
-    pending.extend(
-        session
-            .pending_elicitations
-            .lock()
-            .await
-            .values()
-            .map(|(request, _tx)| {
-                maestro_protocol::PendingSessionRequest::Elicitation(request.clone())
-            }),
-    );
-    pending
+    permissions.sort_by_key(|r| request_seq(&r.request_id));
+    let mut elicitations: Vec<_> = session
+        .pending_elicitations
+        .lock()
+        .await
+        .values()
+        .map(|(request, _tx)| request.clone())
+        .collect();
+    elicitations.sort_by_key(|r| request_seq(&r.request_id));
+    permissions
+        .into_iter()
+        .map(maestro_protocol::PendingSessionRequest::Permission)
+        .chain(
+            elicitations
+                .into_iter()
+                .map(maestro_protocol::PendingSessionRequest::Elicitation),
+        )
+        .collect()
+}
+
+/// The counter in a request id (`perm-12`, `elicit-3`), which orders requests by arrival.
+fn request_seq(request_id: &str) -> u64 {
+    request_id
+        .rsplit('-')
+        .next()
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(u64::MAX)
 }
 
 /// A project's sessions as the session map knows them, for a daemon whose store could not be
@@ -787,7 +806,11 @@ pub(crate) async fn dispatch_message(
 
         ServerRequest::InterruptTurn(req) => {
             if let Some(session) = sessions.get(&req.session_id) {
-                let _ = session.cmd_tx.send(SessionCommand::CancelTurn).await;
+                let command = match req.subagent_session_id {
+                    Some(child) => SessionCommand::CancelSubagent(child),
+                    None => SessionCommand::CancelTurn,
+                };
+                let _ = session.cmd_tx.send(command).await;
             }
         }
 
@@ -844,6 +867,7 @@ pub(crate) async fn dispatch_message(
                 SessionCommand::SetConfigOption {
                     config_id: req.config_id,
                     value: req.value,
+                    boolean: req.boolean,
                 },
                 stdout,
             )
@@ -1284,4 +1308,17 @@ pub(crate) async fn dispatch_message(
     }
 
     true
+}
+
+#[cfg(test)]
+mod request_order_tests {
+    use super::request_seq;
+
+    #[test]
+    fn requests_sort_by_counter_not_by_text() {
+        let mut ids = vec!["perm-10", "perm-9", "perm-1"];
+        ids.sort_by_key(|id| request_seq(id));
+        assert_eq!(ids, ["perm-1", "perm-9", "perm-10"]);
+        assert_eq!(request_seq("odd"), u64::MAX);
+    }
 }

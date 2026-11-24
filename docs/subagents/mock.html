@@ -1,0 +1,748 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Maestro native subagents: approved mock</title>
+    <!-- Standalone copy of the canvas the design was approved on. Open it in a browser.
+     Tokens are the app's light theme from src/index.css; add class="dark" on <html> for dark. -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @custom-variant dark (&:where(.dark, .dark *));
+      @theme inline {
+        --color-background: var(--background);
+        --color-foreground: var(--foreground);
+        --color-card: var(--card);
+        --color-muted: var(--muted);
+        --color-muted-foreground: var(--muted-foreground);
+        --color-primary: var(--primary);
+        --color-primary-foreground: var(--primary-foreground);
+        --color-border: var(--border);
+      }
+      :root {
+        --background: oklch(98% 0.015 70);
+        --foreground: oklch(45% 0.01 250);
+        --card: oklch(99.5% 0.01 70);
+        --muted: oklch(94% 0.015 70);
+        --muted-foreground: oklch(45% 0.01 250);
+        --primary: oklch(0% 0 0);
+        --primary-foreground: oklch(100% 0 0);
+        --border: oklch(90% 0.01 70);
+        --accent: oklch(50% 0.15 250);
+      }
+      .dark {
+        --background: oklch(20% 0.01 250);
+        --foreground: oklch(92% 0.01 250);
+        --card: oklch(24% 0.01 250);
+        --muted: oklch(28% 0.01 250);
+        --muted-foreground: oklch(70% 0.01 250);
+        --primary: oklch(96% 0 0);
+        --primary-foreground: oklch(15% 0 0);
+        --border: oklch(32% 0.01 250);
+        --accent: oklch(75% 0.15 250);
+      }
+      body {
+        margin: 0;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: system-ui, sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <style>
+      .sa {
+        --sa-accent: oklch(58% 0.15 250);
+        --sa-ok: oklch(60% 0.14 150);
+        --sa-warn: oklch(68% 0.15 70);
+        --sa-bad: oklch(58% 0.2 25);
+        --sa-amber: oklch(75% 0.15 75);
+        font-family: system-ui, sans-serif;
+        font-size: 13px;
+        color: var(--color-foreground);
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 300px;
+        gap: 20px;
+        padding: 20px;
+        max-width: 1100px;
+      }
+      .sa * {
+        box-sizing: border-box;
+      }
+      .sa code {
+        font-size: 11.5px;
+      }
+      .sa .muted {
+        color: var(--color-muted-foreground);
+      }
+      .sa .lbl {
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--color-muted-foreground);
+        margin: 18px 0 6px;
+      }
+      .sa .lbl:first-child {
+        margin-top: 0;
+      }
+      .sa .stream {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .sa .user {
+        align-self: flex-end;
+        background: var(--color-muted);
+        border-radius: 12px;
+        padding: 7px 11px;
+        max-width: 70%;
+      }
+      .sa .agent {
+        line-height: 1.45;
+      }
+      .sa .card {
+        border: 1px solid color-mix(in oklch, var(--sa-accent) 30%, transparent);
+        border-radius: 10px;
+        overflow: hidden;
+        background: linear-gradient(
+          135deg,
+          color-mix(in oklch, var(--sa-accent) 10%, transparent),
+          transparent
+        );
+        box-shadow: 0 2px 8px oklch(0% 0 0 / 0.08);
+      }
+      .sa .card.amber {
+        border-color: color-mix(in oklch, var(--sa-amber) 70%, transparent);
+        background: linear-gradient(
+          135deg,
+          color-mix(in oklch, var(--sa-amber) 14%, transparent),
+          transparent
+        );
+      }
+      .sa .head {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 9px 13px;
+        cursor: pointer;
+      }
+      .sa .icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 7px;
+        flex-shrink: 0;
+        display: grid;
+        place-items: center;
+        background: color-mix(in oklch, var(--sa-accent) 10%, transparent);
+        border: 1px solid color-mix(in oklch, var(--sa-accent) 30%, transparent);
+        color: var(--sa-accent);
+      }
+      .sa .icon svg {
+        width: 14px;
+        height: 14px;
+      }
+      .sa .main {
+        flex: 1;
+        min-width: 0;
+      }
+      .sa .name {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .sa .tag {
+        border: 1px solid color-mix(in oklch, var(--sa-accent) 30%, transparent);
+        border-radius: 999px;
+        padding: 0 6px;
+        font-size: 9px;
+        font-weight: 400;
+        color: var(--color-muted-foreground);
+      }
+      .sa .subl {
+        font-size: 10px;
+        color: var(--color-muted-foreground);
+        margin-top: 2px;
+      }
+      .sa .kinds {
+        font-size: 10px;
+        color: var(--color-muted-foreground);
+        opacity: 0.75;
+      }
+      .sa .pill {
+        display: inline-grid;
+        border-radius: 999px;
+        padding: 1px 8px;
+        font-size: 10px;
+        font-weight: 500;
+        white-space: nowrap;
+        border: 0;
+        font-family: inherit;
+      }
+      .sa .pill > span {
+        grid-area: 1 / 1;
+      }
+      .sa .p-run {
+        background: color-mix(in oklch, var(--sa-accent) 15%, transparent);
+        color: var(--sa-accent);
+      }
+      .sa .p-ok {
+        background: color-mix(in oklch, var(--sa-ok) 15%, transparent);
+        color: var(--sa-ok);
+      }
+      .sa .p-warn {
+        background: color-mix(in oklch, var(--sa-warn) 18%, transparent);
+        color: var(--sa-warn);
+      }
+      .sa .p-bad {
+        background: color-mix(in oklch, var(--sa-bad) 15%, transparent);
+        color: var(--sa-bad);
+      }
+      .sa .p-amber {
+        background: color-mix(in oklch, var(--sa-amber) 25%, transparent);
+        color: oklch(50% 0.12 70);
+      }
+      .sa .p-unk {
+        background: var(--color-muted);
+        color: var(--color-muted-foreground);
+      }
+      .sa button.pill {
+        cursor: pointer;
+      }
+      .sa button.pill .stopl {
+        visibility: hidden;
+      }
+      .sa .card:hover button.pill {
+        background: color-mix(in oklch, var(--sa-bad) 12%, transparent);
+        color: var(--sa-bad);
+      }
+      .sa .card:hover button.pill .runl {
+        visibility: hidden;
+      }
+      .sa .card:hover button.pill .stopl {
+        visibility: visible;
+      }
+      .sa .chev {
+        width: 14px;
+        height: 14px;
+        opacity: 0.5;
+        flex-shrink: 0;
+        margin-top: 2px;
+        transition: transform 0.15s;
+      }
+      .sa .card.open > .head .chev {
+        transform: rotate(90deg);
+      }
+      .sa .body {
+        display: none;
+        border-top: 1px solid color-mix(in oklch, var(--sa-accent) 20%, transparent);
+      }
+      .sa .card.open > .body {
+        display: block;
+      }
+      .sa .sec {
+        border-bottom: 1px solid color-mix(in oklch, var(--color-border) 60%, transparent);
+      }
+      .sa .sec > div:first-child {
+        font-size: 10.5px;
+        font-weight: 500;
+        color: var(--color-muted-foreground);
+        padding: 6px 13px;
+      }
+      .sa .sec > div + div {
+        padding: 8px 13px;
+        font-size: 11px;
+        background: color-mix(in oklch, var(--sa-accent) 4%, transparent);
+        border-top: 1px solid color-mix(in oklch, var(--sa-accent) 10%, transparent);
+      }
+      .sa .nested {
+        padding: 8px 13px 10px 24px;
+      }
+      .sa .tc {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        padding: 2px 0;
+      }
+      .sa .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--sa-ok);
+      }
+      .sa .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        padding: 5px 8px;
+        border-radius: 8px;
+      }
+      .sa .chip {
+        border: 1px solid color-mix(in oklch, var(--sa-accent) 35%, transparent);
+        color: var(--sa-accent);
+        border-radius: 999px;
+        padding: 0 8px;
+        font-size: 10.5px;
+        cursor: pointer;
+        background: transparent;
+        font-family: inherit;
+      }
+      .sa .sheet {
+        border: 1px solid color-mix(in oklch, var(--sa-accent) 30%, transparent);
+        border-bottom: 0;
+        border-radius: 12px 12px 0 0;
+        padding: 11px 14px;
+        background: linear-gradient(
+          135deg,
+          color-mix(in oklch, var(--sa-accent) 14%, var(--color-background)),
+          var(--color-background)
+        );
+      }
+      .sa .btn {
+        border: 1px solid var(--color-border);
+        background: var(--color-card);
+        border-radius: 8px;
+        padding: 4px 10px;
+        font-size: 11.5px;
+        font-family: inherit;
+        color: inherit;
+      }
+      .sa .btn.pri {
+        background: var(--color-primary);
+        color: var(--color-primary-foreground);
+        border-color: transparent;
+      }
+      .sa .header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        background: var(--color-card);
+      }
+      .sa .live {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--sa-accent);
+        animation: sa-pulse 1.4s infinite;
+      }
+      @keyframes sa-pulse {
+        50% {
+          opacity: 0.35;
+        }
+      }
+      .sa .compose {
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+        background: var(--color-card);
+        padding: 10px 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .sa .compose input {
+        flex: 1;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        font: inherit;
+        color: inherit;
+      }
+      .sa .side {
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        background: var(--color-card);
+        padding: 12px;
+        font-size: 12px;
+        align-self: start;
+        position: sticky;
+        top: 12px;
+      }
+      .sa .side h4 {
+        margin: 0 0 6px;
+        font-size: 12px;
+      }
+      .sa .side ul {
+        margin: 0 0 12px;
+        padding-left: 16px;
+        color: var(--color-muted-foreground);
+        line-height: 1.45;
+      }
+      .sa .typing {
+        display: inline-flex;
+        gap: 2px;
+        vertical-align: middle;
+      }
+      .sa .typing i {
+        width: 3px;
+        height: 3px;
+        border-radius: 50%;
+        background: currentColor;
+        animation: sa-pulse 1s infinite;
+      }
+      .sa .typing i:nth-child(2) {
+        animation-delay: 0.2s;
+      }
+      .sa .typing i:nth-child(3) {
+        animation-delay: 0.4s;
+      }
+    </style>
+
+    <div class="sa" id="sa-root">
+      <div>
+        <div class="lbl">Claude session, parent turn running</div>
+        <div class="stream">
+          <div class="user">Refactor the auth module and check token refresh</div>
+          <div class="agent">I'll split this across two subagents.</div>
+
+          <div class="card" id="card-running">
+            <div class="head" data-toggle>
+              <div class="icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="4" y="8" width="16" height="12" rx="2" />
+                  <path d="M12 4v4M9 13v2M15 13v2" />
+                </svg>
+              </div>
+              <div class="main">
+                <div class="name">
+                  Explore token refresh <span class="tag">opus</span
+                  ><span class="tag">general-purpose</span>
+                </div>
+                <div class="subl" id="running-sub">
+                  <span class="typing"><i></i><i></i><i></i></span>
+                  <b style="font-weight: 500">2/4</b> Reading token refresh path
+                </div>
+              </div>
+              <button class="pill p-run" id="stop-running" title="Stop this subagent">
+                <span class="runl">Running</span><span class="stopl">■ Stop</span>
+              </button>
+              <svg
+                class="chev"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="m9 6 6 6-6 6" />
+              </svg>
+            </div>
+          </div>
+
+          <div class="card amber" id="card-needs">
+            <div class="head" data-toggle>
+              <div class="icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="4" y="8" width="16" height="12" rx="2" />
+                  <path d="M12 4v4M9 13v2M15 13v2" />
+                </svg>
+              </div>
+              <div class="main">
+                <div class="name">Count lines in all files <span class="tag">opus</span></div>
+                <div class="subl">Waiting for your approval</div>
+              </div>
+              <span class="pill p-amber">Needs you</span>
+              <svg
+                class="chev"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="m9 6 6 6-6 6" />
+              </svg>
+            </div>
+          </div>
+
+          <div class="card open" id="card-done">
+            <div class="head" data-toggle>
+              <div class="icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="4" y="8" width="16" height="12" rx="2" />
+                  <path d="M12 4v4M9 13v2M15 13v2" />
+                </svg>
+              </div>
+              <div class="main">
+                <div class="name">
+                  Refactor auth module <span class="tag">sonnet</span
+                  ><span class="tag">code-reviewer</span>
+                </div>
+                <div class="subl">1m 12s · 6 tool calls</div>
+                <div class="kinds">3 reads · 2 searches · 1 bash</div>
+              </div>
+              <span class="pill p-ok">Done</span>
+              <svg
+                class="chev"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="m9 6 6 6-6 6" />
+              </svg>
+            </div>
+            <div class="body">
+              <div class="sec">
+                <div>› Prompt</div>
+                <div>
+                  Move session handling out of <code>auth/index.ts</code> into
+                  <code>auth/session.ts</code>. Keep the public API.
+                </div>
+              </div>
+              <div class="sec">
+                <div>› Checklist (3/3)</div>
+                <div>
+                  ✓ Map current exports<br />✓ Move session helpers<br />✓ Run the auth tests
+                </div>
+              </div>
+              <div class="sec">
+                <div>› Tool Calls (6)</div>
+                <div>
+                  <div class="tc"><span class="dot"></span>Read <code>auth/index.ts</code></div>
+                  <div class="tc"><span class="dot"></span>Search <code>createSession</code></div>
+                  <div class="tc"><span class="dot"></span>Bash <code>bun run test auth</code></div>
+                  <div class="muted">+ 3 more</div>
+                </div>
+              </div>
+              <div class="sec">
+                <div>› Report</div>
+                <div>
+                  Session helpers now live in <code>auth/session.ts</code>. 14 auth tests pass.
+                </div>
+              </div>
+              <div class="nested">
+                <div class="card" id="card-nested">
+                  <div class="head" data-toggle>
+                    <div class="icon">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="4" y="8" width="16" height="12" rx="2" />
+                        <path d="M12 4v4M9 13v2M15 13v2" />
+                      </svg>
+                    </div>
+                    <div class="main">
+                      <div class="name">Find callers of createSession</div>
+                      <div class="subl">14s · 2 tool calls</div>
+                    </div>
+                    <span class="pill p-ok">Done</span>
+                    <svg
+                      class="chev"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path d="m9 6 6 6-6 6" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lbl">Other outcomes</div>
+          <div class="card">
+            <div class="head">
+              <div class="icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="4" y="8" width="16" height="12" rx="2" />
+                  <path d="M12 4v4M9 13v2M15 13v2" />
+                </svg>
+              </div>
+              <div class="main">
+                <div class="name">Run the slow suite</div>
+                <div class="subl">Stopped after 38s</div>
+              </div>
+              <span class="pill p-warn">Stopped</span>
+            </div>
+          </div>
+          <div class="card">
+            <div class="head">
+              <div class="icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="4" y="8" width="16" height="12" rx="2" />
+                  <path d="M12 4v4M9 13v2M15 13v2" />
+                </svg>
+              </div>
+              <div class="main">
+                <div class="name">Update the changelog</div>
+                <div class="subl" style="color: var(--sa-bad)">Rate limited, try again later</div>
+              </div>
+              <span class="pill p-bad">Failed</span>
+            </div>
+          </div>
+          <div class="card">
+            <div class="head">
+              <div class="icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="4" y="8" width="16" height="12" rx="2" />
+                  <path d="M12 4v4M9 13v2M15 13v2" />
+                </svg>
+              </div>
+              <div class="main">
+                <div class="name">Check the lockfile</div>
+                <div class="subl">Outcome not seen (reopened session)</div>
+              </div>
+              <span class="pill p-unk">Unknown</span>
+            </div>
+          </div>
+
+          <div class="lbl">Codex session</div>
+          <div class="row">
+            <span class="muted">⚙</span>wait
+            <button class="chip" data-goto="card-needs">⇢ Count lines in all files</button
+            ><span class="muted" style="margin-left: auto; font-size: 11px">completed</span>
+          </div>
+          <div class="row">
+            <span class="muted">⚙</span>closeAgent
+            <button class="chip" data-goto="card-needs">⇢ Count lines in all files</button
+            ><span class="muted" style="margin-left: auto; font-size: 11px">completed</span>
+          </div>
+
+          <div class="lbl">Three requests waiting, queued</div>
+          <div class="sheet">
+            <div
+              class="muted"
+              style="font-size: 10.5px; display: flex; align-items: center; gap: 6px"
+            >
+              Subagent · Count lines in all files
+              <span style="margin-left: auto; display: flex; align-items: center; gap: 4px">
+                <button class="btn" style="padding: 0 6px">‹</button>2 of 3<button
+                  class="btn"
+                  style="padding: 0 6px"
+                >
+                  ›
+                </button>
+              </span>
+            </div>
+            <div style="font-weight: 500; margin: 3px 0 8px">Run <code>wc -l *</code>?</div>
+            <div style="display: flex; gap: 6px">
+              <button class="btn pri">Allow once</button><button class="btn">Always allow</button
+              ><button class="btn">Reject</button>
+            </div>
+          </div>
+
+          <div class="lbl">Parent turn ended, one subagent still working</div>
+          <div class="header">
+            <span class="live"></span><b style="font-weight: 500">Working</b
+            ><span class="muted">· 1 subagent</span
+            ><span class="muted" style="margin-left: auto; font-size: 11px"
+              >board card and idle reaper see this session as working</span
+            >
+          </div>
+          <div class="compose">
+            <input
+              placeholder="Ask a follow-up. It starts a new turn, the subagent keeps working."
+            /><button class="btn pri">Send</button>
+          </div>
+        </div>
+      </div>
+
+      <aside class="side">
+        <h4>Decisions (2026-11-24)</h4>
+        <ul>
+          <li>Claude-only path deleted</li>
+          <li>Busy until every child is idle, composer stays usable</li>
+          <li>Stats: elapsed (live only), tool calls, kinds</li>
+          <li>Codex rows keep a chip to the card</li>
+          <li>Nested subagents inside the parent card</li>
+          <li>Unknown keeps the outcome Maestro saw</li>
+          <li>Several requests: one queue, oldest first, pager</li>
+          <li>Boolean config options, separate commit</li>
+        </ul>
+        <h4>Try it</h4>
+        <ul>
+          <li>Hover the running card, click Stop</li>
+          <li>Click a card header to expand it</li>
+          <li>Click a chip on the Codex rows</li>
+        </ul>
+        <h4>Fast mode as a boolean</h4>
+        <div style="display: flex; gap: 6px; align-items: center">
+          <span class="btn">Opus</span><span class="btn">High</span>
+          <button
+            class="btn"
+            id="fast"
+            data-on="0"
+            style="display: inline-flex; gap: 6px; align-items: center"
+          >
+            Fast
+            <span
+              id="fast-track"
+              style="
+                width: 24px;
+                height: 14px;
+                border-radius: 999px;
+                background: var(--color-muted);
+                position: relative;
+                display: inline-block;
+              "
+              ><span
+                id="fast-knob"
+                style="
+                  position: absolute;
+                  top: 2px;
+                  left: 2px;
+                  width: 10px;
+                  height: 10px;
+                  border-radius: 50%;
+                  background: var(--color-muted-foreground);
+                  transition: left 0.15s;
+                "
+              ></span
+            ></span>
+          </button>
+        </div>
+      </aside>
+    </div>
+
+    <script>
+      (function () {
+        var root = document.getElementById("sa-root");
+        root.addEventListener("click", function (e) {
+          var t = e.target;
+          var stop = t.closest("#stop-running");
+          if (stop) {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById("running-sub").textContent = "Stopping…";
+            stop.outerHTML = '<span class="pill p-run">Running</span>';
+            setTimeout(function () {
+              var card = document.getElementById("card-running");
+              card.querySelector(".subl").textContent = "Stopped after 41s";
+              card.querySelector(".pill").outerHTML = '<span class="pill p-warn">Stopped</span>';
+            }, 1100);
+            return;
+          }
+          var chip = t.closest("[data-goto]");
+          if (chip) {
+            e.preventDefault();
+            var c = document.getElementById(chip.getAttribute("data-goto"));
+            c.classList.add("open");
+            c.scrollIntoView({ behavior: "smooth", block: "center" });
+            return;
+          }
+          var fast = t.closest("#fast");
+          if (fast) {
+            e.preventDefault();
+            var on = fast.getAttribute("data-on") !== "1";
+            fast.setAttribute("data-on", on ? "1" : "0");
+            document.getElementById("fast-knob").style.left = on ? "12px" : "2px";
+            document.getElementById("fast-knob").style.background = on
+              ? "white"
+              : "var(--color-muted-foreground)";
+            document.getElementById("fast-track").style.background = on
+              ? "oklch(58% 0.15 250)"
+              : "var(--color-muted)";
+            return;
+          }
+          var head = t.closest("[data-toggle]");
+          if (head) {
+            e.preventDefault();
+            head.parentElement.classList.toggle("open");
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

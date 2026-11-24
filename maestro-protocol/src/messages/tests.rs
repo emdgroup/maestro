@@ -103,6 +103,11 @@ fn session_messages() -> Vec<AnyMessage> {
         })),
         AnyMessage::Request(ServerRequest::InterruptTurn(InterruptTurnRequest {
             session_id: "session".to_string(),
+            subagent_session_id: None,
+        })),
+        AnyMessage::Request(ServerRequest::InterruptTurn(InterruptTurnRequest {
+            session_id: "session".to_string(),
+            subagent_session_id: Some("child".to_string()),
         })),
         AnyMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "session".to_string(),

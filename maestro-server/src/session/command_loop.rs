@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use acp::v1::schema::{
     CancelNotification, CloseSessionRequest, PromptRequest, PromptResponse, SessionConfigId,
-    SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions, SessionConfigValueId,
-    SetSessionConfigOptionRequest, SetSessionModeRequest, StopReason,
+    SessionConfigKind, SessionConfigOption, SessionConfigOptionValue, SessionConfigSelectOptions,
+    SessionConfigValueId, SetSessionConfigOptionRequest, SetSessionModeRequest, StopReason,
 };
 use agent_client_protocol as acp;
 use maestro_protocol::{
@@ -379,6 +379,11 @@ pub(crate) async fn run_command_loop(
                     break;
                 }
             }
+            SessionCommand::CancelSubagent(child) => {
+                // The only request a client may send a subagent. The agent confirms with an idle
+                // `subagent_update`, which is what the window waits for.
+                let _ = cx.send_notification(CancelNotification::new(child));
+            }
             SessionCommand::CancelTurn => {
                 // Only `InterruptTurn` sends this, and only a user stops a turn.
                 crate::turn::note_interrupted(&maestro_sid);
@@ -480,12 +485,20 @@ pub(crate) async fn run_command_loop(
                 };
                 let _ = send_response(&so, &msg).await;
             }
-            SessionCommand::SetConfigOption { config_id, value } => {
+            SessionCommand::SetConfigOption {
+                config_id,
+                value,
+                boolean,
+            } => {
+                let typed = match boolean {
+                    Some(b) => SessionConfigOptionValue::boolean(b),
+                    None => SessionConfigValueId::new(value.clone()).into(),
+                };
                 let result = cx
                     .send_request(SetSessionConfigOptionRequest::new(
                         session_id.clone(),
                         SessionConfigId::new(config_id.clone()),
-                        SessionConfigValueId::new(value.clone()),
+                        typed,
                     ))
                     .block_task()
                     .await;

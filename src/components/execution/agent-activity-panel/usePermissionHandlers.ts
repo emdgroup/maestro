@@ -5,9 +5,7 @@ import { isPlanPermission } from "../activity/PermissionPrompt";
 import { isRejectOption, getOptionName, formatFieldAnswer } from "../activity/utils";
 import { parseElicitationFields } from "../activity/ElicitationPrompt";
 import type { PermissionResponseItem, ElicitationSummaryItem } from "../activity/types";
-
-type PendingPermission = { requestId: string; payload: Record<string, unknown> };
-type PendingElicitation = { requestId: string; message: string; payload: Record<string, unknown> };
+import type { PendingPermission, PendingRequest } from "../activity/sessionRuntime";
 
 export type PermissionHandlers = {
   handlePermissionRespond: (requestId: string, optionId: string | null) => Promise<void>;
@@ -24,10 +22,10 @@ export type PermissionHandlers = {
 export function usePermissionHandlers(
   sessionId: string,
   agentItemsCountRef: React.RefObject<number>,
+  pendingRequests: PendingRequest[],
+  /** The request shown, when it is a permission: the one a plan with no body is approved from. */
   pendingPermission: PendingPermission | null,
-  setPendingPermission: React.Dispatch<React.SetStateAction<PendingPermission | null>>,
-  pendingElicitation: PendingElicitation | null,
-  setPendingElicitation: React.Dispatch<React.SetStateAction<PendingElicitation | null>>,
+  resolvePendingRequest: (requestId: string) => boolean,
   isPlanPermWithBody: boolean,
 ): PermissionHandlers {
   const { setActivity } = useSessionActivityActions();
@@ -45,13 +43,14 @@ export function usePermissionHandlers(
       } catch {
         // best-effort
       }
-      if (pendingPermission) {
-        const isRejection = !optionId || isRejectOption(pendingPermission.payload, optionId);
-        if (!isPlanPermission(pendingPermission.payload)) {
+      const answered = pendingRequests.find((r) => r.requestId === requestId);
+      if (answered?.kind === "permission") {
+        const isRejection = !optionId || isRejectOption(answered.payload, optionId);
+        if (!isPlanPermission(answered.payload)) {
           const responseItem: PermissionResponseItem = {
             id: `perm-${requestId}`,
             optionName:
-              getOptionName(pendingPermission.payload, optionId) ??
+              getOptionName(answered.payload, optionId) ??
               (isRejection ? "Permission denied" : "Allowed"),
             isRejection,
           };
@@ -62,10 +61,10 @@ export function usePermissionHandlers(
           ]);
         }
       }
-      setPendingPermission(null);
-      setActivity(sessionId, "thinking");
+      const more = resolvePendingRequest(requestId);
+      setActivity(sessionId, more ? "awaiting_input" : "thinking");
     },
-    [sessionId, pendingPermission, setPendingPermission, setActivity, agentItemsCountRef],
+    [sessionId, pendingRequests, resolvePendingRequest, setActivity, agentItemsCountRef],
   );
 
   // Auto-respond plan permissions that have no body text to display
@@ -91,9 +90,10 @@ export function usePermissionHandlers(
       } catch {
         /* best-effort */
       }
-      if (pendingElicitation) {
+      const answered = pendingRequests.find((r) => r.requestId === requestId);
+      if (answered?.kind === "elicitation") {
         const insertAt = agentItemsCountRef.current;
-        const { message, payload } = pendingElicitation;
+        const { message, payload } = answered;
         const { fields: parsedFields } = parseElicitationFields(payload);
         const fieldSummaries = parsedFields.map((f) => ({
           key: f.key,
@@ -113,10 +113,10 @@ export function usePermissionHandlers(
           },
         ]);
       }
-      setPendingElicitation(null);
-      setActivity(sessionId, "thinking");
+      const more = resolvePendingRequest(requestId);
+      setActivity(sessionId, more ? "awaiting_input" : "thinking");
     },
-    [sessionId, pendingElicitation, setPendingElicitation, setActivity, agentItemsCountRef],
+    [sessionId, pendingRequests, resolvePendingRequest, setActivity, agentItemsCountRef],
   );
 
   const handleElicitationDecline = useCallback(
@@ -126,14 +126,15 @@ export function usePermissionHandlers(
       } catch {
         /* best-effort */
       }
-      if (pendingElicitation) {
+      const answered = pendingRequests.find((r) => r.requestId === requestId);
+      if (answered?.kind === "elicitation") {
         const insertAt = agentItemsCountRef.current;
         setLiveElicitationSummaries((prev) => [
           ...prev,
           {
             item: {
               id: `elicit-${requestId}`,
-              message: pendingElicitation.message,
+              message: answered.message,
               declined: true,
               fields: [],
             },
@@ -141,10 +142,10 @@ export function usePermissionHandlers(
           },
         ]);
       }
-      setPendingElicitation(null);
-      setActivity(sessionId, "thinking");
+      const more = resolvePendingRequest(requestId);
+      setActivity(sessionId, more ? "awaiting_input" : "thinking");
     },
-    [sessionId, pendingElicitation, setPendingElicitation, setActivity, agentItemsCountRef],
+    [sessionId, pendingRequests, resolvePendingRequest, setActivity, agentItemsCountRef],
   );
 
   return {

@@ -323,6 +323,24 @@ pub async fn interrupt_acp_turn(
 
     let msg = ServerRequest::InterruptTurn(InterruptTurnRequest {
         session_id: session_id.to_string(),
+        subagent_session_id: None,
+    });
+    crate::acp::write_to_acp_session(&app_state, session_id, &msg).await
+}
+
+/// Stop one subagent of a session (its ACP child session), leaving the turn running.
+#[tauri::command]
+#[specta::specta]
+pub async fn stop_acp_subagent(
+    app_state: State<'_, Arc<AppState>>,
+    session_id: &str,
+    subagent_session_id: &str,
+) -> Result<(), String> {
+    use maestro_protocol::{InterruptTurnRequest, ServerRequest};
+
+    let msg = ServerRequest::InterruptTurn(InterruptTurnRequest {
+        session_id: session_id.to_string(),
+        subagent_session_id: Some(subagent_session_id.to_string()),
     });
     crate::acp::write_to_acp_session(&app_state, session_id, &msg).await
 }

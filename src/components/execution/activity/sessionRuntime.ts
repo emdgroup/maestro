@@ -7,6 +7,7 @@ import { useSessionActivityStore } from "@/store/sessionActivityStore";
 import { activityReducer, type ActivityAction } from "./activityReducer";
 import { INITIAL_ACTIVITY_STATE } from "./types";
 import { parsePlanLimits, type PlanLimits } from "./planLimits";
+import { isWorkingState } from "./subagentReducer";
 import type {
   ActivityState,
   AvailableCommand,
@@ -43,6 +44,11 @@ export type PendingElicitation = {
   payload: Record<string, unknown>;
 };
 
+/** A permission or a question the agent is blocked on until the user answers it. */
+export type PendingRequest =
+  | ({ kind: "permission" } & PendingPermission)
+  | ({ kind: "elicitation" } & PendingElicitation);
+
 export type SessionLifecycle = {
   configOptions: ConfigOption[];
   configValues: Record<string, string>;
@@ -51,8 +57,13 @@ export type SessionLifecycle = {
   planLimits: PlanLimits | null;
   availableCommands: AvailableCommand[];
   promptCapabilities: AcpPromptCapabilities | null;
-  pendingPermission: PendingPermission | null;
-  pendingElicitation: PendingElicitation | null;
+  /**
+   * Every request the agent is blocked on, oldest first. Several can be open at once (parallel
+   * subagents each ask on their own), and the panel shows one of them at a time.
+   */
+  pendingRequests: PendingRequest[];
+  /** The request the user brought forward; the oldest is shown when this is null or answered. */
+  shownRequestId: string | null;
   /**
    * Every `canvas_await` the agent is blocked on, oldest first. More than one can be open, and
    * an entry with a `null` surfaceId is answerable from whichever canvas the user acts on.
@@ -67,10 +78,22 @@ export const INITIAL_LIFECYCLE: SessionLifecycle = {
   planLimits: null,
   availableCommands: [],
   promptCapabilities: null,
-  pendingPermission: null,
-  pendingElicitation: null,
+  pendingRequests: [],
+  shownRequestId: null,
   pendingCanvasAwaits: [],
 };
+
+/** The request the panel shows: the one brought forward, else the oldest. */
+export function shownRequest(lifecycle: SessionLifecycle): PendingRequest | null {
+  const { pendingRequests, shownRequestId } = lifecycle;
+  return pendingRequests.find((r) => r.requestId === shownRequestId) ?? pendingRequests[0] ?? null;
+}
+
+/** Adds a request unless it is already queued: a reattach re-sends every unanswered one. */
+function enqueueRequest(lifecycle: SessionLifecycle, request: PendingRequest): SessionLifecycle {
+  if (lifecycle.pendingRequests.some((r) => r.requestId === request.requestId)) return lifecycle;
+  return { ...lifecycle, pendingRequests: [...lifecycle.pendingRequests, request] };
+}
 
 /** Callbacks into the panel showing the session, present only while one is mounted. */
 export type SessionHandlers = {
@@ -177,6 +200,10 @@ function applySessionUpdate(sessionId: string, rt: Runtime, raw: Record<string, 
     title?: string;
     description?: string | null;
   };
+  // A subagent that stopped will wait on nothing it asked: the daemon answers those `cancelled`.
+  if (p.sessionUpdate === "subagent_update") dropRequestsOfStoppedSubagent(rt, raw);
+  // A subagent's model, mode, commands and usage describe it, never the session.
+  if (typeof raw.childSessionId === "string") return;
   const l = rt.lifecycle;
   // The stream shows every notice. Only one the spec does not call routine (`error`, or a severity
   // newer than this build) also reaches the user outside the session.
@@ -213,11 +240,8 @@ function applySessionUpdate(sessionId: string, rt: Runtime, raw: Record<string, 
     }
   } else if (p.sessionUpdate === "config_option_update") {
     if (Array.isArray(p.configOptions)) {
-      rt.lifecycle = {
-        ...l,
-        configOptions: p.configOptions,
-        configValues: valuesOf(p.configOptions),
-      };
+      const configOptions = normalizeConfigOptions(p.configOptions);
+      rt.lifecycle = { ...l, configOptions, configValues: valuesOf(configOptions) };
     }
   } else if (p.sessionUpdate === "current_model_update") {
     const modelId = p.modelId ?? p.currentModelId;
@@ -226,6 +250,33 @@ function applySessionUpdate(sessionId: string, rt: Runtime, raw: Record<string, 
     const modeId = p.modeId ?? p.currentModeId;
     if (modeId) rt.lifecycle = { ...l, configValues: { ...l.configValues, mode: modeId } };
   }
+}
+
+function dropRequestsOfStoppedSubagent(rt: Runtime, raw: Record<string, unknown>) {
+  const child = raw.sessionId;
+  const state = (raw.state as { state?: unknown } | null | undefined)?.state;
+  if (typeof child !== "string" || typeof state !== "string" || isWorkingState(state)) return;
+  const asked = (r: PendingRequest) => {
+    const payload = r.payload as { sessionId?: unknown; scope?: { sessionId?: unknown } };
+    return payload.sessionId === child || payload.scope?.sessionId === child;
+  };
+  if (!rt.lifecycle.pendingRequests.some(asked)) return;
+  rt.lifecycle = {
+    ...rt.lifecycle,
+    pendingRequests: rt.lifecycle.pendingRequests.filter((r) => !asked(r)),
+  };
+}
+
+/**
+ * ACP sends a boolean option's value as a boolean and gives it no choices. The compose bar keeps
+ * every value as a string, so it becomes `"true"` or `"false"` here, with an empty choice list.
+ */
+function normalizeConfigOptions(options: ConfigOption[]): ConfigOption[] {
+  return options.map((o) =>
+    o.type === "boolean"
+      ? { ...o, currentValue: String((o.currentValue as unknown) === true), options: [] }
+      : o,
+  );
 }
 
 function valuesOf(options: ConfigOption[]): Record<string, string> {
@@ -389,27 +440,27 @@ function create(sessionId: string): Runtime {
     listen<{ request_id: string; payload: Record<string, unknown> }>(
       `acp://permission-request/${sessionId}`,
       (event) => {
-        updateLifecycle((l) => ({
-          ...l,
-          pendingPermission: {
+        updateLifecycle((l) =>
+          enqueueRequest(l, {
+            kind: "permission",
             requestId: event.payload.request_id,
             payload: event.payload.payload,
-          },
-        }));
+          }),
+        );
         setStatus(sessionId, "awaiting_input");
       },
     ),
     listen<{ request_id: string; message: string; payload: Record<string, unknown> }>(
       `acp://elicitation-request/${sessionId}`,
       (event) => {
-        updateLifecycle((l) => ({
-          ...l,
-          pendingElicitation: {
+        updateLifecycle((l) =>
+          enqueueRequest(l, {
+            kind: "elicitation",
             requestId: event.payload.request_id,
             message: event.payload.message,
             payload: event.payload.payload,
-          },
-        }));
+          }),
+        );
         setStatus(sessionId, "awaiting_input");
       },
     ),
@@ -477,9 +528,10 @@ function create(sessionId: string): Runtime {
     listen<{ config_id: string; value: string; configOptions: ConfigOption[] }>(
       `acp://config-state-updated/${sessionId}`,
       (event) => {
-        const { configOptions, config_id, value } = event.payload;
+        const { config_id, value } = event.payload;
+        const configOptions = normalizeConfigOptions(event.payload.configOptions ?? []);
         updateLifecycle((l) =>
-          Array.isArray(configOptions) && configOptions.length > 0
+          configOptions.length > 0
             ? { ...l, configOptions, configValues: valuesOf(configOptions) }
             : { ...l, configValues: { ...l.configValues, [config_id]: value } },
         );

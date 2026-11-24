@@ -3,16 +3,16 @@ use std::sync::Arc;
 
 use acp::schema::ProtocolVersion;
 use acp::v1::schema::{
-    AuthCapabilities, AuthMethod, ClientCapabilities, ClientSessionCapabilities,
-    CloseSessionRequest, CompactionCapabilities, ContentBlock, CreateTerminalRequest,
-    CreateTerminalResponse, DeleteSessionRequest, ElicitationCapabilities,
+    AuthCapabilities, AuthMethod, BooleanConfigOptionCapabilities, ClientCapabilities,
+    ClientSessionCapabilities, CloseSessionRequest, CompactionCapabilities, ContentBlock,
+    CreateTerminalRequest, CreateTerminalResponse, DeleteSessionRequest, ElicitationCapabilities,
     ElicitationFormCapabilities, EnvVariable, Implementation, InitializeRequest,
     KillTerminalRequest, KillTerminalResponse, ListSessionsRequest, LoadSessionRequest, McpServer,
     McpServerStdio, NewSessionRequest, NoticeCapabilities, PlanCapabilities,
     ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionRequest,
-    RequestPermissionResponse, SessionNotification, SystemPrompt, TerminalExitStatus,
-    TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
-    WaitForTerminalExitResponse,
+    RequestPermissionResponse, SessionConfigOptionsCapabilities, SessionNotification,
+    SubagentCapabilities, SystemPrompt, TerminalExitStatus, TerminalOutputRequest,
+    TerminalOutputResponse, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
 };
 use agent_client_protocol as acp;
 use maestro_protocol::{
@@ -681,11 +681,21 @@ pub(crate) async fn pre_initialize_agent(
                                     .session(
                                         ClientSessionCapabilities::new()
                                             .compaction(CompactionCapabilities::new())
-                                            .notices(NoticeCapabilities::new()),
+                                            .notices(NoticeCapabilities::new())
+                                            // Boolean options as such (Claude's Fast mode), not as
+                                            // an off/on select. The compose bar draws a switch.
+                                            .config_options(
+                                                SessionConfigOptionsCapabilities::new().boolean(
+                                                    BooleanConfigOptionCapabilities::new(),
+                                                ),
+                                            ),
                                     )
                                     // Plans by ID: a subagent's checklist then arrives as a plan
                                     // of its own instead of replacing the session's checklist.
-                                    .plan(PlanCapabilities::new()),
+                                    .plan(PlanCapabilities::new())
+                                    // Each subagent as a child session: its state, its own tool
+                                    // calls and a cancel of its own. See `crate::subagents`.
+                                    .subagents(SubagentCapabilities::new()),
                             ),
                     )
                     .block_task()

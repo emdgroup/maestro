@@ -14,7 +14,13 @@ vi.mock("@/services/canvas.service", () => ({
   saveCanvasSurface: () => Promise.resolve(),
 }));
 
-import { getActivity, getLifecycle, releaseSession, subscribeSession } from "./sessionRuntime";
+import {
+  getActivity,
+  getLifecycle,
+  releaseSession,
+  shownRequest,
+  subscribeSession,
+} from "./sessionRuntime";
 
 const emit = (name: string, payload: unknown) => handlers.get(name)?.({ payload });
 const chunk = (text: string) => ({
@@ -48,8 +54,69 @@ describe("sessionRuntime", () => {
     const items = getActivity(sid).items;
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ type: "message", item: { text: "before after" } });
-    expect(getLifecycle(sid).pendingPermission?.requestId).toBe("r1");
+    expect(shownRequest(getLifecycle(sid))?.requestId).toBe("r1");
     expect(drainAcpReplay).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a boolean option's value as text, with no choices", async () => {
+    const sid = "boolean-option";
+    subscribeSession(sid, () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    emit(`acp://session-update/${sid}`, {
+      sessionUpdate: "config_option_update",
+      configOptions: [{ id: "fast", name: "Fast mode", type: "boolean", currentValue: true }],
+    });
+    await vi.advanceTimersByTimeAsync(60);
+    const lifecycle = getLifecycle(sid);
+    expect(lifecycle.configOptions[0]).toMatchObject({ currentValue: "true", options: [] });
+    expect(lifecycle.configValues.fast).toBe("true");
+  });
+
+  it("keeps a subagent's config off the session", async () => {
+    const sid = "child-config";
+    subscribeSession(sid, () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    emit(`acp://session-update/${sid}`, {
+      sessionUpdate: "config_option_update",
+      childSessionId: "child",
+      configOptions: [{ id: "model", name: "Model", currentValue: "opus", options: [] }],
+    });
+    await vi.advanceTimersByTimeAsync(60);
+    expect(getLifecycle(sid).configOptions).toEqual([]);
+  });
+
+  it("drops the requests of a subagent that stopped", async () => {
+    const sid = "withdrawn";
+    subscribeSession(sid, () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    emit(`acp://permission-request/${sid}`, { request_id: "p1", payload: { sessionId: "child" } });
+    emit(`acp://permission-request/${sid}`, { request_id: "p2", payload: { sessionId: "root" } });
+    emit(`acp://session-update/${sid}`, {
+      sessionUpdate: "subagent_update",
+      sessionId: "child",
+      state: { state: "idle", stopReason: "cancelled" },
+    });
+    await vi.advanceTimersByTimeAsync(60);
+    expect(getLifecycle(sid).pendingRequests.map((r) => r.requestId)).toEqual(["p2"]);
+  });
+
+  it("queues requests that arrive together instead of replacing the first", async () => {
+    const sid = "queued";
+    subscribeSession(sid, () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    emit(`acp://permission-request/${sid}`, { request_id: "p1", payload: {} });
+    emit(`acp://elicitation-request/${sid}`, { request_id: "e1", message: "Which?", payload: {} });
+    // A reattach re-sends what is still unanswered.
+    emit(`acp://permission-request/${sid}`, { request_id: "p1", payload: {} });
+
+    const lifecycle = getLifecycle(sid);
+    expect(lifecycle.pendingRequests.map((r) => [r.kind, r.requestId])).toEqual([
+      ["permission", "p1"],
+      ["elicitation", "e1"],
+    ]);
+    expect(shownRequest(lifecycle)?.requestId).toBe("p1");
+    expect(shownRequest({ ...lifecycle, shownRequestId: "e1" })?.requestId).toBe("e1");
+    expect(shownRequest({ ...lifecycle, shownRequestId: "gone" })?.requestId).toBe("p1");
   });
 
   it("drains again when the backend takes the session back, keeping what it had", async () => {

@@ -249,6 +249,9 @@ pub struct CancelRequest {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct InterruptTurnRequest {
     pub session_id: String,
+    /// Stops this one subagent (an ACP child session) instead of the turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subagent_session_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -376,6 +379,9 @@ pub struct SetConfigOptionRequest {
     pub session_id: String,
     pub config_id: String,
     pub value: String,
+    /// Set for a boolean option, whose `value` is then `"true"` or `"false"`: ACP takes it typed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boolean: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]

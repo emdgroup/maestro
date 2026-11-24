@@ -42,6 +42,7 @@ mod session;
 mod sessions;
 mod skills;
 mod start_over;
+mod subagents;
 mod task_prompt;
 mod task_restart;
 mod task_runner;
@@ -337,10 +338,12 @@ async fn reap_idle_sessions(
     let mut reap: Vec<String> = Vec::new();
 
     for (session_id, session) in sessions.iter_mut() {
+        // A subagent can outlive its parent's turn, and closing the session would cancel it.
         let busy = attached
             || session
                 .turn_active
-                .load(std::sync::atomic::Ordering::SeqCst);
+                .load(std::sync::atomic::Ordering::SeqCst)
+            || subagents::working(session_id) > 0;
         if busy {
             session.idle_marked = false;
         } else if session.idle_marked {

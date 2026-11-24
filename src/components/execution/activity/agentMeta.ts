@@ -1,10 +1,3 @@
-export type ToolStats = {
-  reads?: number;
-  searches?: number;
-  bash?: number;
-  edits?: number;
-};
-
 export type GitOperation = {
   commitSha?: string;
   pushBranch?: string;
@@ -16,10 +9,6 @@ export type GitOperation = {
 };
 
 export type AgentMeta = {
-  parentToolCallId?: string;
-  totalDurationMs?: number;
-  totalTokens?: number;
-  totalToolUseCount?: number;
   /** The agent's own tool name (Read, Write, Bash…) — finer than the ACP `kind`. */
   toolName?: string;
   /** Why the call was made, when the agent supplies one alongside the command. */
@@ -32,15 +21,6 @@ export type AgentMeta = {
   errorText?: string;
   /** Refused by policy rather than crashed — a different thing to tell the user. */
   blocked?: boolean;
-  /**
-   * A subagent launched in the background: its tool call completes at launch and the subagent
-   * runs on until it hands its report back. Live only, as no replay carries the tool response.
-   */
-  background?: boolean;
-  /** The id the agent gave a subagent it launched, which is how its other tools refer to it. */
-  agentId?: string;
-  /** The task a `TaskStop` call stopped: a background subagent's `agentId`, or a shell's id. */
-  taskId?: string;
   linesAdded?: number;
   linesRemoved?: number;
   fileTotalLines?: number;
@@ -50,14 +30,34 @@ export type AgentMeta = {
   /** What a content search looked for, and where — its title is a mangled command. */
   searchPattern?: string;
   searchScope?: string;
+  /** A subagent's type and model, from the config options of its own session. */
   agentType?: string;
   model?: string;
-  outputTokens?: number;
-  cachedTokens?: number;
-  toolStats?: ToolStats;
+  /** Set on the card the reducer builds for a native subagent, never by an agent. */
+  subagent?: SubagentFacts;
   git?: GitOperation;
   /** Set on the row the reducer builds for a context compaction, never by an agent. */
   compaction?: CompactionFacts;
+};
+
+/** What ACP's `subagent_update` said about a subagent, and what Maestro saw of its run. */
+export type SubagentFacts = {
+  /** The subagent's own ACP session. */
+  sessionId: string;
+  /** The agent's title for it; Codex sends none. */
+  title?: string;
+  state: "running" | "requires_action" | "idle" | "unknown" | (string & {});
+  stopReason?: string;
+  error?: string;
+  /** Granted by a live update only: a replayed one grants nothing. */
+  canCancel: boolean;
+  /** The last outcome seen, which an `unknown` state does not erase. */
+  outcome?: "done" | "stopped" | "failed";
+  /** Set only when the run was watched live from start to end. */
+  startedAt?: number;
+  endedAt?: number;
+  /** The id of the message carrying its prompt, which Claude also names its checklist after. */
+  promptMessageId?: string;
 };
 
 export type CompactionFacts = {
@@ -111,7 +111,6 @@ function extractClaudeCodeMeta(raw: Record<string, unknown>): AgentMeta {
 
   const result: AgentMeta = {};
 
-  result.parentToolCallId = str(cc.parentToolUseId);
   result.toolName = str(cc.toolName);
   // Both automode-blocked and permission-rule mean "never ran", not "crashed".
   if (str(cc.nonExecutionKind)) result.blocked = true;
@@ -121,15 +120,6 @@ function extractClaudeCodeMeta(raw: Record<string, unknown>): AgentMeta {
 
   // A refusal reaches us two ways — the marker above, or a reason with no marker.
   if (str(tr.decisionReason)) result.blocked = true;
-
-  if (tr.isAsync === true) result.background = true;
-  result.agentId = str(tr.agentId);
-  result.taskId = str(tr.task_id);
-  result.totalDurationMs = num(tr.totalDurationMs);
-  result.totalTokens = num(tr.totalTokens);
-  result.totalToolUseCount = num(tr.totalToolUseCount);
-  result.agentType = str(tr.agentType);
-  result.model = str(tr.resolvedModel);
 
   // The classifier's reason is the readable half of `message`, which wraps it in boilerplate.
   result.errorText = str(tr.decisionReason) ?? str(tr.stderr) ?? str(tr.message);
@@ -163,22 +153,6 @@ function extractClaudeCodeMeta(raw: Record<string, unknown>): AgentMeta {
 
   result.matchFileCount =
     num(tr.numFiles) ?? (Array.isArray(tr.filenames) ? tr.filenames.length : undefined);
-
-  const usage = obj(tr.usage);
-  if (usage) {
-    result.outputTokens = num(usage.output_tokens);
-    result.cachedTokens = num(usage.cache_read_input_tokens);
-  }
-
-  const stats = obj(tr.toolStats);
-  if (stats) {
-    result.toolStats = {
-      reads: num(stats.readCount),
-      searches: num(stats.searchCount),
-      bash: num(stats.bashCount),
-      edits: num(stats.editFileCount),
-    };
-  }
 
   const git = obj(tr.gitOperation);
   if (git) {

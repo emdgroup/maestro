@@ -488,6 +488,24 @@ expression beside `webhook_enabled`, and the editor offers None, Schedule or Web
 choice. `enabled` is the row switch and pauses whichever it is, so the editor never writes it; with
 None there is nothing to pause, and the switch stays off.
 
+## Native subagents are child sessions
+
+Maestro declares `clientCapabilities.subagents`, so an agent runs each subagent as an ACP child
+session and reports it with `subagent_update` on the parent. `SessionRouter` files every child id
+it hears of under the parent's Maestro session (`register_child`, nested children too), which is
+what lets a child's notifications, permission requests, elicitations and terminals through instead
+of `session_not_found`. A child's own updates go to the window tagged `childSessionId` and never
+reach `turn::note_update` or `usage_store`: its text is not the turn's and its usage is not the
+session's. `src-tauri`'s reader keeps them out of the parent's mode, config and marker filter too.
+
+`subagents.rs` follows which children still work. While one does, the idle reaper leaves the
+session alone (closing it would cancel the child) and `helpers::note_turn_ended` holds the turn
+end, announcing it when the last child stops; a new turn supersedes a held one. The window's
+composer is not held: the user can prompt while only subagents work. A child that stops has its
+open requests answered `cancelled`. `InterruptTurn` with `subagent_session_id` sends
+`session/cancel` to that child alone, the only request a client may send a child. The design is
+`docs/subagents/design.md`.
+
 ## Usage is recorded per turn
 
 `usage_store.rs` writes one `usage_turns` row per prompt turn into `projects.db`, with the models

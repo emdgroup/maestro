@@ -80,11 +80,6 @@ interface ComposeBarProps {
   onSend: (content: string, contentBlocks?: JsonValue) => void;
   onCancel: () => void;
   isProcessing: boolean;
-  /**
-   * The agent takes a prompt while busy: a turn held open for background subagents ends when the
-   * next prompt arrives. Typing turns the stop button into send; an empty composer still stops.
-   */
-  canQueue?: boolean;
   commands: AvailableCommand[];
   embeddedContext?: boolean;
   sessionId?: string | null;
@@ -103,7 +98,6 @@ export function ComposeBar({
   onSend,
   onCancel,
   isProcessing,
-  canQueue = false,
   commands,
   embeddedContext = false,
   sessionId,
@@ -117,7 +111,7 @@ export function ComposeBar({
   onContentChange,
   ref,
 }: ComposeBarProps) {
-  const blocked = isProcessing && !canQueue;
+  const blocked = isProcessing;
   const [value, setValue] = useState("");
   const [isFocused, setIsFocused] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -396,7 +390,7 @@ export function ComposeBar({
 
   const hasAttachmentErrors = attach.attachments.some((a) => !!a.error);
   const sendDisabled = blocked || isSending || !value.trim() || hasAttachmentErrors;
-  const showStop = isProcessing && (!canQueue || !value.trim());
+  const showStop = isProcessing;
 
   return (
     <>

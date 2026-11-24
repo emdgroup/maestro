@@ -159,13 +159,12 @@ export function isMaestroHostTool(
   return !!title && MAESTRO_TOOL_TITLE.test(title.trim());
 }
 
+/** A native ACP subagent's card (see `subagentReducer`). */
 export function isSubagentToolCall(tc: ToolCallItem): boolean {
-  return typeof tc.rawInput?.prompt === "string";
+  return !!tc.meta?.subagent;
 }
 
 export function subagentName(tc: ToolCallItem): string {
-  const desc = tc.rawInput?.description;
-  if (typeof desc === "string" && desc.trim()) return desc.trim();
   return tc.title;
 }
 
