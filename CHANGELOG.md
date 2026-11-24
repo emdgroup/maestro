@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.49.0](https://github.com/emdgroup/maestro/compare/v0.48.0...v0.49.0) (2026-11-24)
+
+
+### Features
+
+* **activity:** show a subagent's checklist on its card via ACP plan operations ([4d4c81c](https://github.com/emdgroup/maestro/commit/4d4c81c23bb53d89e5b995ff09cb227c94ad2900))
+* **activity:** show an agent's Markdown plan in the Plan tab ([4d4c81c](https://github.com/emdgroup/maestro/commit/4d4c81c23bb53d89e5b995ff09cb227c94ad2900))
+* add a save-as-prompt action to user messages in sessions ([776cf7c](https://github.com/emdgroup/maestro/commit/776cf7c3a8cf3b6595e22717078aa76d96287476))
+* adopt native ACP subagent sessions ([47aaa89](https://github.com/emdgroup/maestro/commit/47aaa89bbd4c82506f60b7a840efa5cf0fa76e77))
+* show boolean config options as a switch ([47aaa89](https://github.com/emdgroup/maestro/commit/47aaa89bbd4c82506f60b7a840efa5cf0fa76e77))
+
+
+### Bug Fixes
+
+* **acp:** offer sign-in when an agent refuses a session at spawn ([7eb1e3c](https://github.com/emdgroup/maestro/commit/7eb1e3cd9743bc8756bb0b6335018fa8cb7b11b0))
+* **agents:** detect GitHub Copilot CLI by its copilot binary ([7eb1e3c](https://github.com/emdgroup/maestro/commit/7eb1e3cd9743bc8756bb0b6335018fa8cb7b11b0))
+* **agents:** detect Qwen Code by its qwen binary ([7eb1e3c](https://github.com/emdgroup/maestro/commit/7eb1e3cd9743bc8756bb0b6335018fa8cb7b11b0))
+* queue concurrent permission and elicitation requests ([47aaa89](https://github.com/emdgroup/maestro/commit/47aaa89bbd4c82506f60b7a840efa5cf0fa76e77))
+* **ui:** draw the Copilot icon in the theme's text color ([7eb1e3c](https://github.com/emdgroup/maestro/commit/7eb1e3cd9743bc8756bb0b6335018fa8cb7b11b0))
+
 ## [0.48.0](https://github.com/emdgroup/maestro/compare/v0.47.0...v0.48.0) (2026-11-19)
 
 
