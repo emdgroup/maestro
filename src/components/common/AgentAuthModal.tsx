@@ -13,6 +13,7 @@ import {
 import { useTauriEvent } from "@/services/tauri-events";
 import { connectionChannelId } from "@/lib/connection-utils";
 import { useNavigate } from "@/store/navigationStore";
+import { useSelectedProject } from "@/store/projectStore";
 import { useAuthRequiredTask, useBoardActions } from "@/store/boardStore";
 import { Spinner } from "@/ui/spinner";
 
@@ -66,7 +67,12 @@ export function AgentAuthModal({
   authKey,
   sessionId,
 }: AgentAuthModalProps) {
-  const { data: authInfo } = useAgentAuthInfoQuery(agentId, connection);
+  const projectPath = useSelectedProject()?.path ?? null;
+  const { data: authInfo, error: authInfoError } = useAgentAuthInfoQuery(
+    agentId,
+    connection,
+    open ? projectPath : null,
+  );
   const authenticate = useAcpAuthenticateMutation();
   const navigate = useNavigate();
   const { setAuthTerminalRunning, setAuthTerminalIdle } = useBoardActions();
@@ -216,7 +222,11 @@ export function AgentAuthModal({
         ) : (
           <div className="space-y-2 py-2">
             {authError && <p className="text-sm text-destructive">{authError}</p>}
-            {authMethods.length === 0 ? (
+            {authInfoError ? (
+              <p className="text-sm text-destructive">
+                Could not load sign-in methods: {String(authInfoError)}
+              </p>
+            ) : authMethods.length === 0 ? (
               <p className="text-sm text-muted-foreground">Loading authentication methods…</p>
             ) : (
               authMethods.map(

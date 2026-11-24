@@ -92,4 +92,19 @@ describe("sessionRuntime", () => {
 
     expect(getActivity(sid).items).toHaveLength(0);
   });
+
+  it("puts a sign-in refusal at spawn in the transcript, where its Login button is", async () => {
+    const sid = "refused";
+    subscribeSession(sid, () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    emit(`acp://session-error/${sid}`, "auth_required");
+    await vi.advanceTimersByTimeAsync(60);
+
+    expect(getActivity(sid).items).toEqual([
+      expect.objectContaining({
+        type: "error",
+        item: expect.objectContaining({ stopReason: "auth_required" }),
+      }),
+    ]);
+  });
 });

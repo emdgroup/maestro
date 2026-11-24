@@ -2976,9 +2976,9 @@ async cancelTask(projectId: number, taskId: number) : Promise<Result<Task, strin
     else return { status: "error", error: e  as any };
 }
 },
-async getAgentAuthInfo(agentId: string, connection: ConnectionKey) : Promise<Result<AgentAuthInfo | null, string>> {
+async getAgentAuthInfo(agentId: string, connection: ConnectionKey, cwd: string | null) : Promise<Result<AgentAuthInfo | null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_agent_auth_info", { agentId, connection }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_agent_auth_info", { agentId, connection, cwd }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

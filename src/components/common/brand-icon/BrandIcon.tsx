@@ -1,4 +1,4 @@
-import type { ForwardRefExoticComponent, RefAttributes, SVGProps } from "react";
+import type { ComponentType, SVGProps } from "react";
 import { cn } from "@/lib/utils";
 import Github from "@thesvg/react/github";
 import Gitlab from "@thesvg/react/gitlab";
@@ -23,9 +23,14 @@ import Kimi from "@thesvg/react/kimi";
 import MistralAi from "@thesvg/react/mistral-ai";
 import Opencode from "@thesvg/react/opencode";
 
-type SvgIcon = ForwardRefExoticComponent<SVGProps<SVGSVGElement> & RefAttributes<SVGSVGElement>>;
+type SvgIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
-const DARK_INVERT_SLUGS = new Set(["github", "github-copilot-cli"]);
+const DARK_INVERT_SLUGS = new Set(["github"]);
+
+/* The default variant paints the mark white; `light` leaves it to currentColor, so it follows the theme. */
+function GithubCopilotThemed(props: SVGProps<SVGSVGElement>) {
+  return <GithubCopilot variant="light" {...props} />;
+}
 
 const BRAND_ICONS: Record<string, SvgIcon> = {
   github: Github,
@@ -43,7 +48,7 @@ const BRAND_ICONS: Record<string, SvgIcon> = {
   "codex-acp": CodexOpenai,
   cursor: Cursor,
   gemini: GoogleGemini,
-  "github-copilot-cli": GithubCopilot,
+  "github-copilot-cli": GithubCopilotThemed,
   goose: GooseCodename,
   junie: Junie,
   kilo: KiloCode,
