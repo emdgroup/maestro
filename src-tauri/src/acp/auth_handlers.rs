@@ -3,7 +3,7 @@ use crate::acp::session_types::AgentAuthInfo;
 use crate::core::AppState;
 use maestro_protocol::{
     AuthTerminalInputRequest, AuthenticateRequest, KillAuthTerminalRequest, LogoutRequest,
-    ServerRequest, ServerResponse, SpawnAuthTerminalRequest,
+    PreInitializeRequest, ServerRequest, ServerResponse, SpawnAuthTerminalRequest,
 };
 use std::sync::Arc;
 use tauri::State;
@@ -27,9 +27,32 @@ pub async fn get_agent_auth_info(
     app_state: State<'_, Arc<AppState>>,
     agent_id: String,
     connection: crate::acp::ConnectionKey,
+    cwd: Option<String>,
 ) -> Result<Option<AgentAuthInfo>, String> {
-    let map = app_state.acp.agent_auth_info.lock().await;
-    Ok(map.get(&(connection, agent_id)).cloned())
+    let key = (connection, agent_id.clone());
+    if let Some(info) = app_state.acp.agent_auth_info.lock().await.get(&key) {
+        return Ok(Some(info.clone()));
+    }
+    // Only the project's default agent is warmed when it opens, so any other agent that asks for a
+    // sign-in has no methods on record yet. The reader records them from this reply.
+    let Some(cwd) = cwd else {
+        return Ok(None);
+    };
+    query_via_server_within(
+        connection,
+        &app_state,
+        ServerRequest::PreInitialize(PreInitializeRequest { agent_id, cwd }),
+        reply!(ServerResponse::PreInitializeOk(response) => response),
+        60,
+    )
+    .await?;
+    Ok(app_state
+        .acp
+        .agent_auth_info
+        .lock()
+        .await
+        .get(&key)
+        .cloned())
 }
 
 #[tauri::command]

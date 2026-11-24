@@ -7,12 +7,22 @@ export const authQueryKeys = {
   base: ["agentAuth"] as const,
   info: (agentId: string | null, connection: ConnectionKey) =>
     [...authQueryKeys.base, "info", agentId, connection] as const,
+  infoIn: (agentId: string | null, connection: ConnectionKey, cwd: string | null) =>
+    [...authQueryKeys.info(agentId, connection), cwd] as const,
 };
 
-export function useAgentAuthInfoQuery(agentId: string | null, connection: ConnectionKey) {
+/**
+ * With a `cwd`, an agent whose sign-in methods are not on record yet is started there to learn
+ * them; without one, only what is already on record is returned.
+ */
+export function useAgentAuthInfoQuery(
+  agentId: string | null,
+  connection: ConnectionKey,
+  cwd: string | null = null,
+) {
   return useQuery({
-    queryKey: authQueryKeys.info(agentId, connection),
-    queryFn: () => api.getAgentAuthInfo(agentId!, connection),
+    queryKey: authQueryKeys.infoIn(agentId, connection, cwd),
+    queryFn: () => api.getAgentAuthInfo(agentId!, connection, cwd),
     enabled: !!agentId,
     staleTime: 30_000,
   });

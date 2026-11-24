@@ -361,6 +361,14 @@ function create(sessionId: string): Runtime {
           stopReason: "error",
           message: `This session could not be restored and has been closed. ${event.payload}`,
         });
+      } else if (event.payload === "auth_required") {
+        // The agent refused the session until it is signed in. An auth error in the transcript
+        // carries the Login button; a toast would leave the user no way to sign in.
+        enqueue({
+          type: "append_error",
+          stopReason: "auth_required",
+          message: "The agent needs you to sign in before it can start.",
+        });
       } else {
         toast.error(`Agent failed to start: ${event.payload}`);
       }
