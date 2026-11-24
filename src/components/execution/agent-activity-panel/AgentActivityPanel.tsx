@@ -110,9 +110,10 @@ export function AgentActivityPanel({
     availableCommands,
     promptCapabilities,
     pendingPermission,
-    setPendingPermission,
     pendingElicitation,
-    setPendingElicitation,
+    pendingRequests,
+    resolvePendingRequest,
+    showPendingRequest,
     pendingCanvasAwaits,
   } = useAcpSessionLifecycle(sessionId, onUsageChangeRef);
 
@@ -185,10 +186,9 @@ export function AgentActivityPanel({
   } = usePermissionHandlers(
     sessionId,
     agentItemsCountRef,
+    pendingRequests,
     pendingPermission,
-    setPendingPermission,
-    pendingElicitation,
-    setPendingElicitation,
+    resolvePendingRequest,
     isPlanPermWithBody,
   );
 
@@ -460,6 +460,8 @@ export function AgentActivityPanel({
       toolCallMap={liveState.toolCallMap}
       pendingElicitation={pendingElicitation}
       pendingPermission={pendingPermission}
+      pendingRequests={pendingRequests}
+      onShowRequest={showPendingRequest}
       isPlan={isPlanPermWithBody}
       onElicitationSubmit={handleElicitationSubmit}
       onElicitationDecline={handleElicitationDecline}

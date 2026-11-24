@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useSyncExternalStore } from "react";
+import type React from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import type { UsageState } from "./types";
 import {
   getLifecycle,
   setSessionHandler,
+  shownRequest,
   subscribeSession,
   updateLifecycle,
   type PendingElicitation,
@@ -13,8 +15,14 @@ import {
 export type { AcpPromptCapabilities } from "./sessionRuntime";
 
 export type AcpSessionLifecycleResult = SessionLifecycle & {
-  setPendingPermission: React.Dispatch<React.SetStateAction<PendingPermission | null>>;
-  setPendingElicitation: React.Dispatch<React.SetStateAction<PendingElicitation | null>>;
+  /** The request shown, when it is a permission. */
+  pendingPermission: PendingPermission | null;
+  /** The request shown, when it is a question. */
+  pendingElicitation: PendingElicitation | null;
+  /** Drops an answered request. Returns whether others are still waiting. */
+  resolvePendingRequest: (requestId: string) => boolean;
+  /** Brings a waiting request forward. */
+  showPendingRequest: (requestId: string) => void;
 };
 
 /** The session's config, usage and pending requests, held by its runtime like its transcript. */
@@ -31,22 +39,28 @@ export function useAcpSessionLifecycle(
     [sessionId, onUsageChangeRef],
   );
 
-  const setPendingPermission = useCallback(
-    (next: React.SetStateAction<PendingPermission | null>) =>
+  const resolvePendingRequest = useCallback(
+    (requestId: string) => {
       updateLifecycle(sessionId, (l) => ({
         ...l,
-        pendingPermission: typeof next === "function" ? next(l.pendingPermission) : next,
-      })),
+        pendingRequests: l.pendingRequests.filter((r) => r.requestId !== requestId),
+        shownRequestId: l.shownRequestId === requestId ? null : l.shownRequestId,
+      }));
+      return getLifecycle(sessionId).pendingRequests.length > 0;
+    },
     [sessionId],
   );
-  const setPendingElicitation = useCallback(
-    (next: React.SetStateAction<PendingElicitation | null>) =>
-      updateLifecycle(sessionId, (l) => ({
-        ...l,
-        pendingElicitation: typeof next === "function" ? next(l.pendingElicitation) : next,
-      })),
+  const showPendingRequest = useCallback(
+    (requestId: string) => updateLifecycle(sessionId, (l) => ({ ...l, shownRequestId: requestId })),
     [sessionId],
   );
 
-  return { ...lifecycle, setPendingPermission, setPendingElicitation };
+  const shown = shownRequest(lifecycle);
+  return {
+    ...lifecycle,
+    pendingPermission: shown?.kind === "permission" ? shown : null,
+    pendingElicitation: shown?.kind === "elicitation" ? shown : null,
+    resolvePendingRequest,
+    showPendingRequest,
+  };
 }

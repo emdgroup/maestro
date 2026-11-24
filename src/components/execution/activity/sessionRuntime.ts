@@ -43,6 +43,11 @@ export type PendingElicitation = {
   payload: Record<string, unknown>;
 };
 
+/** A permission or a question the agent is blocked on until the user answers it. */
+export type PendingRequest =
+  | ({ kind: "permission" } & PendingPermission)
+  | ({ kind: "elicitation" } & PendingElicitation);
+
 export type SessionLifecycle = {
   configOptions: ConfigOption[];
   configValues: Record<string, string>;
@@ -51,8 +56,13 @@ export type SessionLifecycle = {
   planLimits: PlanLimits | null;
   availableCommands: AvailableCommand[];
   promptCapabilities: AcpPromptCapabilities | null;
-  pendingPermission: PendingPermission | null;
-  pendingElicitation: PendingElicitation | null;
+  /**
+   * Every request the agent is blocked on, oldest first. Several can be open at once (parallel
+   * subagents each ask on their own), and the panel shows one of them at a time.
+   */
+  pendingRequests: PendingRequest[];
+  /** The request the user brought forward; the oldest is shown when this is null or answered. */
+  shownRequestId: string | null;
   /**
    * Every `canvas_await` the agent is blocked on, oldest first. More than one can be open, and
    * an entry with a `null` surfaceId is answerable from whichever canvas the user acts on.
@@ -67,10 +77,22 @@ export const INITIAL_LIFECYCLE: SessionLifecycle = {
   planLimits: null,
   availableCommands: [],
   promptCapabilities: null,
-  pendingPermission: null,
-  pendingElicitation: null,
+  pendingRequests: [],
+  shownRequestId: null,
   pendingCanvasAwaits: [],
 };
+
+/** The request the panel shows: the one brought forward, else the oldest. */
+export function shownRequest(lifecycle: SessionLifecycle): PendingRequest | null {
+  const { pendingRequests, shownRequestId } = lifecycle;
+  return pendingRequests.find((r) => r.requestId === shownRequestId) ?? pendingRequests[0] ?? null;
+}
+
+/** Adds a request unless it is already queued: a reattach re-sends every unanswered one. */
+function enqueueRequest(lifecycle: SessionLifecycle, request: PendingRequest): SessionLifecycle {
+  if (lifecycle.pendingRequests.some((r) => r.requestId === request.requestId)) return lifecycle;
+  return { ...lifecycle, pendingRequests: [...lifecycle.pendingRequests, request] };
+}
 
 /** Callbacks into the panel showing the session, present only while one is mounted. */
 export type SessionHandlers = {
@@ -389,27 +411,27 @@ function create(sessionId: string): Runtime {
     listen<{ request_id: string; payload: Record<string, unknown> }>(
       `acp://permission-request/${sessionId}`,
       (event) => {
-        updateLifecycle((l) => ({
-          ...l,
-          pendingPermission: {
+        updateLifecycle((l) =>
+          enqueueRequest(l, {
+            kind: "permission",
             requestId: event.payload.request_id,
             payload: event.payload.payload,
-          },
-        }));
+          }),
+        );
         setStatus(sessionId, "awaiting_input");
       },
     ),
     listen<{ request_id: string; message: string; payload: Record<string, unknown> }>(
       `acp://elicitation-request/${sessionId}`,
       (event) => {
-        updateLifecycle((l) => ({
-          ...l,
-          pendingElicitation: {
+        updateLifecycle((l) =>
+          enqueueRequest(l, {
+            kind: "elicitation",
             requestId: event.payload.request_id,
             message: event.payload.message,
             payload: event.payload.payload,
-          },
-        }));
+          }),
+        );
         setStatus(sessionId, "awaiting_input");
       },
     ),

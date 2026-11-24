@@ -14,7 +14,13 @@ vi.mock("@/services/canvas.service", () => ({
   saveCanvasSurface: () => Promise.resolve(),
 }));
 
-import { getActivity, getLifecycle, releaseSession, subscribeSession } from "./sessionRuntime";
+import {
+  getActivity,
+  getLifecycle,
+  releaseSession,
+  shownRequest,
+  subscribeSession,
+} from "./sessionRuntime";
 
 const emit = (name: string, payload: unknown) => handlers.get(name)?.({ payload });
 const chunk = (text: string) => ({
@@ -48,8 +54,27 @@ describe("sessionRuntime", () => {
     const items = getActivity(sid).items;
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ type: "message", item: { text: "before after" } });
-    expect(getLifecycle(sid).pendingPermission?.requestId).toBe("r1");
+    expect(shownRequest(getLifecycle(sid))?.requestId).toBe("r1");
     expect(drainAcpReplay).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues requests that arrive together instead of replacing the first", async () => {
+    const sid = "queued";
+    subscribeSession(sid, () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    emit(`acp://permission-request/${sid}`, { request_id: "p1", payload: {} });
+    emit(`acp://elicitation-request/${sid}`, { request_id: "e1", message: "Which?", payload: {} });
+    // A reattach re-sends what is still unanswered.
+    emit(`acp://permission-request/${sid}`, { request_id: "p1", payload: {} });
+
+    const lifecycle = getLifecycle(sid);
+    expect(lifecycle.pendingRequests.map((r) => [r.kind, r.requestId])).toEqual([
+      ["permission", "p1"],
+      ["elicitation", "e1"],
+    ]);
+    expect(shownRequest(lifecycle)?.requestId).toBe("p1");
+    expect(shownRequest({ ...lifecycle, shownRequestId: "e1" })?.requestId).toBe("e1");
+    expect(shownRequest({ ...lifecycle, shownRequestId: "gone" })?.requestId).toBe("p1");
   });
 
   it("drains again when the backend takes the session back, keeping what it had", async () => {
