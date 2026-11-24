@@ -67,7 +67,7 @@ describe("extractAgentMeta — claudeCode", () => {
     expect(meta.blocked).toBeUndefined();
   });
 
-  it("pulls read range, match count, usage split, tool stats and git operation", () => {
+  it("pulls read range, match count and git operation", () => {
     const meta = extractAgentMeta({
       _meta: {
         claudeCode: {
@@ -90,11 +90,6 @@ describe("extractAgentMeta — claudeCode", () => {
     expect(meta.fileStartLine).toBe(350);
     expect(meta.fileTotalLines).toBe(412);
     expect(meta.matchFileCount).toBe(3);
-    expect(meta.outputTokens).toBe(3675);
-    expect(meta.cachedTokens).toBe(42199);
-    expect(meta.toolStats).toEqual({ reads: 5, searches: 5, bash: 2, edits: 0 });
-    expect(meta.model).toBe("claude-opus-5[1m]");
-    expect(meta.agentType).toBe("Explore");
     expect(meta.git?.commitSha).toBe("202f6673");
     expect(meta.git?.prNumber).toBe(128);
   });

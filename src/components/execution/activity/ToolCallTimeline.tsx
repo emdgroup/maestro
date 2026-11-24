@@ -29,6 +29,7 @@ import { MarkdownBlock, OpenFileContext } from "@/components/common/markdown/Mar
 import { ContentErrorBoundary, ToolCallContentBlock } from "./ToolCallContentBlock";
 import { isGitCommand, isMcpToolName, isTerminalKind, rowLabel } from "./tool-call-labels";
 import type { ToolCallItem } from "./types";
+import { SubagentNamesContext, revealSubagent } from "./subagent-controls";
 
 export const KIND_ICON: Record<string, React.ElementType> = {
   // ACP SDK ToolKind values
@@ -112,7 +113,7 @@ export function isReadKind(kind: string): boolean {
  */
 export function hasRowContent(tc: ToolCallItem): boolean {
   if (tc.status === "error") return true;
-  return tc.content.length > 0 || tc.meta?.output != null;
+  return tc.content.some((c) => c.type !== "session") || tc.meta?.output != null;
 }
 
 export function isRunning(tc: ToolCallItem): boolean {
@@ -426,6 +427,28 @@ export function RowBody({ tc }: { tc: ToolCallItem }) {
   );
 }
 
+/** The subagents a call acts on (Codex's `wait` and `closeAgent`), each opening its card. */
+function SubagentChips({ tc }: { tc: ToolCallItem }) {
+  const names = useContext(SubagentNamesContext);
+  const sessions = tc.content.flatMap((c) =>
+    c.type === "session" && names.has(c.sessionId) ? [c.sessionId] : [],
+  );
+  if (sessions.length === 0) return null;
+  return sessions.map((sessionId) => (
+    <button
+      key={sessionId}
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        revealSubagent(sessionId);
+      }}
+      className="shrink-0 truncate rounded-full border border-accent/35 px-1.5 text-[10px] text-accent hover:bg-accent/10"
+    >
+      ⇢ {names.get(sessionId)}
+    </button>
+  ));
+}
+
 /** The one word a settled row owes the user when it did not simply succeed. */
 export function StatusWord({ tc }: { tc: ToolCallItem }) {
   if (tc.status === "error") {
@@ -553,6 +576,7 @@ export function ToolCallTimeline({ items, inline }: { items: ToolCallItem[]; inl
                     />
                   )}
                   <StatusWord tc={tc} />
+                  <SubagentChips tc={tc} />
                   {hasContent && (
                     <ChevronRight
                       className={cn(

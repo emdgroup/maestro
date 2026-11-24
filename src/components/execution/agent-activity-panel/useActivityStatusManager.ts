@@ -19,6 +19,8 @@ export function useActivityStatusManager(
   liveState: Pick<ActivityState, "items" | "isInitializing" | "isTurnActive" | "sessionEnded">,
   pendingSendRef: MutableRefObject<boolean>,
   awaitingUserInput = false,
+  /** Subagents still working: the session works on after its turn ends. */
+  workingSubagents = 0,
 ): void {
   const { setActivity, removeActivity, resetIfStale } = useSessionActivityActions();
 
@@ -49,7 +51,11 @@ export function useActivityStatusManager(
     const lastItem = liveState.items[liveState.items.length - 1];
 
     if (!lastItem || !liveState.isTurnActive) {
-      if (!pendingSendRef.current) {
+      if (pendingSendRef.current) return;
+      if (workingSubagents > 0) {
+        const label = `${workingSubagents} subagent${workingSubagents === 1 ? "" : "s"}`;
+        setActivity(sessionId, "acting", label);
+      } else {
         setActivity(sessionId, "idle");
       }
       return;
@@ -92,6 +98,7 @@ export function useActivityStatusManager(
     liveState.isTurnActive,
     liveState.sessionEnded,
     awaitingUserInput,
+    workingSubagents,
     sessionId,
     setActivity,
     removeActivity,

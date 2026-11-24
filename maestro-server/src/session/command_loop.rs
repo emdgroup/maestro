@@ -379,6 +379,11 @@ pub(crate) async fn run_command_loop(
                     break;
                 }
             }
+            SessionCommand::CancelSubagent(child) => {
+                // The only request a client may send a subagent. The agent confirms with an idle
+                // `subagent_update`, which is what the window waits for.
+                let _ = cx.send_notification(CancelNotification::new(child));
+            }
             SessionCommand::CancelTurn => {
                 // Only `InterruptTurn` sends this, and only a user stops a turn.
                 crate::turn::note_interrupted(&maestro_sid);

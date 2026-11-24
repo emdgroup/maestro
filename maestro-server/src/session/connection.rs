@@ -10,8 +10,8 @@ use acp::v1::schema::{
     KillTerminalRequest, KillTerminalResponse, ListSessionsRequest, LoadSessionRequest, McpServer,
     McpServerStdio, NewSessionRequest, NoticeCapabilities, PlanCapabilities,
     ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionRequest,
-    RequestPermissionResponse, SessionNotification, SystemPrompt, TerminalExitStatus,
-    TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
+    RequestPermissionResponse, SessionNotification, SubagentCapabilities, SystemPrompt,
+    TerminalExitStatus, TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
     WaitForTerminalExitResponse,
 };
 use agent_client_protocol as acp;
@@ -685,7 +685,10 @@ pub(crate) async fn pre_initialize_agent(
                                     )
                                     // Plans by ID: a subagent's checklist then arrives as a plan
                                     // of its own instead of replacing the session's checklist.
-                                    .plan(PlanCapabilities::new()),
+                                    .plan(PlanCapabilities::new())
+                                    // Each subagent as a child session: its state, its own tool
+                                    // calls and a cancel of its own. See `crate::subagents`.
+                                    .subagents(SubagentCapabilities::new()),
                             ),
                     )
                     .block_task()

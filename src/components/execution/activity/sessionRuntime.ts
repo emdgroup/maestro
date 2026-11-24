@@ -7,6 +7,7 @@ import { useSessionActivityStore } from "@/store/sessionActivityStore";
 import { activityReducer, type ActivityAction } from "./activityReducer";
 import { INITIAL_ACTIVITY_STATE } from "./types";
 import { parsePlanLimits, type PlanLimits } from "./planLimits";
+import { isWorkingState } from "./subagentReducer";
 import type {
   ActivityState,
   AvailableCommand,
@@ -199,6 +200,10 @@ function applySessionUpdate(sessionId: string, rt: Runtime, raw: Record<string, 
     title?: string;
     description?: string | null;
   };
+  // A subagent that stopped will wait on nothing it asked: the daemon answers those `cancelled`.
+  if (p.sessionUpdate === "subagent_update") dropRequestsOfStoppedSubagent(rt, raw);
+  // A subagent's model, mode, commands and usage describe it, never the session.
+  if (typeof raw.childSessionId === "string") return;
   const l = rt.lifecycle;
   // The stream shows every notice. Only one the spec does not call routine (`error`, or a severity
   // newer than this build) also reaches the user outside the session.
@@ -248,6 +253,21 @@ function applySessionUpdate(sessionId: string, rt: Runtime, raw: Record<string, 
     const modeId = p.modeId ?? p.currentModeId;
     if (modeId) rt.lifecycle = { ...l, configValues: { ...l.configValues, mode: modeId } };
   }
+}
+
+function dropRequestsOfStoppedSubagent(rt: Runtime, raw: Record<string, unknown>) {
+  const child = raw.sessionId;
+  const state = (raw.state as { state?: unknown } | null | undefined)?.state;
+  if (typeof child !== "string" || typeof state !== "string" || isWorkingState(state)) return;
+  const asked = (r: PendingRequest) => {
+    const payload = r.payload as { sessionId?: unknown; scope?: { sessionId?: unknown } };
+    return payload.sessionId === child || payload.scope?.sessionId === child;
+  };
+  if (!rt.lifecycle.pendingRequests.some(asked)) return;
+  rt.lifecycle = {
+    ...rt.lifecycle,
+    pendingRequests: rt.lifecycle.pendingRequests.filter((r) => !asked(r)),
+  };
 }
 
 function valuesOf(options: ConfigOption[]): Record<string, string> {

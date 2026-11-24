@@ -133,7 +133,8 @@ interface AgentScrollOverlaysProps {
   onSend: (content: string, contentBlocks?: JsonValue) => void;
   onCancel: () => Promise<void>;
   isProcessing: boolean;
-  canQueue?: boolean;
+  /** Subagents still working after the turn ended; only the docked composer says so. */
+  workingSubagents?: number;
   commands: AvailableCommand[];
   embeddedContext: boolean;
   sessionId: string;
@@ -155,7 +156,6 @@ export function AgentScrollOverlays({
   onSend,
   onCancel,
   isProcessing,
-  canQueue,
   commands,
   embeddedContext,
   sessionId,
@@ -201,7 +201,6 @@ export function AgentScrollOverlays({
                 onSend={onSend}
                 onCancel={onCancel}
                 isProcessing={isProcessing}
-                canQueue={canQueue}
                 commands={commands}
                 embeddedContext={embeddedContext}
                 sessionId={sessionId}

@@ -13,7 +13,14 @@ import {
 } from "../activity/permission-prompt-utils";
 import { deriveTaskDraft } from "../activity/task-draft";
 import { planLimitsKey, usePlanLimitsStore } from "../activity/planLimits";
-import { StopSubagentContext } from "../activity/subagent-stop";
+import {
+  SubagentControlsContext,
+  SubagentNamesContext,
+  type SubagentControls,
+} from "../activity/subagent-controls";
+import { isSubagentWorking } from "../activity/subagentReducer";
+import { stopAcpSubagent } from "@/services/execution.service";
+import type { PendingRequest } from "../activity/sessionRuntime";
 import type { TaskDraft } from "../activity/task-draft";
 
 import { isSubagentToolCall } from "../activity/utils";
@@ -128,12 +135,21 @@ export function AgentActivityPanel({
 
   const [, setScrollRestoreToken] = useState(0);
 
+  // Subagents can outlive the turn that started them. The session is working while they do,
+  // but the parent's turn is over, so the composer stays the user's.
+  const workingSubagents = useMemo(
+    () => [...liveState.toolCallMap.values()].filter(isSubagentWorking).length,
+    [liveState.toolCallMap],
+  );
+  const subagentsOnly = !liveState.isTurnActive && workingSubagents > 0;
+
   const pendingSendRef = useRef(false);
   useActivityStatusManager(
     sessionId,
     liveState,
     pendingSendRef,
     !!pendingPermission || !!pendingElicitation,
+    workingSubagents,
   );
   const { data: activeSessions } = useActiveSessionsQuery(selectedProject?.id);
   const sessionInfo = activeSessions?.find((s) => s.session_id === sessionId);
@@ -258,19 +274,11 @@ export function AgentActivityPanel({
   });
 
   const isProcessing =
-    activityInfo?.status === "thinking" ||
-    activityInfo?.status === "acting" ||
-    activityInfo?.status === "stale";
+    !subagentsOnly &&
+    (activityInfo?.status === "thinking" ||
+      activityInfo?.status === "acting" ||
+      activityInfo?.status === "stale");
   const [hasSentFirstMessage, setHasSentFirstMessage] = useState(false);
-  // Claude holds the turn open until its background subagents finish, but takes the next prompt
-  // meanwhile and ends the held turn with it, so the user need not wait them out.
-  const backgroundRunning = useMemo(
-    () =>
-      [...liveState.toolCallMap.values()].some(
-        (tc) => tc.meta?.background && tc.status === "in_progress",
-      ),
-    [liveState.toolCallMap],
-  );
 
   // `useMessageSender` polls this from a callback while waiting out a cancelled turn, and a value
   // captured in a closure would never change.
@@ -311,11 +319,40 @@ export function AgentActivityPanel({
     onCenteredTransition: () => setHasSentFirstMessage(true),
     pendingSendRef,
     isTurnActiveRef,
-    canQueue: backgroundRunning,
     pendingCanvasAwaitsRef,
   });
 
-  const handleStopSubagent = useCallback((prompt: string) => void handleSend(prompt), [handleSend]);
+  const subagentNames = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const tc of liveState.toolCallMap.values()) {
+      if (tc.meta?.subagent) names.set(tc.meta.subagent.sessionId, tc.title);
+    }
+    return names;
+  }, [liveState.toolCallMap]);
+  const subagentControls = useMemo<SubagentControls>(() => {
+    const waiting = new Set<string>();
+    for (const request of pendingRequests) {
+      const asker = requestSessionId(request);
+      if (asker && subagentNames.has(asker)) waiting.add(asker);
+    }
+    return {
+      stop: (child) => void stopAcpSubagent(sessionId, child).catch(console.error),
+      waiting,
+      showRequest: (child) => {
+        const request = pendingRequests.find((r) => requestSessionId(r) === child);
+        if (request) showPendingRequest(request.requestId);
+      },
+    };
+  }, [pendingRequests, subagentNames, sessionId, showPendingRequest]);
+  /** Who asked: the main agent, or one of its subagents by name. */
+  const requestSource = useCallback(
+    (request: PendingRequest) => {
+      const asker = requestSessionId(request);
+      const name = asker ? subagentNames.get(asker) : undefined;
+      return name ? `Subagent · ${name}` : "Main agent";
+    },
+    [subagentNames],
+  );
 
   // The Overview's "asks the agent" actions write into the composer instead of prompting, so the
   // user reads and sends what was suggested. Withheld once the session has ended: there would be
@@ -462,6 +499,7 @@ export function AgentActivityPanel({
       pendingPermission={pendingPermission}
       pendingRequests={pendingRequests}
       onShowRequest={showPendingRequest}
+      requestSource={subagentNames.size > 0 ? requestSource : undefined}
       isPlan={isPlanPermWithBody}
       onElicitationSubmit={handleElicitationSubmit}
       onElicitationDecline={handleElicitationDecline}
@@ -475,7 +513,7 @@ export function AgentActivityPanel({
     onSend: handleSendWithTransition as (content: string, contentBlocks?: JsonValue) => void,
     onCancel: handleCancel,
     isProcessing: isProcessing && pendingCanvasAwaits.length === 0,
-    canQueue: backgroundRunning,
+    workingSubagents: subagentsOnly ? workingSubagents : 0,
     commands: availableCommands,
     embeddedContext: promptCapabilities?.embedded_context ?? false,
     sessionId: sessionId,
@@ -562,121 +600,130 @@ export function AgentActivityPanel({
   );
 
   return (
-    <StopSubagentContext.Provider value={isSessionDead ? undefined : handleStopSubagent}>
-      <div className="flex-1 flex flex-col min-h-0">
-        <CanvasImportDialog request={canvasImport.request} onChoice={canvasImport.resolve} />
-        {selectedProject && (
-          <TaskDraftModal
-            draft={taskDraft}
-            projectId={selectedProject.id}
-            onClose={() => setTaskDraft(null)}
-          />
-        )}
-        {agentId && (
-          <AgentAuthModal
-            agentId={agentId}
-            connection={connection}
-            authKey={auth.authKey}
-            sessionId={sessionId}
-            {...auth.modal}
-          />
-        )}
-        <ResizablePanelGroup
-          orientation="horizontal"
-          elementRef={groupElementRef}
-          disabled={maximized}
-          className="relative flex-1 min-h-0 overflow-hidden"
-        >
-          <ResizablePanel
-            elementRef={streamPanelElementRef}
-            minSize="42rem"
-            // Hidden under a maximized side panel, which floats over this one and is transparent
-            // outside its own inset well.
-            className={cn("flex flex-col min-h-0 overflow-hidden", maximized && "invisible")}
+    <SubagentNamesContext.Provider value={subagentNames}>
+      <SubagentControlsContext.Provider value={isSessionDead ? undefined : subagentControls}>
+        <div className="flex-1 flex flex-col min-h-0">
+          <CanvasImportDialog request={canvasImport.request} onChoice={canvasImport.resolve} />
+          {selectedProject && (
+            <TaskDraftModal
+              draft={taskDraft}
+              projectId={selectedProject.id}
+              onClose={() => setTaskDraft(null)}
+            />
+          )}
+          {agentId && (
+            <AgentAuthModal
+              agentId={agentId}
+              connection={connection}
+              authKey={auth.authKey}
+              sessionId={sessionId}
+              {...auth.modal}
+            />
+          )}
+          <ResizablePanelGroup
+            orientation="horizontal"
+            elementRef={groupElementRef}
+            disabled={maximized}
+            className="relative flex-1 min-h-0 overflow-hidden"
           >
-            <div className="flex flex-col flex-1 min-h-0">
-              <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r inner-glass overflow-hidden">
-                {headerSlot}
-                {streamContent}
+            <ResizablePanel
+              elementRef={streamPanelElementRef}
+              minSize="42rem"
+              // Hidden under a maximized side panel, which floats over this one and is transparent
+              // outside its own inset well.
+              className={cn("flex flex-col min-h-0 overflow-hidden", maximized && "invisible")}
+            >
+              <div className="flex flex-col flex-1 min-h-0">
+                <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r inner-glass overflow-hidden">
+                  {headerSlot}
+                  {streamContent}
+                </div>
               </div>
-            </div>
-          </ResizablePanel>
-          {/*
+            </ResizablePanel>
+            {/*
           Draggable but not drawn: transparent, like the panels either side of it, so the
           window's tint runs through the slot. Collapsed or maximized there is nothing to
           drag between, so it goes away entirely; `disabled` is what suppresses the drag
           target, since the library falls back to the panel edge when a separator is
           missing.
         */}
-          <ResizableHandle
-            disabled={sidePanelCollapsed || maximized}
-            className={cn(
-              "bg-transparent hover:bg-transparent",
-              (sidePanelCollapsed || maximized) && "hidden",
-            )}
-          />
-          <ResizablePanel
-            elementRef={sidePanelElementRef}
-            panelRef={sidePanelRef}
-            defaultSize={"40%"}
-            minSize={"22rem"}
-            collapsible
-            collapsedSize={"2.75rem"}
-            onResize={syncCollapsedFromPanel}
-            className={cn(
-              "flex flex-col min-h-0 overflow-hidden",
-              // Maximized floats the panel over the group; the group keeps the dragged
-              // layout underneath for when the panel comes back.
-              maximized && "absolute inset-0 z-20",
-            )}
-          >
-            <SessionPanelContext.Provider
-              value={{
-                sessionId,
-                isSessionActive,
-                subagentItems,
-                toolCallMap: liveState.toolCallMap,
-                sidePanelPlan,
-                canvasMap: liveState.canvasMap,
-                latestCanvasSurfaceId,
-                pendingCanvasAwaits,
-                onCanvasEvent: handleCanvasEvent,
-                onCloseCanvas: (surfaceId) => liveDispatch({ type: "close_canvas", surfaceId }),
-                onImportCanvas: canvasImport.importFile,
-                workingFiles: artifactFiles,
-                taskId,
-                workspacePath,
-                connection,
-                planEntries: liveState.plan,
-                planTitle: liveState.planTitle,
-                planMarkdown: liveState.planMarkdown?.content,
-                onOpenTabKind: openTabKind,
-                onOpenFile: handleOpenFile,
-                onSpawnShell,
-                terminalBuffers: liveState.terminalBuffers,
-                onSendAnnotations: handleSendAnnotations,
-                isProcessing,
-                canSendImages: promptCapabilities?.image ?? false,
-                onSeedPrompt: isSessionDead ? undefined : handleSeedPrompt,
-              }}
+            <ResizableHandle
+              disabled={sidePanelCollapsed || maximized}
+              className={cn(
+                "bg-transparent hover:bg-transparent",
+                (sidePanelCollapsed || maximized) && "hidden",
+              )}
+            />
+            <ResizablePanel
+              elementRef={sidePanelElementRef}
+              panelRef={sidePanelRef}
+              defaultSize={"40%"}
+              minSize={"22rem"}
+              collapsible
+              collapsedSize={"2.75rem"}
+              onResize={syncCollapsedFromPanel}
+              className={cn(
+                "flex flex-col min-h-0 overflow-hidden",
+                // Maximized floats the panel over the group; the group keeps the dragged
+                // layout underneath for when the panel comes back.
+                maximized && "absolute inset-0 z-20",
+              )}
             >
-              <ExecutionSidePanel
-                fill
-                tabs={tabs}
-                activeTabId={activeTabId}
-                onTabChange={setActiveTabId}
-                onTabClose={closeTab}
-                onAddTab={openTabKind}
-                collapsed={sidePanelCollapsed}
-                onCollapsedChange={(v) => setSidePanelCollapsed(v)}
-                unseenTabIds={unseenTabIds}
-                maximized={maximized}
-                onMaximizedChange={handleMaximizedChange}
-              />
-            </SessionPanelContext.Provider>
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      </div>
-    </StopSubagentContext.Provider>
+              <SessionPanelContext.Provider
+                value={{
+                  sessionId,
+                  isSessionActive,
+                  subagentItems,
+                  toolCallMap: liveState.toolCallMap,
+                  sidePanelPlan,
+                  canvasMap: liveState.canvasMap,
+                  latestCanvasSurfaceId,
+                  pendingCanvasAwaits,
+                  onCanvasEvent: handleCanvasEvent,
+                  onCloseCanvas: (surfaceId) => liveDispatch({ type: "close_canvas", surfaceId }),
+                  onImportCanvas: canvasImport.importFile,
+                  workingFiles: artifactFiles,
+                  taskId,
+                  workspacePath,
+                  connection,
+                  planEntries: liveState.plan,
+                  planTitle: liveState.planTitle,
+                  planMarkdown: liveState.planMarkdown?.content,
+                  onOpenTabKind: openTabKind,
+                  onOpenFile: handleOpenFile,
+                  onSpawnShell,
+                  terminalBuffers: liveState.terminalBuffers,
+                  onSendAnnotations: handleSendAnnotations,
+                  isProcessing,
+                  canSendImages: promptCapabilities?.image ?? false,
+                  onSeedPrompt: isSessionDead ? undefined : handleSeedPrompt,
+                }}
+              >
+                <ExecutionSidePanel
+                  fill
+                  tabs={tabs}
+                  activeTabId={activeTabId}
+                  onTabChange={setActiveTabId}
+                  onTabClose={closeTab}
+                  onAddTab={openTabKind}
+                  collapsed={sidePanelCollapsed}
+                  onCollapsedChange={(v) => setSidePanelCollapsed(v)}
+                  unseenTabIds={unseenTabIds}
+                  maximized={maximized}
+                  onMaximizedChange={handleMaximizedChange}
+                />
+              </SessionPanelContext.Provider>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </div>
+      </SubagentControlsContext.Provider>
+    </SubagentNamesContext.Provider>
   );
+}
+
+/** The session a request came from: a subagent's own, or the session's. */
+function requestSessionId(request: PendingRequest): string | undefined {
+  const payload = request.payload as { sessionId?: unknown; scope?: { sessionId?: unknown } };
+  const id = payload.sessionId ?? payload.scope?.sessionId;
+  return typeof id === "string" ? id : undefined;
 }

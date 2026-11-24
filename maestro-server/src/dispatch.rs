@@ -806,7 +806,11 @@ pub(crate) async fn dispatch_message(
 
         ServerRequest::InterruptTurn(req) => {
             if let Some(session) = sessions.get(&req.session_id) {
-                let _ = session.cmd_tx.send(SessionCommand::CancelTurn).await;
+                let command = match req.subagent_session_id {
+                    Some(child) => SessionCommand::CancelSubagent(child),
+                    None => SessionCommand::CancelTurn,
+                };
+                let _ = session.cmd_tx.send(command).await;
             }
         }
 

@@ -11,8 +11,20 @@ import type {
   ErrorItem,
   NoticeItem,
 } from "./types";
-import { extractAgentMeta, mergeAgentMeta, type CompactionFacts } from "./agentMeta";
+import type { CompactionFacts } from "./agentMeta";
 import { isMaestroHostTool } from "./utils";
+import {
+  applyToolCallUpdate,
+  finalizeStreaming,
+  replaceToolCall,
+  toolCallFromPayload,
+} from "./reducerUtils";
+import {
+  applySubagentEvent,
+  endSubagent,
+  isSubagentWorking,
+  subagentOfPromptMessage,
+} from "./subagentReducer";
 import { limitReachedNotice, parsePlanLimits } from "./planLimits";
 
 export type ActivityAction =
@@ -67,15 +79,13 @@ function trimCatchUpBuffer(buffer: string): string {
  */
 export function activityReducer(state: ActivityState, action: ActivityAction): ActivityState {
   switch (action.type) {
-    case "event": {
-      const next = processEvent(state, action.payload, action.raw);
-      return action.payload.sessionUpdate === "tool_call_update"
-        ? settleStoppedSubagent(next, action.payload.toolCallId)
-        : next;
-    }
+    case "event":
+      return (
+        applySubagentEvent(state, action.payload, action.raw) ??
+        processEvent(state, action.payload, action.raw)
+      );
     case "session_ended": {
-      const flushed = flushOrphans(state);
-      const interrupted = interruptStalledToolCalls(flushed);
+      const interrupted = interruptStalledToolCalls(state);
       return {
         ...interrupted,
         items: finalizeStreaming(interrupted.items),
@@ -87,9 +97,8 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
     case "turn_started":
       return state.isTurnActive ? state : { ...state, isTurnActive: true };
     case "turn_ended": {
-      const flushed = flushOrphans(state);
-      // A stop takes the background subagents with it, and the agent reports none of them after.
-      const interrupted = interruptStalledToolCalls(flushed, action.stopReason !== "cancelled");
+      // Subagents can outlive the turn that started them, and report on their own until they end.
+      const interrupted = interruptStalledToolCalls(state, true);
       return {
         ...interrupted,
         items: finalizeStreaming(interrupted.items),
@@ -160,82 +169,42 @@ function continuesMessage(existing: string | undefined, incoming: string | undef
 }
 
 /**
- * `keepBackground` spares background subagents and their tool calls: they outlive the turn that
- * launched them, and the agent keeps reporting them after it ends.
+ * Marks what was still running as interrupted. `keepSubagents` spares subagents still working
+ * and their tool calls: they outlive the turn, and the session ending is what takes them.
  */
-function interruptStalledToolCalls(state: ActivityState, keepBackground = false): ActivityState {
-  const stalledIds = new Set<string>();
+function interruptStalledToolCalls(state: ActivityState, keepSubagents = false): ActivityState {
+  const changed = new Map<string, ToolCallItem>();
   for (const [id, tc] of state.toolCallMap) {
-    if (keepBackground && isBackground(state.toolCallMap, tc)) continue;
-    if (tc.status === "in_progress" || tc.status === "pending") {
-      stalledIds.add(id);
+    if (tc.meta?.subagent) {
+      if (!keepSubagents) {
+        const ended = endSubagent(tc);
+        if (ended !== tc) changed.set(id, ended);
+      }
+      continue;
     }
+    if (tc.status !== "in_progress" && tc.status !== "pending") continue;
+    const owner = tc.parentToolCallId ? state.toolCallMap.get(tc.parentToolCallId) : undefined;
+    if (keepSubagents && owner && isSubagentWorking(owner)) continue;
+    changed.set(id, { ...tc, status: "interrupted" });
   }
-  if (stalledIds.size === 0) return state;
-  const newMap = new Map(state.toolCallMap);
-  for (const id of stalledIds) {
-    const tc = newMap.get(id)!;
-    newMap.set(id, { ...tc, status: "interrupted" });
-  }
-  const items = state.items.map((item) => {
-    if (item.type === "toolCall" && stalledIds.has(item.item.toolCallId)) {
-      return { ...item, item: newMap.get(item.item.toolCallId)! };
-    }
-    return item;
-  });
-  return { ...state, items, toolCallMap: newMap };
-}
-
-function isBackground(map: Map<string, ToolCallItem>, tc: ToolCallItem): boolean {
-  if (tc.meta?.background) return true;
-  return !!tc.parentToolCallId && !!map.get(tc.parentToolCallId)?.meta?.background;
-}
-
-/**
- * The tool a background subagent ends with: its input is the report it hands back to the main
- * agent. It is the subagent's output, not one of its tool calls.
- */
-const HANDBACK_TOOL = "SubagentHandback";
-
-/**
- * A background subagent stopped by `TaskStop` never hands back, and the agent reports nothing
- * more of it. The stop names it by the `agentId` its launch was given.
- */
-function settleStoppedSubagent(state: ActivityState, toolCallId: string): ActivityState {
-  const stop = state.toolCallMap.get(toolCallId);
-  const taskId = stop?.meta?.taskId;
-  if (stop?.meta?.toolName !== "TaskStop" || stop.status !== "completed" || !taskId) return state;
-  const target = [...state.toolCallMap.values()].find(
-    (tc) => tc.meta?.background && tc.meta.agentId === taskId && tc.status === "in_progress",
+  if (changed.size === 0) return state;
+  const toolCallMap = new Map(state.toolCallMap);
+  for (const [id, tc] of changed) toolCallMap.set(id, tc);
+  const items = state.items.map((item) =>
+    item.type === "toolCall" && changed.has(item.item.toolCallId)
+      ? { ...item, item: changed.get(item.item.toolCallId)! }
+      : item,
   );
-  if (!target) return state;
-  return replaceToolCall(state, { ...target, status: "interrupted" });
+  return { ...state, items, toolCallMap };
 }
 
 /**
- * The tool call whose subagent a plan belongs to. Claude names a subagent's checklist
- * `plan:<toolUseId>` after the call that launched it; any other plan is the session's own.
+ * The subagent a plan belongs to. Claude names a subagent's checklist `plan:<id>` after the
+ * message that carried its prompt; any other plan is the session's own.
  */
 function subagentOfPlan(state: ActivityState, planId: string): ToolCallItem | undefined {
   const at = planId.indexOf(":");
-  return at < 0 ? undefined : state.toolCallMap.get(planId.slice(at + 1));
-}
-
-function flushOrphans(state: ActivityState): ActivityState {
-  if (state.pendingOrphans.size === 0) return state;
-  const newMap = new Map(state.toolCallMap);
-  let items = state.items;
-  for (const [, childIds] of state.pendingOrphans) {
-    for (const childId of childIds) {
-      const tc = newMap.get(childId);
-      if (tc) {
-        const adopted = { ...tc, parentToolCallId: undefined };
-        newMap.set(childId, adopted);
-        items = [...items, { type: "toolCall" as const, item: adopted }];
-      }
-    }
-  }
-  return { ...state, items, toolCallMap: newMap, pendingOrphans: new Map() };
+  return at < 0 ? undefined : subagentOfPromptMessage(state, planId.slice(at + 1));
 }
 
 function processEvent(
@@ -368,166 +337,31 @@ function processEvent(
 
     case "tool_call": {
       const items = finalizeStreaming(newState.items);
-      const meta = extractAgentMeta(raw);
-      const parentToolCallId = meta.parentToolCallId;
-      const tc: ToolCallItem = {
-        toolCallId: payload.toolCallId,
-        title: payload.title,
-        kind: payload.kind,
-        status: payload.status ?? "pending",
-        content: payload.content ?? [],
-        locations: payload.locations ?? [],
-        rawInput: payload.rawInput,
-        parentToolCallId,
-        meta,
-      };
-      const newMap = new Map(newState.toolCallMap);
-      newMap.set(payload.toolCallId, tc);
+      const tc = toolCallFromPayload(payload, raw);
+      const toolCallMap = new Map(newState.toolCallMap);
+      toolCallMap.set(payload.toolCallId, tc);
 
       // AskUserQuestion is handled by the elicitation panel — suppress the generic tool card.
       // Maestro's own MCP tools are suppressed for the same reason: the canvas surface and the
       // created task are the visible result, and a row about the call adds nothing.
-      if (meta.toolName === "AskUserQuestion" || isMaestroHostTool(meta.toolName, payload.title)) {
-        return { ...newState, items, toolCallMap: newMap };
+      if (
+        tc.meta?.toolName === "AskUserQuestion" ||
+        isMaestroHostTool(tc.meta?.toolName, payload.title)
+      ) {
+        return { ...newState, items, toolCallMap };
       }
-
-      if (parentToolCallId) {
-        const parent = newMap.get(parentToolCallId);
-        if (parent && meta.toolName === HANDBACK_TOOL) {
-          return { ...newState, items, toolCallMap: newMap };
-        }
-        if (parent) {
-          const updatedParent = {
-            ...parent,
-            childToolCallIds: [...(parent.childToolCallIds ?? []), payload.toolCallId],
-          };
-          newMap.set(parentToolCallId, updatedParent);
-          const updatedItems = items.map((i) =>
-            i.type === "toolCall" && i.item.toolCallId === parentToolCallId
-              ? { ...i, item: updatedParent }
-              : i,
-          );
-          return { ...newState, items: updatedItems, toolCallMap: newMap };
-        }
-        // Parent not yet arrived — store as orphan, don't add to items
-        const newOrphans = new Map(newState.pendingOrphans);
-        const existing = newOrphans.get(parentToolCallId) ?? [];
-        newOrphans.set(parentToolCallId, [...existing, payload.toolCallId]);
-        return { ...newState, items, toolCallMap: newMap, pendingOrphans: newOrphans };
-      }
-
-      // No parent — normal tool call. Check if any orphans were waiting for this id.
-      if (newState.pendingOrphans.has(payload.toolCallId)) {
-        const orphanIds = newState.pendingOrphans.get(payload.toolCallId)!;
-        const updatedTc = {
-          ...tc,
-          childToolCallIds: [...(tc.childToolCallIds ?? []), ...orphanIds],
-        };
-        newMap.set(payload.toolCallId, updatedTc);
-        const newOrphans = new Map(newState.pendingOrphans);
-        newOrphans.delete(payload.toolCallId);
-        return {
-          ...newState,
-          items: [...items, { type: "toolCall", item: updatedTc }],
-          toolCallMap: newMap,
-          pendingOrphans: newOrphans,
-        };
-      }
-
-      return {
-        ...newState,
-        items: [...items, { type: "toolCall", item: tc }],
-        toolCallMap: newMap,
-      };
+      return { ...newState, items: [...items, { type: "toolCall", item: tc }], toolCallMap };
     }
 
     case "tool_call_update": {
       // Deliberately does not finalize: this frame appends nothing, it revises a card that is
-      // already in the list. Ending the message here would split it — a background subagent
-      // reports progress while the main agent is mid-sentence.
-      const items = newState.items;
-      const newMap = new Map(newState.toolCallMap);
-      const existing = newMap.get(payload.toolCallId);
-      if (existing) {
-        const updated = { ...existing };
-        // A create frame that could not classify the call omits `kind` altogether;
-        // without this the row is stuck on that first guess and every kind-keyed
-        // decision — the terminal label, the icon — reads the wrong branch forever.
-        if (payload.kind) updated.kind = payload.kind;
-        if (payload.title) updated.title = payload.title;
-        if (payload.status) updated.status = payload.status === "failed" ? "error" : payload.status;
-        if (payload.content) updated.content = payload.content;
-        if (payload.locations) updated.locations = payload.locations;
-        if (payload.rawInput) updated.rawInput = payload.rawInput;
-        // This frame's view of the call wins; earlier frames fill what it omitted.
-        updated.meta = mergeAgentMeta(extractAgentMeta(raw), existing.meta ?? {});
-        // The launch of a background subagent completes at once, with a receipt meant for the
-        // model as its content. The subagent is still running, and has said nothing yet.
-        if (
-          updated.meta.background &&
-          updated.status === "completed" &&
-          existing.status !== "completed"
-        ) {
-          updated.status = "in_progress";
-          updated.content = existing.content;
-        }
-        newMap.set(payload.toolCallId, updated);
-        const extractedTitle = extractPlanTitle(payload);
-
-        if (existing.parentToolCallId) {
-          // Refresh parent reference in items to trigger re-render of SubagentCard
-          const parent = newMap.get(existing.parentToolCallId);
-          if (parent) {
-            let refreshedParent = { ...parent };
-            // Handing the report back is how a background subagent ends.
-            // ponytail: one that fails on its own stays running until the session ends or is stopped.
-            if (
-              updated.meta.toolName === HANDBACK_TOOL &&
-              updated.status === "completed" &&
-              parent.meta?.background
-            ) {
-              const report = updated.rawInput?.message;
-              refreshedParent = {
-                ...parent,
-                status: "completed",
-                content:
-                  typeof report === "string" && report
-                    ? [
-                        ...parent.content,
-                        { type: "content", content: { type: "text", text: report } },
-                      ]
-                    : parent.content,
-              };
-            }
-            newMap.set(existing.parentToolCallId, refreshedParent);
-            const updatedItems = items.map((i) =>
-              i.type === "toolCall" && i.item.toolCallId === existing.parentToolCallId
-                ? { ...i, item: refreshedParent }
-                : i,
-            );
-            return {
-              ...newState,
-              items: updatedItems,
-              toolCallMap: newMap,
-              ...(extractedTitle && { planTitle: extractedTitle }),
-            };
-          }
-          return { ...newState, items, toolCallMap: newMap };
-        }
-
-        const updatedItems = items.map((i) =>
-          i.type === "toolCall" && i.item.toolCallId === payload.toolCallId
-            ? { ...i, item: updated }
-            : i,
-        );
-        return {
-          ...newState,
-          items: updatedItems,
-          toolCallMap: newMap,
-          ...(extractedTitle && { planTitle: extractedTitle }),
-        };
-      }
-      return { ...newState, items };
+      // already in the list. Ending the message here would split it — a subagent reports
+      // progress while the main agent is mid-sentence.
+      const existing = newState.toolCallMap.get(payload.toolCallId);
+      if (!existing) return state;
+      const extractedTitle = extractPlanTitle(payload);
+      const next = replaceToolCall(newState, applyToolCallUpdate(existing, payload, raw));
+      return extractedTitle ? { ...next, planTitle: extractedTitle } : next;
     }
 
     case "plan": {
@@ -831,15 +665,6 @@ function upsertCompaction(
   };
 }
 
-function replaceToolCall(state: ActivityState, updated: ToolCallItem): ActivityState {
-  const toolCallMap = new Map(state.toolCallMap);
-  toolCallMap.set(updated.toolCallId, updated);
-  const items = state.items.map((i) =>
-    i.type === "toolCall" && i.item.toolCallId === updated.toolCallId ? { ...i, item: updated } : i,
-  );
-  return { ...state, items, toolCallMap };
-}
-
 function extractPlanTitle(payload: {
   title?: string;
   rawInput?: Record<string, unknown>;
@@ -849,22 +674,4 @@ function extractPlanTitle(payload: {
   if (typeof plan !== "string") return null;
   const match = plan.match(/^#\s+(.+)/m);
   return match ? match[1].trim() : null;
-}
-
-/**
- * Clears `isStreaming` on every item, not just the tail. Resuming a thought that a tool call
- * interrupted re-marks an item that is no longer last, and a tail-only sweep would leave that
- * flag set for the rest of the session — the block shimmers as "Thinking" forever and never
- * becomes collapsible. A resumed thought re-sets the flag on its next chunk, so sweeping the
- * whole list costs nothing.
- */
-function finalizeStreaming(items: ActivityItem[]): ActivityItem[] {
-  const isStreaming = (entry: ActivityItem) =>
-    (entry.type === "message" || entry.type === "thinking") && entry.item.isStreaming;
-  if (!items.some(isStreaming)) return items;
-  return items.map((entry) =>
-    isStreaming(entry)
-      ? ({ type: entry.type, item: { ...entry.item, isStreaming: false } } as ActivityItem)
-      : entry,
-  );
 }

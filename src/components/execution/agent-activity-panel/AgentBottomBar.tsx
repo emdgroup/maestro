@@ -24,7 +24,8 @@ interface AgentBottomBarProps {
   onSend: (content: string, contentBlocks?: JsonValue) => void;
   onCancel: () => Promise<void>;
   isProcessing: boolean;
-  canQueue?: boolean;
+  /** Subagents still working after the turn ended: the session works on, the composer is free. */
+  workingSubagents?: number;
   commands: AvailableCommand[];
   embeddedContext: boolean;
   sessionId: string;
@@ -45,7 +46,7 @@ export function AgentBottomBar({
   onSend,
   onCancel,
   isProcessing,
-  canQueue,
+  workingSubagents = 0,
   commands,
   embeddedContext,
   sessionId,
@@ -94,12 +95,20 @@ export function AgentBottomBar({
           className={cn(isCompact && "mx-auto w-full px-12", replacement && "hidden")}
           style={isCompact ? { maxWidth: "min(48rem, calc(100% - 2rem))" } : undefined}
         >
+          {workingSubagents > 0 && (
+            <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
+              <span className="size-1.5 animate-pulse rounded-full bg-accent" />
+              <span className="font-medium text-foreground/80">Working</span>
+              <span>
+                · {workingSubagents} subagent{workingSubagents === 1 ? "" : "s"}
+              </span>
+            </div>
+          )}
           <ComposeBar
             ref={composeBarRef}
             onSend={onSend}
             onCancel={onCancel}
             isProcessing={isProcessing}
-            canQueue={canQueue}
             commands={commands}
             embeddedContext={embeddedContext}
             sessionId={sessionId}

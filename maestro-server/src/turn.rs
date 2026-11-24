@@ -244,6 +244,7 @@ fn with_state(session_id: &str, f: impl FnOnce(&mut TurnState)) {
 
 /// A prompt was sent: whatever an earlier turn left behind does not belong to this one.
 pub(crate) fn note_turn_started(session_id: &str) {
+    crate::subagents::turn_started(session_id);
     if let Ok(mut turns) = TURNS.lock() {
         turns.remove(session_id);
     }

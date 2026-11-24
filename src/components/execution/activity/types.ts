@@ -52,7 +52,9 @@ export type ToolCallCreated = {
 export type ToolCallContent =
   | { type: "content"; content: { type: "text"; text: string } }
   | { type: "diff"; path: string; oldText: string | null; newText: string }
-  | { type: "terminal"; terminalId: string };
+  | { type: "terminal"; terminalId: string }
+  /** The subagent a call acts on, as Codex's `wait` and `closeAgent` name it. */
+  | { type: "session"; sessionId: string };
 
 export type ToolCallUpdate = {
   sessionUpdate: "tool_call_update";
@@ -184,6 +186,28 @@ export type NoticePayload = {
   description?: string | null;
 };
 
+/**
+ * A subagent of this session: ACP runs it as a child session of its own. `title`, `description`
+ * and `cwd` are patches; `capabilities` and `state` replace what was stored.
+ */
+export type SubagentUpdatePayload = {
+  sessionUpdate: "subagent_update";
+  sessionId: string;
+  title?: string | null;
+  description?: string | null;
+  capabilities?: { cancel?: Record<string, unknown> | null } | null;
+  state?: { state: string; stopReason?: string | null; error?: unknown } | null;
+};
+
+/** A message between two sessions: a subagent's prompt, or the report it hands back. */
+export type SessionMessagePayload = {
+  sessionUpdate: "session_message" | "session_message_chunk";
+  messageId: string;
+  senderSessionId?: string;
+  recipientSessionId?: string;
+  content?: unknown;
+};
+
 export type SessionUpdatePayload =
   | AgentMessageChunk
   | AgentThoughtChunk
@@ -201,7 +225,9 @@ export type SessionUpdatePayload =
   | CanvasDataPayload
   | CompactionUpdatePayload
   | CompactionSummaryChunkPayload
-  | NoticePayload;
+  | NoticePayload
+  | SubagentUpdatePayload
+  | SessionMessagePayload;
 
 // Accumulated state for rendering
 
@@ -315,7 +341,6 @@ export type ActivityItem =
 export type ActivityState = {
   items: ActivityItem[];
   toolCallMap: Map<string, ToolCallItem>;
-  pendingOrphans: Map<string, string[]>;
   lastUserMessageId: string | null;
   plan: PlanEntry[] | null;
   /** The ID of the plan `plan` shows, so its `plan_removed` can clear it. */
@@ -350,7 +375,6 @@ export type AvailableCommand = {
 export const INITIAL_ACTIVITY_STATE: ActivityState = {
   items: [],
   toolCallMap: new Map(),
-  pendingOrphans: new Map(),
   lastUserMessageId: null,
   plan: null,
   planId: null,

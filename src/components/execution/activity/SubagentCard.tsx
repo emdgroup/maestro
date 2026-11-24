@@ -1,14 +1,15 @@
-import { useContext, useState, useMemo } from "react";
+import { useContext, useEffect, useRef, useState, useMemo } from "react";
 import { Reveal } from "@/components/common/Reveal";
 import { Bot, Check, ChevronRight, Circle, LoaderCircle, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatElapsed, formatTokens } from "@/lib/format-utils";
+import { formatElapsed } from "@/lib/format-utils";
 import { MarkdownBlock } from "@/components/common/markdown/MarkdownBlock";
 import { TypingDots } from "./ActivityMessageItem";
 import { ToolCallTimeline } from "./ToolCallTimeline";
 import type { PlanEntry, ToolCallItem } from "./types";
 import { subagentName } from "./utils";
-import { StopSubagentContext, stopSubagentPrompt } from "./subagent-stop";
+import { REVEAL_EVENT, SubagentControlsContext } from "./subagent-controls";
+import { subagentPhase, type SubagentPhase } from "./subagentReducer";
 import { useSettings } from "@/services/settings.service";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 
@@ -36,6 +37,30 @@ function ChecklistEntry({ entry }: { entry: PlanEntry }) {
   );
 }
 
+const PHASE_LABEL: Record<SubagentPhase, string> = {
+  running: "Running",
+  needs: "Needs you",
+  done: "Done",
+  stopped: "Stopped",
+  failed: "Failed",
+  unknown: "Unknown",
+};
+
+/** Tool calls by what they did, for the card's second stats line. */
+function kindBreakdown(calls: ToolCallItem[]): string | null {
+  const counts = { reads: 0, searches: 0, bash: 0, edits: 0 };
+  for (const tc of calls) {
+    if (tc.kind === "read") counts.reads++;
+    else if (tc.kind === "search") counts.searches++;
+    else if (tc.kind === "execute") counts.bash++;
+    else if (tc.kind === "edit" || tc.kind === "delete" || tc.kind === "move") counts.edits++;
+  }
+  const parts = Object.entries(counts)
+    .filter(([, n]) => n > 0)
+    .map(([label, n]) => `${n} ${label}`);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 const pillClass =
   "text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 mt-0.5";
 
@@ -53,12 +78,26 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
   const [toolCallsOpen, setToolCallsOpen] = useState(true);
   const [checklistOpen, setChecklistOpen] = useState(true);
 
-  const isStreaming = item.status === "in_progress" || item.status === "pending";
-  const isInterrupted = item.status === "interrupted";
-  const isBackground = !!item.meta?.background;
-  const stopSubagent = useContext(StopSubagentContext);
+  const facts = item.meta?.subagent;
+  const sessionId = facts?.sessionId ?? "";
+  const controls = useContext(SubagentControlsContext);
+  const waiting = !!controls?.waiting.has(sessionId);
+  const phase: SubagentPhase = waiting ? "needs" : subagentPhase(item);
+  const isStreaming = phase === "running" || phase === "needs";
   const [stopAsked, setStopAsked] = useState(false);
-  const canStop = !!stopSubagent && isBackground && isStreaming;
+  const canStop = !!controls && !!facts?.canCancel && isStreaming;
+
+  // A chip elsewhere in the stream (Codex's `wait` row) asks for this card.
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onReveal = (e: Event) => {
+      if ((e as CustomEvent<string>).detail !== sessionId) return;
+      setExpanded(true);
+      rootRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    };
+    window.addEventListener(REVEAL_EVENT, onReveal);
+    return () => window.removeEventListener(REVEAL_EVENT, onReveal);
+  }, [sessionId]);
 
   const prompt = typeof item.rawInput?.prompt === "string" ? item.rawInput.prompt : null;
 
@@ -77,42 +116,30 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
     }
     return textBlocks.join("");
   }, [expanded, item.content, prompt]);
+
+  const children = useMemo(
+    () =>
+      (item.childToolCallIds ?? [])
+        .map((id) => toolCallMap.get(id))
+        .filter((tc): tc is ToolCallItem => tc != null),
+    [item.childToolCallIds, toolCallMap],
+  );
+  const childToolCalls = useMemo(() => children.filter((tc) => !tc.meta?.subagent), [children]);
+  const nestedSubagents = useMemo(() => children.filter((tc) => tc.meta?.subagent), [children]);
+
+  // Elapsed only for a run watched from start to end: ACP reports no duration.
+  const startedAt = facts?.startedAt;
+  const endedAt = facts?.endedAt;
   const usage = useMemo(() => {
     if (isStreaming) return null;
-    const meta = item.meta;
-    const ms = meta?.totalDurationMs;
-    const tokens = meta?.totalTokens;
-    const tools = meta?.totalToolUseCount;
-    if (typeof ms !== "number" || typeof tokens !== "number" || typeof tools !== "number")
-      return null;
-    // A headline token count is mostly cache reads. Splitting it says what the run
-    // actually cost, and the split is only shown when the agent reported one.
-    const parts = [formatElapsed(Math.floor(ms / 1000))];
-    if (meta?.outputTokens != null && meta?.cachedTokens != null) {
-      parts.push(
-        `${formatTokens(meta.outputTokens)} out`,
-        `${formatTokens(meta.cachedTokens)} cached`,
-      );
-    } else {
-      parts.push(`${formatTokens(tokens)} tokens`);
-    }
-    parts.push(`${tools} tool calls`);
-    return parts.join(" · ");
-  }, [isStreaming, item.meta]);
-
-  const toolBreakdown = useMemo(() => {
-    const stats = item.meta?.toolStats;
-    if (!stats) return null;
     const parts: string[] = [];
-    const add = (n: number | undefined, label: string) => {
-      if (n) parts.push(`${n} ${label}`);
-    };
-    add(stats.reads, "reads");
-    add(stats.searches, "searches");
-    add(stats.bash, "bash");
-    add(stats.edits, "edits");
-    return parts.length > 0 ? parts.join(" · ") : null;
-  }, [item.meta]);
+    if (startedAt !== undefined && endedAt !== undefined) {
+      parts.push(formatElapsed(Math.floor((endedAt - startedAt) / 1000)));
+    }
+    parts.push(`${childToolCalls.length} tool call${childToolCalls.length === 1 ? "" : "s"}`);
+    return parts.join(" · ");
+  }, [isStreaming, startedAt, endedAt, childToolCalls.length]);
+  const toolBreakdown = useMemo(() => kindBreakdown(childToolCalls), [childToolCalls]);
   const displayText = useMemo(() => {
     let text = stripUsage(rawText);
     if (prompt && text.startsWith(prompt)) {
@@ -125,13 +152,6 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
   const stepsDone = checklist.filter((e) => e.status === "completed").length;
   const currentStep = checklist.find((e) => e.status === "in_progress")?.content;
 
-  const childToolCalls = useMemo(() => {
-    if (!item.childToolCallIds || item.childToolCallIds.length === 0) return [];
-    return item.childToolCallIds
-      .map((id) => toolCallMap.get(id))
-      .filter((tc): tc is ToolCallItem => tc != null);
-  }, [item.childToolCallIds, toolCallMap]);
-
   // Expanding a subagent that has produced no output yet shows the prompt instead of an
   // empty card. Adjusted during render rather than from an effect so the empty state is
   // never painted first; the user can still collapse the prompt afterwards.
@@ -143,9 +163,13 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
 
   return (
     <div
+      ref={rootRef}
+      data-subagent={sessionId}
       className={cn(
         "group/card rounded-[10px] overflow-hidden",
-        "border border-accent/30 bg-gradient-to-br from-accent/10 to-transparent",
+        phase === "needs"
+          ? "border border-warning/50 bg-gradient-to-br from-warning/12 to-transparent"
+          : "border border-accent/30 bg-gradient-to-br from-accent/10 to-transparent",
         "shadow-[0_2px_8px_oklch(0%_0_0/0.08)]",
       )}
     >
@@ -154,7 +178,10 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
       <div className="relative flex items-start gap-2.5 px-3.5 py-2.5 hover:brightness-110 transition-[filter]">
         <button
           type="button"
-          onClick={() => setExpanded((v) => !v)}
+          onClick={() => {
+            if (waiting) controls?.showRequest(sessionId);
+            setExpanded((v) => !v);
+          }}
           aria-expanded={expanded}
           aria-label={name}
           className="absolute inset-0"
@@ -165,14 +192,19 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="truncate text-xs font-medium text-foreground/85">{name}</span>
-            {item.meta?.model && (
-              <span className="shrink-0 rounded-full border border-accent/30 px-1.5 text-[9px] text-muted-foreground">
-                {item.meta.model}
+            {[item.meta?.model, item.meta?.agentType].filter(Boolean).map((tag) => (
+              <span
+                key={tag}
+                className="shrink-0 rounded-full border border-accent/30 px-1.5 text-[9px] text-muted-foreground"
+              >
+                {tag}
               </span>
-            )}
+            ))}
           </div>
           <div className="mt-0.5 text-[10px] text-muted-foreground">
-            {isStreaming ? (
+            {phase === "needs" ? (
+              "Waiting for your approval"
+            ) : isStreaming ? (
               stopAsked ? (
                 "Stopping…"
               ) : checklist.length > 0 ? (
@@ -186,10 +218,8 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
               ) : (
                 <TypingDots />
               )
-            ) : isInterrupted ? (
-              <span className="text-warning/70">
-                {isBackground ? "Stopped" : "Session interrupted"}
-              </span>
+            ) : phase === "failed" && facts?.error ? (
+              <span className="text-destructive/80">{facts.error}</span>
             ) : (
               usage
             )}
@@ -207,7 +237,7 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
                   aria-label={`Stop ${name}`}
                   onClick={() => {
                     setStopAsked(true);
-                    stopSubagent(stopSubagentPrompt(item));
+                    controls?.stop(sessionId);
                   }}
                   className={cn(
                     pillClass,
@@ -220,7 +250,7 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
               }
             >
               <span className="col-start-1 row-start-1 group-hover/card:invisible group-focus-visible/pill:invisible">
-                Running
+                {PHASE_LABEL[phase]}
               </span>
               <span className="invisible col-start-1 row-start-1 inline-flex items-center justify-center gap-1 group-hover/card:visible group-focus-visible/pill:visible">
                 <Square className="size-2 fill-current" />
@@ -233,21 +263,15 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
           <span
             className={cn(
               pillClass,
-              isStreaming && "bg-accent/15 text-accent",
-              isInterrupted && "bg-warning/15 text-warning",
-              item.status === "completed" && "bg-success/15 text-success",
-              item.status === "error" && "bg-destructive/15 text-destructive",
+              phase === "running" && "bg-accent/15 text-accent",
+              phase === "needs" && "bg-warning/20 text-warning",
+              phase === "stopped" && "bg-warning/15 text-warning",
+              phase === "done" && "bg-success/15 text-success",
+              phase === "failed" && "bg-destructive/15 text-destructive",
+              phase === "unknown" && "bg-muted text-muted-foreground",
             )}
           >
-            {isStreaming
-              ? "Running"
-              : isInterrupted
-                ? isBackground
-                  ? "Stopped"
-                  : "Interrupted"
-                : item.status === "completed"
-                  ? "Done"
-                  : "Failed"}
+            {PHASE_LABEL[phase]}
           </span>
         )}
         <ChevronRight
@@ -347,6 +371,15 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
               <span className="text-muted-foreground italic">No output.</span>
             )}
           </div>
+
+          {/* Subagents this one started, each a card of its own. */}
+          {nestedSubagents.length > 0 && (
+            <div className="flex flex-col gap-2 border-t border-border/40 px-3.5 py-2.5 pl-6">
+              {nestedSubagents.map((nested) => (
+                <SubagentCard key={nested.toolCallId} item={nested} toolCallMap={toolCallMap} />
+              ))}
+            </div>
+          )}
         </div>
       </Reveal>
     </div>
