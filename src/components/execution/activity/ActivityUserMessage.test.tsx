@@ -29,7 +29,7 @@ describe("ActivityUserMessage", () => {
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByLabelText<HTMLInputElement>("Title").value).toBe("Review the diff");
 
-    await user.click(within(dialog).getByText("Create prompt"));
+    await user.click(within(dialog).getByText("Save prompt"));
     await waitFor(() =>
       expect(api.savePrompt).toHaveBeenCalledWith(7, {
         id: null,

@@ -204,7 +204,7 @@ export function PromptEditorDialog({
             Cancel
           </Button>
           <Button disabled={!valid || save.isPending} onClick={submit}>
-            {editing ? "Save" : "Create prompt"}
+            {editing ? "Save" : draft ? "Save prompt" : "Create prompt"}
           </Button>
         </div>
       </DialogContent>
