@@ -14,6 +14,8 @@ export type ConfigOption = {
   name: string;
   description?: string;
   category?: string;
+  /** `boolean` for an on/off option, whose value is `"true"` or `"false"` here. */
+  type?: string;
   currentValue: string;
   options: ConfigOptionValue[];
 };

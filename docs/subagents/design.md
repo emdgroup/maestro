@@ -93,7 +93,9 @@ header reads `Working · 1 subagent` and the composer's send button is enabled.
 
 - **Stop.** Sends `session/cancel` to the child. The sub line reads `Stopping…` until the child
   reports `idle`. Shown for foreground and background subagents alike; never after a reload until
-  a live update grants `cancel` again.
+  a live update grants `cancel` again. The window cannot tell a `session/load` replay from the
+  daemon's replay to a window that attaches again, so both count as a reload: Claude grants
+  `cancel` once, when the subagent starts, and a reattached window offers no Stop for it.
 - **Sub line while running.** Checklist progress (`2/4 Reading token refresh path`) when the child
   has a plan, typing dots otherwise.
 - **Stats once ended.** `1m 12s · 6 tool calls`, and under it the breakdown by kind

@@ -58,6 +58,48 @@ describe("sessionRuntime", () => {
     expect(drainAcpReplay).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps a boolean option's value as text, with no choices", async () => {
+    const sid = "boolean-option";
+    subscribeSession(sid, () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    emit(`acp://session-update/${sid}`, {
+      sessionUpdate: "config_option_update",
+      configOptions: [{ id: "fast", name: "Fast mode", type: "boolean", currentValue: true }],
+    });
+    await vi.advanceTimersByTimeAsync(60);
+    const lifecycle = getLifecycle(sid);
+    expect(lifecycle.configOptions[0]).toMatchObject({ currentValue: "true", options: [] });
+    expect(lifecycle.configValues.fast).toBe("true");
+  });
+
+  it("keeps a subagent's config off the session", async () => {
+    const sid = "child-config";
+    subscribeSession(sid, () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    emit(`acp://session-update/${sid}`, {
+      sessionUpdate: "config_option_update",
+      childSessionId: "child",
+      configOptions: [{ id: "model", name: "Model", currentValue: "opus", options: [] }],
+    });
+    await vi.advanceTimersByTimeAsync(60);
+    expect(getLifecycle(sid).configOptions).toEqual([]);
+  });
+
+  it("drops the requests of a subagent that stopped", async () => {
+    const sid = "withdrawn";
+    subscribeSession(sid, () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    emit(`acp://permission-request/${sid}`, { request_id: "p1", payload: { sessionId: "child" } });
+    emit(`acp://permission-request/${sid}`, { request_id: "p2", payload: { sessionId: "root" } });
+    emit(`acp://session-update/${sid}`, {
+      sessionUpdate: "subagent_update",
+      sessionId: "child",
+      state: { state: "idle", stopReason: "cancelled" },
+    });
+    await vi.advanceTimersByTimeAsync(60);
+    expect(getLifecycle(sid).pendingRequests.map((r) => r.requestId)).toEqual(["p2"]);
+  });
+
   it("queues requests that arrive together instead of replacing the first", async () => {
     const sid = "queued";
     subscribeSession(sid, () => {});

@@ -42,6 +42,8 @@ pub enum SessionCommand {
     SetConfigOption {
         config_id: String,
         value: String,
+        /// A boolean option's value, sent typed rather than as a value id.
+        boolean: Option<bool>,
     },
     CancelTurn,
     /// `session/cancel` to one subagent, leaving the turn and the other subagents running.
@@ -83,7 +85,11 @@ pub(crate) fn settings_commands(
 ) -> Vec<SessionCommand> {
     let effort = effort
         .zip(effort_option_id(config_options))
-        .map(|(value, config_id)| SessionCommand::SetConfigOption { config_id, value });
+        .map(|(value, config_id)| SessionCommand::SetConfigOption {
+            config_id,
+            value,
+            boolean: None,
+        });
     [
         model.map(SessionCommand::SetModel),
         effort,
@@ -352,7 +358,9 @@ mod tests {
             commands.as_slice(),
             [
                 SessionCommand::SetModel(model),
-                SessionCommand::SetConfigOption { config_id, value },
+                SessionCommand::SetConfigOption {
+                    config_id, value, ..
+                },
                 SessionCommand::SetMode(mode),
             ] if model == "opus" && config_id == "effort" && value == "high" && mode == "plan"
         ));

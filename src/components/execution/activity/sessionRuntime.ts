@@ -240,11 +240,8 @@ function applySessionUpdate(sessionId: string, rt: Runtime, raw: Record<string, 
     }
   } else if (p.sessionUpdate === "config_option_update") {
     if (Array.isArray(p.configOptions)) {
-      rt.lifecycle = {
-        ...l,
-        configOptions: p.configOptions,
-        configValues: valuesOf(p.configOptions),
-      };
+      const configOptions = normalizeConfigOptions(p.configOptions);
+      rt.lifecycle = { ...l, configOptions, configValues: valuesOf(configOptions) };
     }
   } else if (p.sessionUpdate === "current_model_update") {
     const modelId = p.modelId ?? p.currentModelId;
@@ -268,6 +265,18 @@ function dropRequestsOfStoppedSubagent(rt: Runtime, raw: Record<string, unknown>
     ...rt.lifecycle,
     pendingRequests: rt.lifecycle.pendingRequests.filter((r) => !asked(r)),
   };
+}
+
+/**
+ * ACP sends a boolean option's value as a boolean and gives it no choices. The compose bar keeps
+ * every value as a string, so it becomes `"true"` or `"false"` here, with an empty choice list.
+ */
+function normalizeConfigOptions(options: ConfigOption[]): ConfigOption[] {
+  return options.map((o) =>
+    o.type === "boolean"
+      ? { ...o, currentValue: String((o.currentValue as unknown) === true), options: [] }
+      : o,
+  );
 }
 
 function valuesOf(options: ConfigOption[]): Record<string, string> {
@@ -519,9 +528,10 @@ function create(sessionId: string): Runtime {
     listen<{ config_id: string; value: string; configOptions: ConfigOption[] }>(
       `acp://config-state-updated/${sessionId}`,
       (event) => {
-        const { configOptions, config_id, value } = event.payload;
+        const { config_id, value } = event.payload;
+        const configOptions = normalizeConfigOptions(event.payload.configOptions ?? []);
         updateLifecycle((l) =>
-          Array.isArray(configOptions) && configOptions.length > 0
+          configOptions.length > 0
             ? { ...l, configOptions, configValues: valuesOf(configOptions) }
             : { ...l, configValues: { ...l.configValues, [config_id]: value } },
         );

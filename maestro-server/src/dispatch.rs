@@ -867,6 +867,7 @@ pub(crate) async fn dispatch_message(
                 SessionCommand::SetConfigOption {
                     config_id: req.config_id,
                     value: req.value,
+                    boolean: req.boolean,
                 },
                 stdout,
             )
