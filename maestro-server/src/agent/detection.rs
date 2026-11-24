@@ -50,8 +50,8 @@ static DETECTION_TABLE: &[AgentDetectionEntry] = &[
     AgentDetectionEntry {
         agent_id: "github-copilot-cli",
         tool_name: "GitHub Copilot",
-        binary: None,
-        config_dir: Some(".config/github-copilot"),
+        binary: Some("copilot"),
+        config_dir: Some(".copilot"),
     },
     AgentDetectionEntry {
         agent_id: "cline",
