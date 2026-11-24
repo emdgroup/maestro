@@ -104,7 +104,24 @@ header reads `Working · 1 subagent` and the composer's send button is enabled.
 - **Nesting.** A subagent started by a subagent is a card inside its parent's card, below the
   sections.
 - **Approvals.** A child's permission request takes the composer's place like any other, labelled
-  `Subagent · <name>` above the question.
+  `Subagent · <name>` above the question. See "Several requests at once".
+
+## Several requests at once
+
+Today the panel holds one pending request and a new one replaces it: the daemon keeps them all,
+but the agent behind a replaced request stays blocked, unseen, until the session is reattached.
+Parallel Claude subagents already reach this; native subagents make it common. Approved on
+2026-11-24: a queue.
+
+- Permission requests and elicitations form one list per session, oldest first.
+- One request is shown at a time, in the composer's place as today. Every request names who asked:
+  `Main agent` or `Subagent · <name>`.
+- With more than one waiting, the source line ends in a pager: `‹ 1 of 3 ›`. The arrows change
+  which request is shown; answering one shows the next.
+- Clicking a `Needs you` card shows that subagent's request.
+- A request whose subagent stops or finishes leaves the list, answered `cancelled` by the daemon.
+- The composer stays hidden while the list is not empty, as today.
+- Plan reviews and the plan-revision path (`useMessageSender`) act on the request shown.
 
 Codex's `wait` and `closeAgent` rows stay in the stream and carry a chip with the subagent's
 name (`⇢ Count lines in all files`) that scrolls to and expands its card.

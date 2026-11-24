@@ -600,9 +600,22 @@
             ><span class="muted" style="margin-left: auto; font-size: 11px">completed</span>
           </div>
 
-          <div class="lbl">A subagent asks for approval</div>
+          <div class="lbl">Three requests waiting, queued</div>
           <div class="sheet">
-            <div class="muted" style="font-size: 10.5px">Subagent · Count lines in all files</div>
+            <div
+              class="muted"
+              style="font-size: 10.5px; display: flex; align-items: center; gap: 6px"
+            >
+              Subagent · Count lines in all files
+              <span style="margin-left: auto; display: flex; align-items: center; gap: 4px">
+                <button class="btn" style="padding: 0 6px">‹</button>2 of 3<button
+                  class="btn"
+                  style="padding: 0 6px"
+                >
+                  ›
+                </button>
+              </span>
+            </div>
             <div style="font-weight: 500; margin: 3px 0 8px">Run <code>wc -l *</code>?</div>
             <div style="display: flex; gap: 6px">
               <button class="btn pri">Allow once</button><button class="btn">Always allow</button
@@ -635,6 +648,7 @@
           <li>Codex rows keep a chip to the card</li>
           <li>Nested subagents inside the parent card</li>
           <li>Unknown keeps the outcome Maestro saw</li>
+          <li>Several requests: one queue, oldest first, pager</li>
           <li>Boolean config options, separate commit</li>
         </ul>
         <h4>Try it</h4>
