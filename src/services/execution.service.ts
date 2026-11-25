@@ -431,6 +431,7 @@ export function useSpawnInteractiveExecutionMutation() {
       worktreeId,
       taskId,
       taskDescription,
+      cwd,
     }: {
       projectId: number;
       branchName: string | null;
@@ -439,6 +440,8 @@ export function useSpawnInteractiveExecutionMutation() {
       worktreeId?: number | null;
       taskId?: number | null;
       taskDescription?: string | null;
+      /** Wins over `worktreeId` and `branchName`. */
+      cwd?: string | null;
     }) => {
       return await api.spawnInteractiveExecution(
         projectId,
@@ -448,6 +451,7 @@ export function useSpawnInteractiveExecutionMutation() {
         worktreeId ?? null,
         taskId ?? null,
         taskDescription ?? null,
+        cwd ?? null,
       );
     },
     onSuccess: (_data, { projectId }) => {

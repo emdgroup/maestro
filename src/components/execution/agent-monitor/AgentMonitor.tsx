@@ -435,6 +435,7 @@ interface AgentMonitorProps {
     branchName: string | null,
     taskId: number | null,
     embedded?: boolean,
+    cwd?: string | null,
   ) => Promise<string | null>;
   connection: ConnectionKey;
 }
@@ -857,7 +858,7 @@ export function AgentMonitor({
                 headerSlot={s.session_id === selectedSessionId ? renderSessionHeader(s) : null}
                 onSpawnShell={
                   onSpawnShell
-                    ? () => onSpawnShell(s.branch_name ?? null, s.task_id ?? null, true)
+                    ? () => onSpawnShell(s.branch_name ?? null, s.task_id ?? null, true, s.cwd)
                     : undefined
                 }
               />
