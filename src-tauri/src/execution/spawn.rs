@@ -43,6 +43,26 @@ fn resolve_windows_shell() -> String {
     "cmd.exe".to_string()
 }
 
+/// What to type into a fresh remote shell to move it to `path` and clear the screen.
+///
+/// Lines end in `\r`, which is Enter on a Unix tty and in a Windows console alike; a bare `\n`
+/// can be left sitting on a PowerShell prompt. A native Windows host, the one whose path has a
+/// drive letter, may run cmd, Windows PowerShell or pwsh, which share no command separator (`&&`
+/// is pwsh 7 only), so it gets one line per command: `pushd`, which also changes drive in cmd,
+/// and `cls`. All three shells understand both.
+fn remote_shell_init(path: &str) -> String {
+    let bytes = path.as_bytes();
+    if bytes.len() > 1 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+        // A Windows path cannot contain `"`, so double quotes need no escaping.
+        format!("pushd \"{}\"\rcls\r", path.replace('/', "\\"))
+    } else {
+        format!(
+            "cd {} && clear\r",
+            crate::connectivity::exec_channel::shell_quote(path)
+        )
+    }
+}
+
 /// Spawn a user-controlled interactive shell on a specific branch.
 ///
 /// This creates an execution log with NULL task_id, resolves an existing worktree for the
@@ -58,6 +78,8 @@ fn resolve_windows_shell() -> String {
 /// * `worktree_id` - Optional worktree ID to use directly
 /// * `task_id` - Optional task ID to associate with this execution (updates task status to InProgress)
 /// * `task_description` - Optional task description to inject into the PTY 2s after spawn
+/// * `cwd` - Optional directory to open the shell in, which wins over `worktree_id` and
+///   `branch_name`. A session's side-panel terminal passes the session's own directory.
 ///
 /// # Returns
 /// The new session's id, which `attach_terminal` takes.
@@ -73,6 +95,7 @@ pub async fn spawn_interactive_execution(
     worktree_id: Option<i32>,
     task_id: Option<i32>,
     _task_description: Option<String>,
+    cwd: Option<String>,
 ) -> Result<String, String> {
     // Resolve project and git connection (local vs remote SSH) — same pattern as create_worktree
     let (project, git_conn) =
@@ -87,7 +110,9 @@ pub async fn spawn_interactive_execution(
         repo_path
     };
 
-    let worktree_abs_path: String = if let Some(wt_id) = worktree_id {
+    let worktree_abs_path: String = if let Some(cwd) = cwd {
+        cwd
+    } else if let Some(wt_id) = worktree_id {
         // Row lookup path — skip git worktree list entirely when caller already knows the worktree ID
         let relative_path = query_project_store(
             &app_state,
@@ -187,10 +212,7 @@ pub async fn spawn_interactive_execution(
 
         let pty_handle = ssh_session.spawn_remote_pty(80, 24, &session_id).await?;
 
-        // cd into the worktree directory and clear the screen.
-        // Single-quote the path to prevent command injection.
-        let escaped_path = worktree_abs_path.replace('\'', "'\\''");
-        let init_cmd = format!("cd '{}' && clear\n", escaped_path);
+        let init_cmd = remote_shell_init(&worktree_abs_path);
         pty_handle
             .write_tx
             .send(crate::connectivity::ssh::SshWriteOp::Data(
@@ -314,4 +336,21 @@ pub async fn spawn_interactive_execution(
     crate::core::emit_or_log(&app_state.app_handle, "sessions-changed", ());
 
     Ok(session_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remote_shell_init;
+
+    #[test]
+    fn remote_shell_init_suits_the_host_shell() {
+        assert_eq!(
+            remote_shell_init("/home/me/it's"),
+            "cd '/home/me/it'\\''s' && clear\r"
+        );
+        assert_eq!(
+            remote_shell_init("C:/Users/me/repo"),
+            "pushd \"C:\\Users\\me\\repo\"\rcls\r"
+        );
+    }
 }

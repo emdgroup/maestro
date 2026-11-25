@@ -664,13 +664,15 @@ async pruneBranches(projectId: number, branches: string[], force: boolean) : Pro
  * * `worktree_id` - Optional worktree ID to use directly
  * * `task_id` - Optional task ID to associate with this execution (updates task status to InProgress)
  * * `task_description` - Optional task description to inject into the PTY 2s after spawn
+ * * `cwd` - Optional directory to open the shell in, which wins over `worktree_id` and
+ * `branch_name`. A session's side-panel terminal passes the session's own directory.
  * 
  * # Returns
  * The new session's id, which `attach_terminal` takes.
  */
-async spawnInteractiveExecution(projectId: number, branchName: string | null, repoPath: string, sessionName: string | null, worktreeId: number | null, taskId: number | null, taskDescription: string | null) : Promise<Result<string, string>> {
+async spawnInteractiveExecution(projectId: number, branchName: string | null, repoPath: string, sessionName: string | null, worktreeId: number | null, taskId: number | null, taskDescription: string | null, cwd: string | null) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("spawn_interactive_execution", { projectId, branchName, repoPath, sessionName, worktreeId, taskId, taskDescription }) };
+    return { status: "ok", data: await TAURI_INVOKE("spawn_interactive_execution", { projectId, branchName, repoPath, sessionName, worktreeId, taskId, taskDescription, cwd }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

@@ -235,6 +235,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
       branchName: string | null,
       taskId: number | null,
       embedded = false,
+      cwd: string | null = null,
     ): Promise<string | null> => {
       if (projectId == null || repoPath == null) return null;
       let resolvedBranch = branchName;
@@ -252,6 +253,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
         repoPath,
         sessionName: embedded ? "__embedded__" : null,
         worktreeId,
+        cwd,
       });
     },
     [projectId, repoPath, worktrees, spawnMutation],
