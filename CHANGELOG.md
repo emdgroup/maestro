@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.49.1](https://github.com/emdgroup/maestro/compare/v0.49.0...v0.49.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ssh:** prime Windows remote shells with pushd and cls ([de4e45d](https://github.com/emdgroup/maestro/commit/de4e45d380b887490b926931ed3d1a51992a0158))
+* **terminal:** open a session's side-panel terminal in the session directory ([de4e45d](https://github.com/emdgroup/maestro/commit/de4e45d380b887490b926931ed3d1a51992a0158))
+
 ## [0.49.0](https://github.com/emdgroup/maestro/compare/v0.48.0...v0.49.0) (2026-11-24)
 
 
