@@ -70,7 +70,7 @@
     "react-dom": "^19.3.1",
     "react-hook-form": "7.92.0",
     "react-markdown": "^10.1.0",
-    "react-resizable-panels": "4.24.0",
+    "react-resizable-panels": "4.24.1",
     "rehype-katex": "^7.0.1",
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",
