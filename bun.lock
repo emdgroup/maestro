@@ -61,7 +61,7 @@
         "remark-mark-highlight": "^0.1.1",
         "remark-math": "^6.0.0",
         "shadcn": "4.23.0",
-        "smiles-drawer": "^2.4.1",
+        "smiles-drawer": "^2.4.2",
         "sonner": "2.0.8",
         "tailwind-merge": "^3.7.0",
         "tailwindcss-animate": "^1.0.7",
@@ -2049,7 +2049,7 @@
 
     "smart-buffer": ["smart-buffer@4.2.0", "", {}, "sha512-94hK0Hh8rPqQl2xXc3HsaBoOXKV20MToPkcXvwbISWLEs+64sBq5kFgn2kJDHb1Pry9yrP0dxrCI9RRci7RXKg=="],
 
-    "smiles-drawer": ["smiles-drawer@2.4.1", "", { "dependencies": { "chroma-js": "^2.4.2" } }, "sha512-kJeD91Bp8EwLTQouq4az7hn5zUYdIaLQoyFt8XlsqriugPiZOdBFADJMUnfqDYpyu3XK9SFpBgTuDtczpbSUbA=="],
+    "smiles-drawer": ["smiles-drawer@2.4.2", "", { "dependencies": { "chroma-js": "^2.4.2" } }, "sha512-EfnEfH05BWJkI4OXJd8g+l0VRsm0Xgrfasr+cVrD14pCfRMg6mBTvxBLPVh66QJl9/JOZQI/jVqGEg1aEB+4gA=="],
 
     "smol-toml": ["smol-toml@1.9.1", "", {}, "sha512-j7WyPdf0CJoutMzMoPLF/bVXHtKZIT9Rb4eGeEbWw8X2t5oirjPgpL+OpaENZrILYaXqYwnVH+qgUwVbl+pUJQ=="],
 
