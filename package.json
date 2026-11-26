@@ -61,7 +61,7 @@
     "culori": "^4.0.2",
     "date-fns": "^4.4.0",
     "framer-motion": "14.9.1",
-    "immer": "11.2.9",
+    "immer": "11.2.10",
     "katex": "^0.19.1",
     "lucide-react": "1.70.0",
     "mermaid": "12.3.0",
